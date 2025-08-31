@@ -14,6 +14,11 @@ interface Assignment {
   estimatedDuration: number;
 }
 
+interface UserStats {
+  completedCourses: number;
+  averageScore: number;
+}
+
 export function UserDashboard() {
   const { user } = useAuth();
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
@@ -21,6 +26,10 @@ export function UserDashboard() {
 
   const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
     queryKey: ['/api/assignments'],
+  });
+
+  const { data: userStats, isLoading: statsLoading } = useQuery<UserStats>({
+    queryKey: ['/api/user/stats'],
   });
 
   const handleStartCourse = (assignment: Assignment) => {
@@ -83,13 +92,25 @@ export function UserDashboard() {
         <div className="stats shadow">
           <div className="stat place-items-center">
             <div className="stat-title">Completed</div>
-            <div className="stat-value text-primary" data-testid="stat-completed-count">12</div>
+            <div className="stat-value text-primary" data-testid="stat-completed-count">
+              {statsLoading ? (
+                <span className="loading loading-spinner loading-sm"></span>
+              ) : (
+                userStats?.completedCourses || 0
+              )}
+            </div>
             <div className="stat-desc">courses</div>
           </div>
           <div className="stat place-items-center">
             <div className="stat-title">Avg Score</div>
-            <div className="stat-value text-secondary" data-testid="stat-avg-score">89%</div>
-            <div className="stat-desc">last 10 courses</div>
+            <div className="stat-value text-secondary" data-testid="stat-avg-score">
+              {statsLoading ? (
+                <span className="loading loading-spinner loading-sm"></span>
+              ) : (
+                `${userStats?.averageScore || 0}%`
+              )}
+            </div>
+            <div className="stat-desc">{userStats?.completedCourses > 0 ? 'all completed' : 'no completions yet'}</div>
           </div>
         </div>
       </div>

@@ -276,6 +276,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User statistics endpoint
+  app.get('/api/user/stats', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role === 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const completions = await storage.getCompletionsByUser(user.id);
+      const completedCourses = completions.filter(c => c.status === 'completed');
+      const completedCount = completedCourses.length;
+      
+      // Calculate average score from completed courses
+      const scoresWithValues = completedCourses.filter(c => c.score !== null && c.score !== undefined);
+      const averageScore = scoresWithValues.length > 0 
+        ? Math.round(scoresWithValues.reduce((sum, c) => sum + (c.score || 0), 0) / scoresWithValues.length)
+        : 0;
+
+      res.json({
+        completedCourses: completedCount,
+        averageScore: averageScore
+      });
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+      res.status(500).json({ message: 'Failed to fetch user statistics' });
+    }
+  });
+
+  // User certificates endpoint
+  app.get('/api/user/certificates', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role === 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const certificates = await storage.getCertificatesByUser(user.id);
+      res.json(certificates);
+    } catch (error) {
+      console.error('Error fetching user certificates:', error);
+      res.status(500).json({ message: 'Failed to fetch certificates' });
+    }
+  });
+
   // Object storage routes
   app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
     const userId = getUserIdFromSession(req);
