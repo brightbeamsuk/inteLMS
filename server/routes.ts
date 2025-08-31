@@ -1458,6 +1458,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk import users from CSV
+  app.post('/api/users/bulk-import', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.session.user?.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { users: usersData } = req.body;
+      
+      if (!Array.isArray(usersData) || usersData.length === 0) {
+        return res.status(400).json({ message: 'Users array is required' });
+      }
+
+      let created = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const userData of usersData) {
+        try {
+          const validatedData = insertUserSchema.parse(userData);
+          
+          // If admin, can only create users in their organisation
+          if (user.role === 'admin') {
+            validatedData.organisationId = user.organisationId;
+          }
+
+          await storage.createUser(validatedData);
+          created++;
+        } catch (error: any) {
+          failed++;
+          errors.push(`${userData.email || 'Unknown'}: ${error.message}`);
+        }
+      }
+
+      res.status(200).json({ 
+        created, 
+        failed, 
+        errors: errors.slice(0, 10) // Limit error messages
+      });
+    } catch (error) {
+      console.error('Error bulk importing users:', error);
+      res.status(500).json({ message: 'Failed to import users' });
+    }
+  });
+
   // Courses routes
   app.get('/api/courses', requireAuth, async (req: any, res) => {
     try {

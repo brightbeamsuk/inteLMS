@@ -22,9 +22,12 @@ export function AdminUsers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<any[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -113,6 +116,35 @@ export function AdminUsers() {
     },
   });
 
+  const importUsersMutation = useMutation({
+    mutationFn: async (users: any[]) => {
+      return await apiRequest('POST', '/api/users/bulk-import', {
+        users: users.map(user => ({
+          ...user,
+          role: 'user',
+          organisationId: currentUser?.organisationId,
+        }))
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setShowImportModal(false);
+      setCsvFile(null);
+      setCsvPreview([]);
+      toast({
+        title: "Success",
+        description: `Successfully imported ${data.created} users`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to import users",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       email: "",
@@ -176,6 +208,99 @@ export function AdminUsers() {
     deleteUserMutation.mutate(selectedUser.id);
   };
 
+  const handleCsvFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+      toast({
+        title: "Invalid File",
+        description: "Please select a CSV file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCsvFile(file);
+    
+    // Parse CSV for preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      
+      const expectedHeaders = ['firstName', 'lastName', 'email', 'jobTitle', 'department', 'allowCertificateDownload'];
+      const hasValidHeaders = expectedHeaders.every(header => headers.includes(header));
+      
+      if (!hasValidHeaders) {
+        toast({
+          title: "Invalid CSV Format",
+          description: "CSV must have columns: firstName, lastName, email, jobTitle, department, allowCertificateDownload",
+          variant: "destructive",
+        });
+        setCsvFile(null);
+        return;
+      }
+      
+      const preview = lines.slice(1, 6) // Show first 5 rows
+        .filter(line => line.trim())
+        .map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const obj: any = {};
+          headers.forEach((header, index) => {
+            obj[header] = values[index] || '';
+          });
+          return obj;
+        });
+      
+      setCsvPreview(preview);
+    };
+    
+    reader.readAsText(file);
+  };
+
+  const handleImportCsv = () => {
+    if (!csvFile) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      
+      const users = lines.slice(1)
+        .filter(line => line.trim())
+        .map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const obj: any = {};
+          headers.forEach((header, index) => {
+            let value = values[index] || '';
+            if (header === 'allowCertificateDownload') {
+              obj[header] = value.toLowerCase() === 'true';
+            } else {
+              obj[header] = value;
+            }
+          });
+          return obj;
+        })
+        .filter(user => user.email && user.firstName && user.lastName);
+      
+      if (users.length === 0) {
+        toast({
+          title: "No Valid Users",
+          description: "No valid users found in CSV file",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      importUsersMutation.mutate(users);
+    };
+    
+    reader.readAsText(csvFile);
+  };
+
   return (
     <div>
       {/* Breadcrumbs */}
@@ -192,6 +317,7 @@ export function AdminUsers() {
         <div className="flex gap-2">
           <button 
             className="btn btn-outline"
+            onClick={() => setShowImportModal(true)}
             data-testid="button-bulk-import"
           >
             <i className="fas fa-upload"></i> Import CSV
@@ -463,6 +589,121 @@ export function AdminUsers() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowCreateModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* CSV Import Modal */}
+      {showImportModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-import-title">Import Users from CSV</h3>
+            
+            <div className="space-y-6">
+              {/* File Upload */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Select CSV File</span>
+                </label>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={handleCsvFileSelect}
+                  className="file-input file-input-bordered w-full" 
+                  data-testid="input-csv-file"
+                />
+                <div className="label">
+                  <span className="label-text-alt">
+                    CSV must contain columns: firstName, lastName, email, jobTitle, department, allowCertificateDownload
+                  </span>
+                </div>
+              </div>
+
+              {/* Format Example */}
+              <div className="card bg-base-100 shadow-sm">
+                <div className="card-body">
+                  <h4 className="card-title text-sm">CSV Format Example:</h4>
+                  <div className="mockup-code text-xs">
+                    <pre data-prefix="1"><code>firstName,lastName,email,jobTitle,department,allowCertificateDownload</code></pre>
+                    <pre data-prefix="2"><code>John,Doe,john@company.com,Developer,IT,true</code></pre>
+                    <pre data-prefix="3"><code>Jane,Smith,jane@company.com,Manager,HR,false</code></pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview */}
+              {csvPreview.length > 0 && (
+                <div className="card bg-base-100 shadow-sm">
+                  <div className="card-body">
+                    <h4 className="card-title text-sm">Preview (first 5 rows):</h4>
+                    <div className="overflow-x-auto">
+                      <table className="table table-sm">
+                        <thead>
+                          <tr>
+                            <th>First Name</th>
+                            <th>Last Name</th>
+                            <th>Email</th>
+                            <th>Job Title</th>
+                            <th>Department</th>
+                            <th>Certificates</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvPreview.map((user, index) => (
+                            <tr key={index}>
+                              <td>{user.firstName}</td>
+                              <td>{user.lastName}</td>
+                              <td>{user.email}</td>
+                              <td>{user.jobTitle || 'N/A'}</td>
+                              <td>{user.department || 'N/A'}</td>
+                              <td>
+                                <div className={`badge ${user.allowCertificateDownload === 'true' ? 'badge-success' : 'badge-ghost'} badge-sm`}>
+                                  {user.allowCertificateDownload === 'true' ? 'Allowed' : 'Restricted'}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-action">
+              <button 
+                type="button" 
+                className="btn" 
+                onClick={() => {
+                  setShowImportModal(false);
+                  setCsvFile(null);
+                  setCsvPreview([]);
+                }}
+                data-testid="button-cancel-import"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                onClick={handleImportCsv}
+                disabled={!csvFile || importUsersMutation.isPending}
+                data-testid="button-confirm-import"
+              >
+                {importUsersMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  <>
+                    <i className="fas fa-upload"></i>
+                    Import Users
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowImportModal(false)}>close</button>
           </form>
         </dialog>
       )}
