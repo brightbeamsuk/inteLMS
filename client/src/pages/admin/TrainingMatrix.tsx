@@ -350,7 +350,7 @@ export function AdminTrainingMatrix() {
                 </div>
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <TrainingMatrixStatusIcon status="grey" size="sm" />
-                  <span className="text-sm text-base-content">Not assigned</span>
+                  <span className="text-sm text-base-content">Not completed</span>
                 </div>
               </div>
             </div>
