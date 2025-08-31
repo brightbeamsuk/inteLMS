@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from "recharts";
 
 interface OrganisationStats {
   activeUsers: number;
@@ -191,13 +191,160 @@ export function AdminDashboard() {
       </div>
 
       {/* Charts and Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Course Completion Analytics Chart */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+        {/* Course Completion Trend Chart */}
+        <div className="card bg-base-200 shadow-sm xl:col-span-2">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-chart-line text-primary"></i>
+              Course Completion Trends
+            </h3>
+            <div className="h-80 bg-base-100 rounded p-4">
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : analyticsData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">📈</div>
+                    <p className="text-sm text-base-content/60">No completion data available yet</p>
+                  </div>
+                </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    successful: {
+                      label: "Successful Completions",
+                      color: "hsl(142, 76%, 36%)",
+                    },
+                    failed: {
+                      label: "Failed Attempts", 
+                      color: "hsl(0, 84%, 60%)",
+                    },
+                    total: {
+                      label: "Total Attempts",
+                      color: "hsl(217, 91%, 60%)",
+                    },
+                  }}
+                >
+                  <AreaChart data={analyticsData}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis 
+                      dataKey="monthName" 
+                      tick={{ fontSize: 11, fill: 'currentColor' }}
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis tick={{ fontSize: 11, fill: 'currentColor' }} />
+                    <ChartTooltip 
+                      content={<ChartTooltipContent />} 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--base-100))',
+                        border: '1px solid hsl(var(--base-300))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Area 
+                      type="monotone" 
+                      dataKey="successful" 
+                      stackId="1" 
+                      stroke="var(--color-successful)" 
+                      fill="var(--color-successful)" 
+                      fillOpacity={0.7}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="failed" 
+                      stackId="1" 
+                      stroke="var(--color-failed)" 
+                      fill="var(--color-failed)" 
+                      fillOpacity={0.7}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Completion Rate Donut Chart */}
         <div className="card bg-base-200 shadow-sm">
           <div className="card-body">
             <h3 className="card-title">
-              <i className="fas fa-chart-bar text-primary"></i>
-              Course Completion Analytics
+              <i className="fas fa-chart-pie text-secondary"></i>
+              Overall Success Rate
+            </h3>
+            <div className="h-80 bg-base-100 rounded p-4">
+              {analyticsLoading || !stats ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <ChartContainer
+                    config={{
+                      successful: {
+                        label: "Successful",
+                        color: "hsl(142, 76%, 36%)",
+                      },
+                      pending: {
+                        label: "In Progress", 
+                        color: "hsl(45, 93%, 47%)",
+                      },
+                    }}
+                    className="h-48 w-full"
+                  >
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Completed', value: stats.coursesCompleted, fill: 'hsl(142, 76%, 36%)' },
+                          { name: 'In Progress', value: Math.max(0, stats.coursesAssigned - stats.coursesCompleted), fill: 'hsl(45, 93%, 47%)' }
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                      </Pie>
+                      <ChartTooltip 
+                        content={<ChartTooltipContent />} 
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--base-100))',
+                          border: '1px solid hsl(var(--base-300))',
+                          borderRadius: '8px'
+                        }}
+                      />
+                    </PieChart>
+                  </ChartContainer>
+                  <div className="text-center mt-4">
+                    <div className="text-2xl font-bold text-success">
+                      {stats.complianceRate}%
+                    </div>
+                    <div className="text-sm text-base-content/60">
+                      Completion Rate
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Secondary Analytics Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Monthly Performance Bar Chart */}
+        <div className="card bg-base-200 shadow-sm">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-chart-bar text-accent"></i>
+              Monthly Performance
             </h3>
             <div className="h-64 bg-base-100 rounded p-4">
               {analyticsLoading ? (
@@ -215,29 +362,45 @@ export function AdminDashboard() {
                 <ChartContainer
                   config={{
                     successful: {
-                      label: "Successful",
-                      color: "hsl(var(--chart-1))",
+                      label: "Pass",
+                      color: "hsl(142, 76%, 36%)",
                     },
                     failed: {
-                      label: "Failed", 
-                      color: "hsl(var(--chart-2))",
+                      label: "Fail", 
+                      color: "hsl(0, 84%, 60%)",
                     },
                   }}
                 >
                   <BarChart data={analyticsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                     <XAxis 
                       dataKey="monthName" 
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 11, fill: 'currentColor' }}
                       interval={0}
                       angle={-45}
                       textAnchor="end"
+                      height={50}
                     />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <YAxis tick={{ fontSize: 11, fill: 'currentColor' }} />
+                    <ChartTooltip 
+                      content={<ChartTooltipContent />} 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--base-100))',
+                        border: '1px solid hsl(var(--base-300))',
+                        borderRadius: '8px'
+                      }}
+                    />
                     <ChartLegend content={<ChartLegendContent />} />
-                    <Bar dataKey="successful" stackId="a" fill="var(--color-successful)" />
-                    <Bar dataKey="failed" stackId="a" fill="var(--color-failed)" />
+                    <Bar 
+                      dataKey="successful" 
+                      fill="var(--color-successful)" 
+                      radius={[2, 2, 0, 0]}
+                    />
+                    <Bar 
+                      dataKey="failed" 
+                      fill="var(--color-failed)" 
+                      radius={[2, 2, 0, 0]}
+                    />
                   </BarChart>
                 </ChartContainer>
               )}
