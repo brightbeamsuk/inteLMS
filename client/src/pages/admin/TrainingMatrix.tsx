@@ -56,12 +56,6 @@ interface FilterState {
   mandatoryOnly: boolean;
 }
 
-interface SavedView {
-  id: string;
-  name: string;
-  filters: FilterState;
-  organisationId: string;
-}
 
 export function AdminTrainingMatrix() {
   const [filters, setFilters] = useState<FilterState>({
@@ -78,9 +72,6 @@ export function AdminTrainingMatrix() {
     cell: MatrixCell;
   } | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showSaveViewModal, setShowSaveViewModal] = useState(false);
-  const [newViewName, setNewViewName] = useState('');
-  const [activeView, setActiveView] = useState<SavedView | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   const { toast } = useToast();
@@ -109,38 +100,33 @@ export function AdminTrainingMatrix() {
   // Debug logging
   console.log('Training Matrix Query:', { matrixData, isLoading, error, currentUser });
 
-  // Fetch saved views
-  const { data: savedViews = [] } = useQuery<SavedView[]>({
-    queryKey: ['/api/training-matrix/views', currentUser?.organisationId],
-    enabled: !!currentUser?.organisationId,
-  });
+  // Load saved filters on mount
+  useEffect(() => {
+    if (currentUser?.organisationId) {
+      const savedFiltersKey = `training-matrix-filters-${currentUser.organisationId}`;
+      const savedFilters = localStorage.getItem(savedFiltersKey);
+      if (savedFilters) {
+        try {
+          const parsedFilters = JSON.parse(savedFilters);
+          setFilters(parsedFilters);
+        } catch (error) {
+          console.error('Failed to load saved filters:', error);
+        }
+      }
+    }
+  }, [currentUser?.organisationId]);
 
-  // Save view mutation
-  const saveViewMutation = useMutation({
-    mutationFn: async (viewData: { name: string; filters: FilterState }) => {
-      return await apiRequest('POST', '/api/training-matrix/views', {
-        name: viewData.name,
-        filters: viewData.filters,
-        organisationId: currentUser?.organisationId,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/training-matrix/views'] });
-      setShowSaveViewModal(false);
-      setNewViewName('');
+  // Save current view
+  const saveCurrentView = () => {
+    if (currentUser?.organisationId) {
+      const savedFiltersKey = `training-matrix-filters-${currentUser.organisationId}`;
+      localStorage.setItem(savedFiltersKey, JSON.stringify(filters));
       toast({
         title: "Success",
-        description: "View saved successfully",
+        description: "Current view saved",
       });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to save view",
-        variant: "destructive",
-      });
-    },
-  });
+    }
+  };
 
   // Send reminders mutation
   const sendRemindersMutation = useMutation({
@@ -198,24 +184,11 @@ export function AdminTrainingMatrix() {
       statuses: [],
       mandatoryOnly: false,
     });
-    setActiveView(null);
-  };
-
-  const applyView = (view: SavedView) => {
-    setFilters(view.filters);
-    setActiveView(view);
-  };
-
-  const handleSaveView = () => {
-    if (!newViewName.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Please enter a view name",
-        variant: "destructive",
-      });
-      return;
+    // Also clear saved filters
+    if (currentUser?.organisationId) {
+      const savedFiltersKey = `training-matrix-filters-${currentUser.organisationId}`;
+      localStorage.removeItem(savedFiltersKey);
     }
-    saveViewMutation.mutate({ name: newViewName.trim(), filters });
   };
 
   const exportData = async (format: 'csv' | 'pdf') => {
@@ -292,11 +265,11 @@ export function AdminTrainingMatrix() {
         <div className="flex flex-wrap gap-2">
           <button 
             className="btn btn-outline btn-sm"
-            onClick={() => setShowSaveViewModal(true)}
+            onClick={saveCurrentView}
             data-testid="button-save-view"
           >
             <i className="fas fa-save"></i>
-            Save View
+            Save Current View
           </button>
           <div className="dropdown dropdown-end">
             <div tabIndex={0} role="button" className="btn btn-outline btn-sm" data-testid="button-export">
@@ -543,32 +516,6 @@ export function AdminTrainingMatrix() {
         </div>
       </div>
 
-      {/* Saved Views */}
-      {savedViews.length > 0 && (
-        <div className="card bg-base-100 shadow-sm mb-6">
-          <div className="card-body p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <i className="fas fa-bookmark text-base-content/60"></i>
-                <span className="font-medium">Saved Views:</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {savedViews.map((view) => (
-                  <button
-                    key={view.id}
-                    className={`btn btn-sm ${activeView?.id === view.id ? 'btn-primary' : 'btn-outline'}`}
-                    onClick={() => applyView(view)}
-                    data-testid={`button-view-${view.id}`}
-                  >
-                    <i className="fas fa-bookmark"></i>
-                    {view.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Legend and Summary */}
       <div className="card bg-base-200 shadow-sm mb-6">
@@ -756,96 +703,6 @@ export function AdminTrainingMatrix() {
         </div>
       )}
 
-      {/* Save View Modal */}
-      {showSaveViewModal && (
-        <div className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Save Current View</h3>
-            
-            <div className="space-y-4">
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">View Name</span>
-                </label>
-                <input 
-                  type="text" 
-                  className="input input-bordered" 
-                  value={newViewName}
-                  onChange={(e) => setNewViewName(e.target.value)}
-                  placeholder="Enter a name for this view"
-                  data-testid="input-view-name"
-                />
-              </div>
-
-              {/* Show current filters */}
-              {(filters.departments.length > 0 || filters.roles.length > 0 || 
-                filters.courses.length > 0 || filters.statuses.length > 0) && (
-                <div>
-                  <label className="label">
-                    <span className="label-text">Current Filters</span>
-                  </label>
-                  <div className="bg-base-200 p-3 rounded-lg">
-                    <div className="flex flex-wrap gap-2">
-                      {filters.departments.map((dept) => (
-                        <span key={`save-dept-${dept}`} className="badge badge-primary">Dept: {dept}</span>
-                      ))}
-                      {filters.roles.map((role) => (
-                        <span key={`save-role-${role}`} className="badge badge-secondary">Role: {role}</span>
-                      ))}
-                      {filters.courses.map((courseId) => {
-                        const course = matrixData.courses.find(c => c.id === courseId);
-                        return (
-                          <span key={`save-course-${courseId}`} className="badge badge-accent">
-                            Course: {course?.title || courseId}
-                          </span>
-                        );
-                      })}
-                      {filters.statuses.map((status) => {
-                        const statusLabels = {
-                          green: 'Completed & current',
-                          amber: 'Expiring soon', 
-                          red: 'Overdue/expired',
-                          grey: 'Not completed'
-                        };
-                        return (
-                          <span key={`save-status-${status}`} className="badge badge-neutral">
-                            Status: {statusLabels[status as keyof typeof statusLabels]}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    {(filters.departments.length === 0 && filters.roles.length === 0 && 
-                      filters.courses.length === 0 && filters.statuses.length === 0) && (
-                      <p className="text-sm text-base-content/60">No filters applied</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-action">
-              <button 
-                className="btn btn-outline" 
-                onClick={() => {
-                  setShowSaveViewModal(false);
-                  setNewViewName('');
-                }}
-                data-testid="button-cancel-save-view"
-              >
-                Cancel
-              </button>
-              <button 
-                className={`btn btn-primary ${saveViewMutation.isPending ? 'loading' : ''}`}
-                onClick={handleSaveView}
-                disabled={saveViewMutation.isPending || !newViewName.trim()}
-                data-testid="button-confirm-save-view"
-              >
-                {saveViewMutation.isPending ? 'Saving...' : 'Save View'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
