@@ -39,6 +39,7 @@ export interface ScormCompletionData {
 
 export class ScormService {
   private extractedPackages = new Map<string, { path: string; manifest: any; launchFile: string }>();
+  private extractionLocks = new Map<string, Promise<any>>();
 
   async extractPackageInfo(packageUrl: string): Promise<ScormPackageInfo> {
     console.log(`📦 Extracting SCORM package info from: ${packageUrl}`);
@@ -67,8 +68,44 @@ export class ScormService {
     }
   }
 
+  private async validateZipFile(zipPath: string): Promise<boolean> {
+    try {
+      // Check if file exists and has some content
+      const stats = await fs.promises.stat(zipPath);
+      if (stats.size === 0) {
+        console.log('❌ Zip file is empty');
+        return false;
+      }
+      
+      // Try to open the zip file to verify it's valid
+      return new Promise((resolve) => {
+        (yauzl as any).open(zipPath, { lazyEntries: true }, (err: Error | null, zipfile?: YauzlZipFile) => {
+          if (err || !zipfile) {
+            console.log(`❌ Invalid zip file: ${err?.message}`);
+            resolve(false);
+            return;
+          }
+          
+          // If we can open it, it's probably valid
+          resolve(true);
+        });
+      });
+    } catch (error) {
+      console.log(`❌ Error validating zip file: ${error}`);
+      return false;
+    }
+  }
+
   private async extractZipFile(zipPath: string, extractDir: string): Promise<void> {
+    // Validate the zip file first
+    const isValid = await this.validateZipFile(zipPath);
+    if (!isValid) {
+      throw new Error('Invalid or corrupted zip file');
+    }
+    
     return new Promise((resolve, reject) => {
+      let hasError = false;
+      
       (yauzl as any).open(zipPath, { lazyEntries: true }, (err: Error | null, zipfile?: YauzlZipFile) => {
         if (err || !zipfile) {
           reject(err || new Error('Failed to open zip file'));
@@ -78,13 +115,18 @@ export class ScormService {
         zipfile.readEntry();
         
         zipfile.on("entry", (entry: YauzlEntry) => {
+          if (hasError) return;
+          
           if (/\/$/.test(entry.fileName)) {
             // Directory entry
             zipfile.readEntry();
           } else {
             // File entry
             zipfile.openReadStream(entry, (err: Error | null, readStream?: NodeJS.ReadableStream) => {
+              if (hasError) return;
+              
               if (err || !readStream) {
+                hasError = true;
                 reject(err || new Error('Failed to open read stream'));
                 return;
               }
@@ -94,24 +136,52 @@ export class ScormService {
               
               // Ensure directory exists
               mkdirp.mkdirp(dirPath).then(() => {
+                if (hasError) return;
+                
                 const writeStream = fs.createWriteStream(filePath);
                 readStream.pipe(writeStream);
                 
                 writeStream.on('close', () => {
-                  zipfile.readEntry();
+                  if (!hasError) {
+                    zipfile.readEntry();
+                  }
                 });
                 
-                writeStream.on('error', reject);
-              }).catch(reject);
+                writeStream.on('error', (writeErr) => {
+                  if (!hasError) {
+                    hasError = true;
+                    reject(writeErr);
+                  }
+                });
+                
+                readStream.on('error', (readErr) => {
+                  if (!hasError) {
+                    hasError = true;
+                    reject(readErr);
+                  }
+                });
+              }).catch((mkdirErr) => {
+                if (!hasError) {
+                  hasError = true;
+                  reject(mkdirErr);
+                }
+              });
             });
           }
         });
         
         zipfile.on("end", () => {
-          resolve();
+          if (!hasError) {
+            resolve();
+          }
         });
         
-        zipfile.on("error", reject);
+        zipfile.on("error", (zipErr) => {
+          if (!hasError) {
+            hasError = true;
+            reject(zipErr);
+          }
+        });
       });
     });
   }
@@ -122,6 +192,26 @@ export class ScormService {
       return this.extractedPackages.get(packageUrl)!;
     }
 
+    // Check if extraction is already in progress for this package
+    if (this.extractionLocks.has(packageUrl)) {
+      console.log(`⏳ Waiting for ongoing extraction of: ${packageUrl}`);
+      return await this.extractionLocks.get(packageUrl)!;
+    }
+
+    // Create extraction promise and store it in locks
+    const extractionPromise = this.performExtraction(packageUrl);
+    this.extractionLocks.set(packageUrl, extractionPromise);
+
+    try {
+      const result = await extractionPromise;
+      return result;
+    } finally {
+      // Always clean up the lock when done
+      this.extractionLocks.delete(packageUrl);
+    }
+  }
+
+  private async performExtraction(packageUrl: string): Promise<{ path: string; manifest: any; launchFile: string }> {
     const extractDir = path.join(process.cwd(), 'temp', 'scorm', Buffer.from(packageUrl).toString('base64').slice(0, 20));
     await mkdirp.mkdirp(extractDir);
 
@@ -235,101 +325,40 @@ export class ScormService {
     } catch (error) {
       console.error('Error extracting SCORM package:', error);
       
-      // Fallback: create a simple error page showing what went wrong
-      const errorHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>SCORM Package Error</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              padding: 40px; 
-              background: #f8f9fa; 
-              color: #333;
-            }
-            .error-container { 
-              background: white; 
-              padding: 30px; 
-              border-radius: 8px; 
-              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-              max-width: 600px;
-              margin: 0 auto;
-            }
-            .error-title {
-              color: #dc3545;
-              margin-bottom: 20px;
-            }
-            .error-details {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 4px;
-              margin: 20px 0;
-              border-left: 4px solid #dc3545;
-            }
-            .package-url {
-              word-break: break-all;
-              background: #e9ecef;
-              padding: 10px;
-              border-radius: 4px;
-              margin: 10px 0;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="error-container">
-            <h1 class="error-title">❌ Error Loading SCORM Package</h1>
-            <p>There was an error extracting your SCORM package. This could be due to:</p>
-            <ul>
-              <li>Invalid or corrupted SCORM package</li>
-              <li>Missing imsmanifest.xml file</li>
-              <li>Unsupported SCORM format</li>
-              <li>Network issues downloading the package</li>
-            </ul>
-            
-            <div class="error-details">
-              <strong>Error:</strong> ${error instanceof Error ? error.message : String(error)}
-            </div>
-            
-            <div class="package-url">
-              <strong>Package URL:</strong><br>
-              ${packageUrl}
-            </div>
-            
-            <p><strong>Suggestions:</strong></p>
-            <ul>
-              <li>Verify your SCORM package is a valid zip file</li>
-              <li>Ensure it contains an imsmanifest.xml file</li>
-              <li>Try re-uploading the package</li>
-              <li>Check that the package follows SCORM standards</li>
-            </ul>
-          </div>
-        </body>
-        </html>
-      `;
+      // Clean up any corrupted cached data
+      this.extractedPackages.delete(packageUrl);
       
-      await fs.promises.writeFile(path.join(extractDir, 'index.html'), errorHtml);
+      // Clean up the extraction directory if it exists
+      try {
+        if (fs.existsSync(extractDir)) {
+          await fs.promises.rmdir(extractDir, { recursive: true });
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up extraction directory:', cleanupError);
+      }
       
-      const result = {
-        path: extractDir,
-        manifest: {
-          metadata: {
-            title: "Error Loading SCORM Package",
-            description: `Failed to extract SCORM package: ${error instanceof Error ? error.message : String(error)}`,
-            schemaversion: "1.2"
-          }
-        },
-        launchFile: 'index.html'
-      };
-      
-      this.extractedPackages.set(packageUrl, result);
-      return result;
+      // Re-throw the error instead of caching an error result
+      throw new Error(`Failed to extract SCORM package: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   async getExtractedPackagePath(packageUrl: string): Promise<string | null> {
     const extracted = this.extractedPackages.get(packageUrl);
     return extracted ? extracted.path : null;
+  }
+
+  // Method to clear cache for a specific package (useful for retries)
+  clearPackageCache(packageUrl: string): void {
+    console.log(`🗑️ Clearing cache for package: ${packageUrl}`);
+    this.extractedPackages.delete(packageUrl);
+    this.extractionLocks.delete(packageUrl);
+  }
+
+  // Method to clear all cached packages (useful for cleanup)
+  clearAllCache(): void {
+    console.log('🗑️ Clearing all SCORM package cache');
+    this.extractedPackages.clear();
+    this.extractionLocks.clear();
   }
 
   private rewriteAssetPaths(content: string, encodedPackageUrl: string): string {

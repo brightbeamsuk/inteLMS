@@ -307,7 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const { packageUrl } = req.query;
+      const { packageUrl, retry } = req.query;
       
       if (!packageUrl) {
         return res.status(400).json({ message: 'Package URL is required' });
@@ -317,13 +317,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { ScormService } = await import('./services/scormService');
       const scormService = new ScormService();
       
+      // If this is a retry, clear the cache first
+      if (retry === 'true') {
+        console.log('🔄 Retrying SCORM preview, clearing cache first');
+        scormService.clearPackageCache(packageUrl as string);
+      }
+      
       const playerHtml = await scormService.getPlayerHtml(packageUrl as string, user.id, 'preview');
       
       res.setHeader('Content-Type', 'text/html');
       res.send(playerHtml);
     } catch (error) {
       console.error('Error generating SCORM preview:', error);
-      res.status(500).json({ message: 'Failed to generate preview' });
+      
+      // Provide a more informative error page
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>SCORM Preview Error</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; background: #f8f9fa; }
+            .error-container { background: white; padding: 30px; border-radius: 8px; max-width: 600px; margin: 0 auto; }
+            .error-title { color: #dc3545; margin-bottom: 20px; }
+            .retry-btn { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin: 10px 5px; }
+            .retry-btn:hover { background: #0056b3; }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <h1 class="error-title">❌ SCORM Preview Error</h1>
+            <p>There was an error loading the SCORM package preview.</p>
+            <p><strong>Error:</strong> ${error instanceof Error ? error.message : String(error)}</p>
+            <p>This might be due to a corrupted package or network issues.</p>
+            <button class="retry-btn" onclick="window.location.href = window.location.href + '&retry=true'">🔄 Retry</button>
+            <button class="retry-btn" onclick="window.close()">❌ Close</button>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.status(500).send(errorHtml);
     }
   });
 
@@ -346,8 +381,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { ScormService } = await import('./services/scormService');
       const scormService = new ScormService();
       
-      const extracted = await scormService.extractPackage(packageUrl as string);
-      const extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
+      let extracted, extractedPath;
+      
+      try {
+        extracted = await scormService.extractPackage(packageUrl as string);
+        extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
+      } catch (extractionError) {
+        console.error('SCORM extraction failed:', extractionError);
+        // Clear corrupted cache and try once more
+        scormService.clearPackageCache(packageUrl as string);
+        
+        try {
+          extracted = await scormService.extractPackage(packageUrl as string);
+          extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
+        } catch (retryError) {
+          console.error('SCORM extraction retry failed:', retryError);
+          return res.status(500).json({ 
+            message: 'Failed to extract SCORM package', 
+            error: retryError instanceof Error ? retryError.message : String(retryError)
+          });
+        }
+      }
       
       if (!extractedPath) {
         return res.status(404).json({ message: 'Package not found' });
@@ -749,6 +803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.session.user?.id;
       const { assignmentId } = req.params;
+      const { retry } = req.query;
 
       const assignment = await storage.getAssignment(assignmentId);
       if (!assignment || assignment.userId !== userId) {
@@ -760,12 +815,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Course or SCORM package not found' });
       }
 
-      const playerHtml = await scormService.getPlayerHtml(course.scormPackageUrl, userId, assignmentId);
+      // If this is a retry, clear the cache first
+      if (retry === 'true') {
+        console.log('🔄 Retrying SCORM player, clearing cache first');
+        scormService.clearPackageCache(course.scormPackageUrl);
+      }
+
+      let playerHtml;
+      try {
+        playerHtml = await scormService.getPlayerHtml(course.scormPackageUrl, userId, assignmentId);
+      } catch (scormError) {
+        console.error('SCORM player generation failed:', scormError);
+        
+        // Provide a user-friendly error page with retry option
+        playerHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Course Loading Error</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; background: #f8f9fa; text-align: center; }
+              .error-container { background: white; padding: 40px; border-radius: 8px; max-width: 500px; margin: 0 auto; }
+              .error-title { color: #dc3545; margin-bottom: 20px; }
+              .retry-btn { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin: 10px; font-size: 16px; }
+              .retry-btn:hover { background: #0056b3; }
+              .home-btn { background: #6c757d; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin: 10px; font-size: 16px; }
+              .home-btn:hover { background: #545b62; }
+            </style>
+          </head>
+          <body>
+            <div class="error-container">
+              <h1 class="error-title">📚 Course Loading Error</h1>
+              <p>We're having trouble loading your course content. This might be temporary.</p>
+              <p><strong>Course:</strong> ${course.title}</p>
+              <p><strong>Error:</strong> ${scormError instanceof Error ? scormError.message : 'Unknown error'}</p>
+              <div>
+                <button class="retry-btn" onclick="window.location.href = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'retry=true'">🔄 Try Again</button>
+                <button class="home-btn" onclick="window.location.href = '/user'">🏠 Go to Dashboard</button>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+      }
+      
       res.setHeader('Content-Type', 'text/html');
       res.send(playerHtml);
     } catch (error) {
       console.error('Error loading SCORM player:', error);
-      res.status(500).json({ message: 'Failed to load SCORM player' });
+      
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>System Error</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; background: #f8f9fa; text-align: center; }
+            .error-container { background: white; padding: 40px; border-radius: 8px; max-width: 500px; margin: 0 auto; }
+            .error-title { color: #dc3545; margin-bottom: 20px; }
+            .home-btn { background: #6c757d; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin: 10px; font-size: 16px; }
+            .home-btn:hover { background: #545b62; }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <h1 class="error-title">⚠️ System Error</h1>
+            <p>A system error occurred while loading your course. Please try again later or contact support.</p>
+            <button class="home-btn" onclick="window.location.href = '/user'">🏠 Return to Dashboard</button>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.status(500).send(errorHtml);
     }
   });
 

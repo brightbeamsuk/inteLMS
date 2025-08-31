@@ -1,34 +1,10 @@
 <template>
 	<files>
 		<common>
-			<file>adlcp_v1p3.xsd</file>
-			<file>adlnav_v1p3.xsd</file>
-			<file>adlseq_v1p3.xsd</file>
-			<file>datatypes.dtd</file>
-			<file>imscp_v1p1.xsd</file>
-			<file>imsss_v1p0.xsd</file>
-			<file>imsss_v1p0auxresource.xsd</file>
-			<file>imsss_v1p0control.xsd</file>
-			<file>imsss_v1p0delivery.xsd</file>
-			<file>imsss_v1p0limit.xsd</file>
-			<file>imsss_v1p0objective.xsd</file>
-			<file>imsss_v1p0random.xsd</file>
-			<file>imsss_v1p0rollup.xsd</file>
-			<file>imsss_v1p0seqrule.xsd</file>
-			<file>imsss_v1p0util.xsd</file>
-			<file>lom.xsd</file>
-			<file>xml.xsd</file>
-			<file>XMLSchema.dtd</file>
-			<file>common\anyElement.xsd</file>
-			<file>common\dataTypes.xsd</file>
-			<file>common\elementNames.xsd</file>
-			<file>common\elementTypes.xsd</file>
-			<file>common\rootElement.xsd</file>
-			<file>common\vocabTypes.xsd</file>
-			<file>common\vocabValues.xsd</file>
-			<file>extend\strict.xsd</file>
-			<file>unique\strict.xsd</file>
-			<file>vocab\strict.xsd</file>
+			<file>adlcp_rootv1p2.xsd</file>
+			<file>imscp_rootv1p1p2.xsd</file>
+			<file>imsmd_rootv1p2p1.xsd</file>
+			<file>ims_xml.xsd</file>
 		</common>
 		<special>
 			<file>res\lms.js</file>
