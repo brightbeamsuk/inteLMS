@@ -10,10 +10,6 @@ import type { UploadResult } from "@uppy/core";
 
 interface OrganisationSettings {
   organisationId: string;
-  signatureImageUrl?: string;
-  signerName?: string;
-  signerTitle?: string;
-  certificateText?: string;
   assignmentEmailsEnabled: boolean;
   reminderEmailsEnabled: boolean;
   completionEmailsEnabled: boolean;
@@ -49,12 +45,6 @@ export function AdminOrganisationSettings() {
     address: "",
   });
 
-  const [certificateData, setCertificateData] = useState({
-    signatureImageUrl: "",
-    signerName: "",
-    signerTitle: "",
-    certificateText: "has successfully completed",
-  });
 
   const [notificationData, setNotificationData] = useState({
     assignmentEmailsEnabled: true,
@@ -138,34 +128,6 @@ export function AdminOrganisationSettings() {
     }
   };
 
-  const handleSignatureUpload = async () => {
-    try {
-      const response = await apiRequest('POST', '/api/objects/upload', {});
-      const data = await response.json();
-      return {
-        method: 'PUT' as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to get upload URL",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const handleSignatureComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadUrl = result.successful[0].uploadURL as string;
-      setCertificateData(prev => ({ ...prev, signatureImageUrl: uploadUrl }));
-      toast({
-        title: "Success",
-        description: "Signature uploaded successfully",
-      });
-    }
-  };
 
   // Save organization data mutation
   const saveOrganizationMutation = useMutation({
@@ -209,8 +171,8 @@ export function AdminOrganisationSettings() {
   };
 
   const tabs = user?.role === 'superadmin' 
-    ? ["Branding", "Contacts", "Certificates", "Visual Designer", "Notifications", "Privacy"]
-    : ["Branding", "Contacts", "Certificates", "Notifications", "Privacy"];
+    ? ["Branding", "Contacts", "Visual Designer", "Notifications", "Privacy"]
+    : ["Branding", "Contacts", "Notifications", "Privacy"];
 
   return (
     <div>
@@ -471,82 +433,9 @@ export function AdminOrganisationSettings() {
             </div>
           )}
 
-          {/* Certificates Tab */}
-          {activeTab === 2 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold">Certificate Settings</h3>
-              
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Signature Image</span>
-                </label>
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={2097152} // 2MB
-                  onGetUploadParameters={handleSignatureUpload}
-                  onComplete={handleSignatureComplete}
-                  buttonClassName="btn btn-outline w-full"
-                >
-                  <i className="fas fa-signature mr-2"></i>
-                  {certificateData.signatureImageUrl ? "Change Signature" : "Upload Signature"}
-                </ObjectUploader>
-                {certificateData.signatureImageUrl && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <img src={certificateData.signatureImageUrl} alt="Signature preview" className="h-8 object-contain" />
-                    <span className="text-sm text-success">Signature uploaded</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">Signer Name</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    className="input input-bordered" 
-                    value={certificateData.signerName}
-                    onChange={(e) => setCertificateData(prev => ({ ...prev, signerName: e.target.value }))}
-                    data-testid="input-signer-name"
-                  />
-                </div>
-
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">Signer Title</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    className="input input-bordered" 
-                    value={certificateData.signerTitle}
-                    onChange={(e) => setCertificateData(prev => ({ ...prev, signerTitle: e.target.value }))}
-                    data-testid="input-signer-title"
-                  />
-                </div>
-              </div>
-
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Default Certificate Text</span>
-                </label>
-                <input 
-                  type="text" 
-                  className="input input-bordered" 
-                  value={certificateData.certificateText}
-                  onChange={(e) => setCertificateData(prev => ({ ...prev, certificateText: e.target.value }))}
-                  placeholder="has successfully completed"
-                  data-testid="input-certificate-text"
-                />
-                <label className="label">
-                  <span className="label-text-alt">This text appears between the user name and course name</span>
-                </label>
-              </div>
-            </div>
-          )}
 
           {/* Visual Designer Tab - SuperAdmin Only */}
-          {user?.role === 'superadmin' && activeTab === 3 && (
+          {user?.role === 'superadmin' && activeTab === 2 && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">Visual Certificate Designer</h3>
@@ -571,7 +460,7 @@ export function AdminOrganisationSettings() {
           )}
 
           {/* Notifications Tab */}
-          {activeTab === (user?.role === 'superadmin' ? 4 : 3) && (
+          {activeTab === (user?.role === 'superadmin' ? 3 : 2) && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Email Notifications</h3>
               
@@ -647,7 +536,7 @@ export function AdminOrganisationSettings() {
           )}
 
           {/* Privacy Tab */}
-          {activeTab === (user?.role === 'superadmin' ? 5 : 4) && (
+          {activeTab === (user?.role === 'superadmin' ? 4 : 3) && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Privacy Settings</h3>
               
