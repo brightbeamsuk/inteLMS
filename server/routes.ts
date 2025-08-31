@@ -391,15 +391,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const { name, template, isDefault } = req.body;
+      const { name, template, templateFormat, templateData, isDefault } = req.body;
       
-      if (!name || !template) {
-        return res.status(400).json({ message: 'Name and template are required' });
+      if (!name || (!template && !templateData)) {
+        return res.status(400).json({ message: 'Name and template/templateData are required' });
       }
 
       const newTemplate = await storage.createCertificateTemplate({
         name,
-        template,
+        template: template || null,
+        templateFormat: templateFormat || 'html',
+        templateData: templateData || null,
         isDefault: isDefault || false,
         organisationId: null
       });
@@ -420,11 +422,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const { name, template, isDefault } = req.body;
+      const { name, template, templateFormat, templateData, isDefault } = req.body;
       
       const updatedTemplate = await storage.updateCertificateTemplate(id, {
         name,
         template,
+        templateFormat,
+        templateData,
         isDefault
       });
       

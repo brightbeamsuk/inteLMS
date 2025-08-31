@@ -4,11 +4,14 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { ImageUpload } from "@/components/ImageUpload";
+import { VisualCertificateEditor, type CertificateTemplate as VisualCertificateTemplate } from "@/components/VisualCertificateEditor";
 
 interface CertificateTemplate {
   id: string;
   name: string;
-  template: string;
+  template?: string;
+  templateFormat?: 'html' | 'visual';
+  templateData?: any;
   isDefault: boolean;
   organisationId?: string;
   createdAt: string;
@@ -23,6 +26,8 @@ export function SuperAdminSettings() {
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [useVisualEditor, setUseVisualEditor] = useState(true);
+  const [currentVisualTemplate, setCurrentVisualTemplate] = useState<VisualCertificateTemplate | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -56,22 +61,12 @@ export function SuperAdminSettings() {
 
   // Save template mutation
   const saveTemplateMutation = useMutation({
-    mutationFn: async (templateData: { name: string; template: string; isDefault?: boolean }) => {
+    mutationFn: async (templateData: any) => {
       if (editingTemplateId) {
-        const response = await fetch(`/api/certificate-templates/${editingTemplateId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(templateData),
-        });
-        if (!response.ok) throw new Error('Failed to update template');
+        const response = await apiRequest('PUT', `/api/certificate-templates/${editingTemplateId}`, templateData);
         return response.json();
       } else {
-        const response = await fetch('/api/certificate-templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(templateData),
-        });
-        if (!response.ok) throw new Error('Failed to create template');
+        const response = await apiRequest('POST', '/api/certificate-templates', templateData);
         return response.json();
       }
     },
@@ -91,6 +86,16 @@ export function SuperAdminSettings() {
       });
     }
   });
+
+  const handleVisualTemplateSave = (template: VisualCertificateTemplate) => {
+    const templateData = {
+      name: template.name,
+      templateFormat: 'visual',
+      templateData: template,
+      isDefault: false
+    };
+    saveTemplateMutation.mutate(templateData);
+  };
 
   // Delete template mutation
   const deleteTemplateMutation = useMutation({
@@ -157,8 +162,14 @@ export function SuperAdminSettings() {
   };
 
   const editTemplate = (template: CertificateTemplate) => {
-    setTemplateEditor(template.template);
-    setTemplateName(template.name);
+    if (template.templateFormat === 'visual' && template.templateData) {
+      setCurrentVisualTemplate(template.templateData);
+      setUseVisualEditor(true);
+    } else {
+      setTemplateEditor(template.template || '');
+      setTemplateName(template.name);
+      setUseVisualEditor(false);
+    }
     setEditingTemplateId(template.id);
     setShowPreview(false);
   };
@@ -224,73 +235,100 @@ export function SuperAdminSettings() {
           {/* Certificate Templates Tab */}
           {activeTab === 0 && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Template Editor */}
+              {/* Editor Mode Toggle */}
+              <div className="flex gap-2 mb-6">
+                <button 
+                  className={`btn btn-sm ${useVisualEditor ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setUseVisualEditor(true)}
+                  data-testid="button-visual-editor"
+                >
+                  <i className="fas fa-palette"></i> Visual Editor
+                </button>
+                <button 
+                  className={`btn btn-sm ${!useVisualEditor ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setUseVisualEditor(false)}
+                  data-testid="button-html-editor"
+                >
+                  <i className="fas fa-code"></i> HTML Editor
+                </button>
+              </div>
+
+              {useVisualEditor ? (
                 <div>
-                  <h3 className="text-lg font-semibold mb-4">Certificate Template Builder</h3>
-                  
-                  <div className="form-control mb-4">
-                    <label className="label">
-                      <span className="label-text">Template Name</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Default Platform Template" 
-                      className="input input-bordered"
-                      value={templateName}
-                      onChange={(e) => setTemplateName(e.target.value)}
-                      data-testid="input-template-name"
-                    />
-                  </div>
-
-                  <div className="form-control mb-4">
-                    <label className="label">
-                      <span className="label-text">Template HTML</span>
-                    </label>
-                    <textarea 
-                      className="textarea textarea-bordered h-64" 
-                      placeholder="Enter your certificate template HTML here..."
-                      value={templateEditor}
-                      onChange={(e) => setTemplateEditor(e.target.value)}
-                      data-testid="textarea-template-editor"
-                    ></textarea>
-                  </div>
-
-                  <div className="flex gap-2 mb-4">
-                    <button 
-                      className="btn btn-primary"
-                      onClick={handleSaveTemplate}
-                      disabled={saveTemplateMutation.isPending}
-                      data-testid="button-save-template"
-                    >
-                      {saveTemplateMutation.isPending ? (
-                        <span className="loading loading-spinner loading-sm"></span>
-                      ) : (
-                        <i className="fas fa-save"></i>
-                      )}
-                      {editingTemplateId ? 'Update Template' : 'Save Template'}
-                    </button>
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => setShowPreview(!showPreview)}
-                      data-testid="button-preview-template"
-                    >
-                      <i className="fas fa-eye"></i> {showPreview ? 'Hide Preview' : 'Show Preview'}
-                    </button>
-                    {editingTemplateId && (
-                      <button 
-                        className="btn btn-outline"
-                        onClick={clearEditor}
-                        data-testid="button-clear-template"
-                      >
-                        <i className="fas fa-times"></i> Cancel Edit
-                      </button>
-                    )}
-                  </div>
+                  <h3 className="text-lg font-semibold mb-4">Visual Certificate Template Builder</h3>
+                  <VisualCertificateEditor 
+                    onSave={handleVisualTemplateSave}
+                    initialTemplate={currentVisualTemplate || undefined}
+                  />
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Template Editor */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">HTML Certificate Template Builder</h3>
+                    
+                    <div className="form-control mb-4">
+                      <label className="label">
+                        <span className="label-text">Template Name</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="Default Platform Template" 
+                        className="input input-bordered"
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                        data-testid="input-template-name"
+                      />
+                    </div>
 
-                {/* Placeholders Panel */}
-                <div>
+                    <div className="form-control mb-4">
+                      <label className="label">
+                        <span className="label-text">Template HTML</span>
+                      </label>
+                      <textarea 
+                        className="textarea textarea-bordered h-64" 
+                        placeholder="Enter your certificate template HTML here..."
+                        value={templateEditor}
+                        onChange={(e) => setTemplateEditor(e.target.value)}
+                        data-testid="textarea-template-editor"
+                      ></textarea>
+                    </div>
+
+                    <div className="flex gap-2 mb-4">
+                      <button 
+                        className="btn btn-primary"
+                        onClick={handleSaveTemplate}
+                        disabled={saveTemplateMutation.isPending}
+                        data-testid="button-save-template"
+                      >
+                        {saveTemplateMutation.isPending ? (
+                          <span className="loading loading-spinner loading-sm"></span>
+                        ) : (
+                          <i className="fas fa-save"></i>
+                        )}
+                        {editingTemplateId ? 'Update Template' : 'Save Template'}
+                      </button>
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={() => setShowPreview(!showPreview)}
+                        data-testid="button-preview-template"
+                      >
+                        <i className="fas fa-eye"></i> {showPreview ? 'Hide Preview' : 'Show Preview'}
+                      </button>
+                      {editingTemplateId && (
+                        <button 
+                          className="btn btn-outline"
+                          onClick={clearEditor}
+                          data-testid="button-clear-template"
+                        >
+                          <i className="fas fa-times"></i> Cancel Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Placeholders Panel */}
+                  <div>
                   <h3 className="text-lg font-semibold mb-4">Available Placeholders</h3>
                   <p className="text-sm text-base-content/60 mb-4">Click to insert into template</p>
                   
@@ -369,8 +407,9 @@ export function SuperAdminSettings() {
                       </select>
                     </div>
                   </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Template Preview */}
               {showPreview && (
