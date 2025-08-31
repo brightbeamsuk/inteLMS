@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 
 interface Assignment {
@@ -14,6 +15,7 @@ interface Assignment {
 }
 
 export function UserDashboard() {
+  const { user } = useAuth();
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
 
@@ -73,7 +75,9 @@ export function UserDashboard() {
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-welcome-message">Welcome back!</h1>
+          <h1 className="text-3xl font-bold" data-testid="text-welcome-message">
+            Welcome back, {user?.firstName || 'User'} 👋
+          </h1>
           <p className="text-base-content/60" data-testid="text-welcome-subtitle">Continue your learning journey</p>
         </div>
         <div className="stats shadow">
