@@ -83,9 +83,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   }
 
+  // Helper function to get user ID from session claims
+  function getUserIdFromSession(req: any): string | null {
+    return req.session?.user?.claims?.sub || null;
+  }
+
   // Helper function to get current user
   async function getCurrentUser(req: any) {
-    return req.session?.user || null;
+    const userId = getUserIdFromSession(req);
+    if (!userId) {
+      return null;
+    }
+    
+    // Fetch the actual user data from the database
+    try {
+      const dbUser = await storage.getUser(userId);
+      return dbUser;
+    } catch (error) {
+      console.error('Error fetching user from database:', error);
+      return null;
+    }
   }
 
   // Initialize SCORM preview service
@@ -231,7 +248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Object storage routes
   app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
-    const userId = req.session?.user?.id;
+    const userId = getUserIdFromSession(req);
     const objectStorageService = new ObjectStorageService();
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
@@ -269,7 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Basic permission check - only authenticated users can upload
-      const userId = req.session?.user?.id;
+      const userId = getUserIdFromSession(req);
       if (!userId) {
         return res.status(401).json({ error: 'Authentication required' });
       }
