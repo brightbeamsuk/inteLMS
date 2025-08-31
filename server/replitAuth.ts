@@ -57,12 +57,60 @@ function updateUserSession(
 async function upsertUser(
   claims: any,
 ) {
+  // Define demo user mappings based on email
+  const demoUserMappings = {
+    'superadmin@demo.app': {
+      id: 'demo-superadmin',
+      role: 'superadmin',
+      firstName: 'Super',
+      lastName: 'Admin'
+    },
+    'admin.acme@demo.app': {
+      id: 'demo-admin-acme', 
+      role: 'admin',
+      firstName: 'Sarah',
+      lastName: 'Johnson'
+    },
+    'admin.ocean@demo.app': {
+      id: 'demo-admin-ocean',
+      role: 'admin', 
+      firstName: 'Mark',
+      lastName: 'Thompson'
+    },
+    'alice@acme.demo': {
+      id: 'demo-user-alice',
+      role: 'user',
+      firstName: 'Alice', 
+      lastName: 'Williams'
+    },
+    'dan@ocean.demo': {
+      id: 'demo-user-dan',
+      role: 'user',
+      firstName: 'Dan',
+      lastName: 'Clark'
+    }
+  };
+
+  const email = claims["email"];
+  const demoMapping = demoUserMappings[email as keyof typeof demoUserMappings];
+
+  if (demoMapping) {
+    // This is a demo user, use the pre-defined demo user data
+    const existingUser = await storage.getUser(demoMapping.id);
+    if (existingUser) {
+      // Demo user already exists, just return
+      return;
+    }
+  }
+
+  // For non-demo users or if demo user doesn't exist yet, create/update normally
   await storage.upsertUser({
-    id: claims["sub"],
+    id: demoMapping?.id || claims["sub"],
     email: claims["email"],
-    firstName: claims["first_name"],
-    lastName: claims["last_name"],
+    firstName: demoMapping?.firstName || claims["first_name"],
+    lastName: demoMapping?.lastName || claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
+    role: (demoMapping?.role as 'superadmin' | 'admin' | 'user') || 'user', // Default role for non-demo users
   });
 }
 

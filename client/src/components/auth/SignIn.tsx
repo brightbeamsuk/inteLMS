@@ -75,7 +75,7 @@ export function SignIn() {
 
           <div className="text-center mb-4">
             <h3 className="font-semibold">Demo Logins</h3>
-            <p className="text-sm text-base-content/60">Quick access to different role interfaces</p>
+            <p className="text-sm text-base-content/60">Click any button to login and experience different role interfaces</p>
           </div>
 
           <div className="space-y-2">
@@ -89,6 +89,12 @@ export function SignIn() {
                 {cred.role}
               </button>
             ))}
+          </div>
+
+          <div className="mt-4 p-3 bg-info/20 rounded-lg">
+            <p className="text-xs text-center">
+              <strong>Note:</strong> Demo logins use your Replit account. Change your Replit profile email to match any of the demo emails above to experience different roles.
+            </p>
           </div>
 
           <div className="text-center mt-6">

@@ -77,6 +77,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public endpoint for initial demo setup (can be removed after setup)
+  app.post('/api/force-seed-demo', async (req: any, res) => {
+    try {
+      await seedDemoData();
+      res.json({ message: 'Demo data force-seeded successfully' });
+    } catch (error) {
+      console.error('Error force-seeding demo data:', error);
+      res.status(500).json({ message: 'Failed to force-seed demo data' });
+    }
+  });
+
   // SuperAdmin routes
   app.get('/api/superadmin/stats', isAuthenticated, async (req: any, res) => {
     try {
@@ -443,7 +454,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  
+  // Auto-seed demo data if database is empty
+  setTimeout(() => autoSeedIfEmpty(), 2000); // Delay to ensure database is ready
+  
   return httpServer;
+}
+
+// Auto-seed demo data on startup if no users exist
+async function autoSeedIfEmpty() {
+  try {
+    const allUsers = await storage.getAllUsers();
+    if (allUsers.length === 0) {
+      console.log('🔍 No users found in database, auto-seeding demo data...');
+      await seedDemoData();
+    } else {
+      console.log(`📊 Found ${allUsers.length} users in database, skipping auto-seed`);
+    }
+  } catch (error) {
+    console.log('⚠️ Could not check user count for auto-seeding:', error);
+  }
 }
 
 // Demo data seeding function
@@ -519,6 +549,65 @@ async function seedDemoData() {
       tags: 'fire safety,workplace,emergency',
       status: 'published',
       createdBy: 'system',
+    });
+
+    // Create demo users with different roles using upsertUser to allow custom IDs
+    // SuperAdmin user
+    await storage.upsertUser({
+      id: 'demo-superadmin',
+      email: 'superadmin@demo.app',
+      firstName: 'Super',
+      lastName: 'Admin',
+      role: 'superadmin',
+      status: 'active',
+    });
+
+    // Admin users for each organization
+    await storage.upsertUser({
+      id: 'demo-admin-acme',
+      email: 'admin.acme@demo.app',
+      firstName: 'Sarah',
+      lastName: 'Johnson',
+      role: 'admin',
+      status: 'active',
+      organisationId: acmeOrg.id,
+      jobTitle: 'Learning & Development Manager',
+    });
+
+    await storage.upsertUser({
+      id: 'demo-admin-ocean',
+      email: 'admin.ocean@demo.app',
+      firstName: 'Mark',
+      lastName: 'Thompson',
+      role: 'admin',
+      status: 'active',
+      organisationId: oceanOrg.id,
+      jobTitle: 'Training Coordinator',
+    });
+
+    // Regular users
+    await storage.upsertUser({
+      id: 'demo-user-alice',
+      email: 'alice@acme.demo',
+      firstName: 'Alice',
+      lastName: 'Williams',
+      role: 'user',
+      status: 'active',
+      organisationId: acmeOrg.id,
+      jobTitle: 'Care Assistant',
+      allowCertificateDownload: true,
+    });
+
+    await storage.upsertUser({
+      id: 'demo-user-dan',
+      email: 'dan@ocean.demo',
+      firstName: 'Dan',
+      lastName: 'Clark',
+      role: 'user',
+      status: 'active',
+      organisationId: oceanOrg.id,
+      jobTitle: 'Childcare Worker',
+      allowCertificateDownload: true,
     });
 
     console.log('✅ Demo data seeded successfully');
