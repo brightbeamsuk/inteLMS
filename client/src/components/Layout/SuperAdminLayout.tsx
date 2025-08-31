@@ -52,8 +52,16 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               </div>
             </div>
             <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
-              <li><a data-testid="link-profile"><i className="fas fa-user"></i> Profile</a></li>
-              <li><a data-testid="link-settings"><i className="fas fa-cog"></i> Settings</a></li>
+              <li>
+                <Link href="/superadmin/users" data-testid="link-profile">
+                  <i className="fas fa-user"></i> Profile
+                </Link>
+              </li>
+              <li>
+                <Link href="/superadmin/settings" data-testid="link-settings">
+                  <i className="fas fa-cog"></i> Settings
+                </Link>
+              </li>
               <li><a href="/api/logout" data-testid="link-logout"><i className="fas fa-sign-out-alt"></i> Logout</a></li>
             </ul>
           </div>
