@@ -1952,6 +1952,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
+      // Get organization data for header
+      const organization = await storage.getOrganisation(organisationId);
+      if (!organization) {
+        return res.status(404).json({ message: 'Organization not found' });
+      }
+
       // Use same filtering logic as main training matrix endpoint
       const {
         departments: departmentFilter = [],
@@ -2112,14 +2118,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const puppeteer = await import('puppeteer');
         
         // Create HTML table
+        const exportDate = new Date().toLocaleDateString('en-GB', {
+          weekday: 'long',
+          year: 'numeric', 
+          month: 'long',
+          day: 'numeric'
+        });
+        
         let html = `
           <html>
             <head>
               <style>
-                body { font-family: Arial, sans-serif; font-size: 10px; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #ddd; padding: 4px; text-align: left; }
-                th { background-color: #f2f2f2; font-weight: bold; }
+                body { font-family: Arial, sans-serif; font-size: 10px; margin: 0; padding: 20px; }
+                .header { 
+                  display: flex; 
+                  justify-content: space-between; 
+                  align-items: center; 
+                  margin-bottom: 30px; 
+                  padding-bottom: 15px;
+                  border-bottom: 2px solid #ddd;
+                }
+                .header-left { flex: 1; }
+                .header-right { 
+                  display: flex; 
+                  align-items: center; 
+                  gap: 15px;
+                }
+                .logo { 
+                  max-width: 80px; 
+                  max-height: 60px; 
+                  object-fit: contain;
+                }
+                .title { 
+                  font-size: 24px; 
+                  font-weight: bold; 
+                  margin: 0 0 8px 0; 
+                  color: #333;
+                }
+                .subtitle { 
+                  font-size: 14px; 
+                  color: #666; 
+                  margin: 0 0 5px 0;
+                }
+                .export-date { 
+                  font-size: 12px; 
+                  color: #888; 
+                  margin: 0;
+                }
+                table { 
+                  border-collapse: collapse; 
+                  width: 100%; 
+                  margin-top: 20px;
+                }
+                th, td { 
+                  border: 1px solid #ddd; 
+                  padding: 6px; 
+                  text-align: left; 
+                  font-size: 9px;
+                }
+                th { 
+                  background-color: #f8f9fa; 
+                  font-weight: bold; 
+                  font-size: 10px;
+                }
                 .status-complete { background-color: #d4edda; }
                 .status-overdue { background-color: #f8d7da; }
                 .status-expiring { background-color: #fff3cd; }
@@ -2127,7 +2188,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               </style>
             </head>
             <body>
-              <h2>Training Matrix Export - ${new Date().toLocaleDateString('en-GB')}</h2>
+              <div class="header">
+                <div class="header-left">
+                  <h1 class="title">Training Matrix Report</h1>
+                  <div class="subtitle">${organization.displayName}</div>
+                  <div class="export-date">Generated on ${exportDate}</div>
+                </div>
+                <div class="header-right">
+                  ${organization.logoUrl ? `<img src="${organization.logoUrl}" alt="${organization.displayName} Logo" class="logo">` : ''}
+                </div>
+              </div>
               <table>
                 <thead>
                   <tr>
