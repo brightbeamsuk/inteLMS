@@ -1621,6 +1621,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get overdue assignments count
+  app.get('/api/admin/overdue-count/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const organisationId = req.params.organisationId;
+      const now = new Date();
+      
+      // Get all assignments for the organisation
+      const assignments = await storage.getAssignmentsByOrganisation(organisationId);
+      
+      // Count overdue assignments (due date passed or status is overdue)
+      const overdueCount = assignments.filter(assignment => {
+        if (assignment.status === 'overdue') {
+          return true;
+        }
+        if (assignment.dueDate) {
+          const dueDate = new Date(assignment.dueDate);
+          return dueDate < now && assignment.status !== 'completed';
+        }
+        return false;
+      }).length;
+      
+      res.json({ overdueCount });
+    } catch (error) {
+      console.error('Error fetching overdue count:', error);
+      res.status(500).json({ message: 'Failed to fetch overdue count' });
+    }
+  });
+
   // Get training matrix data
   app.get('/api/training-matrix', requireAuth, async (req: any, res) => {
     try {

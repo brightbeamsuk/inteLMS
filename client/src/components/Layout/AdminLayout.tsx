@@ -19,6 +19,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     enabled: !!user?.organisationId,
   });
 
+  // Fetch overdue assignments count
+  const { data: overdueData } = useQuery({
+    queryKey: ['/api/admin/overdue-count', user?.organisationId],
+    enabled: !!user?.organisationId,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
 
   const menuItems = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
@@ -146,6 +153,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                     >
                       <i className={item.icon}></i>
                       {item.label}
+                      {/* Show overdue indicator for Training Matrix */}
+                      {item.path === '/admin/training-matrix' && overdueData?.overdueCount > 0 && (
+                        <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
+                          <i className="fas fa-exclamation text-error text-sm"></i>
+                        </div>
+                      )}
                     </Link>
                   </li>
                 ))}
