@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -72,6 +72,15 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
     backgroundColor: '#ffffff',
     elements: []
   });
+
+  // Update template when initialTemplate prop changes
+  useEffect(() => {
+    if (initialTemplate) {
+      setTemplate(initialTemplate);
+      setSelectedElementId(null); // Clear selection when loading new template
+      setEditingElementId(null); // Clear any editing state
+    }
+  }, [initialTemplate]);
   
   // Editor state
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
