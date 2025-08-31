@@ -896,6 +896,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get organisation statistics
+  app.get('/api/organisations/:id/stats', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const stats = await storage.getOrganisationStats(id);
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching organisation stats:', error);
+      res.status(500).json({ message: 'Failed to fetch organisation stats' });
+    }
+  });
+
+  // Impersonate admin for organisation
+  app.post('/api/organisations/:id/impersonate-admin', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: orgId } = req.params;
+      
+      // Find an admin for this organisation
+      const adminUsers = await storage.getUsersWithFilters({
+        organisationId: orgId,
+        role: 'admin',
+        status: 'active'
+      });
+      
+      if (adminUsers.length === 0) {
+        return res.status(404).json({ message: 'No admin users found for this organisation' });
+      }
+
+      // Use the first admin found
+      const adminUser = adminUsers[0];
+      
+      // Create a temporary login token
+      const impersonationToken = `temp_${Date.now()}_${adminUser.id}`;
+      
+      // Store the token temporarily (in a real app, use Redis or database)
+      global.impersonationTokens = global.impersonationTokens || new Map();
+      global.impersonationTokens.set(impersonationToken, {
+        userId: adminUser.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + (5 * 60 * 1000) // 5 minutes
+      });
+      
+      // Clean up expired tokens
+      for (const [token, data] of global.impersonationTokens.entries()) {
+        if (data.expiresAt < Date.now()) {
+          global.impersonationTokens.delete(token);
+        }
+      }
+      
+      const adminLoginUrl = `${req.protocol}://${req.get('host')}/api/impersonate-login?token=${impersonationToken}`;
+      
+      res.json({ 
+        adminLoginUrl,
+        adminUser: {
+          name: `${adminUser.firstName} ${adminUser.lastName}`,
+          email: adminUser.email
+        }
+      });
+    } catch (error) {
+      console.error('Error creating admin impersonation:', error);
+      res.status(500).json({ message: 'Failed to create admin impersonation' });
+    }
+  });
+
+  // Impersonation login endpoint
+  app.get('/api/impersonate-login', async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || !global.impersonationTokens?.has(token)) {
+        return res.status(404).send('Invalid or expired impersonation token');
+      }
+      
+      const tokenData = global.impersonationTokens.get(token);
+      if (tokenData.expiresAt < Date.now()) {
+        global.impersonationTokens.delete(token);
+        return res.status(404).send('Expired impersonation token');
+      }
+      
+      // Get the admin user
+      const adminUser = await storage.getUser(tokenData.userId);
+      if (!adminUser) {
+        return res.status(404).send('Admin user not found');
+      }
+      
+      // Log them in by setting session
+      req.session.user = {
+        id: adminUser.id,
+        email: adminUser.email,
+        role: adminUser.role,
+        organisationId: adminUser.organisationId
+      };
+      
+      // Clean up the token
+      global.impersonationTokens.delete(token);
+      
+      // Redirect to admin dashboard
+      res.redirect('/');
+    } catch (error) {
+      console.error('Error during impersonation login:', error);
+      res.status(500).send('Impersonation login failed');
+    }
+  });
+
+  // Get organisation users (for Manage Users functionality)
+  app.get('/api/organisations/:id/users', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: orgId } = req.params;
+      const users = await storage.getUsersByOrganisation(orgId);
+      res.json(users);
+    } catch (error) {
+      console.error('Error fetching organisation users:', error);
+      res.status(500).json({ message: 'Failed to fetch users' });
+    }
+  });
+
+  // Get all courses (for course assignment)
+  app.get('/api/courses/all', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const courses = await storage.getAllCourses();
+      res.json(courses);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      res.status(500).json({ message: 'Failed to fetch courses' });
+    }
+  });
+
+  // Assign courses to organisation
+  app.post('/api/organisations/:id/assign-courses', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: orgId } = req.params;
+      const { courseIds } = req.body;
+
+      if (!Array.isArray(courseIds) || courseIds.length === 0) {
+        return res.status(400).json({ message: 'Course IDs array is required' });
+      }
+
+      // Get all users from the organisation
+      const orgUsers = await storage.getUsersByOrganisation(orgId);
+      const activeUsers = orgUsers.filter(u => u.status === 'active' && u.role === 'user');
+
+      // Create assignments for each user and course combination
+      const assignments = [];
+      for (const courseId of courseIds) {
+        for (const orgUser of activeUsers) {
+          const assignmentData = {
+            courseId,
+            userId: orgUser.id,
+            organisationId: orgId,
+            assignedBy: user.id,
+            status: 'not_started' as const,
+            notificationsEnabled: true
+          };
+          const assignment = await storage.createAssignment(assignmentData);
+          assignments.push(assignment);
+        }
+      }
+
+      res.json({ 
+        message: `Successfully assigned ${courseIds.length} course(s) to ${activeUsers.length} user(s)`,
+        assignmentsCreated: assignments.length 
+      });
+    } catch (error) {
+      console.error('Error assigning courses:', error);
+      res.status(500).json({ message: 'Failed to assign courses' });
+    }
+  });
+
   app.post('/api/organisations', requireAuth, async (req: any, res) => {
     try {
       const userId = req.session.user?.id;

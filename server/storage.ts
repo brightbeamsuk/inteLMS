@@ -127,6 +127,7 @@ export interface IStorage {
   getPopularCoursesThisMonth(): Promise<any[]>;
   getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
+    adminUsers: number;
     coursesAssigned: number;
     coursesCompleted: number;
     complianceRate: number;
@@ -596,11 +597,13 @@ export class DatabaseStorage implements IStorage {
 
   async getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
+    adminUsers: number;
     coursesAssigned: number;
     coursesCompleted: number;
     complianceRate: number;
   }> {
     const [userCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.status, 'active')));
+    const [adminCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.role, 'admin'), eq(users.status, 'active')));
     const [assignmentCount] = await db.select({ count: count() }).from(assignments).where(eq(assignments.organisationId, organisationId));
     const [completionCount] = await db.select({ count: count() }).from(completions).where(eq(completions.organisationId, organisationId));
     
@@ -608,6 +611,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       activeUsers: userCount.count,
+      adminUsers: adminCount.count,
       coursesAssigned: assignmentCount.count,
       coursesCompleted: completionCount.count,
       complianceRate,

@@ -28,6 +28,9 @@ export function SuperAdminOrganisations() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showManageAdminsModal, setShowManageAdminsModal] = useState(false);
+  const [showManageUsersModal, setShowManageUsersModal] = useState(false);
+  const [showAssignCoursesModal, setShowAssignCoursesModal] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<Organisation>>({});
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { toast } = useToast();
@@ -54,6 +57,12 @@ export function SuperAdminOrganisations() {
 
   const { data: organisations = [], isLoading } = useQuery<Organisation[]>({
     queryKey: ['/api/organisations'],
+  });
+
+  // Get organisation stats when details modal is open
+  const { data: orgStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['/api/organisations', selectedOrg?.id, 'stats'],
+    enabled: !!selectedOrg && showDetailsModal,
   });
 
   const createOrganisationMutation = useMutation({
@@ -189,6 +198,27 @@ export function SuperAdminOrganisations() {
   const handleDelete = () => {
     if (!selectedOrg || deleteConfirmText !== selectedOrg.displayName) return;
     deleteOrganisationMutation.mutate(selectedOrg.id);
+  };
+
+  const handleOpenAsAdmin = async (orgId: string) => {
+    try {
+      const response = await apiRequest('POST', `/api/organisations/${orgId}/impersonate-admin`);
+      const { adminLoginUrl } = await response.json();
+      
+      // Open in new tab
+      window.open(adminLoginUrl, '_blank');
+      
+      toast({
+        title: "Success!",
+        description: "Opened admin dashboard in new tab",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to open admin dashboard",
+        variant: "destructive",
+      });
+    }
   };
 
 
@@ -625,15 +655,19 @@ export function SuperAdminOrganisations() {
                   <i className="fas fa-user-tie text-2xl"></i>
                 </div>
                 <div className="stat-title">Admins</div>
-                <div className="stat-value text-primary" data-testid="stat-org-admins">2</div>
+                <div className="stat-value text-primary" data-testid="stat-org-admins">
+                  {statsLoading ? <span className="loading loading-spinner loading-sm"></span> : (orgStats?.adminUsers || 0)}
+                </div>
               </div>
               
               <div className="stat bg-base-100 rounded-lg">
                 <div className="stat-figure text-secondary">
                   <i className="fas fa-users text-2xl"></i>
                 </div>
-                <div className="stat-title">Users</div>
-                <div className="stat-value text-secondary" data-testid="stat-org-users">47</div>
+                <div className="stat-title">Active Users</div>
+                <div className="stat-value text-secondary" data-testid="stat-org-users">
+                  {statsLoading ? <span className="loading loading-spinner loading-sm"></span> : (orgStats?.activeUsers || 0)}
+                </div>
               </div>
               
               <div className="stat bg-base-100 rounded-lg">
@@ -641,21 +675,39 @@ export function SuperAdminOrganisations() {
                   <i className="fas fa-graduation-cap text-2xl"></i>
                 </div>
                 <div className="stat-title">Courses Assigned</div>
-                <div className="stat-value text-accent" data-testid="stat-org-courses">156</div>
+                <div className="stat-value text-accent" data-testid="stat-org-courses">
+                  {statsLoading ? <span className="loading loading-spinner loading-sm"></span> : (orgStats?.coursesAssigned || 0)}
+                </div>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2 mb-4">
-              <button className="btn btn-sm btn-outline" data-testid="button-manage-admins">
+              <button 
+                className="btn btn-sm btn-outline" 
+                onClick={() => setShowManageAdminsModal(true)}
+                data-testid="button-manage-admins"
+              >
                 <i className="fas fa-user-tie"></i> Manage Admins
               </button>
-              <button className="btn btn-sm btn-outline" data-testid="button-manage-users">
+              <button 
+                className="btn btn-sm btn-outline" 
+                onClick={() => setShowManageUsersModal(true)}
+                data-testid="button-manage-users"
+              >
                 <i className="fas fa-users"></i> Manage Users
               </button>
-              <button className="btn btn-sm btn-outline" data-testid="button-assign-courses">
+              <button 
+                className="btn btn-sm btn-outline" 
+                onClick={() => setShowAssignCoursesModal(true)}
+                data-testid="button-assign-courses"
+              >
                 <i className="fas fa-graduation-cap"></i> Assign Courses
               </button>
-              <button className="btn btn-sm btn-secondary" data-testid="button-open-as-admin">
+              <button 
+                className="btn btn-sm btn-secondary" 
+                onClick={() => handleOpenAsAdmin(selectedOrg.id)}
+                data-testid="button-open-as-admin"
+              >
                 <i className="fas fa-eye"></i> Open as Admin
               </button>
             </div>
@@ -914,6 +966,355 @@ export function SuperAdminOrganisations() {
           </form>
         </dialog>
       )}
+
+      {/* Manage Admins Modal */}
+      {showManageAdminsModal && selectedOrg && (
+        <ManageAdminsModal 
+          organisation={selectedOrg}
+          onClose={() => setShowManageAdminsModal(false)}
+        />
+      )}
+
+      {/* Manage Users Modal */}
+      {showManageUsersModal && selectedOrg && (
+        <ManageUsersModal 
+          organisation={selectedOrg}
+          onClose={() => setShowManageUsersModal(false)}
+        />
+      )}
+
+      {/* Assign Courses Modal */}
+      {showAssignCoursesModal && selectedOrg && (
+        <AssignCoursesModal 
+          organisation={selectedOrg}
+          onClose={() => setShowAssignCoursesModal(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// Manage Admins Modal Component
+function ManageAdminsModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['/api/organisations', organisation.id, 'users'],
+  });
+
+  const adminUsers = users.filter((user: any) => user.role === 'admin');
+
+  return (
+    <dialog className="modal modal-open">
+      <div className="modal-box max-w-4xl">
+        <h3 className="font-bold text-lg mb-4" data-testid="text-manage-admins-title">
+          Manage Admins - {organisation.displayName}
+        </h3>
+        
+        <div className="overflow-x-auto">
+          <table className="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="text-center">
+                    <span className="loading loading-spinner loading-md"></span>
+                  </td>
+                </tr>
+              ) : adminUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center text-base-content/60">
+                    No admin users found
+                  </td>
+                </tr>
+              ) : (
+                adminUsers.map((user: any) => (
+                  <tr key={user.id} data-testid={`row-admin-${user.id}`}>
+                    <td>
+                      <div className="font-bold">{user.firstName} {user.lastName}</div>
+                      <div className="text-sm opacity-50">{user.jobTitle || 'No job title'}</div>
+                    </td>
+                    <td data-testid={`text-admin-email-${user.id}`}>{user.email}</td>
+                    <td>
+                      <div className={`badge ${user.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                        {user.status}
+                      </div>
+                    </td>
+                    <td data-testid={`text-admin-last-login-${user.id}`}>
+                      {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}
+                    </td>
+                    <td>
+                      <button className="btn btn-sm btn-ghost" data-testid={`button-view-admin-${user.id}`}>
+                        <i className="fas fa-eye"></i>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="modal-action">
+          <button 
+            className="btn"
+            onClick={onClose}
+            data-testid="button-close-manage-admins"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
+    </dialog>
+  );
+}
+
+// Manage Users Modal Component
+function ManageUsersModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['/api/organisations', organisation.id, 'users'],
+  });
+
+  const regularUsers = users.filter((user: any) => user.role === 'user');
+
+  return (
+    <dialog className="modal modal-open">
+      <div className="modal-box max-w-4xl">
+        <h3 className="font-bold text-lg mb-4" data-testid="text-manage-users-title">
+          Manage Users - {organisation.displayName}
+        </h3>
+        
+        <div className="overflow-x-auto">
+          <table className="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Assignments</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center">
+                    <span className="loading loading-spinner loading-md"></span>
+                  </td>
+                </tr>
+              ) : regularUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-base-content/60">
+                    No users found
+                  </td>
+                </tr>
+              ) : (
+                regularUsers.map((user: any) => (
+                  <tr key={user.id} data-testid={`row-user-${user.id}`}>
+                    <td>
+                      <div className="font-bold">{user.firstName} {user.lastName}</div>
+                      <div className="text-sm opacity-50">{user.jobTitle || 'No job title'}</div>
+                    </td>
+                    <td data-testid={`text-user-email-${user.id}`}>{user.email}</td>
+                    <td data-testid={`text-user-department-${user.id}`}>{user.department || 'N/A'}</td>
+                    <td>
+                      <div className={`badge ${user.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                        {user.status}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="text-sm">
+                        <div>Active: {user.activeAssignments || 0}</div>
+                        <div>Completed: {user.completedAssignments || 0}</div>
+                      </div>
+                    </td>
+                    <td>
+                      <button className="btn btn-sm btn-ghost" data-testid={`button-view-user-${user.id}`}>
+                        <i className="fas fa-eye"></i>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="modal-action">
+          <button 
+            className="btn"
+            onClick={onClose}
+            data-testid="button-close-manage-users"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
+    </dialog>
+  );
+}
+
+// Assign Courses Modal Component
+function AssignCoursesModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
+  const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: courses = [], isLoading } = useQuery({
+    queryKey: ['/api/courses/all'],
+  });
+
+  const assignCoursesMutation = useMutation({
+    mutationFn: async (courseIds: string[]) => {
+      const response = await apiRequest('POST', `/api/organisations/${organisation.id}/assign-courses`, { courseIds });
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success!",
+        description: data.message,
+      });
+      onClose();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to assign courses",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedCourses([]);
+      setSelectAll(false);
+    } else {
+      setSelectedCourses(courses.map((course: any) => course.id));
+      setSelectAll(true);
+    }
+  };
+
+  const handleCourseToggle = (courseId: string) => {
+    setSelectedCourses(prev => {
+      const updated = prev.includes(courseId)
+        ? prev.filter(id => id !== courseId)
+        : [...prev, courseId];
+      
+      setSelectAll(updated.length === courses.length);
+      return updated;
+    });
+  };
+
+  const handleSubmit = () => {
+    if (selectedCourses.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please select at least one course to assign",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    assignCoursesMutation.mutate(selectedCourses);
+  };
+
+  return (
+    <dialog className="modal modal-open">
+      <div className="modal-box max-w-4xl">
+        <h3 className="font-bold text-lg mb-4" data-testid="text-assign-courses-title">
+          Assign Courses - {organisation.displayName}
+        </h3>
+        
+        <div className="mb-4">
+          <button 
+            className="btn btn-sm btn-outline"
+            onClick={handleSelectAll}
+            data-testid="button-select-all-courses"
+          >
+            <i className="fas fa-check-square"></i>
+            {selectAll ? 'Unselect All' : 'Select All'}
+          </button>
+          <span className="ml-2 text-sm text-base-content/60">
+            {selectedCourses.length} of {courses.length} courses selected
+          </span>
+        </div>
+
+        <div className="max-h-96 overflow-y-auto">
+          {isLoading ? (
+            <div className="text-center py-8">
+              <span className="loading loading-spinner loading-lg"></span>
+            </div>
+          ) : courses.length === 0 ? (
+            <div className="text-center py-8 text-base-content/60">
+              No courses available
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {courses.map((course: any) => (
+                <div key={course.id} className="form-control">
+                  <label className="label cursor-pointer justify-start gap-4" data-testid={`label-course-${course.id}`}>
+                    <input 
+                      type="checkbox"
+                      className="checkbox checkbox-primary"
+                      checked={selectedCourses.includes(course.id)}
+                      onChange={() => handleCourseToggle(course.id)}
+                      data-testid={`checkbox-course-${course.id}`}
+                    />
+                    <div className="flex-1">
+                      <div className="font-bold">{course.title}</div>
+                      <div className="text-sm opacity-70">{course.description}</div>
+                      <div className="text-xs opacity-50 mt-1">
+                        Duration: {course.estimatedDuration || 'N/A'} | 
+                        Type: {course.courseType || 'SCORM'}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-action">
+          <button 
+            className="btn"
+            onClick={onClose}
+            data-testid="button-cancel-assign-courses"
+          >
+            Cancel
+          </button>
+          <button 
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={assignCoursesMutation.isPending || selectedCourses.length === 0}
+            data-testid="button-confirm-assign-courses"
+          >
+            {assignCoursesMutation.isPending ? (
+              <span className="loading loading-spinner loading-sm"></span>
+            ) : (
+              `Assign ${selectedCourses.length} Course${selectedCourses.length !== 1 ? 's' : ''}`
+            )}
+          </button>
+        </div>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
+    </dialog>
   );
 }
