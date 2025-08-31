@@ -131,6 +131,20 @@
 [data-custom-colors="true"] .sidebar-nav a.active {
   background-color: var(--color-nav-active);
   color: white;
+  opacity: 1;
+}
+
+/* Left menu styling for selected items */
+[data-custom-colors="true"] .menu li a.active {
+  background-color: var(--color-primary);
+  color: white;
+  opacity: 1;
+}
+
+[data-custom-colors="true"] .menu li a:hover {
+  background-color: var(--color-nav-hover);
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 /* Breadcrumb active states */

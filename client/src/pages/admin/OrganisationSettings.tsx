@@ -421,18 +421,6 @@ export function AdminOrganisationSettings() {
                 </div>
               </div>
 
-              {/* Theme Preview */}
-              <div className="card bg-base-100">
-                <div className="card-body" data-theme={brandingData.theme}>
-                  <h4 className="card-title">Theme Preview</h4>
-                  <p>This is how your organisation's interface will look with the selected theme.</p>
-                  <div className="flex gap-2">
-                    <button className="btn btn-primary btn-sm">Primary Button</button>
-                    <button className="btn btn-secondary btn-sm">Secondary Button</button>
-                    <button className="btn btn-accent btn-sm">Accent Button</button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

@@ -77,9 +77,9 @@ export function hexToRgba(hex: string, opacity: number): string {
 export function generateColorPalette(primaryHex: string) {
   const [h, s, l] = hexToHsl(primaryHex);
   
-  // Generate secondary color (same as primary but with transparency)
-  const secondary = hexToRgba(primaryHex, 0.1); // 10% opacity
-  const secondaryHover = hexToRgba(primaryHex, 0.2); // 20% opacity on hover
+  // Generate secondary color (faded/lighter version of primary)
+  const secondary = lighterShade(primaryHex, 35); // Much lighter version
+  const secondaryHover = lighterShade(primaryHex, 25); // Slightly less light on hover
   
   // Generate accent color (complementary - 180 degrees shift with adjusted saturation)
   const accentH = (h + 180) % 360;
@@ -124,7 +124,7 @@ export function applyColorPalette(colors: ReturnType<typeof generateColorPalette
   
   // Apply navigation/menu colors
   root.style.setProperty('--color-nav-active', colors.primary);
-  root.style.setProperty('--color-nav-hover', colors.secondary);
+  root.style.setProperty('--color-nav-hover', hexToRgba(colors.primary, 0.1));
 }
 
 /**
