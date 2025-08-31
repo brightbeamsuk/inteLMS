@@ -153,10 +153,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                     >
                       <i className={item.icon}></i>
                       {item.label}
-                      {/* Show overdue indicator for Training Matrix */}
+                      {/* Show overdue count indicator for Training Matrix */}
                       {item.path === '/admin/training-matrix' && overdueData?.overdueCount > 0 && (
                         <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
-                          <i className="fas fa-exclamation text-error text-sm"></i>
+                          <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                            {overdueData.overdueCount}
+                          </div>
                         </div>
                       )}
                     </Link>
