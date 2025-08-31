@@ -1458,6 +1458,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user by ID (for admin updates)
+  app.put('/api/users/:id', requireAuth, async (req: any, res) => {
+    try {
+      const currentUserId = req.session.user?.id;
+      const currentUser = await storage.getUser(currentUserId);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      
+      // Get the target user to update
+      const targetUser = await storage.getUser(id);
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // If admin, can only update users in their organisation
+      if (currentUser.role === 'admin') {
+        if (targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        ...req.body,
+        updatedAt: new Date(),
+      };
+
+      const updatedUser = await storage.updateUser(id, updateData);
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      res.status(500).json({ message: 'Failed to update user' });
+    }
+  });
+
   // Bulk import users from CSV
   app.post('/api/users/bulk-import', requireAuth, async (req: any, res) => {
     try {

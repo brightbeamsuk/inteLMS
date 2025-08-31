@@ -73,6 +73,26 @@ export function AdminUsers() {
     },
   });
 
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: string; data: any }) => {
+      return await apiRequest('PUT', `/api/users/${userId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "Success",
+        description: "User updated successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update user",
+        variant: "destructive",
+      });
+    },
+  });
+
   const updateUserStatusMutation = useMutation({
     mutationFn: async ({ userId, status }: { userId: string; status: string }) => {
       return await apiRequest('PATCH', `/api/users/${userId}/status`, { status });
@@ -780,6 +800,16 @@ export function AdminUsers() {
                           type="checkbox" 
                           className="toggle toggle-primary" 
                           checked={selectedUser.allowCertificateDownload}
+                          onChange={(e) => {
+                            const newValue = e.target.checked;
+                            updateUserMutation.mutate({
+                              userId: selectedUser.id,
+                              data: { allowCertificateDownload: newValue }
+                            });
+                            // Optimistically update the local state
+                            setSelectedUser(prev => prev ? { ...prev, allowCertificateDownload: newValue } : null);
+                          }}
+                          disabled={updateUserMutation.isPending}
                           data-testid="toggle-cert-download"
                         />
                         <span className="label-text">Allowed</span>
