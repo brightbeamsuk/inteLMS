@@ -25,11 +25,7 @@ export function UserProfile() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return await apiRequest('/api/auth/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
+      return await apiRequest('PUT', '/api/auth/profile', data);
     },
     onSuccess: () => {
       toast({
@@ -102,14 +98,9 @@ export function UserProfile() {
         setImageUploading(true);
         
         // Update profile with new image URL
-        await fetch('/api/auth/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            ...formData,
-            profileImageUrl: imageUrl
-          })
+        await apiRequest('PUT', '/api/auth/profile', {
+          ...formData,
+          profileImageUrl: imageUrl
         });
         
         // Update form data

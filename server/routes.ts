@@ -211,12 +211,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "User not found" });
       }
       const userId = currentUser.id;
-      const { firstName, lastName, jobTitle, department, phone, bio, profileImageUrl } = req.body;
+      const { firstName, lastName, email, jobTitle, department, phone, bio, profileImageUrl } = req.body;
 
       console.log('Profile update request body:', req.body);
       console.log('Extracted fields:', {
         firstName,
         lastName,
+        email,
         jobTitle,
         department,
         phone,
@@ -231,6 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
+      if (email !== undefined) updateData.email = email;
       if (jobTitle !== undefined) updateData.jobTitle = jobTitle;
       if (department !== undefined) updateData.department = department;
       if (phone !== undefined) updateData.phone = phone;
