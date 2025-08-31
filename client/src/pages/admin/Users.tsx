@@ -764,16 +764,22 @@ export function AdminUsers() {
                 
                 <div className="stats shadow">
                   <div className="stat">
-                    <div className="stat-title">Assigned Courses</div>
-                    <div className="stat-value text-primary" data-testid="stat-assigned-courses">12</div>
+                    <div className="stat-title">Status</div>
+                    <div className={`stat-value ${selectedUser.status === 'active' ? 'text-success' : 'text-error'}`} data-testid="stat-user-status">
+                      {selectedUser.status === 'active' ? 'Active' : 'Inactive'}
+                    </div>
                   </div>
                   <div className="stat">
-                    <div className="stat-title">Completed</div>
-                    <div className="stat-value text-success" data-testid="stat-completed-courses">8</div>
+                    <div className="stat-title">Role</div>
+                    <div className="stat-value text-primary" data-testid="stat-user-role">
+                      {selectedUser.role?.charAt(0).toUpperCase() + selectedUser.role?.slice(1)}
+                    </div>
                   </div>
                   <div className="stat">
-                    <div className="stat-title">Average Score</div>
-                    <div className="stat-value text-secondary" data-testid="stat-avg-score">87%</div>
+                    <div className="stat-title">Last Active</div>
+                    <div className="stat-value text-secondary text-sm" data-testid="stat-last-active">
+                      {selectedUser.lastActive ? new Date(selectedUser.lastActive).toLocaleDateString() : 'Never'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -781,32 +787,11 @@ export function AdminUsers() {
 
             {activeTab === 1 && (
               <div className="space-y-4">
-                <h4 className="font-semibold">Assigned Courses</h4>
-                <div className="overflow-x-auto">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>Course</th>
-                        <th>Status</th>
-                        <th>Due Date</th>
-                        <th>Score</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>GDPR Compliance Training</td>
-                        <td><div className="badge badge-success">Completed</div></td>
-                        <td>Jan 15, 2024</td>
-                        <td>92%</td>
-                        <td>
-                          <button className="btn btn-xs btn-ghost" data-testid="button-preview-course">
-                            <i className="fas fa-eye"></i>
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <h4 className="font-semibold">Course Assignments</h4>
+                <div className="text-center py-8 text-base-content/60">
+                  <i className="fas fa-graduation-cap text-4xl mb-4 opacity-50"></i>
+                  <p>No course assignments found for this user.</p>
+                  <p className="text-sm">Course assignments will appear here when they are created.</p>
                 </div>
               </div>
             )}
@@ -814,18 +799,13 @@ export function AdminUsers() {
             {activeTab === 2 && (
               <div className="space-y-4">
                 <h4 className="font-semibold">Certificates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="card bg-base-100 shadow-sm">
-                    <div className="card-body">
-                      <h5 className="card-title text-sm">GDPR Compliance Training</h5>
-                      <div className="text-xs text-base-content/60">
-                        <div>Score: 92%</div>
-                        <div>Issued: Jan 15, 2024</div>
-                      </div>
-                      <div className="card-actions justify-end">
-                        <button className="btn btn-xs btn-primary" data-testid="button-view-certificate">View</button>
-                        <button className="btn btn-xs btn-outline" data-testid="button-download-certificate">Download</button>
-                      </div>
+                <div className="text-center py-8 text-base-content/60">
+                  <i className="fas fa-certificate text-4xl mb-4 opacity-50"></i>
+                  <p>No certificates earned yet.</p>
+                  <p className="text-sm">Certificates will appear here when the user completes courses.</p>
+                  <div className="mt-4">
+                    <div className={`badge ${selectedUser.allowCertificateDownload ? 'badge-success' : 'badge-warning'}`}>
+                      Certificate downloads {selectedUser.allowCertificateDownload ? 'enabled' : 'disabled'}
                     </div>
                   </div>
                 </div>
@@ -834,14 +814,42 @@ export function AdminUsers() {
 
             {activeTab === 3 && (
               <div className="space-y-4">
-                <h4 className="font-semibold">Activity History</h4>
-                <div className="timeline">
-                  <div className="timeline-item">
-                    <div className="timeline-point bg-success"></div>
-                    <div className="timeline-content">
-                      <div className="timeline-time text-sm text-base-content/60">Jan 15, 2024</div>
-                      <div className="timeline-title">Completed GDPR Training</div>
-                      <div className="timeline-description text-sm">Score: 92%</div>
+                <h4 className="font-semibold">User Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="card bg-base-100 shadow-sm">
+                    <div className="card-body">
+                      <h5 className="card-title text-sm">Account Details</h5>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>User ID:</strong> {selectedUser.id}</div>
+                        <div><strong>Email:</strong> {selectedUser.email}</div>
+                        <div><strong>Status:</strong> 
+                          <div className={`badge badge-sm ml-2 ${selectedUser.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                            {selectedUser.status}
+                          </div>
+                        </div>
+                        <div><strong>Role:</strong> 
+                          <div className="badge badge-sm badge-primary ml-2">
+                            {selectedUser.role}
+                          </div>
+                        </div>
+                        <div><strong>Organization ID:</strong> {selectedUser.organisationId || 'Not assigned'}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="card bg-base-100 shadow-sm">
+                    <div className="card-body">
+                      <h5 className="card-title text-sm">Profile Information</h5>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Job Title:</strong> {selectedUser.jobTitle || 'Not specified'}</div>
+                        <div><strong>Department:</strong> {selectedUser.department || 'Not specified'}</div>
+                        <div><strong>Certificate Downloads:</strong> 
+                          <div className={`badge badge-sm ml-2 ${selectedUser.allowCertificateDownload ? 'badge-success' : 'badge-warning'}`}>
+                            {selectedUser.allowCertificateDownload ? 'Enabled' : 'Disabled'}
+                          </div>
+                        </div>
+                        <div><strong>Last Active:</strong> {selectedUser.lastActive ? new Date(selectedUser.lastActive).toLocaleDateString() : 'Never'}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
