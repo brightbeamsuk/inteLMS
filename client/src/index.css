@@ -3,6 +3,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Override DaisyUI primary colors with CSS variables for dynamic theming */
+[data-theme="light"] {
+  --primary: hsl(var(--primary-h) var(--primary-s) var(--primary-l));
+  --primary-focus: hsl(var(--primary-focus-h) var(--primary-focus-s) var(--primary-focus-l));
+  --primary-content: hsl(var(--primary-content-h) var(--primary-content-s) var(--primary-content-l));
+  --p: var(--primary-h) var(--primary-s) var(--primary-l);
+  --pf: var(--primary-focus-h) var(--primary-focus-s) var(--primary-focus-l);
+  --pc: var(--primary-content-h) var(--primary-content-s) var(--primary-content-l);
+}
+
 :root {
   --background: hsl(0, 0%, 100%);
   --foreground: hsl(210, 25%, 7.8431%);
@@ -40,6 +50,17 @@
   --font-serif: Georgia, serif;
   --font-mono: 'Fira Code', monospace;
   --radius: 1.3rem;
+  
+  /* Dynamic theme variables for organization branding */
+  --primary-h: 221;
+  --primary-s: 83%;
+  --primary-l: 53%;
+  --primary-focus-h: 221;
+  --primary-focus-s: 83%;
+  --primary-focus-l: 43%;
+  --primary-content-h: 221;
+  --primary-content-s: 83%;
+  --primary-content-l: 20%;
 }
 
 .dark {

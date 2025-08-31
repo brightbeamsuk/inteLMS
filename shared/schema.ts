@@ -67,6 +67,7 @@ export const organisations = pgTable("organisations", {
   subdomain: varchar("subdomain").notNull().unique(),
   logoUrl: varchar("logo_url"),
   theme: varchar("theme").default('light'),
+  accentColor: varchar("accent_color").default('#3b82f6'), // Default blue color
   contactEmail: varchar("contact_email"),
   contactPhone: varchar("contact_phone"),
   address: text("address"),

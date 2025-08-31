@@ -756,6 +756,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/organisations/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      
+      // Admins can only see their own organization, SuperAdmins can see any
+      if (user.role === 'admin' && user.organisationId !== id) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisation = await storage.getOrganisation(id);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      res.json(organisation);
+    } catch (error) {
+      console.error('Error fetching organisation:', error);
+      res.status(500).json({ message: 'Failed to fetch organisation' });
+    }
+  });
+
   app.post('/api/organisations', requireAuth, async (req: any, res) => {
     try {
       const userId = req.session.user?.id;

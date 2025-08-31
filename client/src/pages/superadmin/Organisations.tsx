@@ -12,6 +12,7 @@ interface Organisation {
   subdomain: string;
   logoUrl?: string;
   theme: string;
+  accentColor?: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
@@ -40,6 +41,7 @@ export function SuperAdminOrganisations() {
     contactPhone: "",
     address: "",
     theme: "light",
+    accentColor: "#3b82f6",
     logoUrl: "",
     // Admin user fields
     adminEmail: "",
@@ -134,6 +136,7 @@ export function SuperAdminOrganisations() {
       contactPhone: "",
       address: "",
       theme: "light",
+      accentColor: "#3b82f6",
       logoUrl: "",
       adminEmail: "",
       adminFirstName: "",
@@ -371,6 +374,7 @@ export function SuperAdminOrganisations() {
                                 contactPhone: org.contactPhone,
                                 address: org.address,
                                 theme: org.theme,
+                                accentColor: org.accentColor || "#3b82f6",
                                 logoUrl: org.logoUrl
                               });
                               setShowEditModal(true);
@@ -487,24 +491,51 @@ export function SuperAdminOrganisations() {
                 )}
               </div>
 
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Choose Theme</span>
-                </label>
-                <select 
-                  className="select select-bordered"
-                  value={formData.theme}
-                  onChange={(e) => setFormData(prev => ({ ...prev, theme: e.target.value }))}
-                  data-testid="select-org-theme"
-                >
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="corporate">Corporate</option>
-                  <option value="business">Business</option>
-                  <option value="emerald">Emerald</option>
-                  <option value="fantasy">Fantasy</option>
-                  <option value="pastel">Pastel</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Choose Theme</span>
+                  </label>
+                  <select 
+                    className="select select-bordered"
+                    value={formData.theme}
+                    onChange={(e) => setFormData(prev => ({ ...prev, theme: e.target.value }))}
+                    data-testid="select-org-theme"
+                  >
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="corporate">Corporate</option>
+                    <option value="business">Business</option>
+                    <option value="emerald">Emerald</option>
+                    <option value="fantasy">Fantasy</option>
+                    <option value="pastel">Pastel</option>
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Accent Color</span>
+                  </label>
+                  <div className="flex gap-2 items-end">
+                    <input 
+                      type="color" 
+                      className="w-16 h-12 border border-base-300 rounded cursor-pointer"
+                      value={formData.accentColor}
+                      onChange={(e) => setFormData(prev => ({ ...prev, accentColor: e.target.value }))}
+                      data-testid="input-org-accent-color"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="#3b82f6" 
+                      className="input input-bordered flex-1" 
+                      value={formData.accentColor}
+                      onChange={(e) => setFormData(prev => ({ ...prev, accentColor: e.target.value }))}
+                      data-testid="input-org-accent-color-text"
+                    />
+                  </div>
+                  <label className="label">
+                    <span className="label-text-alt">This color will be used as the primary accent color for the organization's dashboard</span>
+                  </label>
+                </div>
               </div>
 
               <div className="form-control">
@@ -801,24 +832,51 @@ export function SuperAdminOrganisations() {
                 )}
               </div>
 
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Choose Theme</span>
-                </label>
-                <select 
-                  className="select select-bordered"
-                  value={editFormData.theme || 'light'}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, theme: e.target.value }))}
-                  data-testid="select-edit-org-theme"
-                >
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="corporate">Corporate</option>
-                  <option value="business">Business</option>
-                  <option value="emerald">Emerald</option>
-                  <option value="fantasy">Fantasy</option>
-                  <option value="pastel">Pastel</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Choose Theme</span>
+                  </label>
+                  <select 
+                    className="select select-bordered"
+                    value={editFormData.theme || 'light'}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, theme: e.target.value }))}
+                    data-testid="select-edit-org-theme"
+                  >
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="corporate">Corporate</option>
+                    <option value="business">Business</option>
+                    <option value="emerald">Emerald</option>
+                    <option value="fantasy">Fantasy</option>
+                    <option value="pastel">Pastel</option>
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Accent Color</span>
+                  </label>
+                  <div className="flex gap-2 items-end">
+                    <input 
+                      type="color" 
+                      className="w-16 h-12 border border-base-300 rounded cursor-pointer"
+                      value={editFormData.accentColor || "#3b82f6"}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, accentColor: e.target.value }))}
+                      data-testid="input-edit-org-accent-color"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="#3b82f6" 
+                      className="input input-bordered flex-1" 
+                      value={editFormData.accentColor || "#3b82f6"}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, accentColor: e.target.value }))}
+                      data-testid="input-edit-org-accent-color-text"
+                    />
+                  </div>
+                  <label className="label">
+                    <span className="label-text-alt">This color will be used as the primary accent color for the organization's dashboard</span>
+                  </label>
+                </div>
               </div>
 
               <div className="form-control">
