@@ -87,7 +87,21 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
   // Save template mutation
   const saveTemplateMutation = useMutation({
     mutationFn: async (templateData: CertificateTemplate) => {
-      const response = await apiRequest('POST', '/api/certificate-templates', templateData);
+      // Format the data correctly for the server API
+      const requestBody = {
+        name: templateData.name,
+        templateData: {
+          width: templateData.width,
+          height: templateData.height,
+          backgroundColor: templateData.backgroundColor,
+          backgroundImage: templateData.backgroundImage,
+          elements: templateData.elements
+        },
+        templateFormat: 'visual',
+        isDefault: templateData.isDefault || false
+      };
+      
+      const response = await apiRequest('POST', '/api/certificate-templates', requestBody);
       return response.json();
     },
     onSuccess: () => {
