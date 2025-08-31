@@ -297,6 +297,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Course completion analytics
+  app.get('/api/superadmin/analytics/completions', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const completionAnalytics = await storage.getCompletionAnalytics();
+      res.json(completionAnalytics);
+    } catch (error) {
+      console.error('Error fetching completion analytics:', error);
+      res.status(500).json({ message: 'Failed to fetch completion analytics' });
+    }
+  });
+
   // Certificate Template routes
   app.get('/api/certificate-templates', requireAuth, async (req: any, res) => {
     try {

@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 interface TodoItem {
   id: string;
@@ -33,6 +35,11 @@ export function SuperAdminDashboard() {
   // Fetch todos
   const { data: todos = [], isLoading: todosLoading } = useQuery<TodoItem[]>({
     queryKey: ['/api/todos'],
+  });
+
+  // Fetch completion analytics
+  const { data: analyticsData = [], isLoading: analyticsLoading } = useQuery({
+    queryKey: ['/api/superadmin/analytics/completions'],
   });
 
   // Add todo mutation
@@ -215,28 +222,55 @@ export function SuperAdminDashboard() {
 
       {/* Charts and Analytics Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* New Sign-ups Chart */}
+        {/* Course Completion Analytics Chart */}
         <div className="card bg-base-200 shadow-sm">
           <div className="card-body">
             <h3 className="card-title">
-              <i className="fas fa-chart-line text-primary"></i>
-              Analytics Overview
+              <i className="fas fa-chart-bar text-primary"></i>
+              Course Completion Analytics
             </h3>
-            <div className="h-64 flex items-center justify-center bg-base-100 rounded">
-              <div className="text-center">
-                <div className="text-4xl mb-2">📈</div>
-                <p className="text-sm text-base-content/60">Platform growth and usage analytics</p>
-                <div className="stats stats-vertical lg:stats-horizontal shadow mt-4">
-                  <div className="stat place-items-center">
-                    <div className="stat-title">Monthly Growth</div>
-                    <div className="stat-value text-sm">↗︎ 12%</div>
-                  </div>
-                  <div className="stat place-items-center">
-                    <div className="stat-title">Completion Rate</div>
-                    <div className="stat-value text-sm">84%</div>
+            <div className="h-64 bg-base-100 rounded p-4">
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : analyticsData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">📊</div>
+                    <p className="text-sm text-base-content/60">No completion data available yet</p>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    successful: {
+                      label: "Successful",
+                      color: "hsl(var(--chart-1))",
+                    },
+                    failed: {
+                      label: "Failed", 
+                      color: "hsl(var(--chart-2))",
+                    },
+                  }}
+                >
+                  <BarChart data={analyticsData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="monthName" 
+                      tick={{ fontSize: 12 }}
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                    />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="successful" stackId="a" fill="var(--color-successful)" />
+                    <Bar dataKey="failed" stackId="a" fill="var(--color-failed)" />
+                  </BarChart>
+                </ChartContainer>
+              )}
             </div>
           </div>
         </div>

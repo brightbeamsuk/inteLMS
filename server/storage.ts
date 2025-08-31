@@ -123,6 +123,7 @@ export interface IStorage {
     totalCourses: number;
     totalCompletions: number;
   }>;
+  getCompletionAnalytics(): Promise<any[]>;
   getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
     coursesAssigned: number;
@@ -532,6 +533,33 @@ export class DatabaseStorage implements IStorage {
       totalCourses: courseCount.count,
       totalCompletions: completionCount.count,
     };
+  }
+
+  // Get completion analytics for charts
+  async getCompletionAnalytics(): Promise<any[]> {
+    // Get completion data grouped by month for the last 12 months
+    const completionsByMonth = await db
+      .select({
+        month: sql<string>`TO_CHAR(${completions.completedAt}, 'YYYY-MM')`,
+        total: count(),
+        successful: sql<number>`COUNT(CASE WHEN ${completions.status} = 'completed' THEN 1 END)`,
+        failed: sql<number>`COUNT(CASE WHEN ${completions.status} = 'failed' THEN 1 END)`
+      })
+      .from(completions)
+      .where(sql`${completions.completedAt} >= NOW() - INTERVAL '12 months'`)
+      .groupBy(sql`TO_CHAR(${completions.completedAt}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${completions.completedAt}, 'YYYY-MM')`);
+
+    // Format the data for the chart
+    const formattedData = completionsByMonth.map(row => ({
+      month: row.month,
+      monthName: new Date(row.month + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      total: row.total,
+      successful: row.successful,
+      failed: row.failed
+    }));
+
+    return formattedData;
   }
 
   async getOrganisationStats(organisationId: string): Promise<{
