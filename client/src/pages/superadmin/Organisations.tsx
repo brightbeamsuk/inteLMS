@@ -996,11 +996,73 @@ export function SuperAdminOrganisations() {
 
 // Manage Admins Modal Component
 function ManageAdminsModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<any>(null);
+  
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['/api/organisations', organisation.id, 'users'],
   });
 
   const adminUsers = users.filter((user: any) => user.role === 'admin');
+
+  // Reset Password Mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest('POST', `/api/users/${userId}/reset-password`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Password reset email sent to admin",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error", 
+        description: "Failed to reset password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete Admin Mutation
+  const deleteAdminMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest('DELETE', `/api/users/${userId}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Admin deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'users'] });
+      setConfirmDeleteUser(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete admin",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleResetPassword = (user: any) => {
+    resetPasswordMutation.mutate(user.id);
+  };
+
+  const handleDeleteAdmin = (user: any) => {
+    setConfirmDeleteUser(user);
+  };
+
+  const confirmDelete = () => {
+    if (confirmDeleteUser) {
+      deleteAdminMutation.mutate(confirmDeleteUser.id);
+    }
+  };
 
   return (
     <dialog className="modal modal-open">
@@ -1050,9 +1112,37 @@ function ManageAdminsModal({ organisation, onClose }: { organisation: Organisati
                       {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}
                     </td>
                     <td>
-                      <button className="btn btn-sm btn-ghost" data-testid={`button-view-admin-${user.id}`}>
-                        <i className="fas fa-eye"></i>
-                      </button>
+                      <div className="dropdown dropdown-end">
+                        <button 
+                          className="btn btn-sm btn-ghost"
+                          tabIndex={0}
+                          data-testid={`button-admin-actions-${user.id}`}
+                        >
+                          <i className="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul tabIndex={0} className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52">
+                          <li>
+                            <button
+                              onClick={() => handleResetPassword(user)}
+                              className="text-warning"
+                              data-testid={`button-reset-password-${user.id}`}
+                            >
+                              <i className="fas fa-key"></i>
+                              Reset Password
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              onClick={() => handleDeleteAdmin(user)}
+                              className="text-error"
+                              data-testid={`button-delete-admin-${user.id}`}
+                            >
+                              <i className="fas fa-trash"></i>
+                              Delete Admin
+                            </button>
+                          </li>
+                        </ul>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1074,6 +1164,49 @@ function ManageAdminsModal({ organisation, onClose }: { organisation: Organisati
       <form method="dialog" className="modal-backdrop">
         <button onClick={onClose}>close</button>
       </form>
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Confirm Delete Admin</h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">Warning: This action cannot be undone!</h4>
+                <p className="text-sm">This will permanently remove the admin user from the system.</p>
+              </div>
+            </div>
+            
+            <p className="mb-4">
+              Are you sure you want to delete <strong>"{confirmDeleteUser.firstName} {confirmDeleteUser.lastName}"</strong> ({confirmDeleteUser.email})?
+            </p>
+
+            <div className="modal-action">
+              <button 
+                className="btn" 
+                onClick={() => setConfirmDeleteUser(null)}
+                data-testid="button-cancel-delete-admin"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-error"
+                onClick={confirmDelete}
+                disabled={deleteAdminMutation.isPending}
+                data-testid="button-confirm-delete-admin"
+              >
+                {deleteAdminMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Delete Admin'
+                )}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </dialog>
   );
 }
