@@ -78,6 +78,8 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showPreview, setShowPreview] = useState(false);
+  const [editingElementId, setEditingElementId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   // Get selected element
   const selectedElement = template.elements.find(el => el.id === selectedElementId);
@@ -148,13 +150,52 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
     setSelectedElementId(null);
   }, []);
 
-  // Handle mouse events for dragging
+  // Handle mouse events for dragging and editing
   const handleMouseDown = useCallback((e: React.MouseEvent, elementId: string) => {
     e.preventDefault();
+    if (editingElementId) return; // Don't start dragging if editing
     setSelectedElementId(elementId);
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
+  }, [editingElementId]);
+
+  // Handle double-click for inline editing
+  const handleDoubleClick = useCallback((e: React.MouseEvent, elementId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const element = template.elements.find(el => el.id === elementId);
+    if (element && !showPreview) {
+      setEditingElementId(elementId);
+      setEditingText(element.text);
+      setSelectedElementId(elementId);
+    }
+  }, [template.elements, showPreview]);
+
+  // Save inline editing
+  const saveInlineEdit = useCallback(() => {
+    if (editingElementId) {
+      updateElement(editingElementId, { text: editingText });
+      setEditingElementId(null);
+      setEditingText("");
+    }
+  }, [editingElementId, editingText, updateElement]);
+
+  // Cancel inline editing
+  const cancelInlineEdit = useCallback(() => {
+    setEditingElementId(null);
+    setEditingText("");
   }, []);
+
+  // Handle key events during inline editing
+  const handleInlineEditKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      saveInlineEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelInlineEdit();
+    }
+  }, [saveInlineEdit, cancelInlineEdit]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !selectedElementId) return;
@@ -255,9 +296,9 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
             {(showPreview ? getPreviewData() : template).elements.map(element => (
               <div
                 key={element.id}
-                className={`absolute cursor-move border-2 transition-all ${
+                className={`absolute border-2 transition-all ${
                   selectedElementId === element.id ? 'border-primary bg-primary/10' : 'border-transparent hover:border-base-300'
-                }`}
+                } ${editingElementId === element.id ? 'cursor-text' : 'cursor-move'}`}
                 style={{
                   left: element.x,
                   top: element.y,
@@ -273,9 +314,38 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
                   overflow: 'hidden'
                 }}
                 onMouseDown={(e) => !showPreview && handleMouseDown(e, element.id)}
+                onDoubleClick={(e) => !showPreview && handleDoubleClick(e, element.id)}
                 data-testid={`text-element-${element.id}`}
               >
-                {element.text}
+                {editingElementId === element.id ? (
+                  <textarea
+                    className="w-full h-full bg-transparent border-none outline-none resize-none"
+                    style={{
+                      fontSize: element.fontSize,
+                      fontFamily: element.fontFamily,
+                      fontWeight: element.fontWeight,
+                      color: element.color,
+                      textAlign: element.textAlign,
+                      lineHeight: element.lineHeight,
+                      padding: 0,
+                      margin: 0
+                    }}
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    onKeyDown={handleInlineEditKeyDown}
+                    onBlur={saveInlineEdit}
+                    autoFocus
+                    data-testid={`inline-edit-${element.id}`}
+                  />
+                ) : (
+                  <div className="w-full h-full">
+                    {element.text || (
+                      <span className="text-base-content/40 italic">
+                        Double-click to edit text
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
