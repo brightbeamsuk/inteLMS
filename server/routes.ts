@@ -3124,10 +3124,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
     try {
       const { assignmentId } = req.params;
-      const userId = req.session.user?.id;
+      const userId = getUserIdFromSession(req);
+
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
 
       const assignment = await storage.getAssignment(assignmentId);
       if (!assignment || assignment.userId !== userId) {
+        console.log(`🚫 SCORM launch access denied - Assignment userId: ${assignment?.userId}, Session userId: ${userId}`);
         return res.status(403).json({ message: 'Assignment not found or access denied' });
       }
 
@@ -3153,9 +3158,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SCORM completion route
   app.post('/api/scorm/:assignmentId/complete', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.session.user?.id;
+      const userId = getUserIdFromSession(req);
       const { assignmentId } = req.params;
       const scormData = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
 
       const assignment = await storage.getAssignment(assignmentId);
       if (!assignment || assignment.userId !== userId) {
