@@ -174,7 +174,7 @@ export function SuperAdminSettings() {
       '{{PASS_FAIL}}': 'PASS',
       '{{DATE_COMPLETED}}': new Date().toLocaleDateString(),
       '{{CERTIFICATE_ID}}': 'CERT-2024-001',
-      '{{BACKGROUND_IMAGE}}': backgroundImage ? `<div style="background-image: url('${backgroundImage}'); background-size: cover; background-position: center; background-repeat: no-repeat; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;"></div>` : '',
+      '{{BACKGROUND_IMAGE}}': backgroundImage ? `<img src="${backgroundImage}" alt="Certificate Background" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;" />` : '',
       '{{SIGNATURE_IMAGE}}': signatureImage ? `<img src="${signatureImage}" alt="Signature" style="max-width: 200px; height: auto;" />` : ''
     };
 
@@ -377,8 +377,17 @@ export function SuperAdminSettings() {
                     <h3 className="text-lg font-semibold mb-4">Preview with Sample Data</h3>
                     <div className="bg-gray-100 p-4 rounded-lg">
                       <div 
-                        className="certificate-preview border p-4 bg-white rounded-lg min-h-[400px] relative overflow-hidden" 
-                        style={{ position: 'relative' }}
+                        className="certificate-preview border bg-white rounded-lg min-h-[400px] relative overflow-hidden" 
+                        style={{ 
+                          position: 'relative',
+                          padding: '1rem',
+                          ...(backgroundImage && {
+                            backgroundImage: `url('${backgroundImage}')`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat'
+                          })
+                        }}
                         dangerouslySetInnerHTML={{ __html: previewTemplate() }}
                         data-testid="preview-certificate"
                       ></div>
