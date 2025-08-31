@@ -40,6 +40,7 @@ import AdminCertificates from "@/pages/admin/Certificates";
 import { UserDashboard } from "@/pages/user/Dashboard";
 import { UserCourses } from "@/pages/user/Courses";
 import { UserSettings } from "@/pages/user/Settings";
+import { UserProfile } from "@/pages/user/Profile";
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -253,6 +254,14 @@ function Router() {
         <ProtectedRoute requiredRole="user">
           <UserLayout>
             <UserSettings />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/user/profile">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserProfile />
           </UserLayout>
         </ProtectedRoute>
       </Route>

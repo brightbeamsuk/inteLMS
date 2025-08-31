@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 
 interface Assignment {
@@ -89,9 +90,9 @@ export function UserDashboard() {
         </div>
       </div>
 
-      {/* My Assignments */}
+      {/* Enrolled Courses */}
       <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">My Assignments</h2>
+        <h2 className="text-2xl font-bold mb-4">Enrolled Courses</h2>
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 3 }).map((_, index) => (
@@ -107,12 +108,12 @@ export function UserDashboard() {
         ) : assignments.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">📚</div>
-            <h3 className="text-2xl font-bold mb-2">No assignments yet</h3>
-            <p className="text-base-content/60">Your learning assignments will appear here when they're available</p>
+            <h3 className="text-2xl font-bold mb-2">No enrolled courses yet</h3>
+            <p className="text-base-content/60">Your enrolled courses will appear here when they're available</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {assignments.map((assignment) => (
+            {assignments.slice(0, 3).map((assignment) => (
               <div 
                 key={assignment.id} 
                 className={`card bg-base-200 shadow-sm ${getDueSoonStatus(assignment.dueDate) ? 'border-l-4 border-warning' : ''}`}
@@ -152,82 +153,43 @@ export function UserDashboard() {
                   )}
                   
                   <div className="card-actions justify-end">
-                    <button 
-                      className={`btn btn-sm ${
-                        assignment.status === 'not_started' ? 'btn-primary' :
-                        assignment.status === 'in_progress' ? 'btn-info' :
-                        assignment.status === 'completed' ? 'btn-success' :
-                        'btn-error'
-                      }`}
-                      onClick={() => handleStartCourse(assignment)}
-                      data-testid={`button-start-assignment-${assignment.id}`}
-                    >
-                      <i className="fas fa-play"></i> 
-                      {assignment.status === 'not_started' ? 'Start' :
-                       assignment.status === 'in_progress' ? 'Resume' :
-                       assignment.status === 'completed' ? 'Review' :
-                       'Continue'}
-                    </button>
+                    {assignment.status === 'not_started' || assignment.status === 'in_progress' ? (
+                      <button 
+                        className={`btn btn-sm ${
+                          assignment.status === 'not_started' ? 'btn-primary' : 'btn-info'
+                        }`}
+                        onClick={() => handleStartCourse(assignment)}
+                        data-testid={`button-start-assignment-${assignment.id}`}
+                      >
+                        <i className="fas fa-play"></i> 
+                        {assignment.status === 'not_started' ? 'Start Course' : 'Resume'}
+                      </button>
+                    ) : (
+                      <button 
+                        className={`btn btn-sm ${
+                          assignment.status === 'completed' ? 'btn-success' : 'btn-error'
+                        }`}
+                        onClick={() => handleStartCourse(assignment)}
+                        data-testid={`button-start-assignment-${assignment.id}`}
+                      >
+                        <i className={assignment.status === 'completed' ? 'fas fa-eye' : 'fas fa-play'}></i> 
+                        {assignment.status === 'completed' ? 'Review' : 'Continue'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
-
-      {/* Recent Activity */}
-      <div className="card bg-base-200 shadow-sm">
-        <div className="card-body">
-          <h3 className="card-title mb-4">
-            <i className="fas fa-history text-info"></i>
-            Recent Activity
-          </h3>
-          <div className="timeline">
-            <div className="timeline-item">
-              <div className="timeline-point bg-success"></div>
-              <div className="timeline-content">
-                <div className="timeline-time text-sm text-base-content/60" data-testid="text-activity-time-1">
-                  2 hours ago
-                </div>
-                <div className="timeline-title" data-testid="text-activity-title-1">
-                  Completed "Fire Safety Procedures"
-                </div>
-                <div className="timeline-description text-sm" data-testid="text-activity-desc-1">
-                  Score: 92% • Certificate earned
-                </div>
-              </div>
-            </div>
-            <div className="timeline-item">
-              <div className="timeline-point bg-info"></div>
-              <div className="timeline-content">
-                <div className="timeline-time text-sm text-base-content/60" data-testid="text-activity-time-2">
-                  1 day ago
-                </div>
-                <div className="timeline-title" data-testid="text-activity-title-2">
-                  Started "GDPR Compliance Update"
-                </div>
-                <div className="timeline-description text-sm" data-testid="text-activity-desc-2">
-                  Progress: 65%
-                </div>
-              </div>
-            </div>
-            <div className="timeline-item">
-              <div className="timeline-point bg-warning"></div>
-              <div className="timeline-content">
-                <div className="timeline-time text-sm text-base-content/60" data-testid="text-activity-time-3">
-                  3 days ago
-                </div>
-                <div className="timeline-title" data-testid="text-activity-title-3">
-                  Assigned "Cybersecurity Fundamentals"
-                </div>
-                <div className="timeline-description text-sm" data-testid="text-activity-desc-3">
-                  Due: Feb 15, 2024
-                </div>
-              </div>
-            </div>
+        
+        {assignments.length > 3 && (
+          <div className="text-center mt-4">
+            <Link href="/user/courses" className="btn btn-ghost" data-testid="link-view-all-courses">
+              View All Courses ({assignments.length})
+            </Link>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Course Player Modal */}
