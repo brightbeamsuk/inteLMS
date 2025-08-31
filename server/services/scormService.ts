@@ -128,15 +128,40 @@ export class ScormService {
     try {
       console.log(`📦 Downloading SCORM package from: ${packageUrl}`);
       
-      // Download the SCORM package
-      const response = await fetch(packageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download SCORM package: ${response.statusText}`);
-      }
-      
-      const buffer = await response.arrayBuffer();
+      // Download the SCORM package using ObjectStorageService for proper private file access
+      const objectStorageService = new ObjectStorageService();
       const zipPath = path.join(extractDir, 'package.zip');
-      await fs.promises.writeFile(zipPath, Buffer.from(buffer));
+      
+      try {
+        // Try to handle as a private object storage file first
+        const normalizedPath = objectStorageService.normalizeObjectEntityPath(packageUrl);
+        const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
+        
+        // Stream the file content to local storage
+        const stream = objectFile.createReadStream();
+        const writeStream = fs.createWriteStream(zipPath);
+        
+        await new Promise((resolve, reject) => {
+          stream.on('error', reject);
+          writeStream.on('error', reject);
+          writeStream.on('finish', resolve);
+          stream.pipe(writeStream);
+        });
+        
+        console.log(`✅ Downloaded SCORM package using object storage service`);
+      } catch (objectStorageError) {
+        console.log(`⚠️ Object storage download failed, trying direct fetch: ${objectStorageError}`);
+        
+        // Fallback to direct fetch for public URLs or other cases
+        const response = await fetch(packageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download SCORM package: ${response.statusText}`);
+        }
+        
+        const buffer = await response.arrayBuffer();
+        await fs.promises.writeFile(zipPath, Buffer.from(buffer));
+        console.log(`✅ Downloaded SCORM package using direct fetch`);
+      }
       
       console.log(`📁 Extracting SCORM package to: ${extractDir}`);
       
