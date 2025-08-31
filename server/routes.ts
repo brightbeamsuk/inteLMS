@@ -98,14 +98,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Helper function to get current user
   async function getCurrentUser(req: any) {
+    console.log('getCurrentUser - Session data:', JSON.stringify(req.session, null, 2));
+    
     const userId = getUserIdFromSession(req);
+    console.log('getCurrentUser - Extracted user ID:', userId);
+    
     if (!userId) {
+      console.log('getCurrentUser - No user ID found in session');
       return null;
     }
     
     // Fetch the actual user data from the database
     try {
       const dbUser = await storage.getUser(userId);
+      console.log('getCurrentUser - Database user:', dbUser ? 'Found' : 'Not found');
       return dbUser;
     } catch (error) {
       console.error('Error fetching user from database:', error);
@@ -152,7 +158,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const demoAccount = demoUsers[email as keyof typeof demoUsers];
       
       if (demoAccount && password === demoAccount.password && demoAccount.user) {
+        console.log('Demo login - User data being stored:', JSON.stringify(demoAccount.user, null, 2));
         req.session.user = demoAccount.user;
+        console.log('Demo login - Session after storing user:', JSON.stringify(req.session, null, 2));
         return res.json({ 
           message: "Login successful",
           user: demoAccount.user,
