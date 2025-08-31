@@ -304,78 +304,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Package URL is required' });
       }
 
-      // For now, return a simple HTML player that can handle the SCORM package
-      const previewHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>SCORM Preview</title>
-          <style>
-            body, html { 
-              margin: 0; 
-              padding: 20px; 
-              height: 100%; 
-              font-family: Arial, sans-serif;
-              background: #f5f5f5;
-            }
-            .container {
-              background: white;
-              border-radius: 8px;
-              padding: 20px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-              text-align: center;
-            }
-            .preview-info {
-              color: #666;
-              margin-bottom: 20px;
-            }
-            .package-url {
-              word-break: break-all;
-              background: #f8f9fa;
-              padding: 10px;
-              border-radius: 4px;
-              margin: 20px 0;
-              border: 1px solid #e9ecef;
-            }
-            .note {
-              background: #e3f2fd;
-              border: 1px solid #2196f3;
-              border-radius: 4px;
-              padding: 15px;
-              margin-top: 20px;
-              color: #0d47a1;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h2>📚 SCORM Course Preview</h2>
-            <div class="preview-info">
-              This is a preview of your SCORM package. In a production environment, 
-              the SCORM content would be extracted and displayed here.
-            </div>
-            
-            <div class="package-url">
-              <strong>Package URL:</strong><br>
-              ${decodeURIComponent(packageUrl as string)}
-            </div>
-            
-            <div class="note">
-              <strong>💡 Note:</strong> This preview shows that your SCORM package has been successfully uploaded. 
-              When published, learners will see the actual SCORM content rendered here.
-              <br><br>
-              <strong>Package Status:</strong> ✅ Ready for publishing
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
+      // Import ScormService dynamically to avoid circular dependency
+      const { ScormService } = await import('../services/scormService');
+      const scormService = new ScormService();
+      
+      const playerHtml = await scormService.getPlayerHtml(packageUrl as string, user.id, 'preview');
+      
       res.setHeader('Content-Type', 'text/html');
-      res.send(previewHtml);
+      res.send(playerHtml);
     } catch (error) {
       console.error('Error generating SCORM preview:', error);
       res.status(500).json({ message: 'Failed to generate preview' });
+    }
+  });
+
+  // SCORM Content serving route
+  app.get('/api/scorm/content', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { packageUrl, file } = req.query;
+      
+      if (!packageUrl || !file) {
+        return res.status(400).json({ message: 'Package URL and file are required' });
+      }
+
+      // Import ScormService dynamically
+      const { ScormService } = await import('../services/scormService');
+      const scormService = new ScormService();
+      
+      await scormService.extractPackage(packageUrl as string);
+      const extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
+      
+      if (!extractedPath) {
+        return res.status(404).json({ message: 'Package not found' });
+      }
+
+      const filePath = require('path').join(extractedPath, file as string);
+      
+      // Check if file exists
+      if (!require('fs').existsSync(filePath)) {
+        return res.status(404).json({ message: 'File not found' });
+      }
+
+      // Serve the file with appropriate content type
+      const ext = require('path').extname(file as string).toLowerCase();
+      let contentType = 'application/octet-stream';
+      
+      switch (ext) {
+        case '.html':
+          contentType = 'text/html';
+          break;
+        case '.css':
+          contentType = 'text/css';
+          break;
+        case '.js':
+          contentType = 'application/javascript';
+          break;
+        case '.json':
+          contentType = 'application/json';
+          break;
+        case '.png':
+          contentType = 'image/png';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          contentType = 'image/jpeg';
+          break;
+        case '.gif':
+          contentType = 'image/gif';
+          break;
+      }
+
+      res.setHeader('Content-Type', contentType);
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('Error serving SCORM content:', error);
+      res.status(500).json({ message: 'Failed to serve content' });
     }
   });
 
