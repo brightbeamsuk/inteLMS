@@ -20,6 +20,7 @@ interface PlatformStats {
 
 export function SuperAdminDashboard() {
   const [newTodo, setNewTodo] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -99,6 +100,11 @@ export function SuperAdminDashboard() {
       updates: { completed: !todo.completed }
     });
   };
+
+  // Filter todos based on completion status
+  const activeTodos = todos.filter(todo => !todo.completed);
+  const archivedTodos = todos.filter(todo => todo.completed);
+  const displayedTodos = showArchived ? archivedTodos : activeTodos;
 
   return (
     <div>
@@ -272,44 +278,64 @@ export function SuperAdminDashboard() {
       {/* Personal To-Do List */}
       <div className="card bg-base-200 shadow-sm">
         <div className="card-body">
-          <h3 className="card-title">
-            <i className="fas fa-tasks text-info"></i>
-            Personal To-Do List
-          </h3>
-          <div className="join mb-4">
-            <input 
-              className="input input-bordered join-item flex-1" 
-              placeholder="Add new task..." 
-              value={newTodo}
-              onChange={(e) => setNewTodo(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleAddTodo()}
-              data-testid="input-todo"
-            />
-            <button 
-              className="btn btn-primary join-item"
-              onClick={handleAddTodo}
-              disabled={addTodoMutation.isPending}
-              data-testid="button-add-todo"
-            >
-              {addTodoMutation.isPending ? (
-                <span className="loading loading-spinner loading-sm"></span>
-              ) : (
-                <i className="fas fa-plus"></i>
-              )}
-            </button>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="card-title">
+              <i className="fas fa-tasks text-info"></i>
+              Personal To-Do List
+            </h3>
+            <div className="flex gap-2">
+              <button 
+                className={`btn btn-sm ${!showArchived ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setShowArchived(false)}
+                data-testid="button-active-todos"
+              >
+                <i className="fas fa-list"></i> Active ({activeTodos.length})
+              </button>
+              <button 
+                className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setShowArchived(true)}
+                data-testid="button-archived-todos"
+              >
+                <i className="fas fa-archive"></i> Archived ({archivedTodos.length})
+              </button>
+            </div>
           </div>
+          {!showArchived && (
+            <div className="join mb-4">
+              <input 
+                className="input input-bordered join-item flex-1" 
+                placeholder="Add new task..." 
+                value={newTodo}
+                onChange={(e) => setNewTodo(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddTodo()}
+                data-testid="input-todo"
+              />
+              <button 
+                className="btn btn-primary join-item"
+                onClick={handleAddTodo}
+                disabled={addTodoMutation.isPending}
+                data-testid="button-add-todo"
+              >
+                {addTodoMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  <i className="fas fa-plus"></i>
+                )}
+              </button>
+            </div>
+          )}
           
           <div className="space-y-2" data-testid="todo-list">
             {todosLoading ? (
               <div className="text-center">
                 <span className="loading loading-spinner loading-md"></span>
               </div>
-            ) : todos.length === 0 ? (
+            ) : displayedTodos.length === 0 ? (
               <div className="text-center text-base-content/60">
-                No tasks yet. Add your first task above.
+                {showArchived ? 'No archived tasks yet.' : 'No active tasks. Add your first task above.'}
               </div>
             ) : (
-              todos.map((todo) => (
+              displayedTodos.map((todo) => (
                 <div key={todo.id} className="form-control">
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
