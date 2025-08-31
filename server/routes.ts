@@ -897,10 +897,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const validatedData = insertCourseSchema.parse({
+      // Normalize cover image URL if provided
+      let courseData = {
         ...req.body,
         createdBy: user.id,
-      });
+      };
+
+      if (courseData.coverImageUrl) {
+        const { ObjectStorageService } = await import('./objectStorage');
+        const objectStorageService = new ObjectStorageService();
+        courseData.coverImageUrl = objectStorageService.normalizeObjectEntityPath(courseData.coverImageUrl);
+      }
+
+      const validatedData = insertCourseSchema.parse(courseData);
 
       const course = await storage.createCourse(validatedData);
       res.status(201).json(course);
