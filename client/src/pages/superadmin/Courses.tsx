@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ImageUpload } from "@/components/ImageUpload";
 
 interface Course {
   id: string;
@@ -210,13 +211,17 @@ export function SuperAdminCourses() {
                 <div className="w-full h-32 bg-base-300 rounded-lg flex items-center justify-center">
                   {course.coverImageUrl ? (
                     <img 
-                      src={course.coverImageUrl.startsWith('https://storage.googleapis.com/') || course.coverImageUrl.startsWith('/objects/') ? course.coverImageUrl : `/public-objects/${course.coverImageUrl}`} 
+                      src={course.coverImageUrl} 
                       alt={course.title} 
-                      className="w-full h-full object-cover rounded-lg" 
+                      className="w-full h-full object-cover rounded-lg"
+                      onError={(e) => {
+                        // Show fallback icon on error
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
                     />
-                  ) : (
-                    <i className="fas fa-graduation-cap text-4xl text-base-content/40"></i>
-                  )}
+                  ) : null}
+                  <i className={`fas fa-graduation-cap text-4xl text-base-content/40 ${course.coverImageUrl ? 'hidden' : ''}`}></i>
                 </div>
               </figure>
               <div className="card-body">
@@ -284,17 +289,21 @@ export function SuperAdminCourses() {
                     <div className="w-full h-48 bg-base-300 rounded-lg flex items-center justify-center">
                       {selectedCourse.coverImageUrl ? (
                         <img 
-                          src={selectedCourse.coverImageUrl.startsWith('https://storage.googleapis.com/') || selectedCourse.coverImageUrl.startsWith('/objects/') ? selectedCourse.coverImageUrl : `/public-objects/${selectedCourse.coverImageUrl}`} 
+                          src={selectedCourse.coverImageUrl} 
                           alt={selectedCourse.title} 
                           className="w-full h-full object-cover rounded-lg" 
                           data-testid="img-course-cover"
+                          onError={(e) => {
+                            // Show fallback on error
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
                         />
-                      ) : (
-                        <div className="text-center">
-                          <i className="fas fa-graduation-cap text-6xl text-base-content/40 mb-2"></i>
-                          <p className="text-sm text-base-content/60">No cover image</p>
-                        </div>
-                      )}
+                      ) : null}
+                      <div className={`text-center ${selectedCourse.coverImageUrl ? 'hidden' : ''}`}>
+                        <i className="fas fa-graduation-cap text-6xl text-base-content/40 mb-2"></i>
+                        <p className="text-sm text-base-content/60">No cover image</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -473,14 +482,13 @@ export function SuperAdminCourses() {
 
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text">Cover Image URL</span>
+                      <span className="label-text">Cover Image</span>
                     </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered" 
-                      value={editFormData.coverImageUrl || ''}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev, coverImageUrl: e.target.value }))}
-                      data-testid="input-edit-cover-url"
+                    <ImageUpload
+                      imageType="course-cover"
+                      currentImageUrl={editFormData.coverImageUrl}
+                      onImageUploaded={(publicPath) => setEditFormData(prev => ({ ...prev, coverImageUrl: publicPath }))}
+                      buttonClassName="btn btn-outline w-full"
                     />
                   </div>
                 </div>
