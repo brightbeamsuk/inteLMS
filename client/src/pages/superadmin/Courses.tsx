@@ -173,8 +173,17 @@ export function SuperAdminCourses() {
                          course.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
     const matchesViewMode = viewMode === 'active' ? course.status !== 'archived' : course.status === 'archived';
+    
+    // Debug logging
+    if (viewMode === 'archived') {
+      console.log('Course:', course.title, 'Status:', course.status, 'Matches:', matchesViewMode);
+    }
+    
     return matchesSearch && matchesCategory && matchesViewMode;
   });
+
+  // Debug: Log the total courses and filtered results
+  console.log(`Total courses: ${courses.length}, View mode: ${viewMode}, Filtered: ${filteredCourses.length}`);
 
   // Get unique categories
   const categories = Array.from(new Set(courses.map(course => course.category).filter(Boolean)));
