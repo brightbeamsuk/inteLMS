@@ -235,7 +235,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (department !== undefined) updateData.department = department;
       if (phone !== undefined) updateData.phone = phone;
       if (bio !== undefined) updateData.bio = bio;
-      if (profileImageUrl !== undefined) updateData.profileImageUrl = profileImageUrl;
+      
+      // Handle profile image URL with ACL policy
+      if (profileImageUrl !== undefined) {
+        if (profileImageUrl) {
+          const { ObjectStorageService } = await import('./objectStorage');
+          const objectStorageService = new ObjectStorageService();
+          try {
+            updateData.profileImageUrl = await objectStorageService.trySetObjectEntityAclPolicy(
+              profileImageUrl,
+              {
+                owner: userId,
+                visibility: "public", // Profile images should be publicly accessible
+              }
+            );
+          } catch (error) {
+            console.error('Error setting profile image ACL policy:', error);
+            // Fallback to just normalizing the path
+            updateData.profileImageUrl = objectStorageService.normalizeObjectEntityPath(profileImageUrl);
+          }
+        } else {
+          updateData.profileImageUrl = profileImageUrl;
+        }
+      }
 
       console.log('Update data:', updateData);
 
