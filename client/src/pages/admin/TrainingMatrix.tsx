@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { TrainingMatrixStatusIcon } from "@/components/TrainingMatrixStatusIcon";
 
 interface TrainingMatrixData {
   staff: StaffMember[];
@@ -332,33 +333,25 @@ export function AdminTrainingMatrix() {
         <div className="card-body p-4">
           <div className="flex flex-col lg:flex-row lg:justify-between gap-4">
             {/* Legend */}
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-xs">Legend:</span>
+                <span className="text-sm font-medium">Legend:</span>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="badge badge-error badge-sm">
-                  <i className="fas fa-exclamation-triangle text-xs mr-1"></i>
-                  Out of date
-                </div>
+              <div className="flex items-center gap-2">
+                <TrainingMatrixStatusIcon status="green" size="sm" />
+                <span className="text-sm">Completed & current</span>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="badge badge-warning badge-sm">
-                  <i className="fas fa-clock text-xs mr-1"></i>
-                  Expiring (30d)
-                </div>
+              <div className="flex items-center gap-2">
+                <TrainingMatrixStatusIcon status="amber" size="sm" />
+                <span className="text-sm">Expiring soon</span>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="badge badge-success badge-sm">
-                  <i className="fas fa-check-circle text-xs mr-1"></i>
-                  In date
-                </div>
+              <div className="flex items-center gap-2">
+                <TrainingMatrixStatusIcon status="red" size="sm" />
+                <span className="text-sm">Overdue/expired</span>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="badge badge-neutral badge-sm">
-                  <i className="fas fa-minus-circle text-xs mr-1"></i>
-                  Not completed
-                </div>
+              <div className="flex items-center gap-2">
+                <TrainingMatrixStatusIcon status="grey" size="sm" />
+                <span className="text-sm">Not assigned</span>
               </div>
             </div>
 
@@ -393,16 +386,133 @@ export function AdminTrainingMatrix() {
         </div>
       </div>
 
-      {/* TODO: Add filters section */}
-      {/* TODO: Add saved views section */}
-      {/* TODO: Add main matrix table */}
-      {/* TODO: Add detail modal */}
-      {/* TODO: Add save view modal */}
-
-      <div className="text-center py-10 text-base-content/60">
-        <p>Training Matrix implementation in progress...</p>
-        <p className="text-sm">Next: Adding filters, table, and modals</p>
+      {/* Training Matrix Table */}
+      <div className="card bg-base-100 shadow-sm">
+        <div className="card-body p-0">
+          <div className="overflow-x-auto">
+            <table className="table table-sm">
+              <thead>
+                <tr className="bg-base-200">
+                  <th className="sticky left-0 bg-base-200 z-10 min-w-[200px]">
+                    <div className="font-semibold">Staff Member</div>
+                  </th>
+                  {matrixData.courses.map((course) => (
+                    <th key={course.id} className="text-center min-w-[120px] p-2">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="font-medium text-xs leading-tight">{course.title}</div>
+                        {course.category && (
+                          <div className="text-xs text-base-content/60">{course.category}</div>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrixData.staff.map((staff, staffIndex) => (
+                  <tr key={staff.id} className="hover:bg-base-50">
+                    <td className="sticky left-0 bg-base-100 z-10 font-medium">
+                      <div className="flex flex-col">
+                        <div className="font-medium">
+                          {staff.firstName} {staff.lastName}
+                        </div>
+                        <div className="text-xs text-base-content/60">
+                          {staff.jobTitle && staff.department 
+                            ? `${staff.jobTitle} • ${staff.department}`
+                            : staff.jobTitle || staff.department || staff.email}
+                        </div>
+                      </div>
+                    </td>
+                    {matrixData.courses.map((course, courseIndex) => {
+                      const cell = matrixData.matrix[staffIndex]?.[courseIndex];
+                      return (
+                        <td key={`${staff.id}-${course.id}`} className="text-center p-3">
+                          {cell && (
+                            <div className="flex justify-center">
+                              <TrainingMatrixStatusIcon
+                                status={cell.status}
+                                onClick={() => {
+                                  if (cell.status !== 'blank') {
+                                    setSelectedCell({
+                                      staffId: staff.id,
+                                      courseId: course.id,
+                                      cell: cell
+                                    });
+                                    setShowDetailModal(true);
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
+
+      {/* Cell Detail Modal */}
+      {showDetailModal && selectedCell && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Training Details</h3>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Staff Member:</label>
+                <p>{matrixData.staff.find(s => s.id === selectedCell.staffId)?.firstName} {matrixData.staff.find(s => s.id === selectedCell.staffId)?.lastName}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Course:</label>
+                <p>{matrixData.courses.find(c => c.id === selectedCell.courseId)?.title}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Status:</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <TrainingMatrixStatusIcon status={selectedCell.cell.status} size="sm" />
+                  <span className="capitalize">{selectedCell.cell.label}</span>
+                </div>
+              </div>
+              {selectedCell.cell.completionDate && (
+                <div>
+                  <label className="text-sm font-medium">Completion Date:</label>
+                  <p>{new Date(selectedCell.cell.completionDate).toLocaleDateString()}</p>
+                </div>
+              )}
+              {selectedCell.cell.expiryDate && (
+                <div>
+                  <label className="text-sm font-medium">Expiry Date:</label>
+                  <p>{new Date(selectedCell.cell.expiryDate).toLocaleDateString()}</p>
+                </div>
+              )}
+              {selectedCell.cell.score !== undefined && (
+                <div>
+                  <label className="text-sm font-medium">Score:</label>
+                  <p>{selectedCell.cell.score}%</p>
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium">Attempts:</label>
+                <p>{selectedCell.cell.attemptCount}</p>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn" 
+                onClick={() => setShowDetailModal(false)}
+                data-testid="button-close-detail"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
