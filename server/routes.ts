@@ -2247,9 +2247,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Courses routes
   app.get('/api/courses', requireAuth, async (req: any, res) => {
     try {
-      // Fetch all courses (published and archived) for SuperAdmin
-      const courses = await storage.getAllCourses();
-      res.json(courses);
+      const user = await getCurrentUser(req);
+      
+      // For admins doing course assignment, only return active courses
+      if (user?.role === 'admin') {
+        const courses = await storage.getAllCourses();
+        const activeCourses = courses.filter(course => course.status === 'published');
+        res.json(activeCourses);
+      } else {
+        // For SuperAdmin, fetch all courses (published and archived)
+        const courses = await storage.getAllCourses();
+        res.json(courses);
+      }
     } catch (error) {
       console.error('Error fetching courses:', error);
       res.status(500).json({ message: 'Failed to fetch courses' });
