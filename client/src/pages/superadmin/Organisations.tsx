@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { ImageUpload } from "@/components/ImageUpload";
 import type { UploadResult } from "@uppy/core";
 
 interface Organisation {
@@ -190,63 +191,6 @@ export function SuperAdminOrganisations() {
     deleteOrganisationMutation.mutate(selectedOrg.id);
   };
 
-  const handleEditLogoUpload = async () => {
-    try {
-      const response = await apiRequest('POST', '/api/objects/upload', {});
-      const data = await response.json();
-      return {
-        method: 'PUT' as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to get upload URL",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const handleEditLogoComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadUrl = result.successful[0].uploadURL as string;
-      setEditFormData(prev => ({ ...prev, logoUrl: uploadUrl }));
-      toast({
-        title: "Success",
-        description: "Logo uploaded successfully",
-      });
-    }
-  };
-
-  const handleLogoUpload = async () => {
-    try {
-      const response = await apiRequest('POST', '/api/objects/upload', {});
-      const data = await response.json();
-      return {
-        method: 'PUT' as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to get upload URL",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const handleLogoComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadUrl = result.successful[0].uploadURL as string;
-      setFormData(prev => ({ ...prev, logoUrl: uploadUrl }));
-      toast({
-        title: "Success",
-        description: "Logo uploaded successfully",
-      });
-    }
-  };
 
   return (
     <div>
@@ -472,21 +416,12 @@ export function SuperAdminOrganisations() {
                 <label className="label">
                   <span className="label-text">Logo Upload</span>
                 </label>
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={5242880} // 5MB
-                  onGetUploadParameters={handleLogoUpload}
-                  onComplete={handleLogoComplete}
+                <ImageUpload
+                  imageType="logo"
+                  currentImageUrl={formData.logoUrl}
+                  onImageUploaded={(publicPath) => setFormData(prev => ({ ...prev, logoUrl: publicPath }))}
                   buttonClassName="btn btn-outline w-full"
-                >
-                  <i className="fas fa-upload mr-2"></i>
-                  {formData.logoUrl ? "Change Logo" : "Upload Logo"}
-                </ObjectUploader>
-                {formData.logoUrl && (
-                  <div className="mt-2 text-sm text-success">
-                    <i className="fas fa-check"></i> Logo uploaded
-                  </div>
-                )}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -813,21 +748,12 @@ export function SuperAdminOrganisations() {
                 <label className="label">
                   <span className="label-text">Logo Upload</span>
                 </label>
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={5242880} // 5MB
-                  onGetUploadParameters={handleEditLogoUpload}
-                  onComplete={handleEditLogoComplete}
+                <ImageUpload
+                  imageType="logo"
+                  currentImageUrl={editFormData.logoUrl}
+                  onImageUploaded={(publicPath) => setEditFormData(prev => ({ ...prev, logoUrl: publicPath }))}
                   buttonClassName="btn btn-outline w-full"
-                >
-                  <i className="fas fa-upload mr-2"></i>
-                  {editFormData.logoUrl ? "Change Logo" : "Upload Logo"}
-                </ObjectUploader>
-                {editFormData.logoUrl && (
-                  <div className="mt-2 text-sm text-success">
-                    <i className="fas fa-check"></i> Logo uploaded
-                  </div>
-                )}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

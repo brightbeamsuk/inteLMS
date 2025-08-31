@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { ImageUpload } from "@/components/ImageUpload";
 import type { UploadResult } from "@uppy/core";
 
 interface ScormValidation {
@@ -148,34 +149,6 @@ export function SuperAdminCourseBuilder() {
     }
   };
 
-  const handleImageUpload = async () => {
-    try {
-      const response = await apiRequest('POST', '/api/objects/upload', {});
-      const data = await response.json();
-      return {
-        method: 'PUT' as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to get upload URL",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const handleImageComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadUrl = result.successful[0].uploadURL as string;
-      setFormData(prev => ({ ...prev, coverImageUrl: uploadUrl }));
-      toast({
-        title: "Success",
-        description: "Cover image uploaded successfully",
-      });
-    }
-  };
 
   const handleTestPackage = () => {
     if (!scormPackageInfo) {
@@ -300,7 +273,6 @@ export function SuperAdminCourseBuilder() {
                   onGetUploadParameters={handleScormUpload}
                   onComplete={handleScormComplete}
                   buttonClassName="btn btn-outline w-full"
-                  disabled={isProcessingScorm}
                 >
                   <i className="fas fa-upload mr-2"></i>
                   {isProcessingScorm ? "Processing..." : formData.scormPackageUrl ? "Change SCORM Package" : "Upload SCORM Package (.zip)"}
@@ -493,21 +465,12 @@ export function SuperAdminCourseBuilder() {
                 <label className="label">
                   <span className="label-text">Cover Image (Optional)</span>
                 </label>
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={5242880} // 5MB
-                  onGetUploadParameters={handleImageUpload}
-                  onComplete={handleImageComplete}
+                <ImageUpload
+                  imageType="course-cover"
+                  currentImageUrl={formData.coverImageUrl}
+                  onImageUploaded={(publicPath) => setFormData(prev => ({ ...prev, coverImageUrl: publicPath }))}
                   buttonClassName="btn btn-outline w-full"
-                >
-                  <i className="fas fa-image mr-2"></i>
-                  {formData.coverImageUrl ? "Change Cover Image" : "Upload Cover Image"}
-                </ObjectUploader>
-                {formData.coverImageUrl && (
-                  <div className="mt-2 text-sm text-success">
-                    <i className="fas fa-check"></i> Cover image uploaded
-                  </div>
-                )}
+                />
               </div>
 
               <div className="form-control">

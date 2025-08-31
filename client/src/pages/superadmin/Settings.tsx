@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ImageUpload } from "@/components/ImageUpload";
 
 interface CertificateTemplate {
   id: string;
@@ -160,18 +161,6 @@ export function SuperAdminSettings() {
     setShowPreview(false);
   };
 
-  const handleFileUpload = (file: File, type: 'background' | 'signature') => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      if (type === 'background') {
-        setBackgroundImage(result);
-      } else {
-        setSignatureImage(result);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
   const previewTemplate = () => {
     const sampleData = {
@@ -185,7 +174,7 @@ export function SuperAdminSettings() {
       '{{PASS_FAIL}}': 'PASS',
       '{{DATE_COMPLETED}}': new Date().toLocaleDateString(),
       '{{CERTIFICATE_ID}}': 'CERT-2024-001',
-      '{{BACKGROUND_IMAGE}}': backgroundImage ? `<img src="${backgroundImage}" alt="Background" style="width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: -1;" />` : '',
+      '{{BACKGROUND_IMAGE}}': backgroundImage ? `<div style="background-image: url('${backgroundImage}'); background-size: cover; background-position: center; background-repeat: no-repeat; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;"></div>` : '',
       '{{SIGNATURE_IMAGE}}': signatureImage ? `<img src="${signatureImage}" alt="Signature" style="max-width: 200px; height: auto;" />` : ''
     };
 
@@ -328,58 +317,42 @@ export function SuperAdminSettings() {
                       <label className="label">
                         <span className="label-text">Background Image</span>
                       </label>
-                      <input 
-                        type="file" 
-                        className="file-input file-input-bordered" 
-                        accept="image/*" 
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleFileUpload(file, 'background');
-                        }}
-                        data-testid="input-background-image" 
-                      />
-                      {backgroundImage && (
-                        <div className="mt-2">
-                          <div className="text-xs text-green-600 mb-1">✓ Background image uploaded</div>
-                          <img src={backgroundImage} alt="Background preview" className="w-32 h-20 object-cover rounded border" />
-                          <button 
-                            className="btn btn-xs btn-error ml-2"
-                            onClick={() => setBackgroundImage(null)}
-                            data-testid="button-remove-background"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
+                      <ImageUpload
+                        imageType="certificate-bg"
+                        currentImageUrl={backgroundImage || undefined}
+                        onImageUploaded={(publicPath) => setBackgroundImage(publicPath)}
+                        buttonClassName="btn btn-outline w-full"
+                        previewClassName="w-32 h-20 object-cover rounded border"
+                      >
+                        <button 
+                          className="btn btn-xs btn-error ml-2"
+                          onClick={() => setBackgroundImage(null)}
+                          data-testid="button-remove-background"
+                        >
+                          Remove
+                        </button>
+                      </ImageUpload>
                     </div>
 
                     <div className="form-control">
                       <label className="label">
                         <span className="label-text">Signature Image</span>
                       </label>
-                      <input 
-                        type="file" 
-                        className="file-input file-input-bordered" 
-                        accept="image/*" 
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleFileUpload(file, 'signature');
-                        }}
-                        data-testid="input-signature-image" 
-                      />
-                      {signatureImage && (
-                        <div className="mt-2">
-                          <div className="text-xs text-green-600 mb-1">✓ Signature image uploaded</div>
-                          <img src={signatureImage} alt="Signature preview" className="w-32 h-20 object-cover rounded border" />
-                          <button 
-                            className="btn btn-xs btn-error ml-2"
-                            onClick={() => setSignatureImage(null)}
-                            data-testid="button-remove-signature"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
+                      <ImageUpload
+                        imageType="certificate-signature"
+                        currentImageUrl={signatureImage || undefined}
+                        onImageUploaded={(publicPath) => setSignatureImage(publicPath)}
+                        buttonClassName="btn btn-outline w-full"
+                        previewClassName="w-32 h-20 object-cover rounded border"
+                      >
+                        <button 
+                          className="btn btn-xs btn-error ml-2"
+                          onClick={() => setSignatureImage(null)}
+                          data-testid="button-remove-signature"
+                        >
+                          Remove
+                        </button>
+                      </ImageUpload>
                     </div>
 
                     <div className="form-control">

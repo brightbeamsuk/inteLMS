@@ -169,6 +169,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ uploadURL });
   });
 
+  // Public image upload endpoint for logos, course covers, etc.
+  app.post("/api/images/upload", requireAuth, async (req, res) => {
+    try {
+      const { imageType } = req.body;
+      
+      if (!imageType || !['logo', 'course-cover', 'certificate-bg', 'certificate-signature'].includes(imageType)) {
+        return res.status(400).json({ error: 'Invalid or missing imageType. Must be one of: logo, course-cover, certificate-bg, certificate-signature' });
+      }
+
+      // Basic permission check - only authenticated users can upload
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ error: 'User not found' });
+      }
+
+      // Additional permission checks for different image types
+      if (imageType === 'logo' && user.role !== 'superadmin' && user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admins can upload organization logos' });
+      }
+
+      if (imageType === 'course-cover' && user.role !== 'superadmin') {
+        return res.status(403).json({ error: 'Only superadmins can upload course covers' });
+      }
+
+      if ((imageType === 'certificate-bg' || imageType === 'certificate-signature') && user.role !== 'superadmin') {
+        return res.status(403).json({ error: 'Only superadmins can upload certificate images' });
+      }
+
+      const objectStorageService = new ObjectStorageService();
+      const { uploadURL, publicPath } = await objectStorageService.getPublicImageUploadURL(imageType);
+      
+      res.json({ uploadURL, publicPath });
+    } catch (error) {
+      console.error('Error getting public image upload URL:', error);
+      res.status(500).json({ error: 'Failed to get upload URL' });
+    }
+  });
+
   // Demo data seeding route
   app.post('/api/seed-demo-data', requireAuth, async (req: any, res) => {
     try {

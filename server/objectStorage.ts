@@ -130,7 +130,7 @@ export class ObjectStorageService {
     }
   }
 
-  // Gets the upload URL for an object entity.
+  // Gets the upload URL for an object entity (private uploads).
   async getObjectEntityUploadURL(): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     if (!privateObjectDir) {
@@ -152,6 +152,33 @@ export class ObjectStorageService {
       method: "PUT",
       ttlSec: 900,
     });
+  }
+
+  // Gets the upload URL for a public image (logos, course covers, etc).
+  async getPublicImageUploadURL(imageType: 'logo' | 'course-cover' | 'certificate-bg' | 'certificate-signature'): Promise<{ uploadURL: string; publicPath: string }> {
+    const publicPaths = this.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      throw new Error("No public object search paths configured");
+    }
+
+    const objectId = randomUUID();
+    const fileName = `${imageType}-${objectId}`;
+    const fullPath = `${publicPaths[0]}/images/${fileName}`;
+
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+
+    // Sign URL for PUT method with TTL
+    const uploadURL = await signObjectURL({
+      bucketName,
+      objectName,
+      method: "PUT",
+      ttlSec: 900,
+    });
+
+    // Return both the upload URL and the public path for storing in database
+    const publicPath = `/public-objects/images/${fileName}`;
+    
+    return { uploadURL, publicPath };
   }
 
   // Gets the object entity file from the object path.
