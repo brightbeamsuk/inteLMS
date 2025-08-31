@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import session from "express-session";
+import MemoryStore from "memorystore";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { emailService } from "./services/emailService";
@@ -11,39 +12,102 @@ import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertA
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+  // Session middleware for simple authentication
+  const MemStore = MemoryStore(session);
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'demo-secret-key',
+    store: new MemStore({ checkPeriod: 86400000 }),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  }));
 
-  // Helper function to get current user (supports demo mode)
-  async function getCurrentUser(req: any) {
-    // Check if in demo mode
-    if ((req.session as any).demoMode && (req.session as any).demoUser) {
-      return (req.session as any).demoUser;
+  // Simple auth middleware
+  function requireAuth(req: any, res: any, next: any) {
+    if (!req.session?.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-    
-    // Normal user lookup
-    const userId = req.user.claims.sub;
-    return await storage.getUser(userId);
+    next();
+  }
+
+  // Helper function to get current user
+  async function getCurrentUser(req: any) {
+    return req.session?.user || null;
   }
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.post('/api/login', async (req: any, res) => {
     try {
-      // Check if in demo mode
-      if ((req.session as any).demoMode && (req.session as any).demoUser) {
-        return res.json({
-          ...(req.session as any).demoUser,
-          demoMode: true
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      // Check if it's a demo user
+      const demoUsers = {
+        'superadmin@demo.app': { 
+          password: 'superadmin123',
+          user: await storage.getUser('demo-superadmin')
+        },
+        'admin.acme@demo.app': { 
+          password: 'admin123',
+          user: await storage.getUser('demo-admin-acme')
+        },
+        'admin.ocean@demo.app': { 
+          password: 'admin123', 
+          user: await storage.getUser('demo-admin-ocean')
+        },
+        'alice@acme.demo': { 
+          password: 'user123',
+          user: await storage.getUser('demo-user-alice')
+        },
+        'dan@ocean.demo': { 
+          password: 'user123',
+          user: await storage.getUser('demo-user-dan')
+        }
+      };
+
+      const demoAccount = demoUsers[email as keyof typeof demoUsers];
+      
+      if (demoAccount && password === demoAccount.password && demoAccount.user) {
+        req.session.user = demoAccount.user;
+        return res.json({ 
+          message: "Login successful",
+          user: demoAccount.user,
+          redirectUrl: demoAccount.user.role === 'superadmin' ? '/superadmin' 
+            : demoAccount.user.role === 'admin' ? '/admin'
+            : '/dashboard'
         });
       }
 
-      // Normal user lookup
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      return res.status(401).json({ message: "Invalid credentials" });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post('/api/logout', (req: any, res) => {
+    req.session.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+
+  app.get('/api/auth/user', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json({ ...user, demoMode: false });
+      res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -51,8 +115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Object storage routes
-  app.get("/objects/:objectPath(*)", isAuthenticated, async (req, res) => {
-    const userId = req.user?.claims?.sub;
+  app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
+    const userId = req.session.user?.id;
     const objectStorageService = new ObjectStorageService();
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
@@ -74,16 +138,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/objects/upload", isAuthenticated, async (req, res) => {
+  app.post("/api/objects/upload", requireAuth, async (req, res) => {
     const objectStorageService = new ObjectStorageService();
     const uploadURL = await objectStorageService.getObjectEntityUploadURL();
     res.json({ uploadURL });
   });
 
   // Demo data seeding route
-  app.post('/api/seed-demo-data', isAuthenticated, async (req: any, res) => {
+  app.post('/api/seed-demo-data', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const user = await storage.getUser(userId);
       
       if (!user || user.role !== 'superadmin') {
@@ -109,60 +173,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Demo login routes - these simulate logging in as different demo users
-  app.post('/api/demo-login/:role', isAuthenticated, async (req: any, res) => {
-    try {
-      const { role } = req.params;
-      const demoUsers = {
-        'superadmin': 'demo-superadmin',
-        'admin-acme': 'demo-admin-acme', 
-        'admin-ocean': 'demo-admin-ocean',
-        'user-alice': 'demo-user-alice',
-        'user-dan': 'demo-user-dan'
-      };
-
-      const demoUserId = demoUsers[role as keyof typeof demoUsers];
-      if (!demoUserId) {
-        return res.status(400).json({ message: 'Invalid demo role' });
-      }
-
-      // Get the demo user from database
-      const demoUser = await storage.getUser(demoUserId);
-      if (!demoUser) {
-        return res.status(404).json({ message: 'Demo user not found. Please seed demo data first.' });
-      }
-
-      // Store demo mode in session
-      (req.session as any).demoMode = true;
-      (req.session as any).demoUserId = demoUserId;
-      (req.session as any).demoUser = demoUser;
-
-      res.json({ 
-        message: `Demo login successful as ${demoUser.role}`,
-        user: demoUser,
-        demoMode: true
-      });
-    } catch (error) {
-      console.error('Error in demo login:', error);
-      res.status(500).json({ message: 'Demo login failed' });
-    }
-  });
-
-  // Exit demo mode
-  app.post('/api/exit-demo', isAuthenticated, async (req: any, res) => {
-    try {
-      delete (req.session as any).demoMode;
-      delete (req.session as any).demoUserId; 
-      delete (req.session as any).demoUser;
-      res.json({ message: 'Exited demo mode' });
-    } catch (error) {
-      console.error('Error exiting demo mode:', error);
-      res.status(500).json({ message: 'Failed to exit demo mode' });
-    }
-  });
 
   // SuperAdmin routes
-  app.get('/api/superadmin/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/superadmin/stats', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -179,7 +192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Organisations routes
-  app.get('/api/organisations', isAuthenticated, async (req: any, res) => {
+  app.get('/api/organisations', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -195,9 +208,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/organisations', isAuthenticated, async (req: any, res) => {
+  app.post('/api/organisations', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const user = await storage.getUser(userId);
       
       if (!user || user.role !== 'superadmin') {
@@ -222,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Users routes
-  app.get('/api/users', isAuthenticated, async (req: any, res) => {
+  app.get('/api/users', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -249,9 +262,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/users', isAuthenticated, async (req: any, res) => {
+  app.post('/api/users', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const user = await storage.getUser(userId);
       
       if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
@@ -274,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Courses routes
-  app.get('/api/courses', isAuthenticated, async (req: any, res) => {
+  app.get('/api/courses', requireAuth, async (req: any, res) => {
     try {
       const courses = await storage.getCoursesByStatus('published');
       res.json(courses);
@@ -284,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/courses', isAuthenticated, async (req: any, res) => {
+  app.post('/api/courses', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -294,7 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = insertCourseSchema.parse({
         ...req.body,
-        createdBy: userId,
+        createdBy: user.id,
       });
 
       const course = await storage.createCourse(validatedData);
@@ -306,7 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assignments routes
-  app.get('/api/assignments', isAuthenticated, async (req: any, res) => {
+  app.get('/api/assignments', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -333,9 +346,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/assignments', isAuthenticated, async (req: any, res) => {
+  app.post('/api/assignments', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const user = await storage.getUser(userId);
       
       if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
@@ -344,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = insertAssignmentSchema.parse({
         ...req.body,
-        assignedBy: userId,
+        assignedBy: user.id,
       });
 
       // If admin, ensure assignment is within their organisation
@@ -361,9 +374,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SCORM player route
-  app.get('/api/scorm/:assignmentId/player', isAuthenticated, async (req: any, res) => {
+  app.get('/api/scorm/:assignmentId/player', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const { assignmentId } = req.params;
 
       const assignment = await storage.getAssignment(assignmentId);
@@ -386,9 +399,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SCORM completion route
-  app.post('/api/scorm/:assignmentId/complete', isAuthenticated, async (req: any, res) => {
+  app.post('/api/scorm/:assignmentId/complete', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const { assignmentId } = req.params;
       const scormData = req.body;
 
@@ -452,9 +465,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Todo items routes
-  app.get('/api/todos', isAuthenticated, async (req: any, res) => {
+  app.get('/api/todos', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const todos = await storage.getTodoItemsByUser(userId);
       res.json(todos);
     } catch (error) {
@@ -463,9 +476,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/todos', isAuthenticated, async (req: any, res) => {
+  app.post('/api/todos', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const { task } = req.body;
 
       if (!task || task.trim() === '') {
@@ -484,9 +497,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/todos/:id', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/todos/:id', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const { id } = req.params;
       const updates = req.body;
 
@@ -503,9 +516,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/todos/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/todos/:id', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.user?.id;
       const { id } = req.params;
 
       const todo = await storage.getTodoItem(id);

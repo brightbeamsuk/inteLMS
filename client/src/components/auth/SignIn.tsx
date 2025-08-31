@@ -1,36 +1,100 @@
+import { useState } from 'react';
+
 export function SignIn() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
   const demoCredentials = [
     {
       role: 'SuperAdmin',
       email: 'superadmin@demo.app',
-      password: 'Passw0rd!',
+      password: 'superadmin123',
       className: 'btn-primary'
     },
     {
       role: 'Admin (Acme Care Ltd)',
       email: 'admin.acme@demo.app',
-      password: 'Passw0rd!',
+      password: 'admin123',
       className: 'btn-secondary'
     },
     {
       role: 'Admin (Ocean Nurseries CIC)',
       email: 'admin.ocean@demo.app',
-      password: 'Passw0rd!',
+      password: 'admin123',
       className: 'btn-secondary'
     },
     {
       role: 'User (Alice - Acme)',
       email: 'alice@acme.demo',
-      password: 'Learner1!',
+      password: 'user123',
       className: 'btn-accent'
     },
     {
       role: 'User (Dan - Ocean)',
       email: 'dan@ocean.demo',
-      password: 'Learner1!',
+      password: 'user123',
       className: 'btn-accent'
     }
   ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Login successful, redirect to appropriate dashboard
+        window.location.href = data.redirectUrl || '/dashboard';
+      } else {
+        setError(data.message || 'Login failed');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async (cred: typeof demoCredentials[0]) => {
+    setError('');
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: cred.email, password: cred.password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Login successful, redirect to appropriate dashboard
+        window.location.href = data.redirectUrl || '/dashboard';
+      } else {
+        setError(data.message || 'Demo login failed');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-base-100 flex items-center justify-center p-4">
@@ -41,35 +105,54 @@ export function SignIn() {
             <p className="text-base-content/60" data-testid="text-app-subtitle">White-label Learning Management System</p>
           </div>
 
-          <div className="form-control mb-6">
-            <label className="label">
-              <span className="label-text">Email</span>
-            </label>
-            <input 
-              type="email" 
-              placeholder="Enter your email" 
-              className="input input-bordered w-full" 
-              data-testid="input-email"
-            />
-          </div>
+          {error && (
+            <div className="alert alert-error mb-4">
+              <span>{error}</span>
+            </div>
+          )}
 
-          <div className="form-control mb-6">
-            <label className="label">
-              <span className="label-text">Password</span>
-            </label>
-            <input 
-              type="password" 
-              placeholder="Enter your password" 
-              className="input input-bordered w-full" 
-              data-testid="input-password"
-            />
-          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Email</span>
+              </label>
+              <input 
+                type="email" 
+                placeholder="Enter your email" 
+                className="input input-bordered w-full" 
+                data-testid="input-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-          <div className="form-control mb-6">
-            <button className="btn btn-primary w-full" data-testid="button-signin">
-              Sign In
-            </button>
-          </div>
+            <div className="form-control mb-6">
+              <label className="label">
+                <span className="label-text">Password</span>
+              </label>
+              <input 
+                type="password" 
+                placeholder="Enter your password" 
+                className="input input-bordered w-full" 
+                data-testid="input-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-control mb-6">
+              <button 
+                type="submit" 
+                className={`btn btn-primary w-full ${isLoading ? 'loading' : ''}`} 
+                data-testid="button-signin"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Signing In...' : 'Sign In'}
+              </button>
+            </div>
+          </form>
 
           <div className="divider">OR</div>
 
@@ -82,36 +165,10 @@ export function SignIn() {
             {demoCredentials.map((cred, index) => (
               <button
                 key={index}
-                className={`btn btn-sm w-full ${cred.className}`}
-                onClick={async () => {
-                  // First ensure user is logged in
-                  const response = await fetch('/api/auth/user');
-                  if (response.status === 401) {
-                    // User not logged in, redirect to login first
-                    window.location.href = '/api/login';
-                    return;
-                  }
-                  
-                  // User is logged in, now switch to demo mode
-                  const demoRole = cred.role === 'SuperAdmin' ? 'superadmin' 
-                    : cred.role === 'Admin (Acme Care)' ? 'admin-acme'
-                    : cred.role === 'Admin (Ocean Nurseries)' ? 'admin-ocean'
-                    : cred.role === 'User (Alice)' ? 'user-alice'
-                    : 'user-dan';
-                  
-                  const demoResponse = await fetch(`/api/demo-login/${demoRole}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                  });
-                  
-                  if (demoResponse.ok) {
-                    // Refresh the page to update the user context
-                    window.location.reload();
-                  } else {
-                    console.error('Failed to switch to demo mode');
-                  }
-                }}
+                className={`btn btn-sm w-full ${cred.className} ${isLoading ? 'loading' : ''}`}
+                onClick={() => handleDemoLogin(cred)}
                 data-testid={`button-demo-${cred.role.toLowerCase().replace(/\s+/g, '-')}`}
+                disabled={isLoading}
               >
                 {cred.role}
               </button>
@@ -120,13 +177,13 @@ export function SignIn() {
 
           <div className="mt-4 p-3 bg-success/20 rounded-lg">
             <p className="text-xs text-center">
-              <strong>New!</strong> Demo logins now work with any Replit account! Click any button above to experience different user roles without changing your email.
+              <strong>Demo Credentials:</strong> Use the credentials below or click the demo buttons above.
             </p>
           </div>
 
-          <div className="text-center mt-6">
+          <div className="text-center mt-4">
             <div className="text-xs text-base-content/60">
-              <h4 className="font-semibold mb-2">Demo Credentials</h4>
+              <h4 className="font-semibold mb-2">Available Demo Accounts</h4>
               {demoCredentials.map((cred, index) => (
                 <div key={index} className="mb-1" data-testid={`text-credentials-${index}`}>
                   <strong>{cred.role}:</strong><br />
@@ -134,12 +191,6 @@ export function SignIn() {
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="text-center mt-4">
-            <a href="#" className="link link-primary text-sm" data-testid="link-forgot-password">
-              Forgot Password?
-            </a>
           </div>
         </div>
       </div>
