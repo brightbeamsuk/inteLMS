@@ -76,7 +76,7 @@ export const organisations = pgTable("organisations", {
   contactEmail: varchar("contact_email"),
   contactPhone: varchar("contact_phone"),
   address: text("address"),
-  status: varchar("status").notNull().default('active'),
+  status: organisationStatusEnum("status").notNull().default('active'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
