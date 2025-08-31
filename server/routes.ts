@@ -214,12 +214,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('Update data:', updateData);
 
-      // Update user profile
-      const [updatedUser] = await db
-        .update(users)
-        .set(updateData)
-        .where(eq(users.id, userId))
-        .returning();
+      // Update user profile using storage interface
+      const updatedUser = await storage.updateUser(userId, updateData);
 
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
@@ -1327,6 +1323,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching users:', error);
       res.status(500).json({ message: 'Failed to fetch users' });
+    }
+  });
+
+  // Update user status (deactivate/activate)
+  app.patch('/api/users/:id/status', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!currentUser) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Only SuperAdmin and Admin can update user status
+      if (currentUser.role !== 'superadmin' && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Admin can only update users in their own organisation
+      if (currentUser.role === 'admin') {
+        const targetUser = await storage.getUser(id);
+        if (!targetUser || targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Validate status
+      if (!['active', 'inactive'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status. Must be active or inactive.' });
+      }
+
+      const updatedUser = await storage.updateUser(id, { status, updatedAt: new Date() });
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Error updating user status:', error);
+      res.status(500).json({ message: 'Failed to update user status' });
+    }
+  });
+
+  // Delete user
+  app.delete('/api/users/:id', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      const { id } = req.params;
+
+      if (!currentUser) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Only SuperAdmin and Admin can delete users
+      if (currentUser.role !== 'superadmin' && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get the target user
+      const targetUser = await storage.getUser(id);
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Admin can only delete users in their own organisation
+      if (currentUser.role === 'admin') {
+        if (targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Prevent deleting yourself
+      if (targetUser.id === currentUser.id) {
+        return res.status(400).json({ message: 'Cannot delete your own account' });
+      }
+
+      // Prevent deleting other SuperAdmins unless you're a SuperAdmin
+      if (targetUser.role === 'superadmin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Cannot delete SuperAdmin accounts' });
+      }
+
+      await storage.deleteUser(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      res.status(500).json({ message: 'Failed to delete user' });
     }
   });
 

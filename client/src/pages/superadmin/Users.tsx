@@ -25,6 +25,10 @@ interface Organisation {
 
 export function SuperAdminUsers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [filters, setFilters] = useState({
     role: "",
     organisationId: "",
@@ -94,6 +98,49 @@ export function SuperAdminUsers() {
     },
   });
 
+  const updateUserStatusMutation = useMutation({
+    mutationFn: async ({ userId, status }: { userId: string; status: string }) => {
+      return await apiRequest('PATCH', `/api/users/${userId}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "Success",
+        description: "User status updated successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update user status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest('DELETE', `/api/users/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      setDeleteConfirmText("");
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to delete user",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       email: "",
@@ -131,6 +178,38 @@ export function SuperAdminUsers() {
   };
 
   const [generatedPassword] = useState(generatePassword());
+
+  const handleViewUser = (user: User) => {
+    setSelectedUser(user);
+    setShowViewModal(true);
+  };
+
+  const handleToggleUserStatus = (user: User) => {
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    updateUserStatusMutation.mutate({ userId: user.id, status: newStatus });
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setSelectedUser(user);
+    setShowDeleteModal(true);
+    setDeleteConfirmText("");
+  };
+
+  const confirmDeleteUser = () => {
+    if (!selectedUser) return;
+    
+    const expectedText = `${selectedUser.firstName} ${selectedUser.lastName}`;
+    if (deleteConfirmText.trim() !== expectedText) {
+      toast({
+        title: "Confirmation Error",
+        description: `Please type the user's full name exactly: ${expectedText}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    deleteUserMutation.mutate(selectedUser.id);
+  };
 
   return (
     <div>
@@ -302,21 +381,29 @@ export function SuperAdminUsers() {
                         <div className="flex gap-1">
                           <button 
                             className="btn btn-sm btn-ghost"
+                            onClick={() => handleViewUser(user)}
                             data-testid={`button-view-user-${user.id}`}
                           >
                             <i className="fas fa-eye"></i>
                           </button>
                           <button 
-                            className="btn btn-sm btn-ghost"
-                            data-testid={`button-edit-user-${user.id}`}
+                            className={`btn btn-sm ${user.status === 'active' ? 'btn-warning' : 'btn-success'}`}
+                            onClick={() => handleToggleUserStatus(user)}
+                            disabled={updateUserStatusMutation.isPending}
+                            data-testid={`button-toggle-status-user-${user.id}`}
                           >
-                            <i className="fas fa-edit"></i>
+                            {updateUserStatusMutation.isPending ? (
+                              <span className="loading loading-spinner loading-xs"></span>
+                            ) : (
+                              <i className={`fas ${user.status === 'active' ? 'fa-ban' : 'fa-check'}`}></i>
+                            )}
                           </button>
                           <button 
                             className="btn btn-sm btn-error"
-                            data-testid={`button-deactivate-user-${user.id}`}
+                            onClick={() => handleDeleteUser(user)}
+                            data-testid={`button-delete-user-${user.id}`}
                           >
-                            <i className="fas fa-ban"></i>
+                            <i className="fas fa-trash"></i>
                           </button>
                         </div>
                       </td>
@@ -510,6 +597,166 @@ export function SuperAdminUsers() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowCreateModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* View User Modal */}
+      {showViewModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-view-user-title">
+              {selectedUser.firstName} {selectedUser.lastName}
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="font-semibold text-sm">Email:</label>
+                  <div data-testid="text-view-user-email">{selectedUser.email}</div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Role:</label>
+                  <div>
+                    <div className={`badge inline-flex ${
+                      selectedUser.role === 'superadmin' ? 'badge-primary' :
+                      selectedUser.role === 'admin' ? 'badge-secondary' : 'badge-accent'
+                    }`} data-testid="badge-view-user-role">
+                      {selectedUser.role}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Organisation:</label>
+                  <div data-testid="text-view-user-organisation">
+                    {organisations.find(o => o.id === selectedUser.organisationId)?.displayName || 'Platform'}
+                  </div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Status:</label>
+                  <div>
+                    <div className={`badge inline-flex ${selectedUser.status === 'active' ? 'badge-success' : 'badge-error'}`} data-testid="badge-view-user-status">
+                      {selectedUser.status}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="font-semibold text-sm">Job Title:</label>
+                  <div data-testid="text-view-user-job">{selectedUser.jobTitle || 'Not specified'}</div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Department:</label>
+                  <div data-testid="text-view-user-department">{selectedUser.department || 'Not specified'}</div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Certificate Download:</label>
+                  <div>
+                    <div className={`badge inline-flex ${selectedUser.allowCertificateDownload ? 'badge-primary' : 'badge-ghost'}`} data-testid="badge-view-user-cert">
+                      {selectedUser.allowCertificateDownload ? 'Allowed' : 'Restricted'}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="font-semibold text-sm">Last Active:</label>
+                  <div data-testid="text-view-user-last-active">
+                    {selectedUser.lastActive ? new Date(selectedUser.lastActive).toLocaleDateString() : 'Never'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn"
+                onClick={() => setShowViewModal(false)}
+                data-testid="button-close-view-user"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowViewModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-delete-user-title">Delete User</h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">Warning!</h4>
+                <div className="text-sm">This action cannot be undone. This will permanently delete the user account and remove all associated data.</div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="font-semibold">User to delete:</label>
+                <div className="text-lg" data-testid="text-delete-user-name">
+                  {selectedUser.firstName} {selectedUser.lastName} ({selectedUser.email})
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    To confirm deletion, please type the user's full name: <strong>{selectedUser.firstName} {selectedUser.lastName}</strong>
+                  </span>
+                </label>
+                <input 
+                  type="text"
+                  className="input input-bordered"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={`${selectedUser.firstName} ${selectedUser.lastName}`}
+                  data-testid="input-delete-confirm-text"
+                />
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                type="button" 
+                className="btn" 
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setSelectedUser(null);
+                  setDeleteConfirmText("");
+                }}
+                data-testid="button-cancel-delete-user"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-error"
+                onClick={confirmDeleteUser}
+                disabled={deleteUserMutation.isPending || deleteConfirmText.trim() !== `${selectedUser.firstName} ${selectedUser.lastName}`}
+                data-testid="button-confirm-delete-user"
+              >
+                {deleteUserMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Delete User'
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => {
+              setShowDeleteModal(false);
+              setSelectedUser(null);
+              setDeleteConfirmText("");
+            }}>close</button>
           </form>
         </dialog>
       )}

@@ -21,8 +21,10 @@ interface User {
 export function AdminUsers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -68,6 +70,49 @@ export function AdminUsers() {
     },
   });
 
+  const updateUserStatusMutation = useMutation({
+    mutationFn: async ({ userId, status }: { userId: string; status: string }) => {
+      return await apiRequest('PATCH', `/api/users/${userId}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "Success",
+        description: "User status updated successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update user status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest('DELETE', `/api/users/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      setDeleteConfirmText("");
+      toast({
+        title: "Success",
+        description: "User removed successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to remove user",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       email: "",
@@ -103,6 +148,33 @@ export function AdminUsers() {
   };
 
   const [generatedPassword] = useState(generatePassword());
+
+  const handleToggleUserStatus = (user: User) => {
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    updateUserStatusMutation.mutate({ userId: user.id, status: newStatus });
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setSelectedUser(user);
+    setShowDeleteModal(true);
+    setDeleteConfirmText("");
+  };
+
+  const confirmDeleteUser = () => {
+    if (!selectedUser) return;
+    
+    const expectedText = `${selectedUser.firstName} ${selectedUser.lastName}`;
+    if (deleteConfirmText.trim() !== expectedText) {
+      toast({
+        title: "Confirmation Error",
+        description: `Please type the user's full name exactly: ${expectedText}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    deleteUserMutation.mutate(selectedUser.id);
+  };
 
   return (
     <div>
@@ -216,13 +288,20 @@ export function AdminUsers() {
                             <i className="fas fa-eye"></i>
                           </button>
                           <button 
-                            className="btn btn-sm btn-ghost"
-                            data-testid={`button-edit-user-${user.id}`}
+                            className={`btn btn-sm ${user.status === 'active' ? 'btn-warning' : 'btn-success'}`}
+                            onClick={() => handleToggleUserStatus(user)}
+                            disabled={updateUserStatusMutation.isPending}
+                            data-testid={`button-toggle-status-user-${user.id}`}
                           >
-                            <i className="fas fa-edit"></i>
+                            {updateUserStatusMutation.isPending ? (
+                              <span className="loading loading-spinner loading-xs"></span>
+                            ) : (
+                              <i className={`fas ${user.status === 'active' ? 'fa-ban' : 'fa-check'}`}></i>
+                            )}
                           </button>
                           <button 
                             className="btn btn-sm btn-error"
+                            onClick={() => handleDeleteUser(user)}
                             data-testid={`button-remove-user-${user.id}`}
                           >
                             <i className="fas fa-trash"></i>
@@ -540,6 +619,83 @@ export function AdminUsers() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowUserModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-delete-user-title">Remove User</h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">Warning!</h4>
+                <div className="text-sm">This action cannot be undone. This will permanently remove the user from your organisation.</div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="font-semibold">User to remove:</label>
+                <div className="text-lg" data-testid="text-delete-user-name">
+                  {selectedUser.firstName} {selectedUser.lastName} ({selectedUser.email})
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    To confirm removal, please type the user's full name: <strong>{selectedUser.firstName} {selectedUser.lastName}</strong>
+                  </span>
+                </label>
+                <input 
+                  type="text"
+                  className="input input-bordered"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={`${selectedUser.firstName} ${selectedUser.lastName}`}
+                  data-testid="input-delete-confirm-text"
+                />
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                type="button" 
+                className="btn" 
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setSelectedUser(null);
+                  setDeleteConfirmText("");
+                }}
+                data-testid="button-cancel-remove-user"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-error"
+                onClick={confirmDeleteUser}
+                disabled={deleteUserMutation.isPending || deleteConfirmText.trim() !== `${selectedUser.firstName} ${selectedUser.lastName}`}
+                data-testid="button-confirm-remove-user"
+              >
+                {deleteUserMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Remove User'
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => {
+              setShowDeleteModal(false);
+              setSelectedUser(null);
+              setDeleteConfirmText("");
+            }}>close</button>
           </form>
         </dialog>
       )}
