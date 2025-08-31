@@ -2919,7 +2919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SCORM player route
   app.get('/api/scorm/:assignmentId/player', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.session.user?.id;
+      const userId = getUserIdFromSession(req);
       const { assignmentId } = req.params;
       const { retry } = req.query;
 
