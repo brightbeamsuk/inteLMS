@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { ImageUpload } from "@/components/ImageUpload";
 import type { UploadResult } from "@uppy/core";
@@ -35,6 +36,7 @@ export function SuperAdminOrganisations() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   // Form states
   const [formData, setFormData] = useState({
@@ -227,7 +229,7 @@ export function SuperAdminOrganisations() {
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
-          <li><a data-testid="link-superadmin">SuperAdmin</a></li>
+          <li><a onClick={() => setLocation('/superadmin')} className="cursor-pointer" data-testid="link-superadmin">SuperAdmin</a></li>
           <li className="font-semibold" data-testid="text-current-page">Organisations</li>
         </ul>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -43,6 +43,7 @@ export function SuperAdminCourses() {
   const [editFormData, setEditFormData] = useState<Partial<Course>>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: courses = [], isLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses'],
@@ -130,7 +131,7 @@ export function SuperAdminCourses() {
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
-          <li><a data-testid="link-superadmin">SuperAdmin</a></li>
+          <li><a onClick={() => setLocation('/superadmin')} className="cursor-pointer" data-testid="link-superadmin">SuperAdmin</a></li>
           <li className="font-semibold" data-testid="text-current-page">Courses</li>
         </ul>
       </div>

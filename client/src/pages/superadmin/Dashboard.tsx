@@ -123,7 +123,7 @@ export function SuperAdminDashboard() {
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
-          <li><a data-testid="link-superadmin">SuperAdmin</a></li>
+          <li><a onClick={() => setLocation('/superadmin')} className="cursor-pointer" data-testid="link-superadmin">SuperAdmin</a></li>
           <li className="font-semibold" data-testid="text-current-page">Dashboard</li>
         </ul>
       </div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 interface User {
   id: string;
@@ -32,6 +33,7 @@ export function SuperAdminUsers() {
   });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   // Form states
   const [formData, setFormData] = useState({
@@ -135,7 +137,7 @@ export function SuperAdminUsers() {
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
-          <li><a data-testid="link-superadmin">SuperAdmin</a></li>
+          <li><a onClick={() => setLocation('/superadmin')} className="cursor-pointer" data-testid="link-superadmin">SuperAdmin</a></li>
           <li className="font-semibold" data-testid="text-current-page">Users</li>
         </ul>
       </div>
