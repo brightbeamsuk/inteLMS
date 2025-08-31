@@ -1,12 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 interface OrganisationStats {
   activeUsers: number;
   coursesAssigned: number;
   coursesCompleted: number;
   complianceRate: number;
+}
+
+interface Organisation {
+  id: string;
+  name: string;
+  displayName: string;
+  logoUrl?: string;
+  subdomain: string;
+  status: string;
+}
+
+interface RecentCompletion {
+  id: string;
+  userId: string;
+  userName: string;
+  courseTitle: string;
+  score: number;
+  completedAt: string;
+}
+
+interface ExpiringTraining {
+  userId: string;
+  userName: string;
+  courseId: string;
+  courseTitle: string;
+  dueDate: string;
+  daysUntilDue: number;
 }
 
 export function AdminDashboard() {
@@ -17,8 +46,26 @@ export function AdminDashboard() {
   });
 
   // Fetch organization details for the logged-in admin
-  const { data: organisation, isLoading: orgLoading } = useQuery({
+  const { data: organisation, isLoading: orgLoading } = useQuery<Organisation>({
     queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
+
+  // Fetch analytics data
+  const { data: analyticsData = [], isLoading: analyticsLoading } = useQuery({
+    queryKey: ['/api/admin/analytics/completions', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
+
+  // Fetch recent completions
+  const { data: recentCompletions = [], isLoading: completionsLoading } = useQuery<RecentCompletion[]>({
+    queryKey: ['/api/admin/recent-completions', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
+
+  // Fetch expiring training
+  const { data: expiringTraining = [], isLoading: expiringLoading } = useQuery<ExpiringTraining[]>({
+    queryKey: ['/api/admin/expiring-training', user?.organisationId],
     enabled: !!user?.organisationId,
   });
 
@@ -145,38 +192,55 @@ export function AdminDashboard() {
 
       {/* Charts and Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Expiring Training */}
+        {/* Course Completion Analytics Chart */}
         <div className="card bg-base-200 shadow-sm">
           <div className="card-body">
             <h3 className="card-title">
-              <i className="fas fa-exclamation-triangle text-warning"></i>
-              Expiring Training
+              <i className="fas fa-chart-bar text-primary"></i>
+              Course Completion Analytics
             </h3>
-            <div className="space-y-3">
-              <div className="alert alert-warning">
-                <i className="fas fa-clock"></i>
-                <div>
-                  <div className="font-bold" data-testid="text-due-7-days">5 users</div>
-                  <div className="text-xs">Due within 7 days</div>
+            <div className="h-64 bg-base-100 rounded p-4">
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
                 </div>
-                <button className="btn btn-sm btn-outline" data-testid="button-view-due-7">View</button>
-              </div>
-              <div className="alert alert-info">
-                <i className="fas fa-calendar"></i>
-                <div>
-                  <div className="font-bold" data-testid="text-due-30-days">12 users</div>
-                  <div className="text-xs">Due within 30 days</div>
+              ) : analyticsData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">📊</div>
+                    <p className="text-sm text-base-content/60">No completion data available yet</p>
+                  </div>
                 </div>
-                <button className="btn btn-sm btn-outline" data-testid="button-view-due-30">View</button>
-              </div>
-              <div className="alert alert-ghost">
-                <i className="fas fa-calendar-alt"></i>
-                <div>
-                  <div className="font-bold" data-testid="text-due-90-days">23 users</div>
-                  <div className="text-xs">Due within 90 days</div>
-                </div>
-                <button className="btn btn-sm btn-outline" data-testid="button-view-due-90">View</button>
-              </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    successful: {
+                      label: "Successful",
+                      color: "hsl(var(--chart-1))",
+                    },
+                    failed: {
+                      label: "Failed", 
+                      color: "hsl(var(--chart-2))",
+                    },
+                  }}
+                >
+                  <BarChart data={analyticsData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="monthName" 
+                      tick={{ fontSize: 12 }}
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                    />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="successful" stackId="a" fill="var(--color-successful)" />
+                    <Bar dataKey="failed" stackId="a" fill="var(--color-failed)" />
+                  </BarChart>
+                </ChartContainer>
+              )}
             </div>
           </div>
         </div>
@@ -188,93 +252,113 @@ export function AdminDashboard() {
               <i className="fas fa-trophy text-success"></i>
               Recent Completions
             </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div className="flex items-center gap-3">
-                  <div className="avatar placeholder">
-                    <div className="bg-neutral text-neutral-content rounded-full w-8">
-                      <span className="text-xs">JD</span>
+            <div className="space-y-3" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+              {completionsLoading ? (
+                <div className="text-center py-8">
+                  <span className="loading loading-spinner loading-md"></span>
+                </div>
+              ) : recentCompletions.length === 0 ? (
+                <div className="text-center py-8 text-base-content/60">
+                  <i className="fas fa-trophy text-4xl mb-4 opacity-50"></i>
+                  <p>No recent completions yet.</p>
+                  <p className="text-sm">Completions will appear here when users finish courses.</p>
+                </div>
+              ) : (
+                recentCompletions.slice(0, 5).map((completion, index) => (
+                  <div key={completion.id} className="flex justify-between items-center p-3 bg-base-100 rounded">
+                    <div className="flex items-center gap-3">
+                      <div className="avatar placeholder">
+                        <div className={`bg-${['neutral', 'primary', 'secondary', 'accent', 'info'][index % 5]} text-${['neutral', 'primary', 'secondary', 'accent', 'info'][index % 5]}-content rounded-full w-8`}>
+                          <span className="text-xs">
+                            {completion.userName.split(' ').map(n => n.charAt(0)).join('').toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold" data-testid={`text-completion-user-${index + 1}`}>
+                          {completion.userName}
+                        </div>
+                        <div className="text-sm text-base-content/60" data-testid={`text-completion-course-${index + 1}`}>
+                          {completion.courseTitle}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="badge badge-success" data-testid={`badge-completion-score-${index + 1}`}>
+                        {Math.round(completion.score)}%
+                      </div>
+                      <div className="text-xs text-base-content/60" data-testid={`text-completion-time-${index + 1}`}>
+                        {new Date(completion.completedAt).toLocaleDateString('en-GB')}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="font-semibold" data-testid="text-completion-user-1">John Doe</div>
-                    <div className="text-sm text-base-content/60" data-testid="text-completion-course-1">GDPR Training</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="badge badge-success" data-testid="badge-completion-score-1">92%</div>
-                  <div className="text-xs text-base-content/60" data-testid="text-completion-time-1">2 hours ago</div>
-                </div>
-              </div>
-              
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div className="flex items-center gap-3">
-                  <div className="avatar placeholder">
-                    <div className="bg-primary text-primary-content rounded-full w-8">
-                      <span className="text-xs">SM</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-semibold" data-testid="text-completion-user-2">Sarah Miller</div>
-                    <div className="text-sm text-base-content/60" data-testid="text-completion-course-2">Fire Safety</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="badge badge-success" data-testid="badge-completion-score-2">87%</div>
-                  <div className="text-xs text-base-content/60" data-testid="text-completion-time-2">5 hours ago</div>
-                </div>
-              </div>
-              
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div className="flex items-center gap-3">
-                  <div className="avatar placeholder">
-                    <div className="bg-secondary text-secondary-content rounded-full w-8">
-                      <span className="text-xs">RJ</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-semibold" data-testid="text-completion-user-3">Robert Johnson</div>
-                    <div className="text-sm text-base-content/60" data-testid="text-completion-course-3">Cybersecurity</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="badge badge-success" data-testid="badge-completion-score-3">95%</div>
-                  <div className="text-xs text-base-content/60" data-testid="text-completion-time-3">1 day ago</div>
-                </div>
-              </div>
+                ))
+              )}
             </div>
             
-            <div className="card-actions justify-end mt-4">
-              <button className="btn btn-sm btn-outline" data-testid="button-view-all-completions">
-                View All Completions
-              </button>
-            </div>
+            {recentCompletions.length > 0 && (
+              <div className="card-actions justify-end mt-4">
+                <button className="btn btn-sm btn-outline" data-testid="button-view-all-completions">
+                  View All Completions
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Compliance Trend Chart */}
+      {/* Expiring Training Alerts */}
       <div className="card bg-base-200 shadow-sm">
         <div className="card-body">
           <h3 className="card-title">
-            <i className="fas fa-chart-line text-primary"></i>
-            Compliance Trend (Last 6 Months)
+            <i className="fas fa-exclamation-triangle text-warning"></i>
+            Expiring Training Alerts
           </h3>
-          <div className="h-64 flex items-center justify-center bg-base-100 rounded">
-            <div className="text-center">
-              <div className="text-4xl mb-2">📈</div>
-              <p className="text-sm text-base-content/60">Compliance trend chart would display here</p>
-              <div className="stats stats-horizontal shadow mt-4">
-                <div className="stat place-items-center">
-                  <div className="stat-title">Avg Compliance</div>
-                  <div className="stat-value text-sm" data-testid="stat-avg-compliance">84%</div>
-                </div>
-                <div className="stat place-items-center">
-                  <div className="stat-title">Trend</div>
-                  <div className="stat-value text-sm text-success" data-testid="stat-compliance-trend">↗ +5%</div>
-                </div>
+          <div className="space-y-3">
+            {expiringLoading ? (
+              <div className="text-center py-8">
+                <span className="loading loading-spinner loading-md"></span>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="alert alert-warning">
+                  <i className="fas fa-clock"></i>
+                  <div>
+                    <div className="font-bold" data-testid="text-due-7-days">
+                      {expiringTraining.filter(t => t.daysUntilDue <= 7).length} users
+                    </div>
+                    <div className="text-xs">Due within 7 days</div>
+                  </div>
+                  <Link href="/admin/training-matrix">
+                    <button className="btn btn-sm btn-outline" data-testid="button-view-due-7">View</button>
+                  </Link>
+                </div>
+                <div className="alert alert-info">
+                  <i className="fas fa-calendar"></i>
+                  <div>
+                    <div className="font-bold" data-testid="text-due-30-days">
+                      {expiringTraining.filter(t => t.daysUntilDue <= 30).length} users
+                    </div>
+                    <div className="text-xs">Due within 30 days</div>
+                  </div>
+                  <Link href="/admin/training-matrix">
+                    <button className="btn btn-sm btn-outline" data-testid="button-view-due-30">View</button>
+                  </Link>
+                </div>
+                <div className="alert alert-ghost">
+                  <i className="fas fa-calendar-alt"></i>
+                  <div>
+                    <div className="font-bold" data-testid="text-due-90-days">
+                      {expiringTraining.filter(t => t.daysUntilDue <= 90).length} users
+                    </div>
+                    <div className="text-xs">Due within 90 days</div>
+                  </div>
+                  <Link href="/admin/training-matrix">
+                    <button className="btn btn-sm btn-outline" data-testid="button-view-due-90">View</button>
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
