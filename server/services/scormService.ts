@@ -51,6 +51,55 @@ export class ScormService {
     }
   }
 
+  private async extractZipFile(zipPath: string, extractDir: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        zipfile.readEntry();
+        
+        zipfile.on("entry", (entry) => {
+          if (/\/$/.test(entry.fileName)) {
+            // Directory entry
+            zipfile.readEntry();
+          } else {
+            // File entry
+            zipfile.openReadStream(entry, (err, readStream) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+              
+              const filePath = path.join(extractDir, entry.fileName);
+              const dirPath = path.dirname(filePath);
+              
+              // Ensure directory exists
+              mkdirp.mkdirp(dirPath).then(() => {
+                const writeStream = fs.createWriteStream(filePath);
+                readStream.pipe(writeStream);
+                
+                writeStream.on('close', () => {
+                  zipfile.readEntry();
+                });
+                
+                writeStream.on('error', reject);
+              }).catch(reject);
+            });
+          }
+        });
+        
+        zipfile.on("end", () => {
+          resolve();
+        });
+        
+        zipfile.on("error", reject);
+      });
+    });
+  }
+
   async extractPackage(packageUrl: string): Promise<{ path: string; manifest: any; launchFile: string }> {
     // Check if already extracted
     if (this.extractedPackages.has(packageUrl)) {
@@ -61,493 +110,179 @@ export class ScormService {
     await mkdirp.mkdirp(extractDir);
 
     try {
-      // For demonstration, create a realistic interactive SCORM course
-      const indexHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Interactive SCORM Course</title>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <style>
-            body { 
-              font-family: 'Segoe UI', Arial, sans-serif; 
-              margin: 0; 
-              padding: 20px; 
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              min-height: 100vh;
-              color: #333;
-            }
-            .course-container { 
-              background: white; 
-              padding: 30px; 
-              border-radius: 12px; 
-              box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-              max-width: 1000px;
-              margin: 0 auto;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-              padding-bottom: 20px;
-              border-bottom: 2px solid #f0f0f0;
-            }
-            .progress-section {
-              background: #f8f9ff;
-              padding: 20px;
-              border-radius: 8px;
-              margin: 20px 0;
-              border-left: 4px solid #4CAF50;
-            }
-            .progress-bar { 
-              width: 100%; 
-              height: 24px; 
-              background: #e0e0e0; 
-              border-radius: 12px; 
-              margin: 15px 0;
-              overflow: hidden;
-            }
-            .progress-fill { 
-              height: 100%; 
-              background: linear-gradient(90deg, #4CAF50, #45a049); 
-              border-radius: 12px; 
-              width: 0%; 
-              transition: all 0.5s ease;
-              position: relative;
-            }
-            .progress-fill::after {
-              content: '';
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-              animation: shimmer 2s infinite;
-            }
-            @keyframes shimmer {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(100%); }
-            }
-            button { 
-              background: linear-gradient(135deg, #667eea, #764ba2);
-              color: white; 
-              border: none; 
-              padding: 12px 24px; 
-              border-radius: 6px; 
-              cursor: pointer; 
-              margin: 8px; 
-              font-size: 14px;
-              font-weight: 500;
-              transition: all 0.3s ease;
-              box-shadow: 0 2px 8px rgba(102,126,234,0.3);
-            }
-            button:hover { 
-              transform: translateY(-2px);
-              box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-            }
-            button:disabled { 
-              background: #ccc; 
-              cursor: not-allowed; 
-              transform: none;
-              box-shadow: none;
-            }
-            .lesson { 
-              margin: 25px 0; 
-              padding: 20px; 
-              background: #fff; 
-              border-radius: 8px; 
-              border: 1px solid #e0e0e0;
-              transition: all 0.3s ease;
-            }
-            .lesson:hover {
-              box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-              transform: translateY(-2px);
-            }
-            .lesson.completed { 
-              background: linear-gradient(135deg, #e8f5e8, #f0f8f0); 
-              border-color: #4CAF50;
-            }
-            .lesson-header {
-              display: flex;
-              align-items: center;
-              margin-bottom: 15px;
-            }
-            .lesson-icon {
-              font-size: 24px;
-              margin-right: 12px;
-            }
-            .lesson-content {
-              line-height: 1.6;
-              margin-bottom: 15px;
-            }
-            .actions {
-              margin-top: 30px;
-              text-align: center;
-              padding: 20px;
-              background: #f8f9fa;
-              border-radius: 8px;
-            }
-            .score-display {
-              background: linear-gradient(135deg, #667eea, #764ba2);
-              color: white;
-              padding: 15px;
-              border-radius: 8px;
-              margin: 20px 0;
-              text-align: center;
-              font-weight: bold;
-            }
-            .completed-badge {
-              display: inline-block;
-              background: #4CAF50;
-              color: white;
-              padding: 4px 12px;
-              border-radius: 20px;
-              font-size: 12px;
-              font-weight: bold;
-              margin-left: 10px;
-            }
-            .status-indicator {
-              display: inline-block;
-              width: 12px;
-              height: 12px;
-              border-radius: 50%;
-              margin-right: 8px;
-            }
-            .status-pending { background: #ffc107; }
-            .status-completed { background: #4CAF50; }
-            .quiz-section {
-              background: #fff3cd;
-              border: 1px solid #ffeaa7;
-              padding: 20px;
-              border-radius: 8px;
-              margin: 20px 0;
-            }
-            .quiz-question {
-              font-weight: bold;
-              margin-bottom: 15px;
-            }
-            .quiz-options {
-              margin: 10px 0;
-            }
-            .quiz-option {
-              margin: 8px 0;
-            }
-            .quiz-option input {
-              margin-right: 8px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="course-container">
-            <div class="header">
-              <h1>🎓 Interactive SCORM Learning Experience</h1>
-              <p>A comprehensive course designed to demonstrate SCORM functionality and tracking capabilities.</p>
-            </div>
-            
-            <div class="progress-section">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <span><strong>Course Progress</strong></span>
-                <span id="progressText">0% Complete</span>
-              </div>
-              <div class="progress-bar">
-                <div class="progress-fill" id="progressBar"></div>
-              </div>
-              <div style="font-size: 14px; color: #666;">
-                Lessons Completed: <span id="lessonCount">0 of 3</span>
-              </div>
-            </div>
-            
-            <div class="lesson" id="lesson1">
-              <div class="lesson-header">
-                <span class="lesson-icon">📚</span>
-                <h3>Module 1: Learning Fundamentals</h3>
-                <span class="status-indicator status-pending" id="status1"></span>
-              </div>
-              <div class="lesson-content">
-                <p>Welcome to our interactive learning platform! This module introduces you to the key concepts of effective learning.</p>
-                <p><strong>Learning Objectives:</strong></p>
-                <ul>
-                  <li>Understand the principles of active learning</li>
-                  <li>Identify your learning style</li>
-                  <li>Apply effective study techniques</li>
-                </ul>
-              </div>
-              <button onclick="completeLesson(1)" id="btn1">📖 Complete Module 1</button>
-            </div>
-            
-            <div class="lesson" id="lesson2">
-              <div class="lesson-header">
-                <span class="lesson-icon">🔬</span>
-                <h3>Module 2: Practical Application</h3>
-                <span class="status-indicator status-pending" id="status2"></span>
-              </div>
-              <div class="lesson-content">
-                <p>Put your knowledge into practice with hands-on exercises and real-world scenarios.</p>
-                <p><strong>What you'll practice:</strong></p>
-                <ul>
-                  <li>Problem-solving techniques</li>
-                  <li>Critical thinking exercises</li>
-                  <li>Case study analysis</li>
-                </ul>
-              </div>
-              <button onclick="completeLesson(2)" disabled id="btn2">🔓 Complete Module 2</button>
-            </div>
-            
-            <div class="lesson" id="lesson3">
-              <div class="lesson-header">
-                <span class="lesson-icon">🎯</span>
-                <h3>Module 3: Knowledge Assessment</h3>
-                <span class="status-indicator status-pending" id="status3"></span>
-              </div>
-              <div class="lesson-content">
-                <p>Test your understanding with our comprehensive assessment.</p>
-                <div class="quiz-section" id="quizSection" style="display: none;">
-                  <div class="quiz-question">
-                    What is the most important factor in effective learning?
-                  </div>
-                  <div class="quiz-options">
-                    <div class="quiz-option">
-                      <input type="radio" name="quiz1" value="a" id="q1a">
-                      <label for="q1a">Memorization</label>
-                    </div>
-                    <div class="quiz-option">
-                      <input type="radio" name="quiz1" value="b" id="q1b">
-                      <label for="q1b">Active engagement and practice</label>
-                    </div>
-                    <div class="quiz-option">
-                      <input type="radio" name="quiz1" value="c" id="q1c">
-                      <label for="q1c">Reading speed</label>
-                    </div>
-                  </div>
-                  <button onclick="submitQuiz()" id="quizSubmit">Submit Answer</button>
-                </div>
-              </div>
-              <button onclick="startAssessment()" disabled id="btn3">📝 Take Assessment</button>
-            </div>
-
-            <div class="score-display" id="scoreDisplay" style="display: none;">
-              🏆 Final Score: <span id="finalScore">0</span>%
-            </div>
-            
-            <div class="actions">
-              <button onclick="pauseCourse()" style="background: #6c757d;">💾 Save Progress</button>
-              <button onclick="completeCourse()" disabled id="completeBtn" style="background: #28a745;">🎉 Complete Course</button>
-              <button onclick="resetCourse()" style="background: #dc3545;">🔄 Reset Course</button>
-            </div>
-          </div>
+      console.log(`📦 Downloading SCORM package from: ${packageUrl}`);
+      
+      // Download the SCORM package
+      const response = await fetch(packageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download SCORM package: ${response.statusText}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      const zipPath = path.join(extractDir, 'package.zip');
+      await fs.promises.writeFile(zipPath, Buffer.from(buffer));
+      
+      console.log(`📁 Extracting SCORM package to: ${extractDir}`);
+      
+      // Extract the zip file
+      await this.extractZipFile(zipPath, extractDir);
+      
+      // Parse imsmanifest.xml to find launch file
+      const manifestPath = path.join(extractDir, 'imsmanifest.xml');
+      let manifest = {};
+      let launchFile = 'index.html'; // fallback
+      
+      try {
+        if (fs.existsSync(manifestPath)) {
+          const manifestContent = await fs.promises.readFile(manifestPath, 'utf-8');
+          console.log(`📄 Found imsmanifest.xml, parsing launch file...`);
           
-          <script>
-            let progress = 0;
-            let completedLessons = 0;
-            let courseScore = 0;
-            let startTime = Date.now();
-            
-            // Enhanced SCORM API simulation
-            window.API = {
-              LMSInitialize: function(param) { 
-                console.log('🚀 SCORM API: Course initialized');
-                return 'true'; 
-              },
-              LMSFinish: function(param) { 
-                console.log('🏁 SCORM API: Course finished');
-                return 'true'; 
-              },
-              LMSGetValue: function(element) { 
-                switch(element) {
-                  case 'cmi.core.lesson_status': 
-                    return progress === 100 ? 'completed' : 'incomplete';
-                  case 'cmi.core.score.raw': 
-                    return courseScore.toString();
-                  case 'cmi.core.lesson_location': 
-                    return 'lesson' + Math.min(completedLessons + 1, 3);
-                  case 'cmi.core.session_time':
-                    return Math.floor((Date.now() - startTime) / 1000).toString();
-                  default: 
-                    return ''; 
-                }
-              },
-              LMSSetValue: function(element, value) { 
-                console.log('📝 SCORM API: Setting', element, '=', value);
-                switch(element) {
-                  case 'cmi.core.lesson_status':
-                    if (value === 'completed') {
-                      console.log('✅ Course marked as completed');
-                    }
-                    break;
-                  case 'cmi.core.score.raw':
-                    courseScore = parseInt(value) || 0;
-                    break;
-                }
-                return 'true'; 
-              },
-              LMSCommit: function(param) { 
-                console.log('💾 SCORM API: Data committed');
-                return 'true'; 
-              },
-              LMSGetLastError: function() { return '0'; },
-              LMSGetErrorString: function(errorCode) { return ''; },
-              LMSGetDiagnostic: function(errorCode) { return ''; }
-            };
-            
-            function updateProgress() {
-              progress = (completedLessons / 3) * 100;
-              document.getElementById('progressBar').style.width = progress + '%';
-              document.getElementById('progressText').textContent = Math.round(progress) + '% Complete';
-              document.getElementById('lessonCount').textContent = completedLessons + ' of 3';
-              
-              if (progress === 100) {
-                document.getElementById('completeBtn').disabled = false;
-                courseScore = 85 + Math.floor(Math.random() * 15); // Score between 85-100
-                document.getElementById('scoreDisplay').style.display = 'block';
-                document.getElementById('finalScore').textContent = courseScore;
-              }
-              
-              // SCORM tracking
-              if (window.API) {
-                window.API.LMSSetValue('cmi.core.score.raw', courseScore.toString());
-                window.API.LMSSetValue('cmi.core.lesson_location', 'lesson' + Math.min(completedLessons + 1, 3));
-                window.API.LMSCommit('');
-              }
+          // Parse XML to find launch file and metadata
+          const launchMatch = manifestContent.match(/href\s*=\s*["']([^"']+)["']/);
+          if (launchMatch) {
+            launchFile = launchMatch[1];
+            console.log(`🚀 Found launch file: ${launchFile}`);
+          }
+          
+          // Extract metadata
+          const titleMatch = manifestContent.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const descMatch = manifestContent.match(/<description[^>]*>([^<]+)<\/description>/i);
+          
+          manifest = {
+            metadata: {
+              title: titleMatch ? titleMatch[1].trim() : "SCORM Course",
+              description: descMatch ? descMatch[1].trim() : "Uploaded SCORM Package",
+              schemaversion: "1.2"
             }
-            
-            function completeLesson(lessonNum) {
-              const lesson = document.getElementById('lesson' + lessonNum);
-              const status = document.getElementById('status' + lessonNum);
-              const btn = document.getElementById('btn' + lessonNum);
-              
-              lesson.classList.add('completed');
-              status.className = 'status-indicator status-completed';
-              btn.innerHTML = '✅ Completed';
-              btn.disabled = true;
-              
-              lesson.innerHTML += '<span class="completed-badge">COMPLETED</span>';
-              
-              completedLessons++;
-              
-              // Unlock next lesson
-              if (lessonNum === 1) {
-                document.getElementById('btn2').disabled = false;
-                document.getElementById('btn2').innerHTML = '🔬 Complete Module 2';
-              } else if (lessonNum === 2) {
-                document.getElementById('btn3').disabled = false;
-                document.getElementById('btn3').innerHTML = '📝 Take Assessment';
-              }
-              
-              updateProgress();
-              
-              // Visual feedback
-              setTimeout(() => {
-                lesson.style.transform = 'scale(1.02)';
-                setTimeout(() => {
-                  lesson.style.transform = 'scale(1)';
-                }, 200);
-              }, 100);
-            }
-            
-            function startAssessment() {
-              document.getElementById('quizSection').style.display = 'block';
-              document.getElementById('btn3').style.display = 'none';
-            }
-            
-            function submitQuiz() {
-              const selected = document.querySelector('input[name="quiz1"]:checked');
-              if (!selected) {
-                alert('Please select an answer before submitting.');
-                return;
-              }
-              
-              const correct = selected.value === 'b';
-              if (correct) {
-                alert('🎉 Correct! Active engagement is key to effective learning.');
-                completeLesson(3);
-              } else {
-                alert('Not quite right. The correct answer is "Active engagement and practice".');
-                // Allow retry
-                setTimeout(() => {
-                  document.querySelectorAll('input[name="quiz1"]').forEach(input => input.checked = false);
-                }, 1000);
-              }
-            }
-            
-            function pauseCourse() {
-              alert('📚 Course progress saved! You can resume anytime from where you left off.');
-              if (window.API) {
-                window.API.LMSSetValue('cmi.core.lesson_status', 'incomplete');
-                window.API.LMSCommit('');
-              }
-            }
-            
-            function completeCourse() {
-              if (progress === 100) {
-                const timeSpent = Math.floor((Date.now() - startTime) / 1000);
-                alert('🎓 Congratulations! Course completed successfully!\\n\\n' +
-                      '📊 Final Score: ' + courseScore + '%\\n' +
-                      '⏱️ Time Spent: ' + Math.floor(timeSpent / 60) + ' minutes\\n' +
-                      '🏆 Achievement: Course Master');
-                
-                if (window.API) {
-                  window.API.LMSSetValue('cmi.core.lesson_status', 'completed');
-                  window.API.LMSSetValue('cmi.core.score.raw', courseScore.toString());
-                  window.API.LMSSetValue('cmi.core.session_time', timeSpent.toString());
-                  window.API.LMSCommit('');
-                }
-                
-                // Notify parent window
-                window.parent.postMessage({ 
-                  type: 'scorm_complete', 
-                  score: courseScore,
-                  timeSpent: timeSpent
-                }, '*');
-              }
-            }
-            
-            function resetCourse() {
-              if (confirm('Are you sure you want to reset your progress? This cannot be undone.')) {
-                location.reload();
-              }
-            }
-            
-            // Initialize SCORM
-            if (window.API) {
-              window.API.LMSInitialize('');
-            }
-            
-            // Auto-save progress every 30 seconds
-            setInterval(() => {
-              if (window.API && completedLessons > 0) {
-                window.API.LMSCommit('');
-                console.log('🔄 Auto-saved progress');
-              }
-            }, 30000);
-            
-            console.log('📚 SCORM Course loaded successfully!');
-          </script>
-        </body>
-        </html>
-      `;
-      
-      await fs.promises.writeFile(path.join(extractDir, 'index.html'), indexHtml);
-      
-      const manifest = {
-        metadata: {
-          title: "Interactive SCORM Learning Experience",
-          description: "A comprehensive interactive course with progress tracking, assessments, and SCORM API integration",
-          schemaversion: "1.2"
+          };
         }
-      };
+      } catch (error) {
+        console.error('Error parsing manifest:', error);
+      }
+      
+      // If no launch file found or file doesn't exist, look for common entry points
+      const launchPath = path.join(extractDir, launchFile);
+      if (!fs.existsSync(launchPath)) {
+        console.log(`⚠️ Launch file ${launchFile} not found, searching for alternatives...`);
+        const possibleFiles = ['index.html', 'index.htm', 'start.html', 'start.htm', 'launch.html', 'course.html', 'main.html'];
+        
+        for (const file of possibleFiles) {
+          if (fs.existsSync(path.join(extractDir, file))) {
+            launchFile = file;
+            console.log(`✅ Found alternative launch file: ${launchFile}`);
+            break;
+          }
+        }
+      }
+      
+      // Verify the launch file exists
+      if (!fs.existsSync(path.join(extractDir, launchFile))) {
+        throw new Error(`Launch file ${launchFile} not found in SCORM package`);
+      }
+      
+      console.log(`🎉 SCORM package extracted successfully. Launch file: ${launchFile}`);
       
       const result = {
         path: extractDir,
         manifest,
+        launchFile
+      };
+      
+      this.extractedPackages.set(packageUrl, result);
+      return result;
+      
+    } catch (error) {
+      console.error('Error extracting SCORM package:', error);
+      
+      // Fallback: create a simple error page showing what went wrong
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>SCORM Package Error</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              padding: 40px; 
+              background: #f8f9fa; 
+              color: #333;
+            }
+            .error-container { 
+              background: white; 
+              padding: 30px; 
+              border-radius: 8px; 
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+              max-width: 600px;
+              margin: 0 auto;
+            }
+            .error-title {
+              color: #dc3545;
+              margin-bottom: 20px;
+            }
+            .error-details {
+              background: #f8f9fa;
+              padding: 15px;
+              border-radius: 4px;
+              margin: 20px 0;
+              border-left: 4px solid #dc3545;
+            }
+            .package-url {
+              word-break: break-all;
+              background: #e9ecef;
+              padding: 10px;
+              border-radius: 4px;
+              margin: 10px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <h1 class="error-title">❌ Error Loading SCORM Package</h1>
+            <p>There was an error extracting your SCORM package. This could be due to:</p>
+            <ul>
+              <li>Invalid or corrupted SCORM package</li>
+              <li>Missing imsmanifest.xml file</li>
+              <li>Unsupported SCORM format</li>
+              <li>Network issues downloading the package</li>
+            </ul>
+            
+            <div class="error-details">
+              <strong>Error:</strong> ${error.message}
+            </div>
+            
+            <div class="package-url">
+              <strong>Package URL:</strong><br>
+              ${packageUrl}
+            </div>
+            
+            <p><strong>Suggestions:</strong></p>
+            <ul>
+              <li>Verify your SCORM package is a valid zip file</li>
+              <li>Ensure it contains an imsmanifest.xml file</li>
+              <li>Try re-uploading the package</li>
+              <li>Check that the package follows SCORM standards</li>
+            </ul>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      await fs.promises.writeFile(path.join(extractDir, 'index.html'), errorHtml);
+      
+      const result = {
+        path: extractDir,
+        manifest: {
+          metadata: {
+            title: "Error Loading SCORM Package",
+            description: `Failed to extract SCORM package: ${error.message}`,
+            schemaversion: "1.2"
+          }
+        },
         launchFile: 'index.html'
       };
       
       this.extractedPackages.set(packageUrl, result);
       return result;
-    } catch (error) {
-      console.error('Error extracting SCORM package:', error);
-      throw error;
     }
   }
 
@@ -558,7 +293,13 @@ export class ScormService {
 
   async validatePackage(packageUrl: string): Promise<boolean> {
     console.log(`✅ Validating SCORM package: ${packageUrl}`);
-    return true;
+    try {
+      await this.extractPackage(packageUrl);
+      return true;
+    } catch (error) {
+      console.error('SCORM package validation failed:', error);
+      return false;
+    }
   }
 
   async processCompletion(scormData: any, passmark: number): Promise<ScormCompletionData> {
@@ -577,21 +318,20 @@ export class ScormService {
 
   async getLaunchUrl(packageUrl: string, userId: string, assignmentId: string): Promise<string> {
     console.log(`🚀 Generating launch URL for user ${userId}, assignment ${assignmentId}`);
-    return `/api/scorm/content?package=${encodeURIComponent(packageUrl)}&file=index.html`;
+    const extracted = await this.extractPackage(packageUrl);
+    return `/api/scorm/content?package=${encodeURIComponent(packageUrl)}&file=${extracted.launchFile}`;
   }
 
   async getPlayerHtml(packageUrl: string, userId: string, assignmentId: string): Promise<string> {
     try {
-      await this.extractPackage(packageUrl);
-      const contentUrl = `/api/scorm/content?package=${encodeURIComponent(packageUrl)}&file=index.html`;
-      
-      // Directly embed the course content instead of using iframe
+      // Extract the actual SCORM package
       const extracted = await this.extractPackage(packageUrl);
-      const indexPath = path.join(extracted.path, 'index.html');
+      const indexPath = path.join(extracted.path, extracted.launchFile);
       let courseContent = '';
       
       try {
         courseContent = await fs.promises.readFile(indexPath, 'utf-8');
+        console.log(`📚 Loaded actual SCORM content from: ${extracted.launchFile}`);
       } catch (error) {
         console.error('Error reading course content:', error);
         courseContent = '<h1>Error loading course content</h1>';
@@ -601,7 +341,7 @@ export class ScormService {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>SCORM Player</title>
+          <title>SCORM Player - ${extracted.manifest?.metadata?.title || 'Course'}</title>
           <style>
             body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
             .scorm-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
@@ -611,6 +351,7 @@ export class ScormService {
               padding: 12px 20px; 
               text-align: center;
               box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+              font-size: 14px;
             }
             .scorm-content { flex: 1; overflow: auto; background: white; }
           </style>
@@ -618,7 +359,7 @@ export class ScormService {
         <body>
           <div class="scorm-container">
             <div class="scorm-header">
-              🎓 SCORM Learning Platform - Interactive Course Player
+              🎓 ${extracted.manifest?.metadata?.title || 'SCORM Course'} - Interactive Learning Platform
             </div>
             <div class="scorm-content">
               ${courseContent}
@@ -705,7 +446,7 @@ export class ScormService {
             });
             
             console.log('🚀 SCORM Player initialized for assignment ${assignmentId}');
-            console.log('📚 Interactive course content loaded directly');
+            console.log('📚 Actual SCORM content loaded: ${extracted.launchFile}');
           </script>
         </body>
         </html>
