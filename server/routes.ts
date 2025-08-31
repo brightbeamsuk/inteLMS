@@ -305,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Import ScormService dynamically to avoid circular dependency
-      const { ScormService } = await import('../services/scormService');
+      const { ScormService } = await import('./services/scormService');
       const scormService = new ScormService();
       
       const playerHtml = await scormService.getPlayerHtml(packageUrl as string, user.id, 'preview');
@@ -334,7 +334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Import ScormService dynamically
-      const { ScormService } = await import('../services/scormService');
+      const { ScormService } = await import('./services/scormService');
       const scormService = new ScormService();
       
       await scormService.extractPackage(packageUrl as string);
