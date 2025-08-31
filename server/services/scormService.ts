@@ -332,6 +332,17 @@ export class ScormService {
     return extracted ? extracted.path : null;
   }
 
+  private rewriteAssetPaths(content: string, encodedPackageUrl: string): string {
+    // Rewrite relative paths to include packageUrl parameter
+    return content
+      .replace(/src\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
+        `src="/api/scorm/$1?packageUrl=${encodedPackageUrl}"`)
+      .replace(/href\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
+        `href="/api/scorm/$1?packageUrl=${encodedPackageUrl}"`)
+      .replace(/url\s*\(\s*["']?(?!https?:\/\/)(?!\/api\/scorm\/)([^"')]+)["']?\s*\)/gi, 
+        `url("/api/scorm/$1?packageUrl=${encodedPackageUrl}")`);
+  }
+
   async validatePackage(packageUrl: string): Promise<boolean> {
     console.log(`✅ Validating SCORM package: ${packageUrl}`);
     try {
@@ -378,11 +389,14 @@ export class ScormService {
         courseContent = '<h1>Error loading course content</h1>';
       }
 
+      const encodedPackageUrl = encodeURIComponent(packageUrl);
+      
       return `
         <!DOCTYPE html>
         <html>
         <head>
           <title>SCORM Player - ${extracted.manifest?.metadata?.title || 'Course'}</title>
+          <base href="/api/scorm/?packageUrl=${encodedPackageUrl}&file=">
           <style>
             body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
             .scorm-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
@@ -403,7 +417,7 @@ export class ScormService {
               🎓 ${extracted.manifest?.metadata?.title || 'SCORM Course'} - Interactive Learning Platform
             </div>
             <div class="scorm-content">
-              ${courseContent}
+              ${this.rewriteAssetPaths(courseContent, encodedPackageUrl)}
             </div>
           </div>
           <script>
