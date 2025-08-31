@@ -1180,6 +1180,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           success: true
         };
         
+        // Make sure we have valid data
+        if (!finalResponse.launchUrl) {
+          console.error('❌ Critical: launchUrl is empty in response');
+        }
+        if (!finalResponse.courseTitle) {
+          console.error('❌ Critical: courseTitle is empty in response');
+        }
+        if (!finalResponse.scormVersion) {
+          console.error('❌ Critical: scormVersion is empty in response');
+        }
+        
         console.log('🚀 Final response being sent:', JSON.stringify(finalResponse, null, 2));
         
         res.json(finalResponse);
@@ -1210,6 +1221,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`❌ Unexpected error in SCORM launch for assignment ${assignmentId}:`, error);
       res.status(500).json({ message: 'Failed to launch course', code: 'SERVER_ERROR' });
+    }
+  });
+
+  // SCORM Diagnostic route - comprehensive SCORM package analysis
+  app.get('/admin/scorm/:courseId/diagnose', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { courseId } = req.params;
+      const course = await storage.getCourse(courseId);
+      
+      if (!course) {
+        return res.status(404).json({ message: 'Course not found' });
+      }
+
+      if (!course.scormPackageUrl) {
+        return res.json({
+          ok: false,
+          reason: 'No SCORM package URL configured for this course',
+          scormRoot: '',
+          manifestFound: false,
+          courseId
+        });
+      }
+
+      // Start comprehensive diagnosis
+      const { performScormDiagnosis } = await import('./scormDiagnosis');
+      const diagnosis = await performScormDiagnosis(courseId, course.scormPackageUrl);
+      res.json(diagnosis);
+
+    } catch (error: any) {
+      console.error('Error in SCORM diagnosis:', error);
+      res.json({
+        ok: false,
+        reason: `Diagnosis failed: ${error.message}`,
+        scormRoot: '',
+        manifestFound: false,
+        error: error.message
+      });
     }
   });
 
