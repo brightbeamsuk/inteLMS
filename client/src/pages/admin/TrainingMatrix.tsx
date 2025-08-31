@@ -430,30 +430,63 @@ export function AdminTrainingMatrix() {
               </div>
 
               {/* Staff Filter */}
-              <div className="form-control min-w-[150px]">
-                <select 
-                  className="select select-bordered select-sm"
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setFilters(prev => ({
-                        ...prev,
-                        staff: prev.staff.includes(e.target.value) 
-                          ? prev.staff 
-                          : [...prev.staff, e.target.value]
-                      }));
-                      e.target.value = "";
-                    }
-                  }}
-                  data-testid="select-staff-filter"
-                >
-                  <option value="">Add Staff</option>
+              <div className="dropdown dropdown-end">
+                <div tabIndex={0} role="button" className="btn btn-outline btn-sm" data-testid="button-staff-filter">
+                  <i className="fas fa-users"></i>
+                  Staff ({filters.staff.length})
+                  <i className="fas fa-chevron-down ml-1"></i>
+                </div>
+                <div tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 max-h-60 overflow-y-auto">
+                  <div className="form-control p-2">
+                    <label className="label cursor-pointer justify-start gap-2">
+                      <input 
+                        type="checkbox" 
+                        className="checkbox checkbox-sm"
+                        checked={filters.staff.length === matrixData.staff.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFilters(prev => ({
+                              ...prev,
+                              staff: matrixData.staff.map(s => s.id)
+                            }));
+                          } else {
+                            setFilters(prev => ({ ...prev, staff: [] }));
+                          }
+                        }}
+                      />
+                      <span className="label-text font-medium">Select All</span>
+                    </label>
+                  </div>
+                  <div className="divider my-1"></div>
                   {matrixData.staff.map((staffMember) => (
-                    <option key={staffMember.id} value={staffMember.id}>
-                      {staffMember.firstName} {staffMember.lastName}
-                    </option>
+                    <div key={staffMember.id} className="form-control">
+                      <label className="label cursor-pointer justify-start gap-2">
+                        <input 
+                          type="checkbox" 
+                          className="checkbox checkbox-sm"
+                          checked={filters.staff.includes(staffMember.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFilters(prev => ({
+                                ...prev,
+                                staff: [...prev.staff, staffMember.id]
+                              }));
+                            } else {
+                              setFilters(prev => ({
+                                ...prev,
+                                staff: prev.staff.filter(id => id !== staffMember.id)
+                              }));
+                            }
+                          }}
+                          data-testid={`checkbox-staff-${staffMember.id}`}
+                        />
+                        <span className="label-text">
+                          {staffMember.firstName} {staffMember.lastName}
+                        </span>
+                      </label>
+                    </div>
                   ))}
-                </select>
+                </div>
               </div>
             </div>
 

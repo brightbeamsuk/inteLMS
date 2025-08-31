@@ -1694,11 +1694,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(now.getDate() + 30);
 
-      // Function to check if a cell status matches the filter
-      const matchesStatusFilter = (cellStatus: string) => {
-        if (statusFilter.length === 0) return true;
-        return statusFilter.includes(cellStatus);
-      };
+      // Filter matrix data after building it
+      let filteredMatrix: any[][] = [];
+      let filteredSummary = { red: 0, amber: 0, green: 0, grey: 0 };
 
       for (const staffMember of activeStaff) {
         const staffRow: any[] = [];
@@ -1711,16 +1709,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!assignment) {
             // No assignment - blank cell
-            const blankCell = {
+            staffRow.push({
               status: 'blank',
               label: '-',
               attemptCount: 0
-            };
-            if (matchesStatusFilter('blank')) {
-              staffRow.push(blankCell);
-            } else {
-              staffRow.push(null); // Placeholder for filtered out cell
-            }
+            });
             continue;
           }
 
@@ -1737,20 +1730,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!latestCompletion) {
             // Not completed - grey cell
-            const greyCell = {
+            staffRow.push({
               status: 'grey',
               label: 'Not completed',
               attemptCount: completions.filter(c => 
                 c.userId === staffMember.id && c.courseId === course.id
               ).length,
               assignmentId: assignment.id
-            };
-            if (matchesStatusFilter('grey')) {
-              staffRow.push(greyCell);
-              summary.grey++;
-            } else {
-              staffRow.push(null); // Placeholder for filtered out cell
-            }
+            });
+            summary.grey++;
             continue;
           }
 
@@ -1791,7 +1779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             dateLabel = `Exp: ${expiryDate.toLocaleDateString('en-GB')}`;
           }
 
-          const completedCell = {
+          staffRow.push({
             status,
             label,
             date: dateLabel,
@@ -1801,20 +1789,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
             attemptCount: userCompletions.length,
             assignmentId: assignment.id,
             completionId: latestCompletion.id
-          };
+          });
+
+          summary[status]++;
+        }
+        
+        matrix.push(staffRow);
+      }
+
+      // Now apply status filtering to the completed matrix
+      if (statusFilter.length > 0) {
+        for (let i = 0; i < matrix.length; i++) {
+          const staffRow = matrix[i];
+          const filteredRow: any[] = [];
+          let hasVisibleCell = false;
           
-          if (matchesStatusFilter(status)) {
-            staffRow.push(completedCell);
-            summary[status]++;
-          } else {
-            staffRow.push(null); // Placeholder for filtered out cell
+          for (let j = 0; j < staffRow.length; j++) {
+            const cell = staffRow[j];
+            if (statusFilter.includes(cell.status)) {
+              filteredRow.push(cell);
+              hasVisibleCell = true;
+              filteredSummary[cell.status as keyof typeof filteredSummary]++;
+            } else {
+              filteredRow.push(null);
+            }
+          }
+          
+          if (hasVisibleCell) {
+            filteredMatrix.push(filteredRow);
           }
         }
         
-        // Only add row if it has any visible cells or no status filter is applied
-        if (statusFilter.length === 0 || staffRow.some(cell => cell !== null)) {
-          matrix.push(staffRow);
+        // Update courses to show only those with matching status cells
+        let filteredCourses = [];
+        for (let j = 0; j < validCourses.length; j++) {
+          let hasVisibleCell = false;
+          for (let i = 0; i < filteredMatrix.length; i++) {
+            if (filteredMatrix[i][j] !== null) {
+              hasVisibleCell = true;
+              break;
+            }
+          }
+          if (hasVisibleCell) {
+            filteredCourses.push(validCourses[j]);
+          }
         }
+        
+        validCourses = filteredCourses;
+      } else {
+        filteredMatrix = matrix;
+        filteredSummary = summary;
       }
 
       res.json({
@@ -1834,8 +1858,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           certificateExpiryPeriod: c.certificateExpiryPeriod,
           status: c.status
         })),
-        matrix,
-        summary
+        matrix: filteredMatrix,
+        summary: filteredSummary
       });
     } catch (error) {
       console.error('Error fetching training matrix:', error);
