@@ -141,6 +141,8 @@ export const certificateTemplates = pgTable("certificate_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
   template: text("template").notNull(), // HTML template with placeholders
+  templateFormat: varchar("template_format").default('html'), // 'html' or 'visual'
+  templateData: jsonb("template_data"), // JSON data for visual templates
   isDefault: boolean("is_default").default(false),
   organisationId: varchar("organisation_id"), // null for global templates
   createdAt: timestamp("created_at").defaultNow(),

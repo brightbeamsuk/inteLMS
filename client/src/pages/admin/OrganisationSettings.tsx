@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { VisualCertificateEditor } from "@/components/VisualCertificateEditor";
 import type { UploadResult } from "@uppy/core";
 
 interface OrganisationSettings {
@@ -119,7 +120,7 @@ export function AdminOrganisationSettings() {
     });
   };
 
-  const tabs = ["Branding", "Contacts", "Certificates", "Notifications", "Privacy"];
+  const tabs = ["Branding", "Contacts", "Certificates", "Visual Designer", "Notifications", "Privacy"];
 
   return (
     <div>
@@ -375,8 +376,33 @@ export function AdminOrganisationSettings() {
             </div>
           )}
 
-          {/* Notifications Tab */}
+          {/* Visual Designer Tab */}
           {activeTab === 3 && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Visual Certificate Designer</h3>
+                <div className="text-sm text-base-content/60">
+                  Create custom certificate layouts with drag-and-drop editing
+                </div>
+              </div>
+              
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <div>
+                  <div className="font-bold">Visual Certificate Designer</div>
+                  <div className="text-sm">
+                    Design your certificates visually by dragging text elements, adjusting fonts, colors, and positioning. 
+                    All placeholders are supported and will be automatically replaced with actual data.
+                  </div>
+                </div>
+              </div>
+
+              <VisualCertificateEditor />
+            </div>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === 4 && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Email Notifications</h3>
               
@@ -452,7 +478,7 @@ export function AdminOrganisationSettings() {
           )}
 
           {/* Privacy Tab */}
-          {activeTab === 4 && (
+          {activeTab === 5 && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Privacy Settings</h3>
               

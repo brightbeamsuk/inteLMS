@@ -41,8 +41,14 @@ export class CertificateService {
       // Generate certificate data
       const certificateData = await this.prepareCertificateData(completion, user, course, organisation);
       
-      // Generate HTML from template
-      const html = this.replacePlaceholders(template.template, certificateData);
+      // Generate HTML content based on template format
+      let html: string;
+      if (template.templateFormat === 'visual' && template.templateData) {
+        html = this.generateHTMLFromVisualTemplate(template.templateData, certificateData);
+      } else {
+        // Legacy HTML template
+        html = this.replacePlaceholders(template.template, certificateData);
+      }
       
       // In a real implementation, this would:
       // 1. Convert HTML to PDF using a library like puppeteer
@@ -80,6 +86,8 @@ export class CertificateService {
       id: 'default',
       name: 'Default Template',
       template: this.getDefaultTemplate(),
+      templateFormat: 'html',
+      templateData: null,
       isDefault: true,
       organisationId: null,
       createdAt: new Date(),
@@ -129,6 +137,63 @@ export class CertificateService {
     result = result.replace(/{{CERTIFICATE_ID}}/g, data.certificateId);
     
     return result;
+  }
+
+  // Convert visual template to HTML
+  private generateHTMLFromVisualTemplate(templateData: any, data: CertificateData): string {
+    const elements = templateData.elements || [];
+    
+    const elementHTML = elements.map((element: any) => {
+      // Replace placeholders in element text
+      const textWithData = this.replacePlaceholders(element.text, data);
+      
+      return `
+        <div style="
+          position: absolute;
+          left: ${element.x}px;
+          top: ${element.y}px;
+          width: ${element.width}px;
+          height: ${element.height}px;
+          font-size: ${element.fontSize}px;
+          font-family: ${element.fontFamily};
+          font-weight: ${element.fontWeight};
+          color: ${element.color};
+          text-align: ${element.textAlign};
+          line-height: ${element.lineHeight};
+          padding: 4px;
+          overflow: hidden;
+        ">${textWithData}</div>
+      `;
+    }).join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Certificate</title>
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+          }
+          .certificate-container {
+            position: relative;
+            width: ${templateData.width}px;
+            height: ${templateData.height}px;
+            background-color: ${templateData.backgroundColor};
+            ${templateData.backgroundImage ? `background-image: url(${templateData.backgroundImage}); background-size: cover; background-position: center;` : ''}
+          }
+        </style>
+      </head>
+      <body>
+        <div class="certificate-container">
+          ${elementHTML}
+        </div>
+      </body>
+      </html>
+    `;
   }
 
   private getDefaultTemplate(): string {
