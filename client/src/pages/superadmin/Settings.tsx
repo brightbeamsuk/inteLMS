@@ -185,8 +185,8 @@ export function SuperAdminSettings() {
       '{{PASS_FAIL}}': 'PASS',
       '{{DATE_COMPLETED}}': new Date().toLocaleDateString(),
       '{{CERTIFICATE_ID}}': 'CERT-2024-001',
-      '{{BACKGROUND_IMAGE}}': backgroundImage || '',
-      '{{SIGNATURE_IMAGE}}': signatureImage || ''
+      '{{BACKGROUND_IMAGE}}': backgroundImage ? `<img src="${backgroundImage}" alt="Background" style="width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: -1;" />` : '',
+      '{{SIGNATURE_IMAGE}}': signatureImage ? `<img src="${signatureImage}" alt="Signature" style="max-width: 200px; height: auto;" />` : ''
     };
 
     let preview = templateEditor;
@@ -320,6 +320,9 @@ export function SuperAdminSettings() {
 
                   <div className="space-y-4">
                     <h4 className="font-semibold">Template Options</h4>
+                    <div className="text-sm text-gray-600 mb-4">
+                      Upload images and use {{BACKGROUND_IMAGE}} and {{SIGNATURE_IMAGE}} placeholders in your template
+                    </div>
                     
                     <div className="form-control">
                       <label className="label">
@@ -337,10 +340,12 @@ export function SuperAdminSettings() {
                       />
                       {backgroundImage && (
                         <div className="mt-2">
-                          <img src={backgroundImage} alt="Background preview" className="w-24 h-16 object-cover rounded" />
+                          <div className="text-xs text-green-600 mb-1">✓ Background image uploaded</div>
+                          <img src={backgroundImage} alt="Background preview" className="w-32 h-20 object-cover rounded border" />
                           <button 
                             className="btn btn-xs btn-error ml-2"
                             onClick={() => setBackgroundImage(null)}
+                            data-testid="button-remove-background"
                           >
                             Remove
                           </button>
@@ -364,10 +369,12 @@ export function SuperAdminSettings() {
                       />
                       {signatureImage && (
                         <div className="mt-2">
-                          <img src={signatureImage} alt="Signature preview" className="w-24 h-16 object-cover rounded" />
+                          <div className="text-xs text-green-600 mb-1">✓ Signature image uploaded</div>
+                          <img src={signatureImage} alt="Signature preview" className="w-32 h-20 object-cover rounded border" />
                           <button 
                             className="btn btn-xs btn-error ml-2"
                             onClick={() => setSignatureImage(null)}
+                            data-testid="button-remove-signature"
                           >
                             Remove
                           </button>
@@ -395,11 +402,21 @@ export function SuperAdminSettings() {
                 <div className="card bg-base-100 shadow-sm">
                   <div className="card-body">
                     <h3 className="text-lg font-semibold mb-4">Preview with Sample Data</h3>
-                    <div 
-                      className="certificate-preview border p-4 bg-white rounded-lg min-h-[400px]" 
-                      dangerouslySetInnerHTML={{ __html: previewTemplate() }}
-                      data-testid="preview-certificate"
-                    ></div>
+                    <div className="bg-gray-100 p-4 rounded-lg">
+                      <div 
+                        className="certificate-preview border p-4 bg-white rounded-lg min-h-[400px] relative overflow-hidden" 
+                        style={{ position: 'relative' }}
+                        dangerouslySetInnerHTML={{ __html: previewTemplate() }}
+                        data-testid="preview-certificate"
+                      ></div>
+                      {(backgroundImage || signatureImage) && (
+                        <div className="mt-4 text-sm text-gray-600">
+                          <p><strong>Note:</strong> This preview shows your uploaded images.</p>
+                          {backgroundImage && <p>✓ Background image is applied</p>}
+                          {signatureImage && <p>✓ Signature image is applied</p>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
