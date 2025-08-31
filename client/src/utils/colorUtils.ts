@@ -78,8 +78,8 @@ export function generateColorPalette(primaryHex: string) {
   const [h, s, l] = hexToHsl(primaryHex);
   
   // Generate secondary color (faded/lighter version of primary)
-  const secondary = lighterShade(primaryHex, 35); // Much lighter version
-  const secondaryHover = lighterShade(primaryHex, 25); // Slightly less light on hover
+  const secondary = lighterShade(primaryHex, 40); // Much lighter/faded version
+  const secondaryHover = lighterShade(primaryHex, 30); // Slightly less light on hover
   
   // Generate accent color (complementary - 180 degrees shift with adjusted saturation)
   const accentH = (h + 180) % 360;

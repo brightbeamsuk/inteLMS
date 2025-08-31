@@ -92,16 +92,7 @@
   border-color: var(--color-accent-hover);
 }
 
-/* Navigation and menu highlight colors */
-[data-custom-colors="true"] .menu a:hover {
-  background-color: var(--color-nav-hover);
-  color: var(--color-primary);
-}
-
-[data-custom-colors="true"] .menu a.active {
-  background-color: var(--color-nav-active);
-  color: white;
-}
+/* Navigation and menu highlight colors - removed duplicates, handled below */
 
 [data-custom-colors="true"] .tabs-bordered .tab.tab-active {
   border-color: var(--color-primary);
@@ -135,16 +126,20 @@
 }
 
 /* Left menu styling for selected items */
-[data-custom-colors="true"] .menu li a.active {
-  background-color: var(--color-primary);
-  color: white;
-  opacity: 1;
+[data-custom-colors="true"] .drawer-side .menu a.active,
+[data-custom-colors="true"] .menu a.active {
+  background-color: var(--color-primary) !important;
+  color: white !important;
+  opacity: 1 !important;
+  border-radius: 0.5rem !important;
 }
 
-[data-custom-colors="true"] .menu li a:hover {
-  background-color: var(--color-nav-hover);
-  color: var(--color-primary);
-  opacity: 1;
+[data-custom-colors="true"] .drawer-side .menu a:hover:not(.active),
+[data-custom-colors="true"] .menu a:hover:not(.active) {
+  background-color: var(--color-nav-hover) !important;
+  color: var(--color-primary) !important;
+  opacity: 1 !important;
+  border-radius: 0.5rem !important;
 }
 
 /* Breadcrumb active states */

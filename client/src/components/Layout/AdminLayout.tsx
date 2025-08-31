@@ -34,7 +34,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         '--color-primary', '--color-primary-hover',
         '--color-secondary', '--color-secondary-hover', 
         '--color-accent', '--color-accent-hover',
-        '--color-neutral', '--color-neutral-hover'
+        '--color-neutral', '--color-neutral-hover',
+        '--color-nav-active', '--color-nav-hover'
       ];
       properties.forEach(prop => root.style.removeProperty(prop));
       // Remove data attribute to disable custom color overrides
