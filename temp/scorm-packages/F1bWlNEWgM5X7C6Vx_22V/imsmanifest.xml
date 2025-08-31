@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest
+  identifier="coassemble.173186"
+  version="1.0"
+  xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"
+  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"
+  xmlns:adlseq="http://www.adlnet.org/xsd/adlseq_v1p3"
+  xmlns:adlnav="http://www.adlnet.org/xsd/adlnav_v1p3"
+  xmlns:imsss="http://www.imsglobal.org/xsd/imsss"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:lom="http://ltsc.ieee.org/xsd/LOM"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd
+    http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd
+    http://www.adlnet.org/xsd/adlseq_v1p3 adlseq_v1p3.xsd
+    http://www.adlnet.org/xsd/adlnav_v1p3 adlnav_v1p3.xsd
+    http://www.imsglobal.org/xsd/imsss imsss_v1p0.xsd"
+>
+  <metadata>
+    <schema>ADL SCORM</schema>
+    <schemaversion>2004 4th Edition</schemaversion>
+    <lom:lom>
+      <lom:general>
+        <lom:title>
+          <lom:string language="en-US"></lom:string>
+        </lom:title>
+        <lom:description>
+          <lom:string language="en-US">Description</lom:string>
+        </lom:description>
+      </lom:general>
+    </lom:lom>
+  </metadata>
+  <organizations default="173186_org">
+    <organization identifier="173186_org" adlseq:objectivesGlobalToSystem="false">
+      <title></title>
+      <item identifier="item_173186" identifierref="resource_173186">
+        <title></title>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="resource_173186" type="webcontent" adlcp:scormType="sco" href="index.html">
+      <file href="index.html" />
+      <file href="pipwerksWrapper.js" />
+      <file href="scorm.js" />
+    </resource>
+  </resources>
+</manifest>

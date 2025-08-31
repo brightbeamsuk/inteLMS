@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.adlnet.org/xsd/adlseq_v1p3"
+           targetNamespace="http://www.adlnet.org/xsd/adlseq_v1p3"
+           version="SCORM 2004 4th Edition"
+           elementFormDefault="qualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      This is the ADL Sequencing Extension schema for SCORM 2004 4th Edition
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:attribute name="objectivesGlobalToSystem" type="xs:boolean"/>
+
+  <xs:element name="constrainedChoiceConsiderations">
+    <xs:complexType>
+      <xs:attribute name="preventActivation" type="xs:boolean" use="optional"/>
+      <xs:attribute name="constrainChoice" type="xs:boolean" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="rollupConsiderations">
+    <xs:complexType>
+      <xs:attribute name="requiredForSatisfied" type="xs:boolean" use="optional"/>
+      <xs:attribute name="requiredForNotSatisfied" type="xs:boolean" use="optional"/>
+      <xs:attribute name="requiredForCompleted" type="xs:boolean" use="optional"/>
+      <xs:attribute name="requiredForIncomplete" type="xs:boolean" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="objectives">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="objective" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="mapInfo" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="targetObjectiveID" type="xs:string" use="required"/>
+                  <xs:attribute name="readSatisfiedStatus" type="xs:boolean" use="optional"/>
+                  <xs:attribute name="readNormalizedMeasure" type="xs:boolean" use="optional"/>
+                  <xs:attribute name="writeSatisfiedStatus" type="xs:boolean" use="optional"/>
+                  <xs:attribute name="writeNormalizedMeasure" type="xs:boolean" use="optional"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="objectiveID" type="xs:string" use="required"/>
+            <xs:attribute name="satisfiedByMeasure" type="xs:boolean" use="optional"/>
+            <xs:attribute name="minNormalizedMeasure" type="xs:decimal" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema> 

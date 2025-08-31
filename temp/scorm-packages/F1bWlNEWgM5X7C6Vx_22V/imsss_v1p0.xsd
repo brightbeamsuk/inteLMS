@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.imsglobal.org/xsd/imsss"
+           targetNamespace="http://www.imsglobal.org/xsd/imsss"
+           version="SCORM 2004 4th Edition"
+           elementFormDefault="qualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      This is the IMS Simple Sequencing schema for SCORM 2004 4th Edition
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:element name="sequencing">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="controlMode" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="choice" type="xs:boolean" use="optional" default="true"/>
+            <xs:attribute name="choiceExit" type="xs:boolean" use="optional" default="true"/>
+            <xs:attribute name="flow" type="xs:boolean" use="optional" default="false"/>
+            <xs:attribute name="forwardOnly" type="xs:boolean" use="optional" default="false"/>
+            <xs:attribute name="useCurrentAttemptObjectiveInfo" type="xs:boolean" use="optional" default="true"/>
+            <xs:attribute name="useCurrentAttemptProgressInfo" type="xs:boolean" use="optional" default="true"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="sequencingRules" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="preConditionRule" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="ruleConditions">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="ruleCondition" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="condition" use="required">
+                                <xs:simpleType>
+                                  <xs:restriction base="xs:string">
+                                    <xs:enumeration value="satisfied"/>
+                                    <xs:enumeration value="objectiveStatusKnown"/>
+                                    <xs:enumeration value="objectiveMeasureKnown"/>
+                                    <xs:enumeration value="objectiveMeasureGreaterThan"/>
+                                    <xs:enumeration value="objectiveMeasureLessThan"/>
+                                    <xs:enumeration value="completed"/>
+                                    <xs:enumeration value="activityProgressKnown"/>
+                                    <xs:enumeration value="attempted"/>
+                                    <xs:enumeration value="attemptLimitExceeded"/>
+                                    <xs:enumeration value="timeLimitExceeded"/>
+                                    <xs:enumeration value="outsideAvailableTimeRange"/>
+                                    <xs:enumeration value="always"/>
+                                  </xs:restriction>
+                                </xs:simpleType>
+                              </xs:attribute>
+                              <xs:attribute name="referencedObjective" type="xs:string" use="optional"/>
+                              <xs:attribute name="measureThreshold" type="xs:decimal" use="optional"/>
+                              <xs:attribute name="operator" use="optional" default="noOp">
+                                <xs:simpleType>
+                                  <xs:restriction base="xs:string">
+                                    <xs:enumeration value="not"/>
+                                    <xs:enumeration value="noOp"/>
+                                  </xs:restriction>
+                                </xs:simpleType>
+                              </xs:attribute>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="conditionCombination" use="optional" default="all">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="all"/>
+                              <xs:enumeration value="any"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="ruleAction">
+                      <xs:complexType>
+                        <xs:attribute name="action" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="skip"/>
+                              <xs:enumeration value="disabled"/>
+                              <xs:enumeration value="hiddenFromChoice"/>
+                              <xs:enumeration value="stopForwardTraversal"/>
+                              <xs:enumeration value="exitParent"/>
+                              <xs:enumeration value="exitAll"/>
+                              <xs:enumeration value="retry"/>
+                              <xs:enumeration value="retryAll"/>
+                              <xs:enumeration value="continue"/>
+                              <xs:enumeration value="previous"/>
+                              <xs:enumeration value="exit"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="limitConditions" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="attemptLimit" type="xs:nonNegativeInteger" use="optional"/>
+            <xs:attribute name="attemptAbsoluteDurationLimit" type="xs:duration" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="rollupRules" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="rollupRule" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="rollupConditions">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="rollupCondition" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="condition" use="required">
+                                <xs:simpleType>
+                                  <xs:restriction base="xs:string">
+                                    <xs:enumeration value="satisfied"/>
+                                    <xs:enumeration value="objectiveStatusKnown"/>
+                                    <xs:enumeration value="objectiveMeasureKnown"/>
+                                    <xs:enumeration value="completed"/>
+                                    <xs:enumeration value="activityProgressKnown"/>
+                                    <xs:enumeration value="attempted"/>
+                                    <xs:enumeration value="attemptLimitExceeded"/>
+                                    <xs:enumeration value="timeLimitExceeded"/>
+                                  </xs:restriction>
+                                </xs:simpleType>
+                              </xs:attribute>
+                              <xs:attribute name="operator" use="optional" default="noOp">
+                                <xs:simpleType>
+                                  <xs:restriction base="xs:string">
+                                    <xs:enumeration value="not"/>
+                                    <xs:enumeration value="noOp"/>
+                                  </xs:restriction>
+                                </xs:simpleType>
+                              </xs:attribute>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="conditionCombination" use="optional" default="any">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="all"/>
+                              <xs:enumeration value="any"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="rollupAction">
+                      <xs:complexType>
+                        <xs:attribute name="action" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="satisfied"/>
+                              <xs:enumeration value="notSatisfied"/>
+                              <xs:enumeration value="completed"/>
+                              <xs:enumeration value="incomplete"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="childActivitySet" use="optional" default="all">
+                    <xs:simpleType>
+                      <xs:restriction base="xs:string">
+                        <xs:enumeration value="all"/>
+                        <xs:enumeration value="any"/>
+                        <xs:enumeration value="none"/>
+                        <xs:enumeration value="atLeastCount"/>
+                        <xs:enumeration value="atLeastPercent"/>
+                      </xs:restriction>
+                    </xs:simpleType>
+                  </xs:attribute>
+                  <xs:attribute name="minimumCount" type="xs:nonNegativeInteger" use="optional"/>
+                  <xs:attribute name="minimumPercent" type="xs:decimal" use="optional"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema> 

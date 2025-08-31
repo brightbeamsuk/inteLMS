@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+<iframe id="frame" name="frame" width="100%" height="99%" frameborder="0"></iframe>
+<form id="form" action="https://api.coassemble.com/learn/scorm"
+      method="post" target="frame" style="display: none;">
+    <input type="hidden" id="clientId" name="clientId" value="c1bca495-c815-4ef1-ae64-770bb22004fc">
+    <input type="hidden" id="courseId" name="courseId" value="8d244e83-ec3c-4d6a-890e-bcf21e56bd49">
+    <input type="hidden" id="studentId" name="studentId">
+    <input type="hidden" id="studentName" name="studentName">
+</form>
+<script src="pipwerksWrapper.js"></script>
+<script src="scorm.js"></script>
+</body>
+</html>

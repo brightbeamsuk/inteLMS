@@ -328,7 +328,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAssignmentsByUser(userId: string): Promise<Assignment[]> {
-    return await db.select().from(assignments).where(eq(assignments.userId, userId)).orderBy(desc(assignments.assignedAt));
+    return await db
+      .select({
+        id: assignments.id,
+        courseId: assignments.courseId,
+        userId: assignments.userId,
+        organisationId: assignments.organisationId,
+        dueDate: assignments.dueDate,
+        status: assignments.status,
+        assignedBy: assignments.assignedBy,
+        assignedAt: assignments.assignedAt,
+        startedAt: assignments.startedAt,
+        completedAt: assignments.completedAt,
+        notificationsEnabled: assignments.notificationsEnabled,
+        // Include course details
+        courseTitle: courses.title,
+        courseDescription: courses.description,
+        coverImageUrl: courses.coverImageUrl,
+        estimatedDuration: courses.estimatedDuration,
+        passmark: courses.passmark,
+      })
+      .from(assignments)
+      .innerJoin(courses, eq(assignments.courseId, courses.id))
+      .where(eq(assignments.userId, userId))
+      .orderBy(desc(assignments.assignedAt));
   }
 
   async getAssignmentsByOrganisation(organisationId: string): Promise<Assignment[]> {

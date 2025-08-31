@@ -7,11 +7,22 @@ import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 interface Assignment {
   id: string;
   courseId: string;
-  courseTitle: string;
+  userId: string;
+  organisationId: string;
   status: string;
   dueDate?: string;
-  progress?: number;
+  assignedBy: string;
+  assignedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  notificationsEnabled: boolean;
+  // Course details from join
+  courseTitle: string;
+  courseDescription?: string;
+  coverImageUrl?: string;
   estimatedDuration: number;
+  passmark: number;
+  progress?: number; // This would come from completions if we add it later
 }
 
 interface Certificate {
@@ -155,9 +166,20 @@ export function UserDashboard() {
             {assignments.slice(0, 3).map((assignment) => (
               <div 
                 key={assignment.id} 
-                className={`card bg-base-200 shadow-sm ${getDueSoonStatus(assignment.dueDate) ? 'border-l-4 border-warning' : ''}`}
+                className={`card bg-base-100 shadow-lg hover:shadow-xl transition-shadow ${getDueSoonStatus(assignment.dueDate) ? 'border-l-4 border-warning' : ''}`}
                 data-testid={`card-assignment-${assignment.id}`}
               >
+                {/* Course Cover Image */}
+                {assignment.coverImageUrl && (
+                  <figure className="h-48 overflow-hidden">
+                    <img 
+                      src={assignment.coverImageUrl} 
+                      alt={assignment.courseTitle}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                    />
+                  </figure>
+                )}
+                
                 <div className="card-body">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="card-title text-lg" data-testid={`text-assignment-title-${assignment.id}`}>
@@ -166,12 +188,21 @@ export function UserDashboard() {
                     {getStatusBadge(assignment.status)}
                   </div>
                   
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm" data-testid={`text-assignment-due-${assignment.id}`}>
+                  {/* Course Description */}
+                  {assignment.courseDescription && (
+                    <p className="text-sm text-base-content/70 mb-3 line-clamp-2">
+                      {assignment.courseDescription}
+                    </p>
+                  )}
+                  
+                  <div className="flex justify-between items-center mb-3 text-sm">
+                    <span className="flex items-center gap-1" data-testid={`text-assignment-due-${assignment.id}`}>
+                      <i className="fas fa-calendar-alt text-base-content/50"></i>
                       {assignment.dueDate ? `Due: ${new Date(assignment.dueDate).toLocaleDateString()}` : 'No deadline'}
                     </span>
-                    <span className="text-sm" data-testid={`text-assignment-duration-${assignment.id}`}>
-                      ⏱️ {assignment.estimatedDuration} mins
+                    <span className="flex items-center gap-1" data-testid={`text-assignment-duration-${assignment.id}`}>
+                      <i className="fas fa-clock text-base-content/50"></i>
+                      {assignment.estimatedDuration} mins
                     </span>
                   </div>
                   
