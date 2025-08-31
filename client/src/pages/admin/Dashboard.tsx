@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 
 interface OrganisationStats {
   activeUsers: number;
@@ -9,8 +10,16 @@ interface OrganisationStats {
 }
 
 export function AdminDashboard() {
+  const { user } = useAuth();
+  
   const { data: stats, isLoading } = useQuery<OrganisationStats>({
     queryKey: ['/api/admin/stats'],
+  });
+
+  // Fetch organization details for the logged-in admin
+  const { data: organisation, isLoading: orgLoading } = useQuery({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
   });
 
   return (
@@ -27,13 +36,34 @@ export function AdminDashboard() {
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
           <div className="avatar">
-            <div className="w-12 h-12 rounded bg-primary text-primary-content flex items-center justify-center">
-              <i className="fas fa-laptop-code text-xl"></i>
+            <div className="w-12 h-12 rounded">
+              {organisation?.logoUrl ? (
+                <img 
+                  src={organisation.logoUrl} 
+                  alt={`${organisation.name} logo`} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`bg-primary text-primary-content flex items-center justify-center ${organisation?.logoUrl ? 'hidden' : ''}`}>
+                <i className="fas fa-building text-xl"></i>
+              </div>
             </div>
           </div>
           <div>
-            <h1 className="text-3xl font-bold" data-testid="text-organisation-name">Organisation Dashboard</h1>
-            <p className="text-base-content/60" data-testid="text-dashboard-subtitle">Compliance Dashboard</p>
+            <h1 className="text-3xl font-bold" data-testid="text-organisation-name">
+              {orgLoading ? (
+                <span className="loading loading-spinner loading-md"></span>
+              ) : (
+                organisation?.displayName || 'Organisation Dashboard'
+              )}
+            </h1>
+            <p className="text-base-content/60" data-testid="text-dashboard-subtitle">
+              {orgLoading ? 'Loading...' : 'Admin Dashboard'}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
