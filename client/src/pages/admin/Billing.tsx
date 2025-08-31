@@ -61,7 +61,7 @@ export function AdminBilling() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div class="stat-figure text-secondary">
+          <div className="stat-figure text-secondary">
             <i className="fas fa-graduation-cap text-2xl"></i>
           </div>
           <div className="stat-title">Course Assignments</div>

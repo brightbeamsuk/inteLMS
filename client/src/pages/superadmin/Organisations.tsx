@@ -110,7 +110,7 @@ export function SuperAdminOrganisations() {
   };
 
   const handleLogoComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful.length > 0) {
+    if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setFormData(prev => ({ ...prev, logoUrl: uploadUrl }));
       toast({

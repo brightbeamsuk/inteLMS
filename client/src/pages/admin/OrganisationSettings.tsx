@@ -73,7 +73,7 @@ export function AdminOrganisationSettings() {
   };
 
   const handleLogoComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful.length > 0) {
+    if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setBrandingData(prev => ({ ...prev, logoUrl: uploadUrl }));
       toast({
@@ -102,7 +102,7 @@ export function AdminOrganisationSettings() {
   };
 
   const handleSignatureComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful.length > 0) {
+    if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setCertificateData(prev => ({ ...prev, signatureImageUrl: uploadUrl }));
       toast({

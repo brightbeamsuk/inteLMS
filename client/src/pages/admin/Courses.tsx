@@ -91,7 +91,7 @@ export function AdminCourses() {
   });
 
   // Get unique categories
-  const categories = [...new Set(courses.map(course => course.category).filter(Boolean))];
+  const categories = Array.from(new Set(courses.map(course => course.category).filter(Boolean)));
 
   const handleAssignCourse = () => {
     if (!selectedCourse || selectedUsers.length === 0) {

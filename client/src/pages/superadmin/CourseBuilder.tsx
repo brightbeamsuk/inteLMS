@@ -82,7 +82,7 @@ export function SuperAdminCourseBuilder() {
   };
 
   const handleScormComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful.length > 0) {
+    if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setFormData(prev => ({ ...prev, scormPackageUrl: uploadUrl }));
       toast({
@@ -111,7 +111,7 @@ export function SuperAdminCourseBuilder() {
   };
 
   const handleImageComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful.length > 0) {
+    if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setFormData(prev => ({ ...prev, coverImageUrl: uploadUrl }));
       toast({
