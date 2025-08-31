@@ -188,19 +188,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = currentUser.id;
       const { firstName, lastName, jobTitle, department, phone, bio, profileImageUrl } = req.body;
 
+      console.log('Profile update request body:', req.body);
+      console.log('Extracted fields:', {
+        firstName,
+        lastName,
+        jobTitle,
+        department,
+        phone,
+        bio,
+        profileImageUrl
+      });
+
+      // Prepare update data, filtering out undefined/null values
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+
+      if (firstName !== undefined) updateData.firstName = firstName;
+      if (lastName !== undefined) updateData.lastName = lastName;
+      if (jobTitle !== undefined) updateData.jobTitle = jobTitle;
+      if (department !== undefined) updateData.department = department;
+      if (phone !== undefined) updateData.phone = phone;
+      if (bio !== undefined) updateData.bio = bio;
+      if (profileImageUrl !== undefined) updateData.profileImageUrl = profileImageUrl;
+
+      console.log('Update data:', updateData);
+
       // Update user profile
       const [updatedUser] = await db
         .update(users)
-        .set({
-          firstName,
-          lastName,
-          jobTitle,
-          department,
-          phone,
-          bio,
-          profileImageUrl,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(users.id, userId))
         .returning();
 
@@ -211,6 +228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedUser);
     } catch (error) {
       console.error("Error updating profile:", error);
+      console.error("Error details:", error);
       res.status(500).json({ message: "Failed to update profile" });
     }
   });
