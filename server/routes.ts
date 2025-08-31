@@ -13,6 +13,13 @@ import { z } from "zod";
 import * as path from "path";
 import * as fs from "fs";
 
+// Extend Express session to include user property
+declare module 'express-session' {
+  interface SessionData {
+    user?: any;
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session middleware for simple authentication
   const MemStore = MemoryStore(session);
@@ -130,7 +137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Object storage routes
   app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
-    const userId = req.session.user?.id;
+    const userId = req.session?.user?.id;
     const objectStorageService = new ObjectStorageService();
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
@@ -526,7 +533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      let assignments;
+      let assignments: any[] = [];
       if (user.role === 'user') {
         assignments = await storage.getAssignmentsByUser(user.id);
       } else if (user.role === 'admin' && user.organisationId) {
@@ -560,7 +567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // If admin, ensure assignment is within their organisation
-      if (user.role === 'admin') {
+      if (user.role === 'admin' && user.organisationId) {
         validatedData.organisationId = user.organisationId;
       }
 
@@ -623,7 +630,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         courseId: assignment.courseId,
         organisationId: assignment.organisationId,
-        score: completionData.score,
+        score: completionData.score?.toString() || '0',
         status: completionData.status === 'passed' ? 'pass' : 'fail',
         timeSpent: completionData.timeSpent,
         scormData: completionData.sessionData,

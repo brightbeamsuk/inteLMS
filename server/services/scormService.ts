@@ -1,6 +1,22 @@
 import { Course } from "@shared/schema";
 import { ObjectStorageService } from "../objectStorage";
+// @ts-ignore - yauzl doesn't have types
 import * as yauzl from "yauzl";
+
+// Local type interfaces for yauzl
+interface YauzlEntry {
+  fileName: string;
+  uncompressedSize: number;
+  compressedSize: number;
+}
+
+interface YauzlZipFile {
+  readEntry(): void;
+  openReadStream(entry: YauzlEntry, callback: (err: Error | null, readStream?: NodeJS.ReadableStream) => void): void;
+  on(event: 'entry', listener: (entry: YauzlEntry) => void): this;
+  on(event: 'end', listener: () => void): this;
+  on(event: 'error', listener: (err: Error) => void): this;
+}
 import * as fs from "fs";
 import * as path from "path";
 import * as mkdirp from "mkdirp";
@@ -53,23 +69,23 @@ export class ScormService {
 
   private async extractZipFile(zipPath: string, extractDir: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
-        if (err) {
-          reject(err);
+      (yauzl as any).open(zipPath, { lazyEntries: true }, (err: Error | null, zipfile?: YauzlZipFile) => {
+        if (err || !zipfile) {
+          reject(err || new Error('Failed to open zip file'));
           return;
         }
         
         zipfile.readEntry();
         
-        zipfile.on("entry", (entry) => {
+        zipfile.on("entry", (entry: YauzlEntry) => {
           if (/\/$/.test(entry.fileName)) {
             // Directory entry
             zipfile.readEntry();
           } else {
             // File entry
-            zipfile.openReadStream(entry, (err, readStream) => {
-              if (err) {
-                reject(err);
+            zipfile.openReadStream(entry, (err: Error | null, readStream?: NodeJS.ReadableStream) => {
+              if (err || !readStream) {
+                reject(err || new Error('Failed to open read stream'));
                 return;
               }
               
@@ -247,7 +263,7 @@ export class ScormService {
             </ul>
             
             <div class="error-details">
-              <strong>Error:</strong> ${error.message}
+              <strong>Error:</strong> ${error instanceof Error ? error.message : String(error)}
             </div>
             
             <div class="package-url">
@@ -274,7 +290,7 @@ export class ScormService {
         manifest: {
           metadata: {
             title: "Error Loading SCORM Package",
-            description: `Failed to extract SCORM package: ${error.message}`,
+            description: `Failed to extract SCORM package: ${error instanceof Error ? error.message : String(error)}`,
             schemaversion: "1.2"
           }
         },
