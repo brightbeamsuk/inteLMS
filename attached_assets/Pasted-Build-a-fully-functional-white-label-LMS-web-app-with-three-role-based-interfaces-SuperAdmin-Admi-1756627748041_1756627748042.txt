@@ -1,0 +1,418 @@
+Build a fully functional, white‑label LMS web app with three role‑based interfaces (SuperAdmin, Admin/Organisation, User) — use DaisyUI components only
+Purpose
+
+Create a modern Learning Management System that supports multiple organisations on a single platform (multi‑tenant), allows SCORM course delivery with pass/fail and scoring, generates certificates, and provides clean role‑based dashboards. The app must be fully navigable with every button linking to the correct page or form. The three interfaces must share data so actions at the User level immediately reflect for the Admin, and roll up to the SuperAdmin.
+
+Design/UI Requirement: Use DaisyUI components only for all UI (navbars, drawers/sidebars, cards, tables, modals, forms, alerts, badges, steps, tabs, dropdowns, pagination, progress, avatars, tooltips, toast/snackbar). Do not use any other UI libraries. Provide a clean, accessible, responsive layout that works on desktop, tablet, and mobile.
+
+White‑labelling: Each organisation can set a logo, brand name, and theme (choose from DaisyUI themes). These settings must apply across their Admin and User interfaces.
+
+Roles & Access
+
+SuperAdmin (platform owner): Manages organisations and their admins, manages the global course library, views platform‑wide analytics, maintains a personal to‑do list.
+
+Admin (organisation level): Manages their organisation profile, users, course assignments, certificate permissions, and views compliance dashboards.
+
+User (learner): Manages their personal profile, takes assigned courses, and (if permitted by their Admin) downloads their own certificates.
+
+Authentication: Email + password sign‑in. After sign‑in, redirect to the correct interface based on role. Include password reset. Show a simple role badge in the header.
+
+Multi‑tenant data separation: Each organisation only sees its own users, assignments, results, settings, and billing. SuperAdmin can see platform‑wide roll‑ups and drill into a specific organisation.
+
+Navigation Menus (exact structure & destinations)
+SuperAdmin
+
+Dashboard → Platform overview (see details below)
+
+Organisations → List of organisations (view, create, edit, deactivate)
+
+Users → List of all Admins and Users platform‑wide, with filters (view, create, assign to org, deactivate)
+
+Course Builder → Upload SCORM, set details, preview, and publish to the global library
+
+Courses → Global course library (Add New Course button inside opens Course Builder)
+
+Settings → Certificate template management & platform options (see details)
+
+Admin (Organisation)
+
+Dashboard → Compliance overview (graphs, expiring training, assignments)
+
+Users → Add/Edit/Remove users, toggle “Allow certificate download”, view each user’s progress & certificates
+
+Courses → Browse global course library, assign to users, track progress, set due dates, see pass/fail
+
+Billing → Show plan status, renewal date, usage, invoices (demo stubs acceptable)
+
+Organisation Settings → Logo upload, display name, DaisyUI theme choice, contact details, certificate signature/name, notification preferences
+
+User (Learner)
+
+Dashboard → Assigned courses, progress, due soon, last activity
+
+Courses → List of assigned courses, status, Start/Resume buttons launching player, attempt history
+
+Settings → Edit profile (name, email), change password, notification preferences. If permitted: Certificates area to view/download.
+
+Routing requirement: Every menu item opens a real page. Every primary button opens the correct form, modal, or detail view as specified below. Breadcrumbs must reflect navigation.
+
+SuperAdmin Interface — page details
+1) Dashboard
+
+Cards and charts:
+
+Total organisations (count of active organisations)
+
+Total users (admins + learners)
+
+Total courses (in the global library)
+
+Total courses taken (cumulative completions across the whole platform)
+
+New sign‑ups in last 30 days (orgs and users)
+
+Top 5 most‑assigned courses (list with assignment count)
+
+To‑Do List (personal to SuperAdmin): input to add item, list with checkboxes, ability to mark done, reorder items.
+
+Buttons & actions:
+
+“View organisations” (goes to Organisations list)
+
+“Add organisation” (opens Create Organisation form)
+
+“Add new course” (goes to Course Builder)
+
+2) Organisations
+
+Table of organisations: Logo, Name, Subdomain/Slug, Admin name & email, Active users, Status (Active/Inactive), Created date, Actions (View, Edit, Deactivate)
+
+Create Organisation button → form fields: Organisation name, Subdomain/Slug, Primary Admin name & email, initial password (auto‑generate with copy), upload logo, choose DaisyUI theme, contact number, address (optional)
+
+View opens an organisation overview: quick stats, admins list, users count, assigned courses count, latest completions. Buttons: “Manage admins”, “Manage users”, “Assign courses”, “Open as Admin” (temporary impersonation into the Admin interface for that organisation; read‑only in demo mode).
+
+3) Users (platform‑wide)
+
+Filters: Role (Admin/User), Organisation, Status, Search by name/email
+
+Table with Name, Email, Role, Organisation, Last active, Status, Actions (View, Edit, Deactivate)
+
+Create User button → choose Organisation, Role, name, email, initial password (auto‑generate), status. If Role = Admin, optionally send welcome email toggle.
+
+4) Course Builder (Global)
+
+Upload SCORM package (zip). Fields: Course title, Short description, Estimated duration (mins), Pass mark (%), Category/Tags, Cover image (optional), Certificate expiry period (optional: months/years, or “does not expire”).
+
+On upload, allow Preview (launches the package in a player for testing).
+
+On Publish, add the course to the global course library so all Admins can assign it.
+
+SCORM behaviour: When a learner completes an attempt, record completion state and the final score. Determine PASS if score ≥ pass mark; otherwise FAIL. Store attempt history with timestamps.
+
+5) Courses (Global Library)
+
+Grid/list of all published courses: cover image, title, duration, pass mark, tags, number of organisations using it, total completions
+
+Add New Course button → opens Course Builder
+
+Click a course → course details: description, pass mark, preview, analytics (organisations using it, assignments, completions), and a list of recent completions platform‑wide.
+
+6) Settings (Certificate Templates & Platform)
+
+Certificate template builder:
+
+Upload a base certificate document or design in an editor (simple layout tools are fine).
+
+Insert dynamic fields with placeholders (must be selectable/insertable from a list): {{USERNAME}}, {{USER_EMAIL}}, {{COURSE_NAME}}, {{COURSE_ID}}, {{ORGANISATION_NAME}}, {{ADMIN_NAME}}, {{SCORE_PERCENT}}, {{PASS_FAIL}}, {{DATE_COMPLETED}}, {{CERTIFICATE_ID}}.
+
+Upload images for signatures/logos, choose fonts (system‑safe), alignments, and add a background watermark if desired.
+
+Preview with sample data and Save as default platform template.
+
+Platform options: default DaisyUI theme for new orgs, default certificate settings (expiry text on/off if the course has expiry), password policy text, and legal/footer links.
+
+Admin (Organisation) Interface — page details
+1) Dashboard
+
+At‑a‑glance cards:
+
+Active users (count)
+
+Courses assigned (count)
+
+Courses completed (last 30 days)
+
+Overall compliance (% of assigned courses that are completed and in date)
+
+Charts & lists:
+
+Compliance trend (last 6 months)
+
+Expiring training list (shows users + course with due date within the next 30/60/90 days)
+
+Recently completed (latest passes with score and date)
+
+Top overdue (users with the highest number of overdue courses)
+
+Quick actions:
+
+“Add user” → opens Add User form
+
+“Assign courses” → opens Assign Courses flow
+
+“View certificates” → opens Certificates area filtered to last 30 days
+
+2) Users
+
+Table with avatar, name, email, status, last active, assigned courses (count), completed (count), actions
+
+Add User button → form fields: First name, Last name, Email, Optional job title/department, Allow certificate download (checkbox), Set password (or auto‑generate), Status (Active/Inactive)
+
+Clicking a user opens User Profile with tabs:
+
+Overview: Contact info, Allow certificate download (toggle), progress summary
+
+Courses: Assigned list with status, due dates, Start/Resume for Admin preview (read‑only attempt)
+
+Certificates: All certificates issued for this user (view/download by Admin), with score, date, and course title
+
+History: Timeline of assignments, completions, and admin actions
+
+Bulk actions:
+
+Import users via CSV (first name, last name, email, job title, allow certificate download)
+
+Assign selected users to courses in bulk
+
+3) Courses
+
+Library view: All global courses from the platform. Filters by category/tags, search by title, sort by duration or popularity.
+
+Assign: Select one or more courses, pick users or groups, set due dates, and Notify users (in‑app and email). Show a summary before confirming.
+
+Tracking: For each course, see assignment counts, in‑progress, passed, failed, overdue. Click for detail → per‑user progress with last score and attempt count.
+
+4) Billing
+
+Show current plan/tier, renewal date, usage (users, assignments), and invoice history (demo data acceptable). Buttons: “Update payment details”, “Download invoice”, “Contact sales”.
+
+5) Organisation Settings
+
+Branding: Upload logo, choose DaisyUI theme, set organisation display name and short slug/subdomain
+
+Contacts: Organisation email, phone, address
+
+Certificates: Optional organisation signature image, signer name and title, default certificate text line (e.g., “has successfully completed”)
+
+Notifications: Toggles for assignment emails, reminder emails (7/3/1 days before due), completion emails to Admin
+
+Privacy: Toggle allowing learners to download their certificates by default (can still be set per user)
+
+User (Learner) Interface — page details
+1) Dashboard
+
+My assignments: cards showing title, status (Not started / In progress / Due soon / Overdue), due date, and Start/Resume button
+
+Progress summary: Completed courses count, average score, time spent (optional)
+
+Recent activity: last 10 events
+
+2) Courses
+
+List of assigned courses with search and filters (status, due date). Each item shows title, duration, pass mark, progress bar, and Start/Resume. Clicking opens the Course Player.
+
+3) Settings
+
+Edit profile: first/last name, email
+
+Change password
+
+Notification preferences
+
+Certificates (only if allowed by Admin): list of certificates with View and Download
+
+Course Player & SCORM Behaviour
+
+Launches a SCORM package in a player window/pane. The player must record the learner’s progress and final score.
+
+When the package indicates completion, record the final score and completion state. If final score ≥ pass mark, mark PASS; otherwise FAIL.
+
+Show attempt summary to the learner (score, pass/fail, date/time). Allow Resume if the package supports it.
+
+Store all attempts in history for Admin viewing.
+
+On PASS, generate a certificate immediately and attach it to the learner’s profile (Admin side). If the learner has permission, also surface it in their Certificates area.
+
+Certificates — Template & Generation
+
+Use the platform certificate template defined by SuperAdmin by default. Allow organisations to optionally override signature/name and add their logo alongside the platform logo.
+
+Dynamic fields available to insert into the certificate: {{USERNAME}}, {{USER_EMAIL}}, {{COURSE_NAME}}, {{COURSE_ID}}, {{ORGANISATION_NAME}}, {{ADMIN_NAME}}, {{SCORE_PERCENT}}, {{PASS_FAIL}}, {{DATE_COMPLETED}}, {{CERTIFICATE_ID}}.
+
+Certificates should render to a standard page size and be downloadable as a PDF. Store a copy linked to the user, course, and completion date. Show a unique certificate ID.
+
+If the course has an expiry period, show the expiry date on the certificate (configurable in Settings).
+
+Notifications & Reminders
+
+When an Admin assigns a course, notify the user in‑app and by email (if enabled).
+
+Send reminder notifications before due dates (Admin configurable: 7/3/1 days). Include overdue alerts.
+
+Notify Admins on completions and upcoming expiries (digest acceptable).
+
+Search, Filters, and Exports
+
+Provide search boxes and filters on all lists (users, courses, certificates). Support sorting by name, date, status.
+
+Allow Admin and SuperAdmin to export relevant tables (CSV) — users, assignments, completions, certificates.
+
+Accessibility & Usability
+
+Keyboard navigable, proper focus states, form validation with clear messages, toast notifications for success/errors. Use DaisyUI badges, alerts, and progress bars consistently. Support dark/light per theme. Mobile‑friendly layouts.
+
+Demo Data & Credentials (must be created on first run)
+
+Create the following demo accounts and show them on the sign‑in page as quick‑login buttons and as text credentials:
+
+SuperAdmin
+Email: superadmin@demo.app
+Password: Passw0rd!
+
+Admin (Acme Care Ltd)
+Email: admin.acme@demo.app
+Password: Passw0rd!
+
+Admin (Ocean Nurseries CIC)
+Email: admin.ocean@demo.app
+Password: Passw0rd!
+
+Users (Acme Care Ltd)
+alice@acme.demo (password Learner1!)
+ben@acme.demo (password Learner1!)
+chloe@acme.demo (password Learner1!)
+
+Users (Ocean Nurseries CIC)
+dan@ocean.demo (password Learner1!)
+erin@ocean.demo (password Learner1!)
+finn@ocean.demo (password Learner1!)
+
+Seed demo organisations:
+
+Acme Care Ltd — logo, theme “corporate”, 3 users seeded, some completions and one overdue course.
+
+Ocean Nurseries CIC — logo, theme “pastel”, 3 users seeded, mostly in‑progress.
+
+Seed demo courses in the global library:
+
+“Safeguarding Children — Level 1” (pass mark 80%, 60 mins, has demo SCORM)
+
+“Data Protection Essentials” (pass mark 70%, 45 mins, demo SCORM)
+
+“Fire Safety in the Workplace” (pass mark 70%, 40 mins, demo SCORM)
+
+Assign a mix of these to each organisation’s users with various statuses (Not started, In progress, Passed with score, Failed, Overdue). Ensure at least one recent PASS triggers certificate generation for verification.
+
+Admin‑side certificate permission:
+
+For Acme Care Ltd users, set Allow certificate download = ON for Alice and OFF for Ben and Chloe (so the User interface behaves differently for each).
+
+Button‑by‑Button Linking (key examples; apply pattern everywhere)
+
+SuperAdmin → Dashboard
+
+“View organisations” → Organisations list page
+
+“Add organisation” → Organisation create form
+
+“Add new course” → Course Builder
+
+To‑Do widget: “Add item” adds a line item; each item has a checkbox to mark complete
+
+SuperAdmin → Organisations
+
+Row View → Organisation overview with tabs (Overview, Admins, Users, Courses)
+
+Row Edit → Edit organisation form
+
+Row Deactivate → Confirm modal, then set status to Inactive
+
+On Organisation overview: “Manage admins” → list of admins for that org; “Manage users” → list of users for that org; “Assign courses” → assignment flow; “Open as Admin” → impersonated read‑only Admin UI view
+
+SuperAdmin → Courses
+
+“Add New Course” → Course Builder
+
+Course card Details → course detail page with Preview and Analytics
+
+Admin → Users
+
+“Add User” → Add user form
+
+User row View → User Profile tabs (Overview, Courses, Certificates, History)
+
+Bulk Import CSV → CSV import modal
+
+Bulk Assign courses → Assignment wizard
+
+Admin → Courses
+
+Course card Assign → select users/groups, set due date, notify toggle, confirm summary
+
+Course card Track → per‑course tracking table with pass/fail and filters
+
+User → Courses
+
+Course Start/Resume → opens Course Player
+
+On completion, show Attempt Summary modal with score and pass/fail
+
+Apply a consistent pattern for Save, Cancel, Back, and Delete actions across all forms (with confirmation modals where destructive).
+
+Compliance Calculations & Expiry
+
+Overall compliance = percentage of assigned courses that are completed and (if the course has an expiry period) still within date.
+
+For courses with an expiry period, calculate expiry date from DATE_COMPLETED. Show warnings in Admin dashboard for items expiring within 30/60/90 days.
+
+Performance, Security, and Audit
+
+Keep the app responsive with pagination on large lists.
+
+Session‑based access aligned to the user’s role.
+
+Basic audit trail (who created users, who assigned courses, when completions occurred). Show this on the Admin User Profile → History tab, and in SuperAdmin course/organisation detail where appropriate.
+
+First‑Run Experience
+
+After the app starts the first time, seed the demo data above.
+
+On the sign‑in page, show Demo Login buttons for each role (auto‑fills credentials). Also list the emails/passwords for manual entry.
+
+Provide a short Getting Started panel for Admins explaining how to assign courses.
+
+Acceptance Checklist (must pass)
+
+Sign in as SuperAdmin → create an organisation, upload a SCORM course, publish to library, see counts update on Dashboard.
+
+Sign in as Admin → add a user with Allow certificate download ON, assign a course with a due date, see it on Dashboard (assigned count increases).
+
+Sign in as User → start a course, complete with a passing score; the system records score and status, generates a certificate, and shows it under Admin → Users → Certificates for that user. If permission is ON, the learner can see/download it from their own Settings → Certificates.
+
+Admin Dashboard shows Compliance and Expiring training correctly, with charts populated.
+
+SuperAdmin Dashboard shows updated totals (Total organisations, users, courses, and Total courses taken reflecting new completions) and the To‑Do list works (add, tick off).
+
+White‑labelling works: changing an organisation’s logo/name/theme updates the Admin and User interfaces.
+
+All pages are reachable from the navigation menus, and every primary button opens a real form or detail page.
+
+Final Notes
+
+Keep wording UK‑style in labels and notifications.
+
+Use DaisyUI exclusively for all components and theming.
+
+Prepare for image uploads (logos, certificate signatures) and SCORM zip uploads.
+
+Maintain clear, consistent empty states, loading states, and error messages.
