@@ -41,6 +41,10 @@ export function SuperAdminCourses() {
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<Course>>({});
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -71,6 +75,54 @@ export function SuperAdminCourses() {
       toast({
         title: "Error",
         description: error.message || "Failed to update course",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const archiveCourseMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCourse) throw new Error('No course selected');
+      return await apiRequest('PUT', `/api/courses/${selectedCourse.id}`, { status: 'archived' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      setShowArchiveModal(false);
+      setShowDetailsModal(false);
+      setConfirmText("");
+      toast({
+        title: "Course Archived",
+        description: "Course has been archived successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to archive course",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteCourseMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCourse) throw new Error('No course selected');
+      return await apiRequest('DELETE', `/api/courses/${selectedCourse.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      setShowDeleteModal(false);
+      setShowDetailsModal(false);
+      setConfirmText("");
+      toast({
+        title: "Course Deleted",
+        description: "Course has been permanently deleted",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete course",
         variant: "destructive",
       });
     },
@@ -115,12 +167,13 @@ export function SuperAdminCourses() {
     }
   };
 
-  // Filter courses based on search and category
+  // Filter courses based on search, category, and view mode
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesViewMode = viewMode === 'active' ? course.status !== 'archived' : course.status === 'archived';
+    return matchesSearch && matchesCategory && matchesViewMode;
   });
 
   // Get unique categories
@@ -138,7 +191,25 @@ export function SuperAdminCourses() {
 
       {/* Page Header */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Global Course Library</h1>
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="text-page-title">Global Course Library</h1>
+          <div className="tabs tabs-boxed mt-2">
+            <a 
+              className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+              onClick={() => setViewMode('active')}
+              data-testid="tab-active-courses"
+            >
+              Active Courses
+            </a>
+            <a 
+              className={`tab ${viewMode === 'archived' ? 'tab-active' : ''}`}
+              onClick={() => setViewMode('archived')}
+              data-testid="tab-archived-courses"
+            >
+              Archive
+            </a>
+          </div>
+        </div>
         <Link href="/superadmin/course-builder">
           <button className="btn btn-primary" data-testid="button-add-new-course">
             <i className="fas fa-plus"></i> Add New Course
@@ -191,19 +262,26 @@ export function SuperAdminCourses() {
           ))
         ) : filteredCourses.length === 0 ? (
           <div className="col-span-full text-center py-12">
-            <div className="text-6xl mb-4">📚</div>
-            <h3 className="text-2xl font-bold mb-2">No courses found</h3>
+            <div className="text-6xl mb-4">{viewMode === 'archived' ? '📦' : '📚'}</div>
+            <h3 className="text-2xl font-bold mb-2">
+              {viewMode === 'archived' ? 'No archived courses' : 'No courses found'}
+            </h3>
             <p className="text-base-content/60 mb-4">
-              {searchTerm || selectedCategory ? 
-                "No courses match your current filters" : 
-                "No courses have been published to the library yet"
+              {viewMode === 'archived' ? 
+                "No courses have been archived yet" :
+                (searchTerm || selectedCategory ? 
+                  "No courses match your current filters" : 
+                  "No courses have been published to the library yet"
+                )
               }
             </p>
-            <Link href="/superadmin/course-builder">
-              <button className="btn btn-primary" data-testid="button-create-first-course">
-                <i className="fas fa-plus"></i> Create First Course
-              </button>
-            </Link>
+            {viewMode === 'active' && (
+              <Link href="/superadmin/course-builder">
+                <button className="btn btn-primary" data-testid="button-create-first-course">
+                  <i className="fas fa-plus"></i> Create First Course
+                </button>
+              </Link>
+            )}
           </div>
         ) : (
           filteredCourses.map((course) => (
@@ -257,16 +335,18 @@ export function SuperAdminCourses() {
                   >
                     <i className="fas fa-info-circle"></i> Details
                   </button>
-                  <button 
-                    className="btn btn-sm btn-primary"
-                    onClick={() => {
-                      setSelectedCourse(course);
-                      setShowAnalyticsModal(true);
-                    }}
-                    data-testid={`button-course-analytics-${course.id}`}
-                  >
-                    <i className="fas fa-chart-bar"></i> Analytics
-                  </button>
+                  {course.status !== 'archived' && (
+                    <button 
+                      className="btn btn-sm btn-primary"
+                      onClick={() => {
+                        setSelectedCourse(course);
+                        setShowAnalyticsModal(true);
+                      }}
+                      data-testid={`button-course-analytics-${course.id}`}
+                    >
+                      <i className="fas fa-chart-bar"></i> Analytics
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -499,20 +579,40 @@ export function SuperAdminCourses() {
             <div className="flex gap-2 mt-6">
               {!isEditing ? (
                 <>
-                  <button 
-                    className="btn btn-sm btn-outline" 
-                    onClick={handlePreviewCourse}
-                    data-testid="button-preview-course-details"
-                  >
-                    <i className="fas fa-play"></i> Preview
-                  </button>
-                  <button 
-                    className="btn btn-sm btn-secondary" 
-                    onClick={handleEditCourse}
-                    data-testid="button-edit-course-details"
-                  >
-                    <i className="fas fa-edit"></i> Edit Course
-                  </button>
+                  {selectedCourse?.status !== 'archived' && (
+                    <>
+                      <button 
+                        className="btn btn-sm btn-outline" 
+                        onClick={handlePreviewCourse}
+                        data-testid="button-preview-course-details"
+                      >
+                        <i className="fas fa-play"></i> Preview
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-secondary" 
+                        onClick={handleEditCourse}
+                        data-testid="button-edit-course-details"
+                      >
+                        <i className="fas fa-edit"></i> Edit Course
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-warning" 
+                        onClick={() => setShowArchiveModal(true)}
+                        data-testid="button-archive-course"
+                      >
+                        <i className="fas fa-archive"></i> Archive
+                      </button>
+                    </>
+                  )}
+                  {selectedCourse?.status === 'archived' && (
+                    <button 
+                      className="btn btn-sm btn-error" 
+                      onClick={() => setShowDeleteModal(true)}
+                      data-testid="button-delete-course"
+                    >
+                      <i className="fas fa-trash"></i> Delete Permanently
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -661,6 +761,122 @@ export function SuperAdminCourses() {
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowAnalyticsModal(false)}>close</button>
           </form>
+        </dialog>
+      )}
+
+      {/* Archive Course Confirmation Modal */}
+      {showArchiveModal && selectedCourse && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg text-warning mb-4" data-testid="text-archive-modal-title">
+              Archive Course: {selectedCourse.title}
+            </h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <p className="font-semibold">Warning: This action will archive the course</p>
+                <p className="text-sm">Archived courses will be moved to the archive section and will no longer be available for assignment to users.</p>
+              </div>
+            </div>
+
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Type <strong>ARCHIVE</strong> to confirm:</span>
+              </label>
+              <input 
+                type="text" 
+                className="input input-bordered" 
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="ARCHIVE"
+                data-testid="input-archive-confirmation"
+              />
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowArchiveModal(false);
+                  setConfirmText("");
+                }}
+                data-testid="button-cancel-archive"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-warning" 
+                onClick={() => archiveCourseMutation.mutate()}
+                disabled={confirmText !== 'ARCHIVE' || archiveCourseMutation.isPending}
+                data-testid="button-confirm-archive"
+              >
+                {archiveCourseMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Archive Course'
+                )}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Delete Course Confirmation Modal */}
+      {showDeleteModal && selectedCourse && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg text-error mb-4" data-testid="text-delete-modal-title">
+              Delete Course: {selectedCourse.title}
+            </h3>
+            
+            <div className="alert alert-error mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <p className="font-semibold">Warning: This action cannot be undone</p>
+                <p className="text-sm">This will permanently delete the course and all associated data including assignments, completions, and certificates.</p>
+              </div>
+            </div>
+
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Type <strong>DELETE</strong> to confirm:</span>
+              </label>
+              <input 
+                type="text" 
+                className="input input-bordered" 
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="DELETE"
+                data-testid="input-delete-confirmation"
+              />
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setConfirmText("");
+                }}
+                data-testid="button-cancel-delete"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-error" 
+                onClick={() => deleteCourseMutation.mutate()}
+                disabled={confirmText !== 'DELETE' || deleteCourseMutation.isPending}
+                data-testid="button-confirm-delete"
+              >
+                {deleteCourseMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Delete Permanently'
+                )}
+              </button>
+            </div>
+          </div>
         </dialog>
       )}
     </div>

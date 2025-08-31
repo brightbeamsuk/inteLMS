@@ -82,12 +82,13 @@ export function AdminCourses() {
     },
   });
 
-  // Filter courses based on search and category
+  // Filter courses based on search and category (exclude archived courses)
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const isNotArchived = course.status !== 'archived';
+    return matchesSearch && matchesCategory && isNotArchived;
   });
 
   // Get unique categories
