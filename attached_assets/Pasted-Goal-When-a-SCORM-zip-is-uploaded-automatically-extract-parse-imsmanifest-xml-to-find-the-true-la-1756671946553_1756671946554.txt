@@ -1,0 +1,85 @@
+Goal: When a SCORM zip is uploaded, automatically extract, parse imsmanifest.xml to find the true launch file, save that path, verify the file exists, and serve it under the same origin. Improve debugging so “Couldn’t Open Scorm File” shows the exact reason (missing file, 404, CSP, etc.).
+
+Changes:
+
+Static hosting
+
+Ensure Express (or the current server) serves the extracted SCORM root via:
+app.use('/scos', express.static(path.join(process.cwd(), 'public', 'scos')))
+
+Confirm no X-Frame-Options: DENY or restrictive CSP is set on /scos/*.
+
+Zip extraction & manifest parsing
+
+On upload, unzip to public/scos/<courseId>/.
+
+Locate imsmanifest.xml at any depth; if it’s not at the zip root, adjust the content root to the folder that contains it.
+
+Parse the manifest:
+
+Resolve the default <item> (first launchable).
+
+Get its identifierref and locate the <resource> with that id.
+
+Read adlcp:href (or href) for the launch file.
+
+Build the absolute launch path: /scos/<courseId>/<relative-path-from-resource-base>/<adlcp:href>
+
+URL-encode spaces/special characters when constructing the final URL.
+
+Save to DB: courseId, title, launchUrl, scormVersion.
+
+Preflight verification
+
+Immediately check that fs.existsSync(fullPathToLaunchFile) is true.
+
+If false, store a detailed error listing:
+
+the path we tried,
+
+the resource href value,
+
+a sample of the folder tree (first 20 files).
+
+Return this diagnostic to the UI instead of a generic error.
+
+Launch page & logging
+
+On /launch/:courseId, log the chosen launchUrl.
+
+Define window.API and window.API_1484_11 before setting the iframe src.
+
+Add an iframe onload and onerror handler. If onerror or a 404 occurs, show a visible banner with the failing src and suggest opening it in a new tab.
+
+Add a 5-second API handshake timeout: if the SCO does not call Initialize within 5s, surface “SCO didn’t initialise – likely wrong launch file or blocked by headers.”
+
+Better user-facing error messages
+Replace “Couldn’t Open Scorm File” with one of:
+
+“Launch file not found: <path> (check imsmanifest.xml ‘adlcp:href’ and extracted folder)”
+
+“Launch URL returned 404: <url> (is /scos/* statically served?)”
+
+“Blocked by frame headers (remove X-Frame-Options / relax CSP for /scos/*)”
+
+“SCO didn’t initialise SCORM API (wrong SCORM version or wrong entry point)”
+
+Extras:
+
+Store the raw manifest XML alongside the course for support.
+
+Show the resolved SCO list if multi-SCO; let the user pick which to launch if the default fails.
+
+Common causes (and the fix)
+
+Manifest in a subfolder → point the content root to that folder before resolving the adlcp:href.
+
+Wrong entry file → some tools’ entry is index_lms.html (not index.html). Use the manifest, not guesses.
+
+Not served statically → add express.static for the extracted path.
+
+Upper/lower-case mismatch → Linux paths are case-sensitive; match exactly.
+
+Spaces/UTF-8 characters → URL-encode in the iframe src.
+
+Blocked in iframe → remove X-Frame-Options/tight CSP for /scos/* (keep them for the rest of the app if you like).

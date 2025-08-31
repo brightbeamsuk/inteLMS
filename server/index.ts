@@ -24,6 +24,32 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   }
 }));
 
+// Serve extracted SCORM files
+app.use('/scos', express.static(path.join(process.cwd(), 'public', 'scos'), {
+  setHeaders: (res, filePath) => {
+    // Remove X-Frame-Options and allow embedding in iframes
+    res.removeHeader('X-Frame-Options');
+    
+    // Set appropriate Content-Type for SCORM files
+    const ext = path.extname(filePath).toLowerCase();
+    const contentTypes: { [key: string]: string } = {
+      '.html': 'text/html',
+      '.htm': 'text/html',
+      '.js': 'application/javascript',
+      '.css': 'text/css',
+      '.json': 'application/json',
+      '.xml': 'application/xml',
+      '.swf': 'application/x-shockwave-flash',
+      '.mp3': 'audio/mpeg',
+      '.mp4': 'video/mp4',
+      '.pdf': 'application/pdf'
+    };
+    if (contentTypes[ext]) {
+      res.setHeader('Content-Type', contentTypes[ext]);
+    }
+  }
+}));
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;

@@ -231,9 +231,48 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         attemptStateRef.current['cmi.learner_id'] = userResponse.id;
         attemptStateRef.current['cmi.learner_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         
-        // Get course launch URL
-        const launchResponse = await apiRequest('GET', `/api/scorm/${assignmentId}/launch`);
-        setScormUrl(launchResponse.launchUrl);
+        // Get course launch URL using improved SCORM processing
+        try {
+          const launchResponse = await apiRequest('GET', `/api/scorm/${assignmentId}/launch`);
+          console.log('✅ Launch data received:', launchResponse);
+          console.log(`🎯 Launch URL: ${launchResponse.launchUrl}`);
+          console.log(`📋 SCORM Version: ${launchResponse.scormVersion}`);
+          
+          if (launchResponse.diagnostics) {
+            console.log('🔍 SCORM Diagnostics:', launchResponse.diagnostics);
+            addDebugLog(`📊 Diagnostics: ${JSON.stringify(launchResponse.diagnostics, null, 2)}`);
+          }
+          
+          setScormUrl(launchResponse.launchUrl);
+          addDebugLog(`🎯 Launch URL set: ${launchResponse.launchUrl}`);
+        } catch (launchError: any) {
+          console.error('❌ SCORM launch failed:', launchError);
+          
+          // Handle specific SCORM errors with user-friendly messages
+          let errorMessage = 'Failed to launch course. Please contact support.';
+          
+          if (launchError.message?.includes('LAUNCH_FILE_NOT_FOUND')) {
+            errorMessage = 'Course launch file not found. The SCORM package appears to be corrupted.';
+          } else if (launchError.message?.includes('INVALID_MANIFEST')) {
+            errorMessage = 'This SCORM package is missing required files. Please contact your administrator.';
+          } else if (launchError.message?.includes('INVALID_ZIP')) {
+            errorMessage = 'The course package is corrupted. Please contact your administrator.';
+          } else if (launchError.message?.includes('not found')) {
+            errorMessage = 'Course not found or no longer available.';
+          } else if (launchError.message?.includes('permission')) {
+            errorMessage = 'You do not have permission to access this course.';
+          }
+          
+          addDebugLog(`❌ Launch error: ${errorMessage}`);
+          
+          toast({
+            title: "Course Launch Failed",
+            description: errorMessage,
+            variant: "destructive",
+          });
+          
+          throw new Error(errorMessage);
+        }
         
         // Expose SCORM APIs to window BEFORE setting iframe src
         (window as any).API = scorm12API;
@@ -243,11 +282,34 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         addDebugLog(`👤 Learner: ${attemptStateRef.current['cmi.core.student_name']}`);
         addDebugLog(`🆔 Attempt ID: ${newAttemptId}`);
         
+        // Add timeout detection for SCORM API initialization
+        setTimeout(() => {
+          const apisCalled = debugLog.some(log => log.includes('Initialize called') || log.includes('LMSInitialize called'));
+          if (!apisCalled) {
+            console.warn('⚠️ SCORM API initialization timeout - SCO may not have called Initialize within 10 seconds');
+            addDebugLog('⚠️ API timeout - SCO didn\'t initialize within 10s (wrong SCORM version or launch file?)');
+            toast({
+              title: "Course Loading Issue",
+              description: "Course is taking longer than expected to initialize. This may indicate an issue with the SCORM package.",
+              variant: "destructive",
+            });
+          }
+        }, 10000);
+        
         setIsLoading(false);
-      } catch (error) {
-        console.error('Error initializing course:', error);
-        addDebugLog(`❌ Initialization error: ${error}`);
+      } catch (error: any) {
+        console.error('❌ Error initializing course:', error);
+        addDebugLog(`❌ Initialization error: ${error.message || error}`);
         setIsLoading(false);
+        
+        // Show error in UI instead of just console
+        if (!error.message?.includes('Launch Failed')) {
+          toast({
+            title: "Course Initialization Failed",
+            description: error.message || "Failed to initialize course. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     };
     

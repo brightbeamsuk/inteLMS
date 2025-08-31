@@ -729,14 +729,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`📦 Processing SCORM upload for user ${user.id}: ${packageUrl}`);
       
-      // Process the upload
-      const packageInfo = await scormPreviewService.processUpload(packageUrl);
+      // Process the upload using improved SCORM service
+      const { ImprovedScormService } = await import('./services/improvedScormService');
+      const improvedScormService = new ImprovedScormService();
       
-      res.json({
-        success: true,
-        packageInfo,
-        message: `Package processed successfully with ID: ${packageInfo.packageId}`
-      });
+      // Generate a unique course ID for this upload
+      const courseId = Buffer.from(`${Date.now()}_${Math.random()}`).toString('base64').replace(/[/+=]/g, '').substring(0, 16);
+      
+      try {
+        const packageInfo = await improvedScormService.processScormPackage(packageUrl, courseId);
+        
+        res.json({
+          success: true,
+          packageInfo: {
+            packageId: courseId,
+            title: packageInfo.title,
+            description: packageInfo.description,
+            version: packageInfo.version,
+            launchFile: packageInfo.launchFile,
+            launchUrl: packageInfo.launchUrl,
+            diagnostics: packageInfo.diagnostics
+          },
+          message: `Package processed successfully with ID: ${courseId}`
+        });
+      } catch (scormError: any) {
+        // Provide detailed error diagnostics
+        const errorResponse: any = {
+          success: false,
+          message: scormError.message,
+          code: scormError.code || 'SCORM_PROCESSING_ERROR'
+        };
+
+        if (scormError.details) {
+          errorResponse.details = scormError.details;
+        }
+
+        // Add specific error guidance
+        if (scormError.code === 'LAUNCH_FILE_NOT_FOUND') {
+          errorResponse.message = `Launch file not found: ${scormError.details?.attemptedLaunchFile}. Check imsmanifest.xml 'adlcp:href' and extracted folder structure.`;
+          errorResponse.userMessage = "The SCORM package's launch file couldn't be found. This usually means the package structure is incorrect.";
+        } else if (scormError.message.includes('imsmanifest.xml')) {
+          errorResponse.message = `Invalid SCORM package: ${scormError.message}. Ensure the zip contains a valid imsmanifest.xml file.`;
+          errorResponse.userMessage = "This doesn't appear to be a valid SCORM package. Make sure you uploaded the correct zip file.";
+        } else if (scormError.message.includes('Invalid zip')) {
+          errorResponse.message = `Cannot read zip file: ${scormError.message}. Upload a valid SCORM zip package.`;
+          errorResponse.userMessage = "The uploaded file appears to be corrupted or isn't a valid zip file.";
+        }
+
+        console.error('SCORM processing failed:', errorResponse);
+        return res.status(400).json(errorResponse);
+      }
       
     } catch (error) {
       console.error('Error processing SCORM upload:', error);
@@ -1005,25 +1047,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserIdFromSession(req);
       
       if (!userId) {
+        console.log(`❌ SCORM launch failed: User not authenticated for assignment ${assignmentId}`);
         return res.status(401).json({ message: 'User not authenticated' });
       }
 
       const assignment = await storage.getAssignment(assignmentId);
       if (!assignment || assignment.userId !== userId) {
+        console.log(`❌ SCORM launch failed: Assignment ${assignmentId} not found or access denied for user ${userId}`);
         return res.status(403).json({ message: 'Assignment not found or access denied' });
       }
 
       const course = await storage.getCourse(assignment.courseId);
       if (!course || !course.scormPackageUrl) {
+        console.log(`❌ SCORM launch failed: Course ${assignment.courseId} or SCORM package not found`);
         return res.status(404).json({ message: 'Course or SCORM package not found' });
       }
 
-      // Return the launch URL for the iframe
-      const launchUrl = `/api/scorm/${assignmentId}/player`;
-      res.json({ launchUrl, courseTitle: course.title });
+      console.log(`🚀 SCORM launch for assignment ${assignmentId}, course: ${course.title}`);
+      
+      try {
+        // Use improved SCORM service to process and verify the package
+        const { ImprovedScormService } = await import('./services/improvedScormService');
+        const improvedScormService = new ImprovedScormService();
+        
+        // Use course ID as the extraction directory
+        const packageInfo = await improvedScormService.processScormPackage(course.scormPackageUrl, assignment.courseId);
+        
+        console.log(`✅ SCORM package verified. Launch URL: ${packageInfo.launchUrl}`);
+        
+        // Return direct launch URL using static hosting
+        res.json({ 
+          launchUrl: packageInfo.launchUrl, // This will be /scos/courseId/path/to/file.html
+          courseTitle: course.title,
+          scormVersion: packageInfo.version,
+          diagnostics: packageInfo.diagnostics
+        });
+      } catch (scormError: any) {
+        console.error(`❌ SCORM processing failed for assignment ${assignmentId}:`, scormError);
+        
+        // Provide specific error messages based on the error type
+        let errorMessage = 'Failed to launch course';
+        let errorCode = 'SCORM_ERROR';
+        
+        if (scormError.code === 'LAUNCH_FILE_NOT_FOUND') {
+          errorMessage = `Launch file not found: ${scormError.details?.attemptedLaunchFile || 'unknown'}. The SCORM package structure appears to be incorrect.`;
+          errorCode = 'LAUNCH_FILE_NOT_FOUND';
+        } else if (scormError.message.includes('imsmanifest.xml')) {
+          errorMessage = 'Invalid SCORM package: imsmanifest.xml is missing or corrupted.';
+          errorCode = 'INVALID_MANIFEST';
+        } else if (scormError.message.includes('Invalid zip')) {
+          errorMessage = 'SCORM package file is corrupted or not a valid zip file.';
+          errorCode = 'INVALID_ZIP';
+        }
+        
+        return res.status(400).json({ 
+          message: errorMessage,
+          code: errorCode,
+          details: scormError.details
+        });
+      }
     } catch (error) {
-      console.error('Error launching SCORM course:', error);
-      res.status(500).json({ message: 'Failed to launch course' });
+      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignmentId}:`, error);
+      res.status(500).json({ message: 'Failed to launch course', code: 'SERVER_ERROR' });
     }
   });
 
