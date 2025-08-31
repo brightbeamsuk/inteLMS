@@ -998,6 +998,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // NEW SCORM launch endpoint - provides launch URL for iframe (MUST BE BEFORE WILDCARD)
+  app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
+    console.log('🚀 SCORM launch route called');
+    try {
+      const { assignmentId } = req.params;
+      console.log('🚀 Assignment ID:', assignmentId);
+      
+      // Get user from session (multiple possible locations)
+      let userId = null;
+      if (req.session?.user?.claims?.sub) {
+        userId = req.session.user.claims.sub;
+        console.log('🚀 Found user ID from claims.sub:', userId);
+      } else if (req.session?.user?.id) {
+        userId = req.session.user.id;
+        console.log('🚀 Found user ID from user.id:', userId);
+      } else {
+        console.log('🚀 Session structure:', JSON.stringify(req.session, null, 2));
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      const assignment = await storage.getAssignment(assignmentId);
+      console.log('🚀 Assignment found:', !!assignment);
+      console.log('🚀 Assignment userId:', assignment?.userId);
+      console.log('🚀 Session userId:', userId);
+      console.log('🚀 User ID match:', assignment?.userId === userId);
+      
+      if (!assignment || assignment.userId !== userId) {
+        console.log('🚫 SCORM launch access denied - Assignment userId:', assignment?.userId, 'Session userId:', userId);
+        return res.status(403).json({ message: 'Assignment not found or access denied' });
+      }
+
+      const course = await storage.getCourse(assignment.courseId);
+      if (!course || !course.scormPackageUrl) {
+        return res.status(404).json({ message: 'Course or SCORM package not found' });
+      }
+
+      // Return the launch URL for the iframe
+      const launchUrl = `/api/scorm/${assignmentId}/player`;
+      res.json({ launchUrl, courseTitle: course.title });
+    } catch (error) {
+      console.error('Error launching SCORM course:', error);
+      res.status(500).json({ message: 'Failed to launch course' });
+    }
+  });
+
   // SCORM Asset serving route - handles direct asset requests
   app.get('/api/scorm/*', requireAuth, async (req: any, res) => {
     try {
@@ -3120,55 +3165,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // NEW SCORM launch endpoint - provides launch URL for iframe
-  app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
-    console.log('🚀 SCORM launch route called');
-    try {
-      const { assignmentId } = req.params;
-      console.log('🚀 Assignment ID:', assignmentId);
-      
-      // Get user from session (multiple possible locations)
-      let userId = null;
-      if (req.session?.user?.claims?.sub) {
-        userId = req.session.user.claims.sub;
-        console.log('🚀 Found user ID from claims.sub:', userId);
-      } else if (req.session?.user?.id) {
-        userId = req.session.user.id;
-        console.log('🚀 Found user ID from user.id:', userId);
-      } else {
-        console.log('🚀 Session structure:', JSON.stringify(req.session, null, 2));
-        return res.status(401).json({ message: 'User not authenticated' });
-      }
-
-      const assignment = await storage.getAssignment(assignmentId);
-      console.log('🚀 Assignment found:', !!assignment);
-      console.log('🚀 Assignment userId:', assignment?.userId);
-      console.log('🚀 Session userId:', userId);
-      console.log('🚀 User ID match:', assignment?.userId === userId);
-      
-      if (!assignment || assignment.userId !== userId) {
-        console.log('🚫 SCORM launch access denied - Assignment userId:', assignment?.userId, 'Session userId:', userId);
-        return res.status(403).json({ message: 'Assignment not found or access denied' });
-      }
-
-      const course = await storage.getCourse(assignment.courseId);
-      if (!course || !course.scormPackageUrl) {
-        return res.status(404).json({ message: 'Course or SCORM package not found' });
-      }
-
-      const launchUrl = await scormService.getLaunchUrl(course.scormPackageUrl, userId, assignmentId);
-
-      res.json({
-        launchUrl,
-        courseTitle: course.title,
-        passmark: course.passmark || 80
-      });
-
-    } catch (error) {
-      console.error('Error getting SCORM launch URL:', error);
-      res.status(500).json({ message: 'Failed to get launch URL' });
-    }
-  });
 
   // SCORM completion route
   app.post('/api/scorm/:assignmentId/complete', requireAuth, async (req: any, res) => {
