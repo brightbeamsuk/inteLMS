@@ -15,14 +15,31 @@ interface Course {
   createdAt: string;
 }
 
+interface CourseAnalytics {
+  courseId: string;
+  totalAssignments: number;
+  totalCompletions: number;
+  successfulCompletions: number;
+  averageScore: number;
+  completionRate: number;
+  organizationsUsing: number;
+  averageTimeToComplete: number;
+}
+
 export function SuperAdminCourses() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
 
   const { data: courses = [], isLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses'],
+  });
+
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<CourseAnalytics>({
+    queryKey: [`/api/courses/${selectedCourse?.id}/analytics`],
+    enabled: !!selectedCourse && showAnalyticsModal,
   });
 
   // Filter courses based on search and category
@@ -160,6 +177,10 @@ export function SuperAdminCourses() {
                   </button>
                   <button 
                     className="btn btn-sm btn-primary"
+                    onClick={() => {
+                      setSelectedCourse(course);
+                      setShowAnalyticsModal(true);
+                    }}
                     data-testid={`button-course-analytics-${course.id}`}
                   >
                     <i className="fas fa-chart-bar"></i> Analytics
@@ -235,6 +256,106 @@ export function SuperAdminCourses() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowDetailsModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Course Analytics Modal */}
+      {showAnalyticsModal && selectedCourse && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-course-analytics-title">
+              Analytics: {selectedCourse.title}
+            </h3>
+            
+            {analyticsLoading ? (
+              <div className="flex justify-center items-center py-8">
+                <span className="loading loading-spinner loading-lg"></span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="stat bg-base-100 shadow rounded-lg">
+                  <div className="stat-figure text-primary">
+                    <i className="fas fa-users text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Organizations Using</div>
+                  <div className="stat-value text-primary text-lg" data-testid="stat-organizations-using">
+                    {analytics?.organizationsUsing || 0}
+                  </div>
+                  <div className="stat-desc">Active deployments</div>
+                </div>
+
+                <div className="stat bg-base-100 shadow rounded-lg">
+                  <div className="stat-figure text-secondary">
+                    <i className="fas fa-clipboard-list text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Total Assignments</div>
+                  <div className="stat-value text-secondary text-lg" data-testid="stat-total-assignments">
+                    {analytics?.totalAssignments || 0}
+                  </div>
+                  <div className="stat-desc">Course deployments</div>
+                </div>
+
+                <div className="stat bg-base-100 shadow rounded-lg">
+                  <div className="stat-figure text-accent">
+                    <i className="fas fa-check-circle text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Total Completions</div>
+                  <div className="stat-value text-accent text-lg" data-testid="stat-total-completions">
+                    {analytics?.totalCompletions || 0}
+                  </div>
+                  <div className="stat-desc">
+                    {analytics?.successfulCompletions || 0} successful
+                  </div>
+                </div>
+
+                <div className="stat bg-base-100 shadow rounded-lg">
+                  <div className="stat-figure text-success">
+                    <i className="fas fa-percentage text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Completion Rate</div>
+                  <div className="stat-value text-success text-lg" data-testid="stat-completion-rate">
+                    {analytics?.completionRate ? `${analytics.completionRate.toFixed(1)}%` : '0%'}
+                  </div>
+                  <div className="stat-desc">Overall success</div>
+                </div>
+
+                <div className="stat bg-base-100 shadow rounded-lg col-span-1 md:col-span-2">
+                  <div className="stat-figure text-info">
+                    <i className="fas fa-trophy text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Average Score</div>
+                  <div className="stat-value text-info text-lg" data-testid="stat-average-score">
+                    {analytics?.averageScore ? `${analytics.averageScore.toFixed(1)}%` : 'N/A'}
+                  </div>
+                  <div className="stat-desc">Across all completions</div>
+                </div>
+
+                <div className="stat bg-base-100 shadow rounded-lg col-span-1 md:col-span-2">
+                  <div className="stat-figure text-warning">
+                    <i className="fas fa-clock text-2xl"></i>
+                  </div>
+                  <div className="stat-title">Avg. Time to Complete</div>
+                  <div className="stat-value text-warning text-lg" data-testid="stat-average-time">
+                    {analytics?.averageTimeToComplete ? `${Math.round(analytics.averageTimeToComplete)} min` : 'N/A'}
+                  </div>
+                  <div className="stat-desc">From assignment to completion</div>
+                </div>
+              </div>
+            )}
+
+            <div className="modal-action">
+              <button 
+                className="btn"
+                onClick={() => setShowAnalyticsModal(false)}
+                data-testid="button-close-analytics"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowAnalyticsModal(false)}>close</button>
           </form>
         </dialog>
       )}

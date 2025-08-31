@@ -129,6 +129,16 @@ export interface IStorage {
     coursesCompleted: number;
     complianceRate: number;
   }>;
+  getCourseAnalytics(courseId: string): Promise<{
+    courseId: string;
+    totalAssignments: number;
+    totalCompletions: number;
+    successfulCompletions: number;
+    averageScore: number;
+    completionRate: number;
+    organizationsUsing: number;
+    averageTimeToComplete: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -541,6 +551,72 @@ export class DatabaseStorage implements IStorage {
       coursesAssigned: assignmentCount.count,
       coursesCompleted: completionCount.count,
       complianceRate,
+    };
+  }
+
+  async getCourseAnalytics(courseId: string): Promise<{
+    courseId: string;
+    totalAssignments: number;
+    totalCompletions: number;
+    successfulCompletions: number;
+    averageScore: number;
+    completionRate: number;
+    organizationsUsing: number;
+    averageTimeToComplete: number;
+  }> {
+    const [assignmentCount] = await db.select({ count: count() }).from(assignments).where(eq(assignments.courseId, courseId));
+    const [completionCount] = await db.select({ count: count() }).from(completions).where(eq(completions.courseId, courseId));
+    const [successfulCount] = await db.select({ count: count() }).from(completions).where(and(eq(completions.courseId, courseId), eq(completions.status, 'completed')));
+    
+    // Get unique organizations using this course
+    const organizationsUsing = await db
+      .selectDistinct({ orgId: assignments.organisationId })
+      .from(assignments)
+      .where(eq(assignments.courseId, courseId));
+    
+    // Calculate average score from successful completions
+    const scoreResults = await db
+      .select({ score: completions.score })
+      .from(completions)
+      .where(and(eq(completions.courseId, courseId), eq(completions.status, 'completed')));
+    
+    const averageScore = scoreResults.length > 0 
+      ? scoreResults.reduce((sum, c) => sum + (c.score || 0), 0) / scoreResults.length
+      : 0;
+    
+    // Calculate average time to complete (in minutes)
+    const timeResults = await db
+      .select({
+        assignedAt: assignments.assignedAt,
+        completedAt: completions.completedAt
+      })
+      .from(assignments)
+      .innerJoin(completions, eq(assignments.id, completions.assignmentId))
+      .where(and(eq(assignments.courseId, courseId), eq(completions.status, 'completed')));
+    
+    const averageTimeToComplete = timeResults.length > 0
+      ? timeResults.reduce((sum, t) => {
+          if (t.assignedAt && t.completedAt) {
+            const diffInMs = new Date(t.completedAt).getTime() - new Date(t.assignedAt).getTime();
+            return sum + (diffInMs / (1000 * 60)); // Convert to minutes
+          }
+          return sum;
+        }, 0) / timeResults.length
+      : 0;
+    
+    const completionRate = assignmentCount.count > 0 
+      ? (successfulCount.count / assignmentCount.count) * 100
+      : 0;
+
+    return {
+      courseId,
+      totalAssignments: assignmentCount.count,
+      totalCompletions: completionCount.count,
+      successfulCompletions: successfulCount.count,
+      averageScore,
+      completionRate,
+      organizationsUsing: organizationsUsing.length,
+      averageTimeToComplete,
     };
   }
 }

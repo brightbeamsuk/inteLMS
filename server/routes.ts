@@ -919,6 +919,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/courses/:courseId/analytics', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { courseId } = req.params;
+      const analytics = await storage.getCourseAnalytics(courseId);
+      res.json(analytics);
+    } catch (error) {
+      console.error('Error fetching course analytics:', error);
+      res.status(500).json({ message: 'Failed to fetch course analytics' });
+    }
+  });
+
   // Assignments routes
   app.get('/api/assignments', requireAuth, async (req: any, res) => {
     try {
