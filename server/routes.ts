@@ -3121,7 +3121,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // NEW SCORM launch endpoint - provides launch URL for iframe
-  app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
+  app.get('/api/scorm/:assignmentId/launch', (req: any, res: any, next: any) => {
+    console.log('🔥 SCORM launch route hit - BEFORE requireAuth');
+    requireAuth(req, res, next);
+  }, async (req: any, res) => {
     console.log(`🚀 SCORM launch route called`);
     try {
       const { assignmentId } = req.params;
