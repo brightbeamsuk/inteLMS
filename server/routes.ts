@@ -3122,9 +3122,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // NEW SCORM launch endpoint - provides launch URL for iframe
   app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
+    console.log(`🚀 SCORM launch route called`);
     try {
       const { assignmentId } = req.params;
+      console.log(`🚀 Assignment ID: ${assignmentId}`);
       const userId = getUserIdFromSession(req);
+      console.log(`🚀 User ID from session: ${userId}`);
 
       if (!userId) {
         return res.status(401).json({ message: 'User not authenticated' });
