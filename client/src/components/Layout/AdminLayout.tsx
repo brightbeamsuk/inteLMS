@@ -63,9 +63,25 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <div className="dropdown dropdown-end">
               <div tabIndex={0} role="button" className="btn btn-ghost" data-testid="button-user-menu">
                 <div className="badge badge-secondary">Admin</div>
-                <div className="avatar placeholder">
-                  <div className="bg-neutral text-neutral-content rounded-full w-8">
-                    <span className="text-xs">A</span>
+                <div className="avatar">
+                  <div className="w-8 h-8 rounded-full">
+                    {user?.profileImageUrl ? (
+                      <img 
+                        src={user.profileImageUrl} 
+                        alt="Profile"
+                        className="w-full h-full object-cover rounded-full"
+                        data-testid="img-user-avatar"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                      <span className="text-xs font-semibold">
+                        {user?.firstName?.[0] || ''}{user?.lastName?.[0] || ''}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
