@@ -427,7 +427,7 @@ export function AdminDashboard() {
                   <p className="text-sm">Completions will appear here when users finish courses.</p>
                 </div>
               ) : (
-                recentCompletions.slice(0, 5).map((completion, index) => (
+                recentCompletions.map((completion, index) => (
                   <div key={completion.id} className="flex justify-between items-center p-3 bg-base-100 rounded">
                     <div className="flex items-center gap-3">
                       <div className="avatar placeholder">
@@ -459,13 +459,6 @@ export function AdminDashboard() {
               )}
             </div>
             
-            {recentCompletions.length > 0 && (
-              <div className="card-actions justify-end mt-4">
-                <button className="btn btn-sm btn-outline" data-testid="button-view-all-completions">
-                  View All Completions
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>

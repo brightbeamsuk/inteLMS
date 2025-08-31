@@ -1827,7 +1827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                  completionDate >= thirtyDaysAgo;
         })
         .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime())
-        .slice(0, 10)
+        .slice(0, 3)
         .map(completion => {
           const user = userMap.get(completion.userId);
           const course = courseMap.get(completion.courseId);
