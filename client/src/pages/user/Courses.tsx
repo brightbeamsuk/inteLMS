@@ -45,7 +45,7 @@ export function UserCourses() {
 
   // Filter assignments based on search and status
   const filteredAssignments = assignments.filter(assignment => {
-    const matchesSearch = assignment.courseTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = assignment.courseTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          assignment.courseDescription?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = !statusFilter || assignment.status === statusFilter;
     return matchesSearch && matchesStatus;

@@ -52,14 +52,18 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                       src={user.profileImageUrl} 
                       alt="Profile"
                       className="object-cover w-full h-full rounded-full"
+                      data-testid="img-user-avatar"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
                     />
-                  ) : (
-                    <div className="bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center">
-                      <span className="text-xs">
-                        {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
-                      </span>
-                    </div>
-                  )}
+                  ) : null}
+                  <div className={`bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                    <span className="text-xs">
+                      {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

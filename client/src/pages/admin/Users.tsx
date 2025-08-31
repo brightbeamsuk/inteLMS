@@ -486,11 +486,24 @@ export function AdminUsers() {
                     <tr key={user.id} data-testid={`row-user-${user.id}`}>
                       <td>
                         <div className="flex items-center gap-3">
-                          <div className="avatar placeholder">
-                            <div className="bg-neutral text-neutral-content rounded-full w-8">
-                              <span className="text-xs">
-                                {user.firstName?.[0]}{user.lastName?.[0]}
-                              </span>
+                          <div className="avatar">
+                            <div className="w-8 h-8 rounded-full">
+                              {user.profileImageUrl ? (
+                                <img 
+                                  src={user.profileImageUrl} 
+                                  alt="Profile" 
+                                  className="w-full h-full object-cover rounded-full"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                  }}
+                                />
+                              ) : null}
+                              <div className={`bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center ${user.profileImageUrl ? 'hidden' : ''}`}>
+                                <span className="text-xs">
+                                  {user.firstName?.[0]}{user.lastName?.[0]}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div>
