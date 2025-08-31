@@ -19,11 +19,6 @@ export function UserSettings() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  const [profileData, setProfileData] = useState({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    email: user?.email || "",
-  });
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
@@ -42,25 +37,6 @@ export function UserSettings() {
     enabled: user?.allowCertificateDownload === true,
   });
 
-  const updateProfileMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiRequest('PATCH', `/api/users/${user?.id}`, data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      toast({
-        title: "Success",
-        description: "Profile updated successfully",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to update profile",
-        variant: "destructive",
-      });
-    },
-  });
 
   const changePasswordMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -86,18 +62,6 @@ export function UserSettings() {
     },
   });
 
-  const handleProfileSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profileData.firstName || !profileData.lastName || !profileData.email) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    updateProfileMutation.mutate(profileData);
-  };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +97,7 @@ export function UserSettings() {
     document.body.removeChild(link);
   };
 
-  const tabs = ["Profile", "Password", "Notifications"];
+  const tabs = ["Password", "Notifications"];
   
   // Only show certificates tab if user has permission
   if (user?.allowCertificateDownload) {
@@ -170,75 +134,9 @@ export function UserSettings() {
             ))}
           </div>
 
-          {/* Profile Tab */}
-          {activeTab === 0 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold">Profile Information</h3>
-              
-              <form onSubmit={handleProfileSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text">First Name *</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered" 
-                      value={profileData.firstName}
-                      onChange={(e) => setProfileData(prev => ({ ...prev, firstName: e.target.value }))}
-                      required 
-                      data-testid="input-first-name"
-                    />
-                  </div>
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text">Last Name *</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered" 
-                      value={profileData.lastName}
-                      onChange={(e) => setProfileData(prev => ({ ...prev, lastName: e.target.value }))}
-                      required 
-                      data-testid="input-last-name"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">Email Address *</span>
-                  </label>
-                  <input 
-                    type="email" 
-                    className="input input-bordered" 
-                    value={profileData.email}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, email: e.target.value }))}
-                    required 
-                    data-testid="input-email"
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <button 
-                    type="submit" 
-                    className="btn btn-primary"
-                    disabled={updateProfileMutation.isPending}
-                    data-testid="button-save-profile"
-                  >
-                    {updateProfileMutation.isPending ? (
-                      <span className="loading loading-spinner loading-sm"></span>
-                    ) : (
-                      'Save Changes'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
 
           {/* Password Tab */}
-          {activeTab === 1 && (
+          {activeTab === 0 && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Change Password</h3>
               
@@ -314,7 +212,7 @@ export function UserSettings() {
           )}
 
           {/* Notifications Tab */}
-          {activeTab === 2 && (
+          {activeTab === 1 && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Notification Preferences</h3>
               
@@ -380,7 +278,7 @@ export function UserSettings() {
           )}
 
           {/* Certificates Tab */}
-          {activeTab === 3 && user?.allowCertificateDownload && (
+          {activeTab === 2 && user?.allowCertificateDownload && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">My Certificates</h3>
               
