@@ -24,6 +24,10 @@ export function SuperAdminOrganisations() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<Organisation>>({});
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -75,6 +79,52 @@ export function SuperAdminOrganisations() {
     },
   });
 
+  const updateOrganisationMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest('PUT', `/api/organisations/${id}`, data);
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      setShowEditModal(false);
+      setSelectedOrg(null);
+      toast({
+        title: "Success!",
+        description: `Organisation "${data.displayName}" updated successfully`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update organisation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteOrganisationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/organisations/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      setShowDeleteModal(false);
+      setSelectedOrg(null);
+      setDeleteConfirmText("");
+      toast({
+        title: "Success!",
+        description: "Organisation deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete organisation",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -116,6 +166,50 @@ export function SuperAdminOrganisations() {
     }
     
     createOrganisationMutation.mutate(formData);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrg) return;
+    
+    updateOrganisationMutation.mutate({
+      id: selectedOrg.id,
+      data: editFormData,
+    });
+  };
+
+  const handleDelete = () => {
+    if (!selectedOrg || deleteConfirmText !== selectedOrg.displayName) return;
+    deleteOrganisationMutation.mutate(selectedOrg.id);
+  };
+
+  const handleEditLogoUpload = async () => {
+    try {
+      const response = await apiRequest('POST', '/api/objects/upload', {});
+      const data = await response.json();
+      return {
+        method: 'PUT' as const,
+        url: data.uploadURL,
+      };
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to get upload URL",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleEditLogoComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
+    if (result.successful && result.successful.length > 0) {
+      const uploadUrl = result.successful[0].uploadURL as string;
+      setEditFormData(prev => ({ ...prev, logoUrl: uploadUrl }));
+      toast({
+        title: "Success",
+        description: "Logo uploaded successfully",
+      });
+    }
   };
 
   const handleLogoUpload = async () => {
@@ -205,8 +299,23 @@ export function SuperAdminOrganisations() {
                         <div className="avatar">
                           <div className="w-12 h-12 rounded">
                             {org.logoUrl ? (
-                              <img src={org.logoUrl} alt={`${org.name} logo`} />
-                            ) : (
+                              <img 
+                                src={
+                                  org.logoUrl.startsWith('/objects/') 
+                                    ? org.logoUrl 
+                                    : org.logoUrl.includes('storage.googleapis.com') 
+                                      ? `/objects/${org.logoUrl.split('/').pop()}`
+                                      : org.logoUrl
+                                } 
+                                alt={`${org.name} logo`} 
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                }}
+                              />
+                            ) : null}
+                            {!org.logoUrl && (
                               <div className="bg-primary text-primary-content flex items-center justify-center">
                                 <i className="fas fa-building"></i>
                               </div>
@@ -253,15 +362,32 @@ export function SuperAdminOrganisations() {
                           </button>
                           <button 
                             className="btn btn-sm btn-ghost"
+                            onClick={() => {
+                              setSelectedOrg(org);
+                              setEditFormData({
+                                name: org.name,
+                                displayName: org.displayName,
+                                contactEmail: org.contactEmail,
+                                contactPhone: org.contactPhone,
+                                address: org.address,
+                                theme: org.theme,
+                                logoUrl: org.logoUrl
+                              });
+                              setShowEditModal(true);
+                            }}
                             data-testid={`button-edit-org-${org.id}`}
                           >
                             <i className="fas fa-edit"></i>
                           </button>
                           <button 
                             className="btn btn-sm btn-error"
-                            data-testid={`button-deactivate-org-${org.id}`}
+                            onClick={() => {
+                              setSelectedOrg(org);
+                              setShowDeleteModal(true);
+                            }}
+                            data-testid={`button-delete-org-${org.id}`}
                           >
-                            <i className="fas fa-ban"></i>
+                            <i className="fas fa-trash"></i>
                           </button>
                         </div>
                       </td>
@@ -583,6 +709,227 @@ export function SuperAdminOrganisations() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowDetailsModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Edit Organisation Modal */}
+      {showEditModal && selectedOrg && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-edit-modal-title">
+              Edit Organisation: {selectedOrg.displayName}
+            </h3>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Organisation Name *</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter organisation name" 
+                    className="input input-bordered" 
+                    value={editFormData.name || ''}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value, displayName: e.target.value }))}
+                    required 
+                    data-testid="input-edit-org-name"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Display Name</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Display name" 
+                    className="input input-bordered" 
+                    value={editFormData.displayName || ''}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, displayName: e.target.value }))}
+                    data-testid="input-edit-org-display-name"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Contact Email</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    placeholder="contact@organisation.com" 
+                    className="input input-bordered" 
+                    value={editFormData.contactEmail || ''}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+                    data-testid="input-edit-org-email"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Contact Phone</span>
+                  </label>
+                  <input 
+                    type="tel" 
+                    placeholder="+1 (555) 123-4567" 
+                    className="input input-bordered" 
+                    value={editFormData.contactPhone || ''}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
+                    data-testid="input-edit-org-phone"
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Logo Upload</span>
+                </label>
+                <ObjectUploader
+                  maxNumberOfFiles={1}
+                  maxFileSize={5242880} // 5MB
+                  onGetUploadParameters={handleEditLogoUpload}
+                  onComplete={handleEditLogoComplete}
+                  buttonClassName="btn btn-outline w-full"
+                >
+                  <i className="fas fa-upload mr-2"></i>
+                  {editFormData.logoUrl ? "Change Logo" : "Upload Logo"}
+                </ObjectUploader>
+                {editFormData.logoUrl && (
+                  <div className="mt-2 text-sm text-success">
+                    <i className="fas fa-check"></i> Logo uploaded
+                  </div>
+                )}
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Choose Theme</span>
+                </label>
+                <select 
+                  className="select select-bordered"
+                  value={editFormData.theme || 'light'}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, theme: e.target.value }))}
+                  data-testid="select-edit-org-theme"
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="business">Business</option>
+                  <option value="emerald">Emerald</option>
+                  <option value="fantasy">Fantasy</option>
+                  <option value="pastel">Pastel</option>
+                </select>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Address (Optional)</span>
+                </label>
+                <textarea 
+                  className="textarea textarea-bordered" 
+                  placeholder="Organisation address"
+                  value={editFormData.address || ''}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, address: e.target.value }))}
+                  data-testid="input-edit-org-address"
+                ></textarea>
+              </div>
+
+              <div className="modal-action">
+                <button 
+                  type="button" 
+                  className="btn" 
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedOrg(null);
+                    setEditFormData({});
+                  }}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={updateOrganisationMutation.isPending}
+                  data-testid="button-submit-edit"
+                >
+                  {updateOrganisationMutation.isPending ? (
+                    <span className="loading loading-spinner loading-sm"></span>
+                  ) : (
+                    'Update Organisation'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowEditModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && selectedOrg && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-delete-modal-title">
+              Confirm Delete Organisation
+            </h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">Warning: This action cannot be undone!</h4>
+                <p className="text-sm">This will permanently delete the organisation and all associated data including users, courses, and assignments.</p>
+              </div>
+            </div>
+            
+            <p className="mb-4">
+              Are you sure you want to delete <strong>"{selectedOrg.displayName}"</strong>?
+            </p>
+            
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Type the organisation name to confirm:</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder={selectedOrg.displayName}
+                className="input input-bordered" 
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                data-testid="input-confirm-delete"
+              />
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn" 
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setSelectedOrg(null);
+                  setDeleteConfirmText("");
+                }}
+                data-testid="button-cancel-delete"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-error"
+                onClick={handleDelete}
+                disabled={deleteOrganisationMutation.isPending || deleteConfirmText !== selectedOrg.displayName}
+                data-testid="button-confirm-delete"
+              >
+                {deleteOrganisationMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Delete Organisation'
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowDeleteModal(false)}>close</button>
           </form>
         </dialog>
       )}

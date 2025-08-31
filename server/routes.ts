@@ -826,6 +826,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/organisations/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      let updateData = { ...req.body };
+
+      // Normalize logo URL if provided
+      if (updateData.logoUrl) {
+        const { ObjectStorageService } = await import('./objectStorage');
+        const objectStorageService = new ObjectStorageService();
+        updateData.logoUrl = objectStorageService.normalizeObjectEntityPath(updateData.logoUrl);
+      }
+
+      const updatedOrganisation = await storage.updateOrganisation(id, updateData);
+      res.json(updatedOrganisation);
+    } catch (error) {
+      console.error('Error updating organisation:', error);
+      res.status(500).json({ message: 'Failed to update organisation' });
+    }
+  });
+
+  app.delete('/api/organisations/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      await storage.deleteOrganisation(id);
+      res.status(204).end();
+    } catch (error) {
+      console.error('Error deleting organisation:', error);
+      res.status(500).json({ message: 'Failed to delete organisation' });
+    }
+  });
+
   // Users routes
   app.get('/api/users', requireAuth, async (req: any, res) => {
     try {
