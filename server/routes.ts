@@ -1227,6 +1227,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Archive organisation
+  app.put('/api/organisations/:id/archive', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const archivedOrganisation = await storage.updateOrganisation(id, { status: 'archived' });
+      res.json(archivedOrganisation);
+    } catch (error) {
+      console.error('Error archiving organisation:', error);
+      res.status(500).json({ message: 'Failed to archive organisation' });
+    }
+  });
+
+  // Permanently delete organisation
+  app.delete('/api/organisations/:id/permanent', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      await storage.deleteOrganisation(id);
+      res.status(204).end();
+    } catch (error) {
+      console.error('Error permanently deleting organisation:', error);
+      res.status(500).json({ message: 'Failed to permanently delete organisation' });
+    }
+  });
+
   app.delete('/api/organisations/:id', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);

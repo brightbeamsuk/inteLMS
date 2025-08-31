@@ -32,6 +32,9 @@ export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'user'])
 // User status enum
 export const userStatusEnum = pgEnum('user_status', ['active', 'inactive']);
 
+// Organisation status enum
+export const organisationStatusEnum = pgEnum('organisation_status', ['active', 'archived', 'deleted']);
+
 // Course status enum
 export const courseStatusEnum = pgEnum('course_status', ['draft', 'published', 'archived']);
 
@@ -73,7 +76,7 @@ export const organisations = pgTable("organisations", {
   contactEmail: varchar("contact_email"),
   contactPhone: varchar("contact_phone"),
   address: text("address"),
-  status: userStatusEnum("status").notNull().default('active'),
+  status: varchar("status").notNull().default('active'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

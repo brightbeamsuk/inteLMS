@@ -29,11 +29,16 @@ export function SuperAdminOrganisations() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
   const [showManageAdminsModal, setShowManageAdminsModal] = useState(false);
   const [showManageUsersModal, setShowManageUsersModal] = useState(false);
   const [showAssignCoursesModal, setShowAssignCoursesModal] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<Organisation>>({});
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [archiveConfirmText, setArchiveConfirmText] = useState("");
+  const [permanentDeleteConfirmText, setPermanentDeleteConfirmText] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -60,6 +65,11 @@ export function SuperAdminOrganisations() {
   const { data: organisations = [], isLoading } = useQuery<Organisation[]>({
     queryKey: ['/api/organisations'],
   });
+
+  // Filter organizations based on status
+  const activeOrganisations = organisations.filter(org => org.status === 'active');
+  const archivedOrganisations = organisations.filter(org => org.status === 'archived');
+  const displayedOrganisations = showArchived ? archivedOrganisations : activeOrganisations;
 
   // Get organisation stats when details modal is open
   const { data: orgStats, isLoading: statsLoading } = useQuery({
@@ -143,6 +153,52 @@ export function SuperAdminOrganisations() {
     },
   });
 
+  const archiveOrganisationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('PUT', `/api/organisations/${id}/archive`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      setShowArchiveModal(false);
+      setSelectedOrg(null);
+      setArchiveConfirmText("");
+      toast({
+        title: "Success!",
+        description: "Organisation archived successfully. Users will no longer be able to access the platform.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to archive organisation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const permanentDeleteOrganisationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/organisations/${id}/permanent`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      setShowPermanentDeleteModal(false);
+      setSelectedOrg(null);
+      setPermanentDeleteConfirmText("");
+      toast({
+        title: "Success!",
+        description: "Organisation permanently deleted. All data has been removed.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to permanently delete organisation",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -202,6 +258,16 @@ export function SuperAdminOrganisations() {
     deleteOrganisationMutation.mutate(selectedOrg.id);
   };
 
+  const handleArchive = () => {
+    if (!selectedOrg || archiveConfirmText !== 'DELETE') return;
+    archiveOrganisationMutation.mutate(selectedOrg.id);
+  };
+
+  const handlePermanentDelete = () => {
+    if (!selectedOrg || permanentDeleteConfirmText !== 'DELETE') return;
+    permanentDeleteOrganisationMutation.mutate(selectedOrg.id);
+  };
+
   const handleOpenAsAdmin = async (orgId: string) => {
     try {
       const response = await apiRequest('POST', `/api/organisations/${orgId}/impersonate-admin`);
@@ -236,7 +302,25 @@ export function SuperAdminOrganisations() {
 
       {/* Page Header */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Organisations</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold" data-testid="text-page-title">Organisations</h1>
+          <div className="flex gap-2">
+            <button 
+              className={`btn btn-sm ${!showArchived ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setShowArchived(false)}
+              data-testid="button-active-orgs"
+            >
+              <i className="fas fa-building"></i> Active ({activeOrganisations.length})
+            </button>
+            <button 
+              className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setShowArchived(true)}
+              data-testid="button-archived-orgs"
+            >
+              <i className="fas fa-archive"></i> Archived ({archivedOrganisations.length})
+            </button>
+          </div>
+        </div>
         <button 
           className="btn btn-primary"
           onClick={() => setShowCreateModal(true)}
@@ -269,14 +353,14 @@ export function SuperAdminOrganisations() {
                       <span className="loading loading-spinner loading-md"></span>
                     </td>
                   </tr>
-                ) : organisations.length === 0 ? (
+                ) : displayedOrganisations.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center text-base-content/60">
-                      No organisations found. Create your first organisation to get started.
+                      {showArchived ? 'No archived organisations found.' : 'No organisations found. Create your first organisation to get started.'}
                     </td>
                   </tr>
                 ) : (
-                  organisations.map((org) => (
+                  displayedOrganisations.map((org) => (
                     <tr key={org.id} data-testid={`row-organisation-${org.id}`}>
                       <td>
                         <div className="avatar">
@@ -317,7 +401,10 @@ export function SuperAdminOrganisations() {
                         </div>
                       </td>
                       <td>
-                        <div className={`badge ${org.status === 'active' ? 'badge-success' : 'badge-error'}`} data-testid={`badge-org-status-${org.id}`}>
+                        <div className={`badge ${
+                          org.status === 'active' ? 'badge-success' : 
+                          org.status === 'archived' ? 'badge-warning' : 'badge-error'
+                        }`} data-testid={`badge-org-status-${org.id}`}>
                           {org.status}
                         </div>
                       </td>
@@ -336,36 +423,54 @@ export function SuperAdminOrganisations() {
                           >
                             <i className="fas fa-eye"></i>
                           </button>
-                          <button 
-                            className="btn btn-sm btn-ghost"
-                            onClick={() => {
-                              setSelectedOrg(org);
-                              setEditFormData({
-                                name: org.name,
-                                displayName: org.displayName,
-                                contactEmail: org.contactEmail,
-                                contactPhone: org.contactPhone,
-                                address: org.address,
-                                theme: org.theme,
-                                accentColor: org.accentColor || "#3b82f6",
-                                logoUrl: org.logoUrl
-                              });
-                              setShowEditModal(true);
-                            }}
-                            data-testid={`button-edit-org-${org.id}`}
-                          >
-                            <i className="fas fa-edit"></i>
-                          </button>
-                          <button 
-                            className="btn btn-sm btn-error"
-                            onClick={() => {
-                              setSelectedOrg(org);
-                              setShowDeleteModal(true);
-                            }}
-                            data-testid={`button-delete-org-${org.id}`}
-                          >
-                            <i className="fas fa-trash"></i>
-                          </button>
+                          {org.status === 'active' && (
+                            <>
+                              <button 
+                                className="btn btn-sm btn-ghost"
+                                onClick={() => {
+                                  setSelectedOrg(org);
+                                  setEditFormData({
+                                    name: org.name,
+                                    displayName: org.displayName,
+                                    contactEmail: org.contactEmail,
+                                    contactPhone: org.contactPhone,
+                                    address: org.address,
+                                    theme: org.theme,
+                                    accentColor: org.accentColor || "#3b82f6",
+                                    logoUrl: org.logoUrl
+                                  });
+                                  setShowEditModal(true);
+                                }}
+                                data-testid={`button-edit-org-${org.id}`}
+                              >
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button 
+                                className="btn btn-sm btn-warning"
+                                onClick={() => {
+                                  setSelectedOrg(org);
+                                  setShowArchiveModal(true);
+                                }}
+                                data-testid={`button-archive-org-${org.id}`}
+                                title="Archive organisation"
+                              >
+                                <i className="fas fa-archive"></i>
+                              </button>
+                            </>
+                          )}
+                          {org.status === 'archived' && (
+                            <button 
+                              className="btn btn-sm btn-error"
+                              onClick={() => {
+                                setSelectedOrg(org);
+                                setShowPermanentDeleteModal(true);
+                              }}
+                              data-testid={`button-permanent-delete-org-${org.id}`}
+                              title="Permanently delete organisation"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -991,6 +1096,138 @@ export function SuperAdminOrganisations() {
           organisation={selectedOrg}
           onClose={() => setShowAssignCoursesModal(false)}
         />
+      )}
+
+      {/* Archive Confirmation Modal */}
+      {showArchiveModal && selectedOrg && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-archive-modal-title">
+              Archive Organisation
+            </h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">This will archive the organisation!</h4>
+                <p className="text-sm">Users will no longer be able to access the platform. The organisation can be permanently deleted later if needed.</p>
+              </div>
+            </div>
+            
+            <p className="mb-4">
+              Are you sure you want to archive <strong>"{selectedOrg.displayName}"</strong>?
+            </p>
+            
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Type <strong>DELETE</strong> to confirm:</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder="DELETE"
+                className="input input-bordered" 
+                value={archiveConfirmText}
+                onChange={(e) => setArchiveConfirmText(e.target.value)}
+                data-testid="input-confirm-archive"
+              />
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn" 
+                onClick={() => {
+                  setShowArchiveModal(false);
+                  setSelectedOrg(null);
+                  setArchiveConfirmText("");
+                }}
+                data-testid="button-cancel-archive"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-warning"
+                onClick={handleArchive}
+                disabled={archiveOrganisationMutation.isPending || archiveConfirmText !== 'DELETE'}
+                data-testid="button-confirm-archive"
+              >
+                {archiveOrganisationMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Archive Organisation'
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowArchiveModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Permanent Delete Confirmation Modal */}
+      {showPermanentDeleteModal && selectedOrg && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-permanent-delete-modal-title">
+              Permanently Delete Organisation
+            </h3>
+            
+            <div className="alert alert-error mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <h4 className="font-bold">DANGER: This action cannot be undone!</h4>
+                <p className="text-sm">This will permanently delete the organisation and all associated data including users, courses, assignments, and certificates. This action is IRREVERSIBLE.</p>
+              </div>
+            </div>
+            
+            <p className="mb-4">
+              Are you absolutely sure you want to permanently delete <strong>"{selectedOrg.displayName}"</strong>?
+            </p>
+            
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Type <strong>DELETE</strong> to confirm permanent deletion:</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder="DELETE"
+                className="input input-bordered" 
+                value={permanentDeleteConfirmText}
+                onChange={(e) => setPermanentDeleteConfirmText(e.target.value)}
+                data-testid="input-confirm-permanent-delete"
+              />
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn" 
+                onClick={() => {
+                  setShowPermanentDeleteModal(false);
+                  setSelectedOrg(null);
+                  setPermanentDeleteConfirmText("");
+                }}
+                data-testid="button-cancel-permanent-delete"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-error"
+                onClick={handlePermanentDelete}
+                disabled={permanentDeleteOrganisationMutation.isPending || permanentDeleteConfirmText !== 'DELETE'}
+                data-testid="button-confirm-permanent-delete"
+              >
+                {permanentDeleteOrganisationMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Permanently Delete'
+                )}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowPermanentDeleteModal(false)}>close</button>
+          </form>
+        </dialog>
       )}
     </div>
   );
