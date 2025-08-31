@@ -2203,7 +2203,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename=training-matrix.pdf');
-        res.send(pdfBuffer);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        res.end(pdfBuffer, 'binary');
         
       } else {
         return res.status(400).json({ message: 'Invalid format. Must be csv or pdf' });
