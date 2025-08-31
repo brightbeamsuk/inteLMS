@@ -959,6 +959,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/courses/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const updatedCourse = await storage.updateCourse(id, req.body);
+      res.json(updatedCourse);
+    } catch (error) {
+      console.error('Error updating course:', error);
+      res.status(500).json({ message: 'Failed to update course' });
+    }
+  });
+
   app.post('/api/courses', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);

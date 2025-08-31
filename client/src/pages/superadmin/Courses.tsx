@@ -1,18 +1,24 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Course {
   id: string;
   title: string;
   description: string;
+  scormPackageUrl?: string;
+  coverImageUrl?: string;
   estimatedDuration: number;
   passmark: number;
   category: string;
   tags: string;
-  coverImageUrl?: string;
+  certificateExpiryPeriod?: number;
   status: string;
+  createdBy: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 interface CourseAnalytics {
@@ -32,6 +38,10 @@ export function SuperAdminCourses() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<Course>>({});
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: courses = [], isLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses'],
@@ -41,6 +51,67 @@ export function SuperAdminCourses() {
     queryKey: [`/api/courses/${selectedCourse?.id}/analytics`],
     enabled: !!selectedCourse && showAnalyticsModal,
   });
+
+  const updateCourseMutation = useMutation({
+    mutationFn: async (data: Partial<Course>) => {
+      if (!selectedCourse) throw new Error('No course selected');
+      return await apiRequest('PUT', `/api/courses/${selectedCourse.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      setIsEditing(false);
+      toast({
+        title: "Success",
+        description: "Course updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update course",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditCourse = () => {
+    if (selectedCourse) {
+      setEditFormData({
+        title: selectedCourse.title,
+        description: selectedCourse.description,
+        estimatedDuration: selectedCourse.estimatedDuration,
+        passmark: selectedCourse.passmark,
+        category: selectedCourse.category,
+        tags: selectedCourse.tags,
+        certificateExpiryPeriod: selectedCourse.certificateExpiryPeriod,
+        scormPackageUrl: selectedCourse.scormPackageUrl,
+        coverImageUrl: selectedCourse.coverImageUrl,
+      });
+      setIsEditing(true);
+    }
+  };
+
+  const handleSaveChanges = () => {
+    updateCourseMutation.mutate(editFormData);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditFormData({});
+  };
+
+  const handlePreviewCourse = () => {
+    if (selectedCourse?.scormPackageUrl) {
+      // Open SCORM package in new window for preview
+      window.open(selectedCourse.scormPackageUrl, '_blank');
+    } else {
+      toast({
+        title: "No Preview Available",
+        description: "This course doesn't have a SCORM package uploaded",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Filter courses based on search and category
   const filteredCourses = courses.filter(course => {
@@ -170,6 +241,7 @@ export function SuperAdminCourses() {
                     onClick={() => {
                       setSelectedCourse(course);
                       setShowDetailsModal(true);
+                      setIsEditing(false);
                     }}
                     data-testid={`button-course-details-${course.id}`}
                   >
@@ -195,59 +267,253 @@ export function SuperAdminCourses() {
       {/* Course Details Modal */}
       {showDetailsModal && selectedCourse && (
         <dialog className="modal modal-open">
-          <div className="modal-box max-w-4xl">
+          <div className="modal-box max-w-6xl">
             <h3 className="font-bold text-lg mb-4" data-testid="text-course-details-title">
-              {selectedCourse.title}
+              {isEditing ? 'Edit Course' : 'Course Details'}: {selectedCourse.title}
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-semibold mb-2">Course Information</h4>
-                <div className="space-y-2 text-sm">
-                  <div><strong>Duration:</strong> <span data-testid="text-details-duration">{selectedCourse.estimatedDuration} minutes</span></div>
-                  <div><strong>Pass Mark:</strong> <span data-testid="text-details-passmark">{selectedCourse.passmark}%</span></div>
-                  <div><strong>Category:</strong> <span data-testid="text-details-category">{selectedCourse.category || 'Uncategorised'}</span></div>
-                  <div><strong>Tags:</strong> <span data-testid="text-details-tags">{selectedCourse.tags || 'None'}</span></div>
+            {!isEditing ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2">Basic Information</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><strong>Title:</strong> <span data-testid="text-details-title">{selectedCourse.title}</span></div>
+                      <div><strong>Description:</strong> <span data-testid="text-details-description">{selectedCourse.description || 'No description'}</span></div>
+                      <div><strong>Category:</strong> <span data-testid="text-details-category">{selectedCourse.category || 'Uncategorised'}</span></div>
+                      <div><strong>Tags:</strong> <span data-testid="text-details-tags">{selectedCourse.tags || 'None'}</span></div>
+                      <div><strong>Status:</strong> <span className={`badge ${selectedCourse.status === 'published' ? 'badge-success' : 'badge-warning'}`} data-testid="text-details-status">{selectedCourse.status}</span></div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-semibold mb-2">Course Settings</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><strong>Duration:</strong> <span data-testid="text-details-duration">{selectedCourse.estimatedDuration} minutes</span></div>
+                      <div><strong>Pass Mark:</strong> <span data-testid="text-details-passmark">{selectedCourse.passmark}%</span></div>
+                      <div><strong>Certificate Expiry:</strong> <span data-testid="text-details-certificate-expiry">
+                        {selectedCourse.certificateExpiryPeriod ? `${selectedCourse.certificateExpiryPeriod} months` : 'Never expires'}
+                      </span></div>
+                    </div>
+                  </div>
                 </div>
                 
-                <h4 className="font-semibold mt-4 mb-2">Description</h4>
-                <p className="text-sm text-base-content/80" data-testid="text-details-description">
-                  {selectedCourse.description}
-                </p>
-              </div>
-              
-              <div>
-                <h4 className="font-semibold mb-2">Analytics</h4>
-                <div className="stats stats-vertical shadow">
-                  <div className="stat">
-                    <div className="stat-title">Organisations Using</div>
-                    <div className="stat-value text-sm" data-testid="stat-organisations-using">12</div>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2">Content & Media</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><strong>SCORM Package:</strong> 
+                        <span data-testid="text-details-scorm" className={selectedCourse.scormPackageUrl ? 'text-success' : 'text-error'}>
+                          {selectedCourse.scormPackageUrl ? ' ✓ Uploaded' : ' ✗ Not uploaded'}
+                        </span>
+                      </div>
+                      <div><strong>Cover Image:</strong> 
+                        <span data-testid="text-details-cover" className={selectedCourse.coverImageUrl ? 'text-success' : 'text-error'}>
+                          {selectedCourse.coverImageUrl ? ' ✓ Uploaded' : ' ✗ Not uploaded'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="stat">
-                    <div className="stat-title">Total Assignments</div>
-                    <div className="stat-value text-sm" data-testid="stat-total-assignments">347</div>
-                  </div>
-                  <div className="stat">
-                    <div className="stat-title">Completions</div>
-                    <div className="stat-value text-sm" data-testid="stat-total-completions">289</div>
+                  
+                  <div>
+                    <h4 className="font-semibold mb-2">Creation Info</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><strong>Created By:</strong> <span data-testid="text-details-created-by">{selectedCourse.createdBy}</span></div>
+                      <div><strong>Created:</strong> <span data-testid="text-details-created-at">{new Date(selectedCourse.createdAt).toLocaleDateString()}</span></div>
+                      <div><strong>Last Updated:</strong> <span data-testid="text-details-updated-at">{new Date(selectedCourse.updatedAt).toLocaleDateString()}</span></div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Course Title *</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      value={editFormData.title || ''}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, title: e.target.value }))}
+                      data-testid="input-edit-title"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Description</span>
+                    </label>
+                    <textarea 
+                      className="textarea textarea-bordered h-24" 
+                      value={editFormData.description || ''}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                      data-testid="input-edit-description"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Category</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        value={editFormData.category || ''}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
+                        data-testid="input-edit-category"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Tags</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="Comma separated"
+                        value={editFormData.tags || ''}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, tags: e.target.value }))}
+                        data-testid="input-edit-tags"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Duration (minutes) *</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        min="1"
+                        className="input input-bordered" 
+                        value={editFormData.estimatedDuration || ''}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, estimatedDuration: parseInt(e.target.value) || 0 }))}
+                        data-testid="input-edit-duration"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Pass Mark (%) *</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="100"
+                        className="input input-bordered" 
+                        value={editFormData.passmark || ''}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, passmark: parseInt(e.target.value) || 0 }))}
+                        data-testid="input-edit-passmark"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Certificate Expiry Period (months)</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      min="1"
+                      className="input input-bordered" 
+                      placeholder="Leave empty for never expires"
+                      value={editFormData.certificateExpiryPeriod || ''}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, certificateExpiryPeriod: e.target.value ? parseInt(e.target.value) : undefined }))}
+                      data-testid="input-edit-certificate-expiry"
+                    />
+                    <label className="label">
+                      <span className="label-text-alt">Leave empty if certificates should never expire</span>
+                    </label>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">SCORM Package URL</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      value={editFormData.scormPackageUrl || ''}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, scormPackageUrl: e.target.value }))}
+                      data-testid="input-edit-scorm-url"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Cover Image URL</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      value={editFormData.coverImageUrl || ''}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, coverImageUrl: e.target.value }))}
+                      data-testid="input-edit-cover-url"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 mt-6">
-              <button className="btn btn-sm btn-outline" data-testid="button-preview-course-details">
-                <i className="fas fa-play"></i> Preview
-              </button>
-              <button className="btn btn-sm btn-secondary" data-testid="button-edit-course-details">
-                <i className="fas fa-edit"></i> Edit Course
-              </button>
+              {!isEditing ? (
+                <>
+                  <button 
+                    className="btn btn-sm btn-outline" 
+                    onClick={handlePreviewCourse}
+                    data-testid="button-preview-course-details"
+                  >
+                    <i className="fas fa-play"></i> Preview
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-secondary" 
+                    onClick={handleEditCourse}
+                    data-testid="button-edit-course-details"
+                  >
+                    <i className="fas fa-edit"></i> Edit Course
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button 
+                    className="btn btn-sm btn-success" 
+                    onClick={handleSaveChanges}
+                    disabled={updateCourseMutation.isPending}
+                    data-testid="button-save-course-changes"
+                  >
+                    {updateCourseMutation.isPending ? (
+                      <span className="loading loading-spinner loading-sm"></span>
+                    ) : (
+                      <i className="fas fa-save"></i>
+                    )}
+                    Save Changes
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-outline" 
+                    onClick={handleCancelEdit}
+                    data-testid="button-cancel-course-edit"
+                  >
+                    <i className="fas fa-times"></i> Cancel
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="modal-action">
               <button 
                 className="btn"
-                onClick={() => setShowDetailsModal(false)}
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setIsEditing(false);
+                  setEditFormData({});
+                }}
                 data-testid="button-close-course-details"
               >
                 Close
@@ -255,7 +521,11 @@ export function SuperAdminCourses() {
             </div>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowDetailsModal(false)}>close</button>
+            <button onClick={() => {
+              setShowDetailsModal(false);
+              setIsEditing(false);
+              setEditFormData({});
+            }}>close</button>
           </form>
         </dialog>
       )}
