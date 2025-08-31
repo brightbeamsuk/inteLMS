@@ -1,0 +1,97 @@
+Goal: Uploaded images (organisation logo, certificate background, course cover) must display immediately and reliably across the app.
+
+1) Upload handling
+
+Accept image uploads via a form that uses multipart/form-data.
+
+Allow only png, jpg, jpeg, webp. Max size 5 MB.
+
+On upload, save the file to /uploads/images/{yyyy}/{mm}/{unique-filename}.{ext}.
+
+Create (or fix) a public route that serves static files from /uploads at the URL path /uploads/....
+
+Requests like /uploads/images/2025/08/logo-abc123.png must return the image.
+
+After a successful upload, the server must return JSON:
+
+{ "imageUrl": "/uploads/images/2025/08/logo-abc123.png", "width": 300, "height": 120, "contentType": "image/png" }
+
+
+Store imageUrl (the full path starting with /uploads/...) in the database field for that item (e.g., org.logoUrl, course.coverUrl, certificate.backgroundUrl). Do not store just the file name.
+
+2) Front end (immediate preview + saved display)
+
+After the upload response, immediately render the image using:
+
+<img src={imageUrl} alt="..." /> for logos and covers.
+
+For certificate preview, set CSS:
+background-image: url(imageUrl); background-size: cover; background-position: center;
+
+While the file is uploading, show a loading state. When done, replace with the real image from imageUrl.
+
+If the image fails to load (error event), show a default placeholder and a “Try again” button.
+
+3) Make sure nothing blocks images
+
+Static files: Confirm the app does not route /uploads/... through any SPA/history fallback — it must serve the static file directly.
+
+Headers: Serve correct Content-Type headers for images (image/png, image/jpeg, image/webp).
+
+CSP/X-Frame: If a Content Security Policy exists, allow images from 'self'. Do not block /uploads/....
+
+Auth: Do not require login cookies to fetch /uploads/... (logos and covers must be viewable by logged-in users across the app). Keep certificate backgrounds viewable to Admin/SuperAdmin during preview.
+
+Protocol: Use the same protocol (avoid mixed content). If the site is on https, serve /uploads/... over https.
+
+4) Replace any “file name text” with real images
+
+Anywhere the UI currently shows the file name, replace it with the correct <img src={stored imageUrl}>.
+
+Cards, tables, profile headers, and the certificate preview must all display the actual image.
+
+5) Acceptance checks (must all pass)
+
+Organisation logo
+
+Upload a PNG logo.
+
+After save, the page shows the actual image (not text).
+
+Refresh the page: the logo still shows (because logoUrl is stored and used).
+
+Course cover
+
+Upload a JPG cover.
+
+The course card shows the image immediately and after refresh.
+
+Certificate background
+
+Upload a background image.
+
+The certificate preview uses it as a background (fills the preview area).
+
+No console errors. Network shows a 200 for /uploads/... with a valid image content type.
+
+Direct URL test
+
+Copy the returned imageUrl and open it in a new tab. It must load the image.
+
+Error case
+
+Upload a non-image (e.g., .txt). The UI shows a friendly error and does not save.
+
+6) Minimal diagnostics (show in console or log)
+
+On each upload, log: saved disk path and the exact imageUrl returned.
+
+On each image render error, log: the src that failed.
+
+If it still doesn’t show, check these three things (in this order)
+
+Open the Network tab and click the image request. If it’s 404, your static /uploads route mapping is wrong.
+
+If 200 but still blank, check Response Headers → Content-Type is an image type.
+
+If the request is blocked, check CSP (allow images from 'self') and ensure no service worker is intercepting /uploads/*.

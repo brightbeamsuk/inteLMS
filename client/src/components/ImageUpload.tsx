@@ -31,20 +31,21 @@ export function ImageUpload({
     if (!file) return;
 
     // Validate file type
-    if (!file.type.startsWith('image/')) {
+    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
       toast({
-        title: "Error",
-        description: "Please select an image file",
+        title: "Invalid File Type",
+        description: "Only PNG, JPG, JPEG, and WebP files are allowed.",
         variant: "destructive",
       });
       return;
     }
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
       toast({
-        title: "Error",
-        description: "Image file must be less than 10MB",
+        title: "File Too Large",
+        description: "Image must be smaller than 5MB.",
         variant: "destructive",
       });
       return;
@@ -53,25 +54,28 @@ export function ImageUpload({
     setIsUploading(true);
 
     try {
-      // Get upload URL and public path
-      const response = await apiRequest('POST', '/api/images/upload', { imageType });
-      const { uploadURL, publicPath } = await response.json();
+      console.log(`Uploading ${imageType}:`, file.name, file.type, file.size);
 
-      // Upload file directly to storage
-      const uploadResponse = await fetch(uploadURL, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': file.type,
-        },
+      // Use new multipart/form-data upload
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/api/images/upload', {
+        method: 'POST',
+        credentials: 'include', // Include session cookies
+        body: formData,
       });
 
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload image');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
       }
 
-      // Call the callback with the public path
-      onImageUploaded(publicPath);
+      const result = await response.json();
+      console.log('Upload result:', result);
+
+      // Call the callback with the image URL
+      onImageUploaded(result.imageUrl);
 
       toast({
         title: "Success",
@@ -81,7 +85,7 @@ export function ImageUpload({
       console.error('Upload error:', error);
       toast({
         title: "Error",
-        description: "Failed to upload image",
+        description: error instanceof Error ? error.message : "Failed to upload image",
         variant: "destructive",
       });
     } finally {

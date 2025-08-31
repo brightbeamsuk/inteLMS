@@ -1,5 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
+import path from "path";
+import fs from "fs/promises";
+import { existsSync, readdirSync } from "fs";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { storage } from "./storage";
@@ -11,8 +15,6 @@ import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
 import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema } from "@shared/schema";
 import { z } from "zod";
-import * as path from "path";
-import * as fs from "fs";
 
 // Extend Express session to include user property
 declare module 'express-session' {
@@ -20,6 +22,43 @@ declare module 'express-session' {
     user?: any;
   }
 }
+
+// Configure multer for file uploads
+const fileStorage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const uploadDir = path.join(process.cwd(), 'uploads', 'images', String(year), month);
+    
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    } catch (error) {
+      cb(error as Error, uploadDir);
+    }
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: fileStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PNG, JPG, JPEG, and WebP are allowed.'));
+    }
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session middleware for simple authentication
@@ -169,13 +208,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ uploadURL });
   });
 
-  // Public image upload endpoint for logos, course covers, etc.
-  app.post("/api/images/upload", requireAuth, async (req, res) => {
+  // New file upload endpoint with multipart/form-data
+  app.post("/api/images/upload", requireAuth, upload.single('image'), async (req, res) => {
     try {
-      const { imageType } = req.body;
+      console.log('Upload attempt:', req.file ? 'File received' : 'No file');
       
-      if (!imageType || !['logo', 'course-cover', 'certificate-bg', 'certificate-signature'].includes(imageType)) {
-        return res.status(400).json({ error: 'Invalid or missing imageType. Must be one of: logo, course-cover, certificate-bg, certificate-signature' });
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
       }
 
       // Basic permission check - only authenticated users can upload
@@ -189,26 +228,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'User not found' });
       }
 
-      // Additional permission checks for different image types
-      if (imageType === 'logo' && user.role !== 'superadmin' && user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only admins can upload organization logos' });
-      }
+      // Basic image info without dimensions for now
+      let width = 0;
+      let height = 0;
 
-      if (imageType === 'course-cover' && user.role !== 'superadmin') {
-        return res.status(403).json({ error: 'Only superadmins can upload course covers' });
-      }
-
-      if ((imageType === 'certificate-bg' || imageType === 'certificate-signature') && user.role !== 'superadmin') {
-        return res.status(403).json({ error: 'Only superadmins can upload certificate images' });
-      }
-
-      const objectStorageService = new ObjectStorageService();
-      const { uploadURL, publicPath } = await objectStorageService.getPublicImageUploadURL(imageType);
+      // Generate the public URL path
+      const relativePath = path.relative(path.join(process.cwd(), 'uploads'), req.file.path);
+      const imageUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
       
-      res.json({ uploadURL, publicPath });
+      console.log('Saved image:', req.file.path, '-> URL:', imageUrl);
+
+      res.json({
+        imageUrl,
+        width,
+        height,
+        contentType: req.file.mimetype
+      });
     } catch (error) {
-      console.error('Error getting public image upload URL:', error);
-      res.status(500).json({ error: 'Failed to get upload URL' });
+      console.error('Error uploading file:', error);
+      res.status(500).json({ error: 'Failed to upload file' });
     }
   });
 
@@ -595,16 +633,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         - Launch file: ${extracted.launchFile}
         - Extracted path: ${extractedPath}
         - Full file path: ${filePath}
-        - File exists: ${fs.existsSync(filePath)}`);
+        - File exists: ${existsSync(filePath)}`);
       
       // Check if file exists
-      if (!fs.existsSync(filePath)) {
+      if (!existsSync(filePath)) {
         // List directory contents for debugging
         try {
-          const dirContents = fs.readdirSync(extractedPath);
+          const dirContents = readdirSync(extractedPath);
           console.log(`📁 Directory contents: ${dirContents.join(', ')}`);
           if (dirContents.includes('res')) {
-            const resContents = fs.readdirSync(path.join(extractedPath, 'res'));
+            const resContents = readdirSync(path.join(extractedPath, 'res'));
             console.log(`📁 res/ directory contents: ${resContents.join(', ')}`);
           }
         } catch (err) {
@@ -731,7 +769,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filePath = path.join(extractedPath, assetPath);
       
       // Check if file exists
-      if (!fs.existsSync(filePath)) {
+      if (!existsSync(filePath)) {
         return res.status(404).json({ message: 'File not found' });
       }
 
