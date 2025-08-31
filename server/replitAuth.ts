@@ -126,10 +126,25 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user = {};
-    updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
-    verified(null, user);
+    try {
+      const claims = tokens.claims();
+      const user = {};
+      updateUserSession(user, tokens);
+      await upsertUser(claims);
+      
+      // Check if user's organization is archived (but allow SuperAdmins)
+      const dbUser = await storage.getUser(claims["sub"]);
+      if (dbUser && dbUser.role !== 'superadmin' && dbUser.organisationId) {
+        const organisation = await storage.getOrganisation(dbUser.organisationId);
+        if (organisation && organisation.status === 'archived') {
+          return verified(new Error("Your account has been Archived. Please get in touch if this is an error or if you need to be reinstated"));
+        }
+      }
+      
+      verified(null, user);
+    } catch (error) {
+      verified(error);
+    }
   };
 
   for (const domain of process.env
@@ -184,6 +199,18 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 
   const now = Math.floor(Date.now() / 1000);
   if (now <= user.expires_at) {
+    // Check if user's organization is archived (but allow SuperAdmins)
+    try {
+      const dbUser = await storage.getUser(user.claims.sub);
+      if (dbUser && dbUser.role !== 'superadmin' && dbUser.organisationId) {
+        const organisation = await storage.getOrganisation(dbUser.organisationId);
+        if (organisation && organisation.status === 'archived') {
+          return res.status(401).json({ message: "Your account has been Archived. Please get in touch if this is an error or if you need to be reinstated" });
+        }
+      }
+    } catch (error) {
+      console.error('Error checking organization status:', error);
+    }
     return next();
   }
 
