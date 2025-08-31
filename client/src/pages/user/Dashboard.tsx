@@ -14,6 +14,16 @@ interface Assignment {
   estimatedDuration: number;
 }
 
+interface Certificate {
+  id: string;
+  userId: string;
+  courseId: string;
+  courseTitle?: string;
+  certificateUrl: string;
+  issuedAt: string;
+  expiryDate?: string;
+}
+
 interface UserStats {
   completedCourses: number;
   averageScore: number;
@@ -30,6 +40,10 @@ export function UserDashboard() {
 
   const { data: userStats, isLoading: statsLoading } = useQuery<UserStats>({
     queryKey: ['/api/user/stats'],
+  });
+
+  const { data: certificates = [], isLoading: certificatesLoading } = useQuery<Certificate[]>({
+    queryKey: ['/api/user/certificates'],
   });
 
   const handleStartCourse = (assignment: Assignment) => {
@@ -213,6 +227,86 @@ export function UserDashboard() {
             <Link href="/user/courses" className="btn btn-ghost" data-testid="link-view-all-courses">
               View All Courses ({assignments.length})
             </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Certificates Section */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold mb-4">My Certificates</h2>
+        {certificatesLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className="card bg-base-200 shadow-sm">
+                <div className="card-body">
+                  <div className="skeleton h-4 w-full mb-2"></div>
+                  <div className="skeleton h-3 w-3/4 mb-4"></div>
+                  <div className="skeleton h-8 w-full"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : certificates.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-4xl mb-4">🏆</div>
+            <h3 className="text-xl font-bold mb-2">No certificates yet</h3>
+            <p className="text-base-content/60">Complete courses to earn certificates</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {certificates.map((certificate) => (
+              <div 
+                key={certificate.id} 
+                className="card bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 shadow-md border-2 border-amber-200 dark:border-amber-700"
+                data-testid={`card-certificate-${certificate.id}`}
+              >
+                <div className="card-body">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center">
+                        <i className="fas fa-certificate text-white text-xl"></i>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg text-amber-900 dark:text-amber-100" data-testid={`text-certificate-title-${certificate.id}`}>
+                          {certificate.courseTitle || 'Course Certificate'}
+                        </h3>
+                        <div className="text-sm text-amber-700 dark:text-amber-300">
+                          Certificate of Completion
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-base-content/60">Issued:</span>
+                      <span className="font-medium" data-testid={`text-certificate-date-${certificate.id}`}>
+                        {new Date(certificate.issuedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {certificate.expiryDate && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-base-content/60">Expires:</span>
+                        <span className="font-medium" data-testid={`text-certificate-expiry-${certificate.id}`}>
+                          {new Date(certificate.expiryDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="card-actions justify-end">
+                    <a 
+                      href={`/api/certificates/${certificate.id}/download`}
+                      download
+                      className="btn btn-sm btn-primary"
+                      data-testid={`button-download-certificate-${certificate.id}`}
+                    >
+                      <i className="fas fa-download"></i> Download PDF
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

@@ -1,4 +1,7 @@
 import { storage } from "../storage";
+import { ObjectStorageService } from "../objectStorage";
+import puppeteer from "puppeteer";
+import { randomUUID } from "crypto";
 import type { User, Course, Completion, Organisation, CertificateTemplate } from "@shared/schema";
 
 export interface CertificateData {
@@ -47,18 +50,18 @@ export class CertificateService {
         html = this.generateHTMLFromVisualTemplate(template.templateData, certificateData);
       } else {
         // Legacy HTML template
-        html = this.replacePlaceholders(template.template, certificateData);
+        html = this.replacePlaceholders(template.template || this.getDefaultTemplate(), certificateData);
       }
       
-      // In a real implementation, this would:
-      // 1. Convert HTML to PDF using a library like puppeteer
-      // 2. Upload PDF to object storage
-      // 3. Return the URL to the PDF
+      // Generate PDF from HTML
+      const pdfBuffer = await this.htmlToPdf(html);
       
-      console.log(`📜 Generated certificate for ${user.email} - Course: ${course.title}`);
+      // Upload to object storage
+      const certificateUrl = await this.uploadCertificateToStorage(pdfBuffer, certificateData.certificateId);
       
-      // For demo, return a simulated URL
-      return `/certificates/${completion.id}.pdf`;
+      console.log(`📜 Generated certificate for ${user.email} - Course: ${course.title} - URL: ${certificateUrl}`);
+      
+      return certificateUrl;
     } catch (error) {
       console.error('Error generating certificate:', error);
       throw new Error('Failed to generate certificate');
@@ -331,6 +334,111 @@ export class CertificateService {
 
   async updateTemplate(id: string, template: Partial<{ name: string; template: string }>): Promise<CertificateTemplate> {
     return await storage.updateCertificateTemplate(id, template);
+  }
+
+  private async htmlToPdf(html: string): Promise<Buffer> {
+    let browser = null;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+      });
+      
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      
+      const pdf = await page.pdf({
+        format: 'A4',
+        landscape: true,
+        printBackground: true,
+        margin: {
+          top: '20px',
+          right: '20px',
+          bottom: '20px',
+          left: '20px'
+        }
+      });
+      
+      return Buffer.from(pdf);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      throw new Error('Failed to generate PDF from HTML');
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  private async uploadCertificateToStorage(pdfBuffer: Buffer, certificateId: string): Promise<string> {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      
+      // Generate unique filename
+      const filename = `${certificateId}-${Date.now()}.pdf`;
+      
+      // Get private object directory for certificates
+      const privateDir = objectStorageService.getPrivateObjectDir();
+      const certificatePath = `${privateDir}/certificates/${filename}`;
+      
+      // Parse the path to get bucket and object names
+      const pathParts = certificatePath.split('/');
+      const bucketName = pathParts[1];
+      const objectName = pathParts.slice(2).join('/');
+      
+      // Upload to object storage using signed URL approach
+      const signedUrl = await this.getSignedUploadUrl(bucketName, objectName);
+      
+      // Upload the PDF buffer
+      const response = await fetch(signedUrl, {
+        method: 'PUT',
+        body: pdfBuffer,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': pdfBuffer.length.toString()
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+      
+      // Return the public URL for the certificate
+      return `/objects/certificates/${filename}`;
+      
+    } catch (error) {
+      console.error('Error uploading certificate to storage:', error);
+      throw new Error('Failed to upload certificate to storage');
+    }
+  }
+
+  private async getSignedUploadUrl(bucketName: string, objectName: string): Promise<string> {
+    const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+    
+    const request = {
+      bucket_name: bucketName,
+      object_name: objectName,
+      method: 'PUT',
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 minutes
+    };
+    
+    const response = await fetch(
+      `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get signed URL: ${response.status}`);
+    }
+    
+    const { signed_url } = await response.json();
+    return signed_url;
   }
 }
 

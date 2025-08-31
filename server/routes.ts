@@ -322,6 +322,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Certificate download endpoint
+  app.get('/api/certificates/:certificateId/download', requireAuth, async (req: any, res) => {
+    try {
+      const { certificateId } = req.params;
+      const userId = req.session.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // Get certificate and verify ownership
+      const certificate = await storage.getCertificate(certificateId);
+      if (!certificate) {
+        return res.status(404).json({ message: 'Certificate not found' });
+      }
+
+      if (certificate.userId !== userId) {
+        return res.status(403).json({ message: 'Access denied - certificate does not belong to you' });
+      }
+
+      // Get certificate URL and redirect to object storage
+      if (certificate.certificateUrl) {
+        // If it's already a full URL, redirect directly
+        if (certificate.certificateUrl.startsWith('http')) {
+          return res.redirect(certificate.certificateUrl);
+        }
+        
+        // If it's a relative path, serve through object storage
+        if (certificate.certificateUrl.startsWith('/objects/')) {
+          return res.redirect(certificate.certificateUrl);
+        }
+      }
+      
+      return res.status(404).json({ message: 'Certificate file not found' });
+      
+    } catch (error) {
+      console.error('Error downloading certificate:', error);
+      res.status(500).json({ message: 'Failed to download certificate' });
+    }
+  });
+
   // Object storage routes
   app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
     const userId = getUserIdFromSession(req);
@@ -791,10 +832,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SCORM Content serving route - MUST be before wildcard route
   app.get('/api/scorm/content', requireAuth, async (req: any, res) => {
     try {
-      const user = await getCurrentUser(req);
-      
-      if (!user || user.role !== 'superadmin') {
-        return res.status(403).json({ message: 'Access denied' });
+      const userId = req.session.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       const { packageUrl, file } = req.query;
@@ -2938,6 +2978,175 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.setHeader('Content-Type', 'text/html');
       res.status(500).send(errorHtml);
+    }
+  });
+
+  // NEW SCORM runtime result endpoint - handles commit and finish events
+  app.post('/api/scorm/result', requireAuth, async (req: any, res) => {
+    try {
+      const {
+        learnerId,
+        courseId: assignmentId, // Frontend sends assignmentId as courseId
+        attemptId,
+        scormVersion,
+        score,
+        status,
+        successStatus,
+        scaledScore,
+        reason,
+        sessionTime,
+        location
+      } = req.body;
+
+      const userId = req.session.user?.id;
+
+      if (learnerId !== userId) {
+        return res.status(403).json({ message: 'Unauthorized - learner ID mismatch' });
+      }
+
+      // Get assignment and course details
+      const assignment = await storage.getAssignment(assignmentId);
+      if (!assignment || assignment.userId !== userId) {
+        return res.status(403).json({ message: 'Assignment not found or access denied' });
+      }
+
+      const course = await storage.getCourse(assignment.courseId);
+      if (!course) {
+        return res.status(404).json({ message: 'Course not found' });
+      }
+
+      const passmark = course.passmark || 80;
+
+      // Determine pass/fail based on SCORM version and business rules
+      let passed = false;
+      
+      if (scormVersion === '1.2') {
+        // SCORM 1.2 logic
+        if (status === 'passed') {
+          passed = true;
+        } else if (score && parseFloat(score) >= passmark) {
+          passed = true;
+        }
+      } else if (scormVersion === '2004') {
+        // SCORM 2004 logic
+        if (successStatus === 'passed') {
+          passed = true;
+        } else if (score && parseFloat(score) >= passmark) {
+          passed = true;
+        } else if (scaledScore && parseFloat(scaledScore) >= (passmark / 100)) {
+          passed = true;
+        }
+      }
+
+      // Store attempt result (for now, use existing completion table)
+      // TODO: Implement dedicated SCORM attempts storage
+      console.log(`📊 SCORM ${scormVersion} result:`, {
+        attemptId,
+        status,
+        successStatus,
+        score,
+        scaledScore,
+        passed,
+        reason
+      });
+
+      // If this is a finish event and the user passed, trigger completion
+      if (reason === 'finish' && passed) {
+        try {
+          // Check if completion already exists
+          const existingCompletion = await storage.getCompletionByAssignment(assignmentId);
+          
+          if (!existingCompletion) {
+            const completionData = {
+              assignmentId,
+              userId,
+              courseId: assignment.courseId,
+              organisationId: assignment.organisationId,
+              score: score || '0',
+              status: 'pass' as const,
+              timeSpent: sessionTime ? Math.floor(parseFloat(sessionTime) / 60) : 0,
+              scormData: req.body,
+            };
+
+            const completion = await storage.createCompletion(completionData);
+
+            // Update assignment status
+            await storage.updateAssignment(assignmentId, {
+              status: 'completed',
+              completedAt: new Date(),
+            });
+
+            // Generate certificate if passed
+            const user = await storage.getUser(userId);
+            const organisation = await storage.getOrganisation(assignment.organisationId);
+            
+            if (user && organisation) {
+              try {
+                const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
+                
+                await storage.createCertificate({
+                  completionId: completion.id,
+                  userId,
+                  courseId: assignment.courseId,
+                  organisationId: assignment.organisationId,
+                  certificateUrl,
+                  expiryDate: course.certificateExpiryPeriod ? 
+                    new Date(Date.now() + course.certificateExpiryPeriod * 30 * 24 * 60 * 60 * 1000) : 
+                    null,
+                });
+
+                console.log(`🏆 Certificate generated for attempt ${attemptId}: ${certificateUrl}`);
+              } catch (certError) {
+                console.error('Certificate generation error:', certError);
+              }
+            }
+          }
+        } catch (completionError) {
+          console.error('Completion processing error:', completionError);
+        }
+      }
+
+      res.json({
+        success: true,
+        passed,
+        reason,
+        score: score || scaledScore,
+        message: `SCORM result processed (${reason})`
+      });
+
+    } catch (error) {
+      console.error('Error processing SCORM result:', error);
+      res.status(500).json({ message: 'Failed to process SCORM result', error: error.message });
+    }
+  });
+
+  // NEW SCORM launch endpoint - provides launch URL for iframe
+  app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
+    try {
+      const { assignmentId } = req.params;
+      const userId = req.session.user?.id;
+
+      const assignment = await storage.getAssignment(assignmentId);
+      if (!assignment || assignment.userId !== userId) {
+        return res.status(403).json({ message: 'Assignment not found or access denied' });
+      }
+
+      const course = await storage.getCourse(assignment.courseId);
+      if (!course || !course.scormPackageUrl) {
+        return res.status(404).json({ message: 'Course or SCORM package not found' });
+      }
+
+      const launchUrl = await scormService.getLaunchUrl(course.scormPackageUrl, userId, assignmentId);
+
+      res.json({
+        launchUrl,
+        courseTitle: course.title,
+        passmark: course.passmark || 80
+      });
+
+    } catch (error) {
+      console.error('Error getting SCORM launch URL:', error);
+      res.status(500).json({ message: 'Failed to get launch URL' });
     }
   });
 

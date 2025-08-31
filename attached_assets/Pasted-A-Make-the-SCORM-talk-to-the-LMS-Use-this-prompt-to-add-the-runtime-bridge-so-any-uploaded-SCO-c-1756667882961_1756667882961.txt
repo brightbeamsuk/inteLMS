@@ -1,0 +1,74 @@
+A) Make the SCORM talk to the LMS
+
+Use this prompt to add the runtime “bridge” so any uploaded SCO can find the API in the parent and report results.
+
+Prompt for Replit (add/verify runtime API):
+
+In the course launch page that embeds the SCORM content in an iframe, expose both SCORM runtimes on window before the iframe loads:
+• SCORM 1.2 as window.API supporting: LMSInitialize, LMSGetValue, LMSSetValue, LMSCommit, LMSFinish, LMSGetLastError, LMSGetErrorString, LMSGetDiagnostic.
+• SCORM 2004 as window.API_1484_11 supporting: Initialize, GetValue, SetValue, Commit, Terminate, GetLastError, GetErrorString, GetDiagnostic.
+Maintain an in-memory attempt state per launch (e.g., a map of CMI values).
+On SetValue, update that state.
+On Commit and on Finish/Terminate, send a JSON payload to a backend endpoint (see next prompt) including: learnerId, courseId, attemptId, scormVersion, the latest score and status fields, and a reason ("commit" or "finish").
+Ensure the iframe origin is the same as the parent so the SCO can discover the API.
+
+Which CMI fields to handle minimally
+
+SCORM 1.2: cmi.core.lesson_status, cmi.core.score.raw (+ optional min, max).
+
+SCORM 2004: cmi.completion_status, cmi.success_status, cmi.score.raw and/or cmi.score.scaled.
+
+B) Store results and decide pass/fail
+
+Prompt for Replit (results endpoint + pass logic):
+
+Add a backend endpoint POST /api/scorm/result. It should persist an attempt snapshot with: learnerId, courseId, attemptId, scormVersion, last known score values, last known status values, timestamps, and derived pass/fail.
+Pass rules:
+• For 1.2 → if lesson_status is "passed", treat as pass. Otherwise, if numeric cmi.core.score.raw ≥ the course pass mark, treat as pass.
+• For 2004 → if success_status is "passed", treat as pass. Otherwise, if score.raw ≥ pass mark or score.scaled ≥ pass mark/100, treat as pass.
+Store attempts idempotently (update the same attempt on every Commit; finalise on Finish/Terminate).
+If an attempt transitions to passed and no certificate exists, queue certificate generation (see next prompt) and save the certificate URL back on the attempt.
+
+C) Generate and deliver certificates
+
+Prompt for Replit (certificate issuing):
+
+When an attempt first passes, generate a certificate with: learner name, course title, date/time, score, pass mark, unique certificate ID.
+Create a clean HTML template that prints to A4 and a server-side PDF render.
+Save the file to a public path like /public/certificates/:attemptId.pdf and store the URL on the attempt record.
+In the learner dashboard, show a “Download certificate” button once the URL exists. Ensure certificates are only issued once per passed attempt.
+
+D) Multi-SCO handling (only if your packages include several SCOs)
+
+Prompt for Replit (multi-SCO support):
+
+If imsmanifest.xml defines multiple SCO items, show a simple table of contents so the learner can launch each item. Track an attempt per SCO item.
+Consider the course “complete” when all items are completed/passed, and optionally issue a course-level certificate once the set is complete.
+
+Quick setup checklist (sanity checks)
+
+Same origin: The launch page and the extracted SCO files are served from the same host and protocol (no cross-origin iframes).
+
+API timing: Define window.API / window.API_1484_11 before setting the iframe src.
+
+Manifest launch: Your uploader/registrar reads imsmanifest.xml, finds the correct launch file, and points the iframe at it.
+
+Pass mark: There’s a configurable course-level pass mark (default e.g. 80).
+
+Attempt lifecycle: New attemptId per launch; updates on each Commit; final state on Finish/Terminate (but don’t lose the last committed values if the learner closes the window).
+
+Edge cases covered:
+
+Some SCOs only set completion (2004): treat completion_status = completed and score ≥ pass mark as pass.
+
+Some SCOs set only score.scaled (0–1): convert to percentage when displaying and comparing.
+
+Debugging tips (when a score doesn’t arrive)
+
+Toggle a SCORM debug panel on the launch page showing the last 10 SetValue calls; check that the SCO is actually setting score/status.
+
+Confirm the SCORM version of the package (1.2 vs 2004) matches the runtime the SCO is binding to (you can log which API object was discovered).
+
+Try with a known-good sample SCO (1.2 and 2004) to rule out content issues.
+
+Watch network calls: verify POST /api/scorm/result is firing on Commit and Finish.

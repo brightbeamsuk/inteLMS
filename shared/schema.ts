@@ -156,6 +156,47 @@ export const certificateTemplates = pgTable("certificate_templates", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// SCORM attempts table
+export const scormAttempts = pgTable("scorm_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  attemptId: varchar("attempt_id").notNull().unique(), // client-generated unique ID
+  assignmentId: varchar("assignment_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  courseId: varchar("course_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  scormVersion: varchar("scorm_version").notNull(), // "1.2" or "2004"
+  
+  // SCORM tracking data
+  lessonStatus: varchar("lesson_status"), // SCORM 1.2: passed, completed, failed, incomplete, etc.
+  completionStatus: varchar("completion_status"), // SCORM 2004: completed, incomplete, not_attempted, unknown
+  successStatus: varchar("success_status"), // SCORM 2004: passed, failed, unknown
+  
+  // Score information
+  scoreRaw: decimal("score_raw", { precision: 5, scale: 2 }),
+  scoreScaled: decimal("score_scaled", { precision: 5, scale: 4 }), // 0-1 scale for SCORM 2004
+  scoreMin: decimal("score_min", { precision: 5, scale: 2 }).default('0'),
+  scoreMax: decimal("score_max", { precision: 5, scale: 2 }).default('100'),
+  
+  // Session information
+  sessionTime: varchar("session_time"), // SCORM format session time
+  location: varchar("location"), // bookmark location in course
+  
+  // Processing results
+  passed: boolean("passed").default(false), // derived pass/fail based on business rules
+  passmark: integer("passmark"), // course passmark at time of attempt
+  
+  // Attempt lifecycle
+  isActive: boolean("is_active").default(true), // false when terminated/finished
+  lastCommitAt: timestamp("last_commit_at"),
+  finishedAt: timestamp("finished_at"),
+  
+  // Raw SCORM data for debugging
+  rawScormData: jsonb("raw_scorm_data"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Organisation settings table
 export const organisationSettings = pgTable("organisation_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -347,6 +388,12 @@ export const insertCertificateTemplateSchema = createInsertSchema(certificateTem
   updatedAt: true,
 });
 
+export const insertScormAttemptSchema = createInsertSchema(scormAttempts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertOrganisationSettingsSchema = createInsertSchema(organisationSettings).omit({
   id: true,
   createdAt: true,
@@ -386,6 +433,9 @@ export type Certificate = typeof certificates.$inferSelect;
 
 export type InsertCertificateTemplate = z.infer<typeof insertCertificateTemplateSchema>;
 export type CertificateTemplate = typeof certificateTemplates.$inferSelect;
+
+export type InsertScormAttempt = z.infer<typeof insertScormAttemptSchema>;
+export type ScormAttempt = typeof scormAttempts.$inferSelect;
 
 export type InsertOrganisationSettings = z.infer<typeof insertOrganisationSettingsSchema>;
 export type OrganisationSettings = typeof organisationSettings.$inferSelect;
