@@ -48,6 +48,22 @@ export function SuperAdminUsers() {
 
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ['/api/users', filters],
+    queryFn: async () => {
+      const queryParams = new URLSearchParams();
+      if (filters.role) queryParams.append('role', filters.role);
+      if (filters.organisationId) queryParams.append('organisationId', filters.organisationId);
+      if (filters.status) queryParams.append('status', filters.status);
+      if (filters.search) queryParams.append('search', filters.search);
+      
+      const url = `/api/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const response = await fetch(url, { credentials: 'include' });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch users: ${response.statusText}`);
+      }
+      
+      return response.json();
+    },
   });
 
   const { data: organisations = [] } = useQuery<Organisation[]>({
