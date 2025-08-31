@@ -208,7 +208,9 @@ export function AdminOrganisationSettings() {
     saveOrganizationMutation.mutate(organizationData);
   };
 
-  const tabs = ["Branding", "Contacts", "Certificates", "Visual Designer", "Notifications", "Privacy"];
+  const tabs = user?.role === 'superadmin' 
+    ? ["Branding", "Contacts", "Certificates", "Visual Designer", "Notifications", "Privacy"]
+    : ["Branding", "Contacts", "Certificates", "Notifications", "Privacy"];
 
   return (
     <div>
@@ -555,8 +557,8 @@ export function AdminOrganisationSettings() {
             </div>
           )}
 
-          {/* Visual Designer Tab */}
-          {activeTab === 3 && (
+          {/* Visual Designer Tab - SuperAdmin Only */}
+          {user?.role === 'superadmin' && activeTab === 3 && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">Visual Certificate Designer</h3>
@@ -581,7 +583,7 @@ export function AdminOrganisationSettings() {
           )}
 
           {/* Notifications Tab */}
-          {activeTab === 4 && (
+          {activeTab === (user?.role === 'superadmin' ? 4 : 3) && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Email Notifications</h3>
               
@@ -657,7 +659,7 @@ export function AdminOrganisationSettings() {
           )}
 
           {/* Privacy Tab */}
-          {activeTab === 5 && (
+          {activeTab === (user?.role === 'superadmin' ? 5 : 4) && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Privacy Settings</h3>
               
