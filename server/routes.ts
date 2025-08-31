@@ -1798,7 +1798,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Now apply status filtering to the completed matrix
+      let filteredStaff = [...activeStaff];
+      
       if (statusFilter.length > 0) {
+        const staffIndicesWithVisibleCells = new Set<number>();
+        const courseIndicesWithVisibleCells = new Set<number>();
+        
         for (let i = 0; i < matrix.length; i++) {
           const staffRow = matrix[i];
           const filteredRow: any[] = [];
@@ -1809,6 +1814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (statusFilter.includes(cell.status)) {
               filteredRow.push(cell);
               hasVisibleCell = true;
+              courseIndicesWithVisibleCells.add(j);
               filteredSummary[cell.status as keyof typeof filteredSummary]++;
             } else {
               filteredRow.push(null);
@@ -1817,32 +1823,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (hasVisibleCell) {
             filteredMatrix.push(filteredRow);
+            staffIndicesWithVisibleCells.add(i);
           }
         }
         
-        // Update courses to show only those with matching status cells
-        let filteredCourses = [];
-        for (let j = 0; j < validCourses.length; j++) {
-          let hasVisibleCell = false;
-          for (let i = 0; i < filteredMatrix.length; i++) {
-            if (filteredMatrix[i][j] !== null) {
-              hasVisibleCell = true;
-              break;
-            }
-          }
-          if (hasVisibleCell) {
-            filteredCourses.push(validCourses[j]);
-          }
-        }
+        // Update staff to only include those with visible cells
+        filteredStaff = activeStaff.filter((_, index) => staffIndicesWithVisibleCells.has(index));
         
-        validCourses = filteredCourses;
+        // Update courses to only include those with visible cells
+        validCourses = validCourses.filter((_, index) => courseIndicesWithVisibleCells.has(index));
+        
+        // Update filteredMatrix to remove null columns
+        const courseIndicesArray = Array.from(courseIndicesWithVisibleCells).sort((a, b) => a - b);
+        filteredMatrix = filteredMatrix.map(row => 
+          courseIndicesArray.map(courseIndex => row[courseIndex])
+        );
       } else {
         filteredMatrix = matrix;
         filteredSummary = summary;
       }
 
       res.json({
-        staff: activeStaff.map(s => ({
+        staff: filteredStaff.map(s => ({
           id: s.id,
           firstName: s.firstName,
           lastName: s.lastName,
