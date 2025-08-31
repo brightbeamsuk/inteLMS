@@ -303,13 +303,7 @@ export function SuperAdminOrganisations() {
                           <div className="w-12 h-12 rounded">
                             {org.logoUrl ? (
                               <img 
-                                src={
-                                  org.logoUrl.startsWith('/objects/') 
-                                    ? org.logoUrl 
-                                    : org.logoUrl.includes('storage.googleapis.com') 
-                                      ? `/objects/${org.logoUrl.split('/').pop()}`
-                                      : org.logoUrl
-                                } 
+                                src={org.logoUrl.startsWith('https://storage.googleapis.com/') ? org.logoUrl : `/public-objects/${org.logoUrl}`} 
                                 alt={`${org.name} logo`} 
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
