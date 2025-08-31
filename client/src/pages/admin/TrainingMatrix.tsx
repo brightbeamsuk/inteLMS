@@ -52,6 +52,7 @@ interface FilterState {
   roles: string[];
   courses: string[];
   statuses: string[];
+  staff: string[];
   expiryWindow?: number; // days
   mandatoryOnly: boolean;
 }
@@ -63,6 +64,7 @@ export function AdminTrainingMatrix() {
     roles: [],
     courses: [],
     statuses: [],
+    staff: [],
     mandatoryOnly: false,
   });
   const [sortBy, setSortBy] = useState<'overdue' | 'name' | 'expiry'>('overdue');
@@ -87,6 +89,7 @@ export function AdminTrainingMatrix() {
       if (filters.roles.length > 0) params.append('roles', filters.roles.join(','));
       if (filters.courses.length > 0) params.append('courses', filters.courses.join(','));
       if (filters.statuses.length > 0) params.append('statuses', filters.statuses.join(','));
+      if (filters.staff.length > 0) params.append('staff', filters.staff.join(','));
       if (filters.mandatoryOnly) params.append('mandatoryOnly', 'true');
       
       const url = `/api/training-matrix${params.toString() ? `?${params.toString()}` : ''}`;
@@ -182,6 +185,7 @@ export function AdminTrainingMatrix() {
       roles: [],
       courses: [],
       statuses: [],
+      staff: [],
       mandatoryOnly: false,
     });
     // Also clear saved filters
@@ -424,11 +428,38 @@ export function AdminTrainingMatrix() {
                   <option value="grey">Not completed</option>
                 </select>
               </div>
+
+              {/* Staff Filter */}
+              <div className="form-control min-w-[150px]">
+                <select 
+                  className="select select-bordered select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFilters(prev => ({
+                        ...prev,
+                        staff: prev.staff.includes(e.target.value) 
+                          ? prev.staff 
+                          : [...prev.staff, e.target.value]
+                      }));
+                      e.target.value = "";
+                    }
+                  }}
+                  data-testid="select-staff-filter"
+                >
+                  <option value="">Add Staff</option>
+                  {matrixData.staff.map((staffMember) => (
+                    <option key={staffMember.id} value={staffMember.id}>
+                      {staffMember.firstName} {staffMember.lastName}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Clear Filters Button - Only show when filters are active */}
             {(filters.departments.length > 0 || filters.roles.length > 0 || 
-              filters.courses.length > 0 || filters.statuses.length > 0) && (
+              filters.courses.length > 0 || filters.statuses.length > 0 || filters.staff.length > 0) && (
               <button 
                 className="btn btn-outline btn-sm"
                 onClick={clearFilters}
@@ -442,7 +473,7 @@ export function AdminTrainingMatrix() {
 
           {/* Active Filter Tags */}
           {(filters.departments.length > 0 || filters.roles.length > 0 || 
-            filters.courses.length > 0 || filters.statuses.length > 0) && (
+            filters.courses.length > 0 || filters.statuses.length > 0 || filters.staff.length > 0) && (
             <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-base-300">
               {filters.departments.map((dept) => (
                 <div key={`dept-${dept}`} className="badge badge-primary gap-2">
@@ -505,6 +536,24 @@ export function AdminTrainingMatrix() {
                         ...prev,
                         statuses: prev.statuses.filter(s => s !== status)
                       }))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+              {filters.staff.map((staffId) => {
+                const staffMember = matrixData.staff.find(s => s.id === staffId);
+                return (
+                  <div key={`staff-${staffId}`} className="badge badge-info gap-2">
+                    <span>Staff: {staffMember ? `${staffMember.firstName} ${staffMember.lastName}` : staffId}</span>
+                    <button
+                      className="btn btn-xs btn-circle btn-ghost"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        staff: prev.staff.filter(s => s !== staffId)
+                      }))}
+                      data-testid={`button-remove-staff-${staffId}`}
                     >
                       ×
                     </button>

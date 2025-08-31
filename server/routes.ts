@@ -1635,20 +1635,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Organisation ID required' });
       }
 
+      // Extract filter parameters
+      const { departments, roles, courses: coursesQuery, statuses, staff: staffFilter, mandatoryOnly } = req.query;
+      const departmentFilter = departments ? departments.split(',') : [];
+      const roleFilter = roles ? roles.split(',') : [];
+      const courseFilter = coursesQuery ? coursesQuery.split(',') : [];
+      const statusFilter = statuses ? statuses.split(',') : [];
+      const staffIdFilter = staffFilter ? staffFilter.split(',') : [];
+      const mandatoryOnlyFilter = mandatoryOnly === 'true';
+
       // Get all staff members in the organisation
       const staff = await storage.getUsersByOrganisation(organisationId);
-      const activeStaff = staff.filter(u => u.status === 'active' && u.role === 'user');
+      let activeStaff = staff.filter(u => u.status === 'active' && u.role === 'user');
+
+      // Apply staff filter
+      if (staffIdFilter.length > 0) {
+        activeStaff = activeStaff.filter(s => staffIdFilter.includes(s.id));
+      }
+
+      // Apply department filter
+      if (departmentFilter.length > 0) {
+        activeStaff = activeStaff.filter(s => s.department && departmentFilter.includes(s.department));
+      }
+
+      // Apply role/job title filter (treating jobTitle as role)
+      if (roleFilter.length > 0) {
+        activeStaff = activeStaff.filter(s => s.jobTitle && roleFilter.includes(s.jobTitle));
+      }
 
       // Get all courses assigned to users in this organisation
       const assignments = await storage.getAssignmentsByOrganisation(organisationId);
-      const courseIds = [...new Set(assignments.map(a => a.courseId))];
+      let courseIds = [...new Set(assignments.map(a => a.courseId))];
       
       const courses = await Promise.all(
         courseIds.map(async (courseId) => {
           return await storage.getCourse(courseId);
         })
       );
-      const validCourses = courses.filter(Boolean);
+      let validCourses = courses.filter(Boolean);
+
+      // Apply course filter
+      if (courseFilter.length > 0) {
+        validCourses = validCourses.filter(c => courseFilter.includes(c.id));
+      }
 
       // Get all completions for this organisation
       const completions = await storage.getCompletionsByOrganisation(organisationId);
@@ -1665,6 +1694,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(now.getDate() + 30);
 
+      // Function to check if a cell status matches the filter
+      const matchesStatusFilter = (cellStatus: string) => {
+        if (statusFilter.length === 0) return true;
+        return statusFilter.includes(cellStatus);
+      };
+
       for (const staffMember of activeStaff) {
         const staffRow: any[] = [];
         
@@ -1676,11 +1711,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!assignment) {
             // No assignment - blank cell
-            staffRow.push({
+            const blankCell = {
               status: 'blank',
               label: '-',
               attemptCount: 0
-            });
+            };
+            if (matchesStatusFilter('blank')) {
+              staffRow.push(blankCell);
+            } else {
+              staffRow.push(null); // Placeholder for filtered out cell
+            }
             continue;
           }
 
@@ -1697,15 +1737,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!latestCompletion) {
             // Not completed - grey cell
-            staffRow.push({
+            const greyCell = {
               status: 'grey',
               label: 'Not completed',
               attemptCount: completions.filter(c => 
                 c.userId === staffMember.id && c.courseId === course.id
               ).length,
               assignmentId: assignment.id
-            });
-            summary.grey++;
+            };
+            if (matchesStatusFilter('grey')) {
+              staffRow.push(greyCell);
+              summary.grey++;
+            } else {
+              staffRow.push(null); // Placeholder for filtered out cell
+            }
             continue;
           }
 
@@ -1746,7 +1791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             dateLabel = `Exp: ${expiryDate.toLocaleDateString('en-GB')}`;
           }
 
-          staffRow.push({
+          const completedCell = {
             status,
             label,
             date: dateLabel,
@@ -1756,12 +1801,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             attemptCount: userCompletions.length,
             assignmentId: assignment.id,
             completionId: latestCompletion.id
-          });
-
-          summary[status]++;
+          };
+          
+          if (matchesStatusFilter(status)) {
+            staffRow.push(completedCell);
+            summary[status]++;
+          } else {
+            staffRow.push(null); // Placeholder for filtered out cell
+          }
         }
         
-        matrix.push(staffRow);
+        // Only add row if it has any visible cells or no status filter is applied
+        if (statusFilter.length === 0 || staffRow.some(cell => cell !== null)) {
+          matrix.push(staffRow);
+        }
       }
 
       res.json({
