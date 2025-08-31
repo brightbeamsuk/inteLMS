@@ -976,7 +976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get organisation statistics
+  // Get organisation statistics (for SuperAdmins)
   app.get('/api/organisations/:id/stats', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -991,6 +991,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching organisation stats:', error);
       res.status(500).json({ message: 'Failed to fetch organisation stats' });
+    }
+  });
+
+  // Admin dashboard statistics (for admins to get their own organization's stats)
+  app.get('/api/admin/stats', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (!user.organisationId) {
+        return res.status(400).json({ message: 'User is not associated with an organisation' });
+      }
+
+      const stats = await storage.getOrganisationStats(user.organisationId);
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching admin stats:', error);
+      res.status(500).json({ message: 'Failed to fetch admin stats' });
     }
   });
 
