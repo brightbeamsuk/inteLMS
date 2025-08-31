@@ -51,11 +51,11 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp'];
+    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PNG, JPG, JPEG, and WebP are allowed.'));
+      cb(new Error('Invalid file type. Only PNG, JPG, JPEG, WebP, and HEIC files are allowed.'));
     }
   }
 });

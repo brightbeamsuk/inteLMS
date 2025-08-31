@@ -31,11 +31,11 @@ export function ImageUpload({
     if (!file) return;
 
     // Validate file type
-    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp'];
+    const allowedTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'];
     if (!allowedTypes.includes(file.type)) {
       toast({
         title: "Invalid File Type",
-        description: "Only PNG, JPG, JPEG, and WebP files are allowed.",
+        description: "Only PNG, JPG, JPEG, WebP, and HEIC files are allowed.",
         variant: "destructive",
       });
       return;
