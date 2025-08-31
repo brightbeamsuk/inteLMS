@@ -178,6 +178,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user profile
+  app.put('/api/auth/profile', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { firstName, lastName, jobTitle, department, phone, bio, profileImageUrl } = req.body;
+
+      // Update user profile
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          firstName,
+          lastName,
+          jobTitle,
+          department,
+          phone,
+          bio,
+          profileImageUrl,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId))
+        .returning();
+
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
   // Object storage routes
   app.get("/objects/:objectPath(*)", requireAuth, async (req, res) => {
     const userId = req.session?.user?.id;

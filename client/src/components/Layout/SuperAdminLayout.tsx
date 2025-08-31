@@ -45,15 +45,27 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           <div className="dropdown dropdown-end">
             <div tabIndex={0} role="button" className="btn btn-ghost" data-testid="button-user-menu">
               <div className="badge badge-primary">SuperAdmin</div>
-              <div className="avatar placeholder">
-                <div className="bg-neutral text-neutral-content rounded-full w-8">
-                  <span className="text-xs">SA</span>
+              <div className="avatar">
+                <div className="w-8 h-8 rounded-full">
+                  {user?.profileImageUrl ? (
+                    <img 
+                      src={user.profileImageUrl} 
+                      alt="Profile"
+                      className="object-cover w-full h-full rounded-full"
+                    />
+                  ) : (
+                    <div className="bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center">
+                      <span className="text-xs">
+                        {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
             <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
               <li>
-                <Link href="/superadmin/users" data-testid="link-profile">
+                <Link href="/superadmin/profile" data-testid="link-profile">
                   <i className="fas fa-user"></i> Profile
                 </Link>
               </li>

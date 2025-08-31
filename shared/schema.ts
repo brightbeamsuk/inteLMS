@@ -53,6 +53,8 @@ export const users = pgTable("users", {
   organisationId: varchar("organisation_id"),
   jobTitle: varchar("job_title"),
   department: varchar("department"),
+  phone: varchar("phone"),
+  bio: text("bio"),
   allowCertificateDownload: boolean("allow_certificate_download").default(false),
   lastActive: timestamp("last_active"),
   createdAt: timestamp("created_at").defaultNow(),

@@ -24,6 +24,7 @@ import { SuperAdminUsers } from "@/pages/superadmin/Users";
 import { SuperAdminCourseBuilder } from "@/pages/superadmin/CourseBuilder";
 import { SuperAdminCourses } from "@/pages/superadmin/Courses";
 import { SuperAdminSettings } from "@/pages/superadmin/Settings";
+import { SuperAdminProfile } from "@/pages/superadmin/Profile";
 
 // Admin pages
 import { AdminDashboard } from "@/pages/admin/Dashboard";
@@ -151,6 +152,14 @@ function Router() {
         <ProtectedRoute requiredRole="superadmin">
           <SuperAdminLayout>
             <SuperAdminSettings />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/profile">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminProfile />
           </SuperAdminLayout>
         </ProtectedRoute>
       </Route>
