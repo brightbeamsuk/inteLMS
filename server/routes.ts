@@ -8,6 +8,7 @@ import { ObjectPermission } from "./objectAcl";
 import { emailService } from "./services/emailService";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
+import { ScormPreviewService } from "./services/scormPreviewService";
 import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema } from "@shared/schema";
 import { z } from "zod";
 import * as path from "path";
@@ -47,6 +48,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function getCurrentUser(req: any) {
     return req.session?.user || null;
   }
+
+  // Initialize SCORM preview service
+  const scormPreviewService = new ScormPreviewService();
 
   // Auth routes
   app.post('/api/login', async (req: any, res) => {
@@ -359,6 +363,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.setHeader('Content-Type', 'text/html');
       res.status(500).send(errorHtml);
+    }
+  });
+
+  // NEW SCORM Preview System Routes
+  
+  // Process SCORM upload with new preview system
+  app.post('/api/scorm/process-upload', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { packageUrl } = req.body;
+      
+      if (!packageUrl) {
+        return res.status(400).json({ message: 'Package URL is required' });
+      }
+
+      console.log(`📦 Processing SCORM upload for user ${user.id}: ${packageUrl}`);
+      
+      // Process the upload
+      const packageInfo = await scormPreviewService.processUpload(packageUrl);
+      
+      res.json({
+        success: true,
+        packageInfo,
+        message: `Package processed successfully with ID: ${packageInfo.packageId}`
+      });
+      
+    } catch (error) {
+      console.error('Error processing SCORM upload:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to process SCORM package',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Get package validation info
+  app.get('/api/scorm/package-info/:packageId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { packageId } = req.params;
+      const packageInfo = await scormPreviewService.getPackageInfo(packageId);
+      
+      if (!packageInfo) {
+        return res.status(404).json({ message: 'Package not found' });
+      }
+      
+      res.json(packageInfo);
+      
+    } catch (error) {
+      console.error('Error getting package info:', error);
+      res.status(500).json({ message: 'Failed to get package info' });
+    }
+  });
+
+  // SCORM Preview file serving - NO AUTH REQUIRED for iframe loading
+  app.get('/scorm-preview/:packageId/test', async (req: any, res) => {
+    try {
+      const { packageId } = req.params;
+      
+      console.log(`🧪 Serving test page for package: ${packageId}`);
+      
+      const testHtml = scormPreviewService.createTestPage(packageId);
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.send(testHtml);
+      
+    } catch (error) {
+      console.error('Error serving test page:', error);
+      res.status(500).send('Error loading test page');
+    }
+  });
+
+  // SCORM Preview file serving - NO AUTH REQUIRED for iframe loading
+  app.get('/scorm-preview/:packageId/*', async (req: any, res) => {
+    try {
+      const { packageId } = req.params;
+      const filePath = req.params[0] || 'index.html';
+      
+      console.log(`📁 Serving SCORM preview file: ${packageId}/${filePath}`);
+      
+      const fileResult = await scormPreviewService.servePackageFile(packageId, filePath);
+      
+      if (!fileResult) {
+        console.log(`❌ File not found: ${packageId}/${filePath}`);
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>File Not Found</title></head>
+          <body>
+            <h1>404 - File Not Found</h1>
+            <p>File <code>${filePath}</code> not found in package <code>${packageId}</code></p>
+          </body>
+          </html>
+        `);
+      }
+      
+      res.setHeader('Content-Type', fileResult.contentType);
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.send(fileResult.content);
+      
+    } catch (error) {
+      console.error('Error serving SCORM preview file:', error);
+      res.status(500).send('Error loading file');
     }
   });
 

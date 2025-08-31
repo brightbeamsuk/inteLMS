@@ -5,9 +5,31 @@ import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import type { UploadResult } from "@uppy/core";
 
+interface ScormValidation {
+  packageId: string;
+  manifestFound: boolean;
+  launchFileFound: boolean;
+  launchFileCanOpen: boolean;
+  launchFilePath: string;
+  errors: string[];
+  status: 'valid' | 'draft' | 'error';
+}
+
+interface ScormPackageInfo {
+  packageId: string;
+  title: string;
+  description?: string;
+  version: string;
+  launchFilePath: string;
+  rootPath: string;
+  validation: ScormValidation;
+}
+
 export function SuperAdminCourseBuilder() {
   const [activeTab, setActiveTab] = useState(0);
   const [showScormPreview, setShowScormPreview] = useState(false);
+  const [scormPackageInfo, setScormPackageInfo] = useState<ScormPackageInfo | null>(null);
+  const [isProcessingScorm, setIsProcessingScorm] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -62,6 +84,8 @@ export function SuperAdminCourseBuilder() {
       certificateExpiryPeriod: 12,
       neverExpires: false,
     });
+    setScormPackageInfo(null);
+    setIsProcessingScorm(false);
   };
 
   const handleScormUpload = async () => {
@@ -86,10 +110,39 @@ export function SuperAdminCourseBuilder() {
     if (result.successful && result.successful.length > 0) {
       const uploadUrl = result.successful[0].uploadURL as string;
       setFormData(prev => ({ ...prev, scormPackageUrl: uploadUrl }));
-      toast({
-        title: "Success",
-        description: "SCORM package uploaded successfully",
-      });
+      
+      // Process the uploaded package with new preview system
+      setIsProcessingScorm(true);
+      try {
+        const response = await apiRequest('POST', '/api/scorm/process-upload', {
+          packageUrl: uploadUrl
+        });
+        
+        const data = await response.json();
+        const { packageInfo } = data;
+        setScormPackageInfo(packageInfo);
+        
+        toast({
+          title: "SCORM Package Processed",
+          description: `Package validated with status: ${packageInfo.validation.status}`,
+          variant: packageInfo.validation.status === 'valid' ? 'default' : 'destructive'
+        });
+        
+        // Auto-fill title if not already set and package has one
+        if (!formData.title && packageInfo.title && packageInfo.title !== `SCORM Package ${packageInfo.packageId}`) {
+          setFormData(prev => ({ ...prev, title: packageInfo.title }));
+        }
+        
+      } catch (error) {
+        console.error('Error processing SCORM package:', error);
+        toast({
+          title: "Processing Error",
+          description: "Failed to process SCORM package. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsProcessingScorm(false);
+      }
     }
   };
 
@@ -122,8 +175,8 @@ export function SuperAdminCourseBuilder() {
     }
   };
 
-  const handlePreviewCourse = () => {
-    if (!formData.scormPackageUrl) {
+  const handleTestPackage = () => {
+    if (!scormPackageInfo) {
       toast({
         title: "No SCORM Package",
         description: "Please upload a SCORM package first",
@@ -131,7 +184,34 @@ export function SuperAdminCourseBuilder() {
       });
       return;
     }
-    setShowScormPreview(true);
+    
+    // Open test page in new window
+    const testUrl = `/scorm-preview/${scormPackageInfo.packageId}/test`;
+    window.open(testUrl, '_blank', 'width=800,height=600,resizable=yes,scrollbars=yes');
+  };
+
+  const handlePreviewCourse = () => {
+    if (!scormPackageInfo) {
+      toast({
+        title: "No SCORM Package",
+        description: "Please upload a SCORM package first",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (scormPackageInfo.validation.status === 'error') {
+      toast({
+        title: "Package Error",
+        description: "Cannot preview package with errors. Please upload a valid SCORM package.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Open preview in new window
+    const previewUrl = `/scorm-preview/${scormPackageInfo.packageId}/${scormPackageInfo.launchFilePath}`;
+    window.open(previewUrl, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -140,6 +220,24 @@ export function SuperAdminCourseBuilder() {
       toast({
         title: "Validation Error",
         description: "Please provide a title and upload a SCORM package",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!scormPackageInfo) {
+      toast({
+        title: "SCORM Package Processing",
+        description: "Please wait for SCORM package processing to complete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (scormPackageInfo.validation.status === 'error') {
+      toast({
+        title: "Invalid SCORM Package",
+        description: "Cannot publish course with SCORM package errors. Please upload a valid package.",
         variant: "destructive",
       });
       return;
@@ -200,15 +298,100 @@ export function SuperAdminCourseBuilder() {
                   onGetUploadParameters={handleScormUpload}
                   onComplete={handleScormComplete}
                   buttonClassName="btn btn-outline w-full"
+                  disabled={isProcessingScorm}
                 >
                   <i className="fas fa-upload mr-2"></i>
-                  {formData.scormPackageUrl ? "Change SCORM Package" : "Upload SCORM Package (.zip)"}
+                  {isProcessingScorm ? "Processing..." : formData.scormPackageUrl ? "Change SCORM Package" : "Upload SCORM Package (.zip)"}
                 </ObjectUploader>
+                
+                {/* SCORM Package Status and Actions */}
                 {formData.scormPackageUrl && (
-                  <div className="mt-2 text-sm text-success">
-                    <i className="fas fa-check"></i> SCORM package uploaded
+                  <div className="mt-4 p-4 bg-base-100 rounded-lg border">
+                    {isProcessingScorm ? (
+                      <div className="flex items-center gap-2">
+                        <span className="loading loading-spinner loading-sm"></span>
+                        <span>Processing SCORM package...</span>
+                      </div>
+                    ) : scormPackageInfo ? (
+                      <div className="space-y-3">
+                        {/* Package Info */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-semibold" data-testid="text-package-title">{scormPackageInfo.title}</h4>
+                            <p className="text-sm text-base-content/60">Package ID: {scormPackageInfo.packageId}</p>
+                          </div>
+                          <div className={`badge ${
+                            scormPackageInfo.validation.status === 'valid' ? 'badge-success' : 
+                            scormPackageInfo.validation.status === 'draft' ? 'badge-warning' : 'badge-error'
+                          }`} data-testid="badge-validation-status">
+                            {scormPackageInfo.validation.status.toUpperCase()}
+                          </div>
+                        </div>
+                        
+                        {/* Validation Details */}
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <i className={`fas ${scormPackageInfo.validation.manifestFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <span>Manifest Found</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <i className={`fas ${scormPackageInfo.validation.launchFileFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <span>Launch File Found</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <i className={`fas ${scormPackageInfo.validation.launchFileCanOpen ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <span>Launch File Accessible</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <i className="fas fa-info-circle text-info"></i>
+                            <span>SCORM {scormPackageInfo.version}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Error Messages */}
+                        {scormPackageInfo.validation.errors.length > 0 && (
+                          <div className="alert alert-error text-sm">
+                            <i className="fas fa-exclamation-triangle"></i>
+                            <div>
+                              <p className="font-semibold">Validation Errors:</p>
+                              <ul className="list-disc list-inside">
+                                {scormPackageInfo.validation.errors.map((error, index) => (
+                                  <li key={index}>{error}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 justify-end">
+                          <button 
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={handleTestPackage}
+                            data-testid="button-test-package"
+                          >
+                            <i className="fas fa-vial"></i> Test Package
+                          </button>
+                          <button 
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            onClick={handlePreviewCourse}
+                            disabled={scormPackageInfo.validation.status === 'error'}
+                            data-testid="button-preview-package"
+                          >
+                            <i className="fas fa-eye"></i> Preview Course
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-success">
+                        <i className="fas fa-check"></i> SCORM package uploaded (processing...)
+                      </div>
+                    )}
                   </div>
                 )}
+                
                 <label className="label">
                   <span className="label-text-alt">Upload a SCORM 1.2 or SCORM 2004 compliant package (.zip)</span>
                 </label>

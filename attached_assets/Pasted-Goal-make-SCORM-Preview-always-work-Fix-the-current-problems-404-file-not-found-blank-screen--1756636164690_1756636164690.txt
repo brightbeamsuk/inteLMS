@@ -1,0 +1,84 @@
+Goal: make SCORM “Preview” always work.
+Fix the current problems (404, file not found, blank screen).
+
+When a SCORM zip is uploaded
+
+Give it a unique package ID.
+
+Unzip it into a folder: /data/scorm/{packageId}/ (keep the same folder layout as in the zip).
+
+Find imsmanifest.xml anywhere inside that upload.
+
+Work out the launch file from the manifest (often index.html). Save the exact relative location (for example: index.html or folderA/start.html).
+
+If the whole zip is inside one single top folder, treat that folder as the package’s “root”.
+
+Preview button must do this
+
+The Preview button opens an embedded window (an inline frame).
+
+That frame loads this web address:
+/scorm-preview/{packageId}/{launchFileRelativeLocation}
+
+The frame must be allowed to load scripts and behave like a normal page.
+
+How the preview addresses should behave
+
+Any address that starts with /scorm-preview/{packageId}/… must serve the actual file from /data/scorm/{packageId}/….
+
+Do not send these preview addresses back to the main app shell.
+
+Do not change the address, rewrite it, or add extra folders.
+
+Turn off caching for these preview files so you always see the latest version.
+
+Show clear messages
+
+If the launch file is missing or can’t be opened, show a friendly error on screen (not just a blank page).
+
+Add a tiny “Loading…” message while the preview starts.
+
+Quick self-check after upload (automatic)
+
+After every upload, run a quick check and show a result:
+
+“Found manifest” ✅ / ❌
+
+“Found launch file” ✅ / ❌
+
+“Launch file can be opened” ✅ / ❌
+If any of these fail, mark the package as Draft and show the reason.
+
+Small test button (helps diagnose)
+
+Add a Test package button next to Preview that opens a tiny built-in “Hello” page from the same place.
+
+If Test works but Preview fails, the issue is the course files.
+
+If Test fails, the issue is the preview addresses.
+
+Who can see previews
+
+Only SuperAdmin and the Admin of that organisation can use Preview.
+
+Normal Users never use the preview address; they only launch courses the normal way.
+
+Log what happens (for support)
+
+Write down each preview attempt with the package ID and the exact file it tried to open.
+
+This helps find “file not found” mistakes.
+
+Quick test script (do these in order)
+
+Upload a zip that only has an index.html saying “Hello”. Press Preview → you should see “Hello”.
+
+Upload a real SCORM zip with imsmanifest.xml at the top level. Press Preview → it should load the course screen.
+
+Upload a SCORM zip where everything sits inside one folder. Press Preview → still works.
+
+If you see a blank page, use Test package:
+
+If Test works → the problem is inside the course files.
+
+If Test fails → the problem is with the preview addresses; fix that.
