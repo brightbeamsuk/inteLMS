@@ -65,6 +65,7 @@ export function AdminCourses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/training-matrix'] });
       setShowAssignModal(false);
       setSelectedUsers([]);
       setDueDate("");
