@@ -85,7 +85,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Helper function to get user ID from session claims
   function getUserIdFromSession(req: any): string | null {
-    return req.session?.user?.claims?.sub || null;
+    // For Replit Auth (production)
+    if (req.session?.user?.claims?.sub) {
+      return req.session.user.claims.sub;
+    }
+    // For demo login (development)
+    if (req.session?.user?.id) {
+      return req.session.user.id;
+    }
+    return null;
   }
 
   // Helper function to get current user
