@@ -1683,6 +1683,196 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get expiring training data
+  app.get('/api/admin/expiring-training/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = req.params.organisationId;
+      
+      // For admins, ensure they can only access their own organisation's data
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied: Cannot access other organisation data' });
+      }
+
+      const now = new Date();
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(now.getDate() + 7);
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(now.getDate() + 30);
+      const ninetyDaysFromNow = new Date();
+      ninetyDaysFromNow.setDate(now.getDate() + 90);
+      
+      // Get all assignments for the organisation
+      const assignments = await storage.getAssignmentsByOrganisation(organisationId);
+      
+      // Get all users for the organisation
+      const users = await storage.getUsersByOrganisation(organisationId);
+      const activeUsers = users.filter(u => u.status === 'active' && u.role === 'user');
+      
+      // Get all courses
+      const courses = await storage.getCourses();
+      
+      // Get all completions
+      const completions = await storage.getCompletions();
+      
+      const expiringTraining = [];
+      
+      for (const assignment of assignments) {
+        // Skip if assignment is already completed
+        if (assignment.status === 'completed') continue;
+        
+        const user = activeUsers.find(u => u.id === assignment.userId);
+        const course = courses.find(c => c.id === assignment.courseId);
+        
+        if (!user || !course) continue;
+        
+        // Check if user has any completions for this course
+        const userCompletions = completions.filter(c => 
+          c.userId === assignment.userId && 
+          c.courseId === assignment.courseId &&
+          c.status === 'pass'
+        );
+        
+        const latestCompletion = userCompletions.sort((a, b) => 
+          new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()
+        )[0];
+        
+        let daysUntilDue = null;
+        let isExpiring = false;
+        
+        if (latestCompletion && course.certificateExpiryPeriod) {
+          // Course is completed but might be expiring
+          const completionDate = new Date(latestCompletion.completedAt!);
+          const expiryDate = new Date(completionDate);
+          expiryDate.setMonth(expiryDate.getMonth() + course.certificateExpiryPeriod);
+          
+          if (expiryDate <= ninetyDaysFromNow) {
+            daysUntilDue = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            isExpiring = true;
+          }
+        } else if (!latestCompletion && assignment.dueDate) {
+          // Course is not completed and has a due date
+          const dueDate = new Date(assignment.dueDate);
+          if (dueDate <= ninetyDaysFromNow) {
+            daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            isExpiring = true;
+          }
+        }
+        
+        if (isExpiring && daysUntilDue !== null) {
+          expiringTraining.push({
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            courseId: course.id,
+            courseTitle: course.title,
+            dueDate: latestCompletion && course.certificateExpiryPeriod ? 
+              new Date(new Date(latestCompletion.completedAt!).setMonth(
+                new Date(latestCompletion.completedAt!).getMonth() + course.certificateExpiryPeriod
+              )).toISOString() : 
+              assignment.dueDate,
+            daysUntilDue,
+            isExpiry: !!latestCompletion
+          });
+        }
+      }
+      
+      res.json(expiringTraining);
+    } catch (error) {
+      console.error('Error fetching expiring training:', error);
+      res.status(500).json({ message: 'Failed to fetch expiring training' });
+    }
+  });
+
+  // Get recent completions for admin dashboard
+  app.get('/api/admin/recent-completions/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = req.params.organisationId;
+      
+      // For admins, ensure they can only access their own organisation's data
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied: Cannot access other organisation data' });
+      }
+
+      // Get all users for the organisation
+      const users = await storage.getUsersByOrganisation(organisationId);
+      const userMap = new Map(users.map(u => [u.id, u]));
+      
+      // Get all courses
+      const courses = await storage.getCourses();
+      const courseMap = new Map(courses.map(c => [c.id, c]));
+      
+      // Get recent completions (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const allCompletions = await storage.getCompletions();
+      const recentCompletions = allCompletions
+        .filter(completion => {
+          const user = userMap.get(completion.userId);
+          const completionDate = new Date(completion.completedAt!);
+          return user && 
+                 user.organisationId === organisationId && 
+                 completion.status === 'pass' && 
+                 completionDate >= thirtyDaysAgo;
+        })
+        .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime())
+        .slice(0, 10)
+        .map(completion => {
+          const user = userMap.get(completion.userId);
+          const course = courseMap.get(completion.courseId);
+          return {
+            id: completion.id,
+            userId: completion.userId,
+            userName: user ? `${user.firstName} ${user.lastName}` : 'Unknown User',
+            courseTitle: course?.title || 'Unknown Course',
+            score: completion.score ? parseFloat(completion.score) : 0,
+            completedAt: completion.completedAt
+          };
+        });
+      
+      res.json(recentCompletions);
+    } catch (error) {
+      console.error('Error fetching recent completions:', error);
+      res.status(500).json({ message: 'Failed to fetch recent completions' });
+    }
+  });
+
+  // Get analytics/completions data for admin dashboard  
+  app.get('/api/admin/analytics/completions/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = req.params.organisationId;
+      
+      // For admins, ensure they can only access their own organisation's data
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied: Cannot access other organisation data' });
+      }
+
+      // Get organisation completion analytics similar to global but filtered by organisation users
+      const completionAnalytics = await storage.getCompletionAnalytics();
+      res.json(completionAnalytics);
+    } catch (error) {
+      console.error('Error fetching completion analytics:', error);
+      res.status(500).json({ message: 'Failed to fetch completion analytics' });
+    }
+  });
+
   // Get training matrix data
   app.get('/api/training-matrix', requireAuth, async (req: any, res) => {
     try {

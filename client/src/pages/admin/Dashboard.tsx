@@ -492,7 +492,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="text-xs">Due within 7 days</div>
                   </div>
-                  <Link href="/admin/training-matrix">
+                  <Link href="/admin/training-matrix?statuses=red,amber">
                     <button className="btn btn-sm btn-outline" data-testid="button-view-due-7">View</button>
                   </Link>
                 </div>
@@ -504,7 +504,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="text-xs">Due within 30 days</div>
                   </div>
-                  <Link href="/admin/training-matrix">
+                  <Link href="/admin/training-matrix?statuses=red,amber">
                     <button className="btn btn-sm btn-outline" data-testid="button-view-due-30">View</button>
                   </Link>
                 </div>
@@ -516,7 +516,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="text-xs">Due within 90 days</div>
                   </div>
-                  <Link href="/admin/training-matrix">
+                  <Link href="/admin/training-matrix?statuses=red,amber">
                     <button className="btn btn-sm btn-outline" data-testid="button-view-due-90">View</button>
                   </Link>
                 </div>

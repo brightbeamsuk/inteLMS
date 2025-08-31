@@ -105,9 +105,46 @@ export function AdminTrainingMatrix() {
   // Debug logging
   console.log('Training Matrix Query:', { matrixData, isLoading, error, currentUser });
 
-  // Load saved filters on mount
+  // Load filters from URL parameters or localStorage on mount
   useEffect(() => {
     if (currentUser?.organisationId) {
+      // First, check URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlFilters: Partial<FilterState> = {};
+      let hasUrlFilters = false;
+      
+      if (urlParams.has('departments')) {
+        urlFilters.departments = urlParams.get('departments')?.split(',') || [];
+        hasUrlFilters = true;
+      }
+      if (urlParams.has('roles')) {
+        urlFilters.roles = urlParams.get('roles')?.split(',') || [];
+        hasUrlFilters = true;
+      }
+      if (urlParams.has('courses')) {
+        urlFilters.courses = urlParams.get('courses')?.split(',') || [];
+        hasUrlFilters = true;
+      }
+      if (urlParams.has('statuses')) {
+        urlFilters.statuses = urlParams.get('statuses')?.split(',') || [];
+        hasUrlFilters = true;
+      }
+      if (urlParams.has('staff')) {
+        urlFilters.staff = urlParams.get('staff')?.split(',') || [];
+        hasUrlFilters = true;
+      }
+      if (urlParams.has('mandatoryOnly')) {
+        urlFilters.mandatoryOnly = urlParams.get('mandatoryOnly') === 'true';
+        hasUrlFilters = true;
+      }
+      
+      if (hasUrlFilters) {
+        // Apply URL filters
+        setFilters(prev => ({ ...prev, ...urlFilters }));
+        return;
+      }
+      
+      // If no URL filters, load saved filters from localStorage
       const savedFiltersKey = `training-matrix-filters-${currentUser.organisationId}`;
       const savedFilters = localStorage.getItem(savedFiltersKey);
       if (savedFilters) {
