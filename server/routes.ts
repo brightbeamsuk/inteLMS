@@ -14,15 +14,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
+  // Helper function to get current user (supports demo mode)
+  async function getCurrentUser(req: any) {
+    // Check if in demo mode
+    if ((req.session as any).demoMode && (req.session as any).demoUser) {
+      return (req.session as any).demoUser;
+    }
+    
+    // Normal user lookup
+    const userId = req.user.claims.sub;
+    return await storage.getUser(userId);
+  }
+
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
+      // Check if in demo mode
+      if ((req.session as any).demoMode && (req.session as any).demoUser) {
+        return res.json({
+          ...(req.session as any).demoUser,
+          demoMode: true
+        });
+      }
+
+      // Normal user lookup
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json(user);
+      res.json({ ...user, demoMode: false });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -88,11 +109,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Demo login routes - these simulate logging in as different demo users
+  app.post('/api/demo-login/:role', isAuthenticated, async (req: any, res) => {
+    try {
+      const { role } = req.params;
+      const demoUsers = {
+        'superadmin': 'demo-superadmin',
+        'admin-acme': 'demo-admin-acme', 
+        'admin-ocean': 'demo-admin-ocean',
+        'user-alice': 'demo-user-alice',
+        'user-dan': 'demo-user-dan'
+      };
+
+      const demoUserId = demoUsers[role as keyof typeof demoUsers];
+      if (!demoUserId) {
+        return res.status(400).json({ message: 'Invalid demo role' });
+      }
+
+      // Get the demo user from database
+      const demoUser = await storage.getUser(demoUserId);
+      if (!demoUser) {
+        return res.status(404).json({ message: 'Demo user not found. Please seed demo data first.' });
+      }
+
+      // Store demo mode in session
+      (req.session as any).demoMode = true;
+      (req.session as any).demoUserId = demoUserId;
+      (req.session as any).demoUser = demoUser;
+
+      res.json({ 
+        message: `Demo login successful as ${demoUser.role}`,
+        user: demoUser,
+        demoMode: true
+      });
+    } catch (error) {
+      console.error('Error in demo login:', error);
+      res.status(500).json({ message: 'Demo login failed' });
+    }
+  });
+
+  // Exit demo mode
+  app.post('/api/exit-demo', isAuthenticated, async (req: any, res) => {
+    try {
+      delete (req.session as any).demoMode;
+      delete (req.session as any).demoUserId; 
+      delete (req.session as any).demoUser;
+      res.json({ message: 'Exited demo mode' });
+    } catch (error) {
+      console.error('Error exiting demo mode:', error);
+      res.status(500).json({ message: 'Failed to exit demo mode' });
+    }
+  });
+
   // SuperAdmin routes
   app.get('/api/superadmin/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await getCurrentUser(req);
       
       if (!user || user.role !== 'superadmin') {
         return res.status(403).json({ message: 'Access denied' });
@@ -109,8 +181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Organisations routes
   app.get('/api/organisations', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await getCurrentUser(req);
       
       if (!user || user.role !== 'superadmin') {
         return res.status(403).json({ message: 'Access denied' });
@@ -153,8 +224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Users routes
   app.get('/api/users', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await getCurrentUser(req);
       
       if (!user) {
         return res.status(403).json({ message: 'Access denied' });
@@ -216,8 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/courses', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await getCurrentUser(req);
       
       if (!user || user.role !== 'superadmin') {
         return res.status(403).json({ message: 'Access denied' });
@@ -239,8 +308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Assignments routes
   app.get('/api/assignments', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await getCurrentUser(req);
       
       if (!user) {
         return res.status(403).json({ message: 'Access denied' });
@@ -248,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let assignments;
       if (user.role === 'user') {
-        assignments = await storage.getAssignmentsByUser(userId);
+        assignments = await storage.getAssignmentsByUser(user.id);
       } else if (user.role === 'admin' && user.organisationId) {
         assignments = await storage.getAssignmentsByOrganisation(user.organisationId);
       } else if (user.role === 'superadmin') {

@@ -83,7 +83,34 @@ export function SignIn() {
               <button
                 key={index}
                 className={`btn btn-sm w-full ${cred.className}`}
-                onClick={() => window.location.href = '/api/login'}
+                onClick={async () => {
+                  // First ensure user is logged in
+                  const response = await fetch('/api/auth/user');
+                  if (response.status === 401) {
+                    // User not logged in, redirect to login first
+                    window.location.href = '/api/login';
+                    return;
+                  }
+                  
+                  // User is logged in, now switch to demo mode
+                  const demoRole = cred.role === 'SuperAdmin' ? 'superadmin' 
+                    : cred.role === 'Admin (Acme Care)' ? 'admin-acme'
+                    : cred.role === 'Admin (Ocean Nurseries)' ? 'admin-ocean'
+                    : cred.role === 'User (Alice)' ? 'user-alice'
+                    : 'user-dan';
+                  
+                  const demoResponse = await fetch(`/api/demo-login/${demoRole}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+                  
+                  if (demoResponse.ok) {
+                    // Refresh the page to update the user context
+                    window.location.reload();
+                  } else {
+                    console.error('Failed to switch to demo mode');
+                  }
+                }}
                 data-testid={`button-demo-${cred.role.toLowerCase().replace(/\s+/g, '-')}`}
               >
                 {cred.role}
@@ -91,9 +118,9 @@ export function SignIn() {
             ))}
           </div>
 
-          <div className="mt-4 p-3 bg-info/20 rounded-lg">
+          <div className="mt-4 p-3 bg-success/20 rounded-lg">
             <p className="text-xs text-center">
-              <strong>Note:</strong> Demo logins use your Replit account. Change your Replit profile email to match any of the demo emails above to experience different roles.
+              <strong>New!</strong> Demo logins now work with any Replit account! Click any button above to experience different user roles without changing your email.
             </p>
           </div>
 
