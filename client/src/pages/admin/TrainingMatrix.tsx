@@ -714,11 +714,11 @@ export function AdminTrainingMatrix() {
                     <div className="font-semibold">Staff Member</div>
                   </th>
                   {matrixData.courses.map((course) => (
-                    <th key={course.id} className="text-center min-w-[120px] p-2">
+                    <th key={course.id} className="text-center min-w-[140px] p-2">
                       <div className="flex flex-col items-center gap-1">
-                        <div className="font-medium text-xs leading-tight">{course.title}</div>
+                        <div className="font-medium text-xs leading-tight text-center break-words">{course.title}</div>
                         {course.category && (
-                          <div className="text-xs text-base-content/60">{course.category}</div>
+                          <div className="text-xs text-base-content/60 text-center">{course.category}</div>
                         )}
                       </div>
                     </th>
@@ -743,9 +743,9 @@ export function AdminTrainingMatrix() {
                     {matrixData.courses.map((course, courseIndex) => {
                       const cell = matrixData.matrix[staffIndex]?.[courseIndex];
                       return (
-                        <td key={`${staff.id}-${course.id}`} className="text-center p-3">
+                        <td key={`${staff.id}-${course.id}`} className="text-center p-2 min-w-[140px]">
                           {cell && (
-                            <div className="flex justify-center">
+                            <div className="flex flex-col items-center justify-center gap-1">
                               <TrainingMatrixStatusIcon
                                 status={cell.status}
                                 onClick={() => {
@@ -759,6 +759,11 @@ export function AdminTrainingMatrix() {
                                   }
                                 }}
                               />
+                              {cell.status !== 'blank' && cell.status !== 'grey' && (
+                                <div className="text-xs text-center break-words max-w-[130px] leading-tight">
+                                  {cell.label}
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>

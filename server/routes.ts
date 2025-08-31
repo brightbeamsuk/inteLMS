@@ -2430,7 +2430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   <div class="export-date">Generated on ${exportDate}</div>
                 </div>
                 <div class="header-right">
-                  ${organization.logoUrl ? `<img src="${organization.logoUrl}" alt="${organization.displayName} Logo" class="logo">` : ''}
+                  ${organization.logoUrl ? `<img src="${req.protocol}://${req.hostname}${organization.logoUrl}" alt="${organization.displayName} Logo" class="logo">` : ''}
                 </div>
               </div>
               <table>
