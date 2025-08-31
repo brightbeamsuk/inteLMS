@@ -92,6 +92,72 @@
   border-color: var(--color-accent-hover);
 }
 
+/* Navigation and menu highlight colors */
+[data-custom-colors="true"] .menu a:hover {
+  background-color: var(--color-nav-hover);
+  color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .menu a.active {
+  background-color: var(--color-nav-active);
+  color: white;
+}
+
+[data-custom-colors="true"] .tabs-bordered .tab.tab-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .tabs-bordered .tab:hover {
+  background-color: var(--color-nav-hover);
+}
+
+[data-custom-colors="true"] .navbar a:hover {
+  background-color: var(--color-nav-hover);
+  color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .navbar a.active {
+  background-color: var(--color-nav-active);
+  color: white;
+}
+
+/* Sidebar navigation */
+[data-custom-colors="true"] .sidebar-nav a:hover {
+  background-color: var(--color-nav-hover);
+  color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .sidebar-nav a.active {
+  background-color: var(--color-nav-active);
+  color: white;
+}
+
+/* Breadcrumb active states */
+[data-custom-colors="true"] .breadcrumbs ul li a:hover {
+  color: var(--color-primary);
+}
+
+/* Toggle and checkbox primary colors */
+[data-custom-colors="true"] .toggle-primary:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .checkbox-primary:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* Link colors */
+[data-custom-colors="true"] a.link {
+  color: var(--color-primary);
+}
+
+[data-custom-colors="true"] a.link:hover {
+  color: var(--color-primary-hover);
+}
+
 /* Override DaisyUI primary colors with CSS variables for dynamic theming */
 [data-theme="light"] {
   --primary: hsl(var(--primary-h) var(--primary-s) var(--primary-l));

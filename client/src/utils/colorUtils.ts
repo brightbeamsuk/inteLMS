@@ -62,14 +62,24 @@ export function lighterShade(hex: string, amount: number = 15): string {
 }
 
 /**
+ * Convert hex to RGBA with opacity
+ */
+export function hexToRgba(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+/**
  * Generate complementary colors based on a primary color
  */
 export function generateColorPalette(primaryHex: string) {
   const [h, s, l] = hexToHsl(primaryHex);
   
-  // Generate secondary color (analogous - 30 degrees shift)
-  const secondaryH = (h + 30) % 360;
-  const secondary = hslToHex(secondaryH, Math.max(30, s - 10), Math.min(70, l + 5));
+  // Generate secondary color (same as primary but with transparency)
+  const secondary = hexToRgba(primaryHex, 0.1); // 10% opacity
+  const secondaryHover = hexToRgba(primaryHex, 0.2); // 20% opacity on hover
   
   // Generate accent color (complementary - 180 degrees shift with adjusted saturation)
   const accentH = (h + 180) % 360;
@@ -82,7 +92,7 @@ export function generateColorPalette(primaryHex: string) {
     primary: primaryHex,
     primaryHover: darkerShade(primaryHex, 10),
     secondary: secondary,
-    secondaryHover: darkerShade(secondary, 10),
+    secondaryHover: secondaryHover,
     accent: accent,
     accentHover: darkerShade(accent, 10),
     neutral: neutral,
@@ -111,6 +121,10 @@ export function applyColorPalette(colors: ReturnType<typeof generateColorPalette
   // Apply neutral colors
   root.style.setProperty('--color-neutral', colors.neutral);
   root.style.setProperty('--color-neutral-hover', colors.neutralHover);
+  
+  // Apply navigation/menu colors
+  root.style.setProperty('--color-nav-active', colors.primary);
+  root.style.setProperty('--color-nav-hover', colors.secondary);
 }
 
 /**
@@ -122,7 +136,8 @@ export function removeColorPalette() {
     '--color-primary', '--color-primary-hover',
     '--color-secondary', '--color-secondary-hover', 
     '--color-accent', '--color-accent-hover',
-    '--color-neutral', '--color-neutral-hover'
+    '--color-neutral', '--color-neutral-hover',
+    '--color-nav-active', '--color-nav-hover'
   ];
   
   properties.forEach(prop => {
