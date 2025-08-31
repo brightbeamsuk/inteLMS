@@ -92,14 +92,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/logout', (req: any, res) => {
+  // Handle logout as both GET and POST
+  const handleLogout = (req: any, res: any) => {
     req.session.destroy((err: any) => {
       if (err) {
+        console.error('Logout error:', err);
         return res.status(500).json({ message: "Logout failed" });
       }
-      res.json({ message: "Logged out successfully" });
+      
+      // For GET requests (direct navigation), redirect to home
+      if (req.method === 'GET') {
+        res.redirect('/');
+      } else {
+        // For POST requests (API calls), return JSON
+        res.json({ message: "Logged out successfully" });
+      }
     });
-  });
+  };
+
+  app.get('/api/logout', handleLogout);
+  app.post('/api/logout', handleLogout);
 
   app.get('/api/auth/user', requireAuth, async (req: any, res) => {
     try {
