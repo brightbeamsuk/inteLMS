@@ -7,6 +7,7 @@ import type { UploadResult } from "@uppy/core";
 
 export function SuperAdminCourseBuilder() {
   const [activeTab, setActiveTab] = useState(0);
+  const [showScormPreview, setShowScormPreview] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -119,6 +120,18 @@ export function SuperAdminCourseBuilder() {
         description: "Cover image uploaded successfully",
       });
     }
+  };
+
+  const handlePreviewCourse = () => {
+    if (!formData.scormPackageUrl) {
+      toast({
+        title: "No SCORM Package",
+        description: "Please upload a SCORM package first",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowScormPreview(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -385,7 +398,12 @@ export function SuperAdminCourseBuilder() {
                   <div className="text-4xl mb-4">📚</div>
                   <h4 className="text-2xl font-bold mb-2" data-testid="text-preview-title">SCORM Preview Player</h4>
                   <p className="text-base-content/60 mb-4">Course preview would load here</p>
-                  <button className="btn btn-primary" data-testid="button-test-course">
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handlePreviewCourse}
+                    disabled={!formData.scormPackageUrl}
+                    data-testid="button-test-course"
+                  >
                     <i className="fas fa-play"></i> Test Course
                   </button>
                 </div>
@@ -458,6 +476,53 @@ export function SuperAdminCourseBuilder() {
           )}
         </div>
       </div>
+
+      {/* SCORM Preview Modal */}
+      {showScormPreview && (
+        <dialog className="modal modal-open">
+          <div className="modal-box w-11/12 max-w-7xl h-5/6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg">SCORM Course Preview - {formData.title || 'Untitled Course'}</h3>
+              <button 
+                className="btn btn-sm btn-circle btn-ghost"
+                onClick={() => setShowScormPreview(false)}
+                data-testid="button-close-preview"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="w-full h-full bg-white rounded-lg overflow-hidden">
+              {formData.scormPackageUrl ? (
+                <iframe
+                  src={formData.scormPackageUrl}
+                  className="w-full h-full border-0"
+                  title="SCORM Course Preview"
+                  data-testid="iframe-scorm-preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="text-4xl mb-4">⚠️</div>
+                    <p className="text-lg">No SCORM package available for preview</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="modal-action">
+              <button 
+                className="btn btn-outline"
+                onClick={() => setShowScormPreview(false)}
+                data-testid="button-close-preview-modal"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowScormPreview(false)}></div>
+        </dialog>
+      )}
     </div>
   );
 }
