@@ -1501,6 +1501,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create individual assignments
+  app.post('/api/assignments', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { courseId, userId, organisationId, dueDate, notificationsEnabled, assignedBy } = req.body;
+
+      if (!courseId || !userId) {
+        return res.status(400).json({ message: 'Course ID and User ID are required' });
+      }
+
+      // Verify the course exists
+      const course = await storage.getCourse(courseId);
+      if (!course) {
+        return res.status(404).json({ message: 'Course not found' });
+      }
+
+      // Verify the user exists and is in the right organization (for admins)
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // If admin, can only assign to users in their organisation
+      if (currentUser.role === 'admin') {
+        if (targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied: User not in your organization' });
+        }
+      }
+
+      const assignmentData = {
+        courseId,
+        userId,
+        organisationId: organisationId || currentUser.organisationId,
+        assignedBy: assignedBy || currentUser.id,
+        status: 'not_started' as const,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        notificationsEnabled: notificationsEnabled || true
+      };
+
+      const assignment = await storage.createAssignment(assignmentData);
+      res.status(201).json(assignment);
+    } catch (error) {
+      console.error('Error creating assignment:', error);
+      res.status(500).json({ message: 'Failed to create assignment' });
+    }
+  });
+
   // Bulk import users from CSV
   app.post('/api/users/bulk-import', requireAuth, async (req: any, res) => {
     try {

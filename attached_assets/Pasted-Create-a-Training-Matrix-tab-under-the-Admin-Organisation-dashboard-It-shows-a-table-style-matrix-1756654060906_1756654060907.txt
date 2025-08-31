@@ -1,0 +1,97 @@
+Create a Training Matrix tab under the Admin (Organisation) dashboard. It shows a table-style matrix with:
+
+Columns: Each course name (from the platform library that this organisation has assigned).
+
+Rows: Each staff member in this organisation.
+
+Cells: Status for that staff member on that course, derived from their most recent attempt and expiry date.
+
+Cell rules (with colour coding and text labels)
+
+Red (Out of date): Course completed but past expiry date as of today.
+
+Amber (Expiring): Completed and expiring within the next 30 days (today + 30).
+
+Green (In date): Completed and not expiring within 30 days.
+
+Light grey (Not yet completed): Assigned but no valid completion recorded.
+
+If a course does not expire, and is completed, show Green with “No expiry”.
+
+Each cell shows the status label and a small date (e.g., “Exp: 14 Oct 2025” or “No expiry”).
+
+Clicking a cell opens a simple detail panel with: course title, user name, last score, completion date, expiry date, attempt history link, and an Assign/Remind button.
+
+Filters and saved views (org-scoped)
+
+Provide filters for: Team/Department, Role, Course(s), Status (Red/Amber/Green/Grey), Due/Expiry window (e.g., next 7/30/60/90 days), and Show mandatory only.
+
+Add a “Save this filter as a view” button.
+
+Saved views are visible only within this organisation.
+
+Saved views should persist for this Admin until they choose Clear or select a different view.
+
+Allow naming the view (e.g., “Room Leaders – Expiring 30 days”).
+
+Include a Default view button to return to the unfiltered matrix.
+
+Sorting, legend, and quick totals
+
+Allow sorting by most overdue first (Red → Amber → Grey → Green), by staff name, or by soonest expiry.
+
+Add a legend above the table with coloured chips and labels for Red/Amber/Green/Grey.
+
+Show quick totals above the matrix for the current filter: Red count, Amber count, Green count, Not completed.
+
+Reminders and exports
+
+Add “Send reminders” for selected rows or for the current filtered set (sends to learners and CC’s Admin if enabled).
+
+Add Export CSV and Print/PDF for the current filtered view.
+
+Layout and usability
+
+Use DaisyUI components only.
+
+Sticky header for course columns and sticky first column for staff names.
+
+Horizontal scroll for many courses, with a compact but readable cell design.
+
+Tooltips on hover summarising: completion date, expiry date, last score, attempts.
+
+Mobile: stack the matrix as a staff-by-course list with the same colours and labels.
+
+Data source and timing
+
+Pull live data from the platform’s central records for: assignments, completions, and any course expiry period.
+
+Time zone: Use Europe/London for “today” when calculating out-of-date and expiring-in-30-days.
+
+Recalculate colours any time data changes (new completion, updated expiry, new assignment).
+
+Edge cases
+
+If a user is not assigned a course, show a blank cell with a faint dash.
+
+If a course is retired for this organisation, keep historical completions but grey out the column heading with “Retired”.
+
+If a course has a custom expiry window set by the Admin for this org, use that; otherwise use the course default.
+
+Acceptance checks (must pass)
+
+Assign a course with a 12-month expiry; mark one completion 13 months ago → cell shows Red with correct expiry date.
+
+Completion in 20 days to expire → shows Amber.
+
+Completion with no expiry → shows Green and “No expiry”.
+
+Uncompleted assignment → Light grey.
+
+Save a filter as “Room Leaders – 30 days” → persists for this Admin; switching tabs and returning keeps it applied until Clear.
+
+Export CSV reflects the current filter.
+
+“Send reminders” targets only the currently filtered staff/courses in this organisation.
+
+Refreshing the page retains the saved view and the matrix renders quickly.
