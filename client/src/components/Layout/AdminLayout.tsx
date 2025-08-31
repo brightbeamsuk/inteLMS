@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 interface AdminLayoutProps {
@@ -11,6 +12,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Fetch organization data for the current admin user
+  const { data: organization } = useQuery({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
 
   const menuItems = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
@@ -100,13 +107,28 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <div className="p-4">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="avatar">
-                    <div className="w-12 rounded-full bg-primary text-primary-content flex items-center justify-center">
-                      <i className="fas fa-user-tie text-xl"></i>
-                    </div>
+                    {organization?.logoUrl ? (
+                      <div className="w-12 rounded-full">
+                        <img 
+                          src={organization.logoUrl} 
+                          alt={`${organization.displayName} logo`}
+                          className="w-12 h-12 rounded-full object-contain bg-base-100"
+                          data-testid="img-organization-logo"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 rounded-full bg-primary text-primary-content flex items-center justify-center">
+                        <i className="fas fa-building text-xl"></i>
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <div className="font-bold text-lg" data-testid="text-user-role">Admin</div>
-                    <div className="text-sm opacity-60" data-testid="text-user-organisation">Organisation</div>
+                    <div className="font-bold text-lg" data-testid="text-user-name">
+                      {user?.firstName} {user?.lastName}
+                    </div>
+                    <div className="text-sm opacity-60" data-testid="text-user-organisation">
+                      {organization?.displayName || 'Loading...'}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { VisualCertificateEditor } from "@/components/VisualCertificateEditor";
 import type { UploadResult } from "@uppy/core";
@@ -23,24 +24,32 @@ export function AdminOrganisationSettings() {
   const [activeTab, setActiveTab] = useState(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Fetch current organization data
+  const { data: organization, isLoading: orgLoading } = useQuery({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
 
   const [brandingData, setBrandingData] = useState({
     logoUrl: "",
     theme: "corporate",
-    displayName: "TechCorp Ltd",
-    subdomain: "techcorp",
+    displayName: "",
+    subdomain: "",
+    accentColor: "#3b82f6",
   });
 
   const [contactData, setContactData] = useState({
-    email: "contact@techcorp.com",
-    phone: "+1 (555) 123-4567",
-    address: "123 Business Street\nLondon, UK\nSW1A 1AA",
+    email: "",
+    phone: "",
+    address: "",
   });
 
   const [certificateData, setCertificateData] = useState({
     signatureImageUrl: "",
-    signerName: "Sarah Johnson",
-    signerTitle: "Learning & Development Manager",
+    signerName: "",
+    signerTitle: "",
     certificateText: "has successfully completed",
   });
 
@@ -54,6 +63,24 @@ export function AdminOrganisationSettings() {
   const [privacyData, setPrivacyData] = useState({
     defaultCertificateDownload: false,
   });
+
+  // Load organization data when it becomes available
+  useEffect(() => {
+    if (organization) {
+      setBrandingData({
+        logoUrl: organization.logoUrl || "",
+        theme: organization.theme || "corporate",
+        displayName: organization.displayName || "",
+        subdomain: organization.subdomain || "",
+        accentColor: organization.accentColor || "#3b82f6",
+      });
+      setContactData({
+        email: organization.contactEmail || "",
+        phone: organization.contactPhone || "",
+        address: organization.address || "",
+      });
+    }
+  }, [organization]);
 
   const handleLogoUpload = async () => {
     try {
@@ -113,11 +140,43 @@ export function AdminOrganisationSettings() {
     }
   };
 
+  // Save organization data mutation
+  const saveOrganizationMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest('PUT', `/api/organisations/${user?.organisationId}`, data);
+    },
+    onSuccess: () => {
+      // Invalidate organization queries to refresh data everywhere
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      toast({
+        title: "Success",
+        description: "Organization settings saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save settings",
+        variant: "destructive",
+      });
+    },
+  });
+
   const saveSettings = () => {
-    toast({
-      title: "Success",
-      description: "Settings saved successfully",
-    });
+    if (!user?.organisationId) return;
+
+    const organizationData = {
+      logoUrl: brandingData.logoUrl,
+      theme: brandingData.theme,
+      displayName: brandingData.displayName,
+      subdomain: brandingData.subdomain,
+      accentColor: brandingData.accentColor,
+      contactEmail: contactData.email,
+      contactPhone: contactData.phone,
+      address: contactData.address,
+    };
+
+    saveOrganizationMutation.mutate(organizationData);
   };
 
   const tabs = ["Branding", "Contacts", "Certificates", "Visual Designer", "Notifications", "Privacy"];
@@ -136,11 +195,18 @@ export function AdminOrganisationSettings() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold" data-testid="text-page-title">Organisation Settings</h1>
         <button 
-          className="btn btn-primary"
+          className={`btn btn-primary ${saveOrganizationMutation.isPending ? 'loading' : ''}`}
           onClick={saveSettings}
+          disabled={saveOrganizationMutation.isPending}
           data-testid="button-save-settings"
         >
-          <i className="fas fa-save"></i> Save All Changes
+          {saveOrganizationMutation.isPending ? (
+            'Saving...'
+          ) : (
+            <>
+              <i className="fas fa-save"></i> Save All Changes
+            </>
+          )}
         </button>
       </div>
 
