@@ -37,6 +37,12 @@ export function SuperAdminOrganisations() {
     address: "",
     theme: "light",
     logoUrl: "",
+    // Admin user fields
+    adminEmail: "",
+    adminFirstName: "",
+    adminLastName: "",
+    adminJobTitle: "",
+    adminDepartment: "",
   });
 
   const { data: organisations = [], isLoading } = useQuery<Organisation[]>({
@@ -45,21 +51,25 @@ export function SuperAdminOrganisations() {
 
   const createOrganisationMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest('POST', '/api/organisations', data);
+      const response = await apiRequest('POST', '/api/organisations', data);
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
       setShowCreateModal(false);
       resetForm();
+      
+      const { organisation, adminUser } = data;
       toast({
-        title: "Success",
-        description: "Organisation created successfully",
+        title: "Success! 🎉",
+        description: `Organisation "${organisation.displayName}" created with admin user ${adminUser.firstName} ${adminUser.lastName} (${adminUser.email})`,
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const errorMessage = error.message || "Failed to create organisation";
       toast({
         title: "Error",
-        description: "Failed to create organisation",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -75,19 +85,36 @@ export function SuperAdminOrganisations() {
       address: "",
       theme: "light",
       logoUrl: "",
+      adminEmail: "",
+      adminFirstName: "",
+      adminLastName: "",
+      adminJobTitle: "",
+      adminDepartment: "",
     });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.subdomain) {
+    if (!formData.name || !formData.subdomain || !formData.adminEmail || !formData.adminFirstName || !formData.adminLastName) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields including admin user details",
         variant: "destructive",
       });
       return;
     }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.adminEmail)) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid email address for the admin user",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     createOrganisationMutation.mutate(formData);
   };
 
@@ -365,6 +392,94 @@ export function SuperAdminOrganisations() {
                   onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
                   data-testid="input-org-address"
                 ></textarea>
+              </div>
+
+              {/* Admin User Section */}
+              <div className="divider">
+                <span className="text-lg font-semibold">👤 Organisation Admin User</span>
+              </div>
+              
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <span>An admin user will be created for this organisation. They will receive an invitation email to set up their account.</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Admin Email Address *</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    placeholder="admin@organisation.com" 
+                    className="input input-bordered" 
+                    value={formData.adminEmail}
+                    onChange={(e) => setFormData(prev => ({ ...prev, adminEmail: e.target.value }))}
+                    required 
+                    data-testid="input-admin-email"
+                  />
+                  <label className="label">
+                    <span className="label-text-alt">This will be used to invite the admin user</span>
+                  </label>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Job Title</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. Learning Manager" 
+                    className="input input-bordered" 
+                    value={formData.adminJobTitle}
+                    onChange={(e) => setFormData(prev => ({ ...prev, adminJobTitle: e.target.value }))}
+                    data-testid="input-admin-job-title"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">First Name *</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter first name" 
+                    className="input input-bordered" 
+                    value={formData.adminFirstName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, adminFirstName: e.target.value }))}
+                    required 
+                    data-testid="input-admin-first-name"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Last Name *</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter last name" 
+                    className="input input-bordered" 
+                    value={formData.adminLastName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, adminLastName: e.target.value }))}
+                    required 
+                    data-testid="input-admin-last-name"
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Department</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Human Resources, Training" 
+                  className="input input-bordered" 
+                  value={formData.adminDepartment}
+                  onChange={(e) => setFormData(prev => ({ ...prev, adminDepartment: e.target.value }))}
+                  data-testid="input-admin-department"
+                />
               </div>
 
               <div className="modal-action">

@@ -765,17 +765,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const validatedData = insertOrganisationSchema.parse(req.body);
-      const organisation = await storage.createOrganisation(validatedData);
+      // Extract admin user data from request body
+      const { adminEmail, adminFirstName, adminLastName, adminJobTitle, adminDepartment, ...orgData } = req.body;
+      
+      // Validate required admin fields
+      if (!adminEmail || !adminFirstName || !adminLastName) {
+        return res.status(400).json({ message: 'Admin user details are required' });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminEmail)) {
+        return res.status(400).json({ message: 'Invalid admin email format' });
+      }
+
+      // Check if admin email already exists
+      const existingUser = await storage.getUserByEmail(adminEmail);
+      if (existingUser) {
+        return res.status(400).json({ message: 'Admin email address is already in use' });
+      }
+
+      const validatedOrgData = insertOrganisationSchema.parse(orgData);
+      const organisation = await storage.createOrganisation(validatedOrgData);
+      
+      // Create admin user for the organisation
+      const adminUserData = {
+        email: adminEmail,
+        firstName: adminFirstName,
+        lastName: adminLastName,
+        role: 'admin' as const,
+        status: 'active' as const,
+        organisationId: organisation.id,
+        jobTitle: adminJobTitle || null,
+        department: adminDepartment || null,
+        allowCertificateDownload: true,
+      };
+
+      const adminUser = await storage.createUser(adminUserData);
       
       // Create default organisation settings
       await storage.createOrganisationSettings({
         organisationId: organisation.id,
-        signerName: 'Administrator',
-        signerTitle: 'Learning Manager',
+        signerName: adminFirstName + ' ' + adminLastName,
+        signerTitle: adminJobTitle || 'Learning Manager',
       });
 
-      res.status(201).json(organisation);
+      res.status(201).json({
+        organisation,
+        adminUser: {
+          id: adminUser.id,
+          email: adminUser.email,
+          firstName: adminUser.firstName,
+          lastName: adminUser.lastName,
+          role: adminUser.role,
+        }
+      });
     } catch (error) {
       console.error('Error creating organisation:', error);
       res.status(500).json({ message: 'Failed to create organisation' });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,6 +22,7 @@ export function SuperAdminDashboard() {
   const [newTodo, setNewTodo] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   // Fetch platform stats
   const { data: stats, isLoading: statsLoading } = useQuery<PlatformStats>({
@@ -114,6 +116,7 @@ export function SuperAdminDashboard() {
         <div className="flex gap-2">
           <button 
             className="btn btn-primary"
+            onClick={() => setLocation('/superadmin/organisations')}
             data-testid="button-add-organisation"
           >
             <i className="fas fa-plus"></i> Add Organisation
