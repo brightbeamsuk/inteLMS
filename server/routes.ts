@@ -1672,7 +1672,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return await storage.getCourse(courseId);
         })
       );
-      let validCourses = courses.filter(Boolean);
+      let validCourses = courses.filter((c): c is NonNullable<typeof c> => Boolean(c));
 
       // Apply course filter
       if (courseFilter.length > 0) {
@@ -1685,7 +1685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all certificates for this organisation
       const certificates = await storage.getCertificatesByOrganisation(organisationId);
 
-      // Calculate matrix data
+      // Calculate matrix data only for filtered staff and courses
       const matrix: any[][] = [];
       const summary = { red: 0, amber: 0, green: 0, grey: 0 };
 
@@ -1694,10 +1694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(now.getDate() + 30);
 
-      // Filter matrix data after building it
-      let filteredMatrix: any[][] = [];
-      let filteredSummary = { red: 0, amber: 0, green: 0, grey: 0 };
-
+      // Build matrix for filtered staff and courses
       for (const staffMember of activeStaff) {
         const staffRow: any[] = [];
         
@@ -1725,7 +1722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
           
           const latestCompletion = userCompletions.sort((a, b) => 
-            new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+            new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()
           )[0];
 
           if (!latestCompletion) {
@@ -1743,7 +1740,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Has completion - check expiry
-          const completionDate = new Date(latestCompletion.completedAt);
+          const completionDate = new Date(latestCompletion.completedAt!);
           
           // Calculate expiry date
           let expiryDate: Date | null = null;
@@ -1797,54 +1794,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         matrix.push(staffRow);
       }
 
-      // Now apply status filtering to the completed matrix
-      let filteredStaff = [...activeStaff];
-      
+      // Apply status filtering if specified
+      let finalStaff = activeStaff;
+      let finalCourses = validCourses;
+      let finalMatrix = matrix;
+      let finalSummary = summary;
+
       if (statusFilter.length > 0) {
-        const staffIndicesWithVisibleCells = new Set<number>();
-        const courseIndicesWithVisibleCells = new Set<number>();
-        
-        for (let i = 0; i < matrix.length; i++) {
-          const staffRow = matrix[i];
+        const staffToKeep: boolean[] = new Array(activeStaff.length).fill(false);
+        const coursesToKeep: boolean[] = new Array(validCourses.length).fill(false);
+        const filteredMatrix: any[][] = [];
+        const filteredSummary = { red: 0, amber: 0, green: 0, grey: 0 };
+
+        // Check each staff row
+        for (let staffIndex = 0; staffIndex < matrix.length; staffIndex++) {
+          const staffRow = matrix[staffIndex];
           const filteredRow: any[] = [];
-          let hasVisibleCell = false;
-          
-          for (let j = 0; j < staffRow.length; j++) {
-            const cell = staffRow[j];
+          let staffHasVisibleCells = false;
+
+          // Check each course cell for this staff member
+          for (let courseIndex = 0; courseIndex < staffRow.length; courseIndex++) {
+            const cell = staffRow[courseIndex];
+            
+            // If this cell matches the status filter
             if (statusFilter.includes(cell.status)) {
               filteredRow.push(cell);
-              hasVisibleCell = true;
-              courseIndicesWithVisibleCells.add(j);
+              staffHasVisibleCells = true;
+              coursesToKeep[courseIndex] = true;
               filteredSummary[cell.status as keyof typeof filteredSummary]++;
             } else {
               filteredRow.push(null);
             }
           }
-          
-          if (hasVisibleCell) {
+
+          // If this staff member has any visible cells, keep them
+          if (staffHasVisibleCells) {
             filteredMatrix.push(filteredRow);
-            staffIndicesWithVisibleCells.add(i);
+            staffToKeep[staffIndex] = true;
           }
         }
+
+        // Create final filtered arrays
+        finalStaff = activeStaff.filter((_, index) => staffToKeep[index]);
+        finalCourses = validCourses.filter((_, index) => coursesToKeep[index]);
         
-        // Update staff to only include those with visible cells
-        filteredStaff = activeStaff.filter((_, index) => staffIndicesWithVisibleCells.has(index));
-        
-        // Update courses to only include those with visible cells
-        validCourses = validCourses.filter((_, index) => courseIndicesWithVisibleCells.has(index));
-        
-        // Update filteredMatrix to remove null columns
-        const courseIndicesArray = Array.from(courseIndicesWithVisibleCells).sort((a, b) => a - b);
-        filteredMatrix = filteredMatrix.map(row => 
-          courseIndicesArray.map(courseIndex => row[courseIndex])
+        // Remove null columns from filtered matrix
+        finalMatrix = filteredMatrix.map(row => 
+          row.filter((_, colIndex) => coursesToKeep[colIndex])
         );
-      } else {
-        filteredMatrix = matrix;
-        filteredSummary = summary;
+        
+        finalSummary = filteredSummary;
       }
 
       res.json({
-        staff: filteredStaff.map(s => ({
+        staff: finalStaff.map(s => ({
           id: s.id,
           firstName: s.firstName,
           lastName: s.lastName,
@@ -1853,15 +1856,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           jobTitle: s.jobTitle,
           role: s.role
         })),
-        courses: validCourses.map(c => ({
+        courses: finalCourses.map(c => ({
           id: c.id,
           title: c.title,
           category: c.category,
           certificateExpiryPeriod: c.certificateExpiryPeriod,
           status: c.status
         })),
-        matrix: filteredMatrix,
-        summary: filteredSummary
+        matrix: finalMatrix,
+        summary: finalSummary
       });
     } catch (error) {
       console.error('Error fetching training matrix:', error);

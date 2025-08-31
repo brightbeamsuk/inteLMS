@@ -98,6 +98,8 @@ export function AdminTrainingMatrix() {
       return response.json();
     },
     enabled: !!currentUser?.organisationId,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   // Debug logging
@@ -180,6 +182,9 @@ export function AdminTrainingMatrix() {
   // Filter helpers - no longer needed as filters are applied automatically via query
 
   const clearFilters = () => {
+    // Force complete cache refresh first
+    queryClient.removeQueries({ queryKey: ['/api/training-matrix'] });
+    
     setFilters({
       departments: [],
       roles: [],
@@ -188,7 +193,8 @@ export function AdminTrainingMatrix() {
       staff: [],
       mandatoryOnly: false,
     });
-    // Also clear saved filters
+    
+    // Clear saved filters 
     if (currentUser?.organisationId) {
       const savedFiltersKey = `training-matrix-filters-${currentUser.organisationId}`;
       localStorage.removeItem(savedFiltersKey);
