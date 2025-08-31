@@ -251,20 +251,19 @@ export function SuperAdminOrganisations() {
                           <div className="w-12 h-12 rounded">
                             {org.logoUrl ? (
                               <img 
-                                src={org.logoUrl.startsWith('https://storage.googleapis.com/') ? org.logoUrl : `/public-objects/${org.logoUrl}`} 
+                                src={org.logoUrl} 
                                 alt={`${org.name} logo`} 
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
+                                  // Show fallback on error
                                   e.currentTarget.style.display = 'none';
                                   e.currentTarget.nextElementSibling?.classList.remove('hidden');
                                 }}
                               />
                             ) : null}
-                            {!org.logoUrl && (
-                              <div className="bg-primary text-primary-content flex items-center justify-center">
-                                <i className="fas fa-building"></i>
-                              </div>
-                            )}
+                            <div className={`bg-primary text-primary-content flex items-center justify-center ${org.logoUrl ? 'hidden' : ''}`}>
+                              <i className="fas fa-building"></i>
+                            </div>
                           </div>
                         </div>
                       </td>
