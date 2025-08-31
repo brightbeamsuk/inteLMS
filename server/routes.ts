@@ -1938,6 +1938,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get assignments for a specific user (admin only)
+  app.get('/api/assignments/user/:userId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { userId } = req.params;
+      
+      // For admins, verify the user belongs to their organisation
+      if (user.role === 'admin') {
+        const targetUser = await storage.getUser(userId);
+        if (!targetUser || targetUser.organisationId !== user.organisationId) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+      }
+
+      const assignments = await storage.getAssignmentsByUser(userId);
+      
+      // Enrich assignments with course information
+      const enrichedAssignments = await Promise.all(
+        assignments.map(async (assignment) => {
+          const course = await storage.getCourse(assignment.courseId);
+          return {
+            ...assignment,
+            courseTitle: course?.title || 'Unknown Course'
+          };
+        })
+      );
+
+      res.json(enrichedAssignments);
+    } catch (error) {
+      console.error('Error fetching user assignments:', error);
+      res.status(500).json({ message: 'Failed to fetch user assignments' });
+    }
+  });
+
   // SCORM player route
   app.get('/api/scorm/:assignmentId/player', requireAuth, async (req: any, res) => {
     try {

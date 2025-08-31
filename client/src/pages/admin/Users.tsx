@@ -28,6 +28,8 @@ export function AdminUsers() {
   const [activeTab, setActiveTab] = useState(0);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [showAssignCoursesModal, setShowAssignCoursesModal] = useState(false);
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [csvPreview, setCsvPreview] = useState<any[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -57,6 +59,18 @@ export function AdminUsers() {
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['/api/users'],
+  });
+
+  // Fetch user assignments for the selected user
+  const { data: userAssignments = [], isLoading: assignmentsLoading } = useQuery({
+    queryKey: ['/api/assignments/user', selectedUser?.id],
+    enabled: !!selectedUser?.id && showUserModal,
+  });
+
+  // Fetch available courses
+  const { data: availableCourses = [], isLoading: coursesLoading } = useQuery({
+    queryKey: ['/api/courses'],
+    enabled: showAssignCoursesModal,
   });
 
   const createUserMutation = useMutation({
@@ -172,6 +186,42 @@ export function AdminUsers() {
       toast({
         title: "Error",
         description: error.message || "Failed to import users",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Assign courses mutation  
+  const assignCoursesMutation = useMutation({
+    mutationFn: async (data: { userId: string; courseIds: string[] }) => {
+      const assignments = [];
+      for (const courseId of data.courseIds) {
+        const assignment = await apiRequest('POST', '/api/assignments', {
+          courseId,
+          userId: data.userId,
+          organisationId: currentUser?.organisationId,
+          assignedBy: currentUser?.id,
+          status: 'not_started',
+          dueDate: null,
+          notificationsEnabled: true
+        });
+        assignments.push(assignment);
+      }
+      return assignments;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/assignments/user'] });
+      setShowAssignCoursesModal(false);
+      setSelectedCourseIds([]);
+      toast({
+        title: "Success",
+        description: `Successfully assigned ${selectedCourseIds.length} course(s)`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to assign courses",
         variant: "destructive",
       });
     },
@@ -893,12 +943,76 @@ export function AdminUsers() {
 
             {activeTab === 1 && (
               <div className="space-y-4">
-                <h4 className="font-semibold">Course Assignments</h4>
-                <div className="text-center py-8 text-base-content/60">
-                  <i className="fas fa-graduation-cap text-4xl mb-4 opacity-50"></i>
-                  <p>No course assignments found for this user.</p>
-                  <p className="text-sm">Course assignments will appear here when they are created.</p>
+                <div className="flex justify-between items-center">
+                  <h4 className="font-semibold">Course Assignments</h4>
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    onClick={() => setShowAssignCoursesModal(true)}
+                    data-testid="button-assign-courses"
+                  >
+                    <i className="fas fa-plus"></i>
+                    Assign Courses
+                  </button>
                 </div>
+                
+                {assignmentsLoading ? (
+                  <div className="text-center py-8">
+                    <span className="loading loading-spinner loading-md"></span>
+                  </div>
+                ) : userAssignments.length === 0 ? (
+                  <div className="text-center py-8 text-base-content/60">
+                    <i className="fas fa-graduation-cap text-4xl mb-4 opacity-50"></i>
+                    <p>No course assignments found for this user.</p>
+                    <p className="text-sm">Click "Assign Courses" to add course assignments.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="table table-zebra w-full">
+                      <thead>
+                        <tr>
+                          <th>Course</th>
+                          <th>Status</th>
+                          <th>Due Date</th>
+                          <th>Assigned Date</th>
+                          <th>Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userAssignments.map((assignment: any) => (
+                          <tr key={assignment.id}>
+                            <td>
+                              <div className="font-semibold" data-testid={`text-assignment-course-${assignment.id}`}>
+                                {assignment.courseTitle || assignment.courseId}
+                              </div>
+                            </td>
+                            <td>
+                              <div className={`badge ${
+                                assignment.status === 'completed' ? 'badge-success' : 
+                                assignment.status === 'in_progress' ? 'badge-warning' : 
+                                'badge-ghost'
+                              }`} data-testid={`badge-assignment-status-${assignment.id}`}>
+                                {assignment.status.replace('_', ' ').toLowerCase()}
+                              </div>
+                            </td>
+                            <td data-testid={`text-assignment-due-${assignment.id}`}>
+                              {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString('en-GB') : 'No due date'}
+                            </td>
+                            <td data-testid={`text-assignment-assigned-${assignment.id}`}>
+                              {new Date(assignment.assignedAt).toLocaleDateString('en-GB')}
+                            </td>
+                            <td>
+                              <div className="text-sm text-base-content/70" data-testid={`text-assignment-progress-${assignment.id}`}>
+                                {assignment.status === 'completed' ? 'Complete' : 
+                                 assignment.status === 'in_progress' ? 'In Progress' : 
+                                 'Not Started'}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
@@ -986,6 +1100,96 @@ export function AdminUsers() {
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowUserModal(false)}>close</button>
           </form>
+        </dialog>
+      )}
+
+      {/* Assign Courses Modal */}
+      {showAssignCoursesModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-assign-courses-title">
+              Assign Courses to {selectedUser.firstName} {selectedUser.lastName}
+            </h3>
+            
+            {coursesLoading ? (
+              <div className="text-center py-8">
+                <span className="loading loading-spinner loading-md"></span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-base-content/70 mb-4">
+                  Select the courses you want to assign to this user:
+                </p>
+                
+                {availableCourses.length === 0 ? (
+                  <div className="text-center py-8 text-base-content/60">
+                    <i className="fas fa-book text-4xl mb-4 opacity-50"></i>
+                    <p>No courses available for assignment.</p>
+                  </div>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto space-y-2">
+                    {availableCourses.map((course: any) => (
+                      <div key={course.id} className="form-control">
+                        <label className="cursor-pointer label justify-start space-x-3">
+                          <input 
+                            type="checkbox" 
+                            className="checkbox checkbox-primary" 
+                            checked={selectedCourseIds.includes(course.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedCourseIds([...selectedCourseIds, course.id]);
+                              } else {
+                                setSelectedCourseIds(selectedCourseIds.filter(id => id !== course.id));
+                              }
+                            }}
+                            data-testid={`checkbox-course-${course.id}`}
+                          />
+                          <div className="flex-1">
+                            <span className="label-text font-medium" data-testid={`text-course-title-${course.id}`}>
+                              {course.title}
+                            </span>
+                            {course.description && (
+                              <p className="text-sm text-base-content/70 mt-1">
+                                {course.description}
+                              </p>
+                            )}
+                          </div>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowAssignCoursesModal(false);
+                  setSelectedCourseIds([]);
+                }}
+                data-testid="button-assign-cancel"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-primary ${assignCoursesMutation.isPending ? 'loading' : ''}`}
+                onClick={() => {
+                  if (selectedCourseIds.length > 0 && selectedUser) {
+                    assignCoursesMutation.mutate({
+                      userId: selectedUser.id,
+                      courseIds: selectedCourseIds
+                    });
+                  }
+                }}
+                disabled={selectedCourseIds.length === 0 || assignCoursesMutation.isPending}
+                data-testid="button-assign-confirm"
+              >
+                {assignCoursesMutation.isPending ? 'Assigning...' : `Assign ${selectedCourseIds.length} Course(s)`}
+              </button>
+            </div>
+          </div>
         </dialog>
       )}
 
