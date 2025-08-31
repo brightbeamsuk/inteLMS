@@ -2243,8 +2243,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const staffMember of activeStaff) {
         const staffData: any = {
           'Staff Name': `${staffMember.firstName} ${staffMember.lastName}`,
-          'Email': staffMember.email,
-          'Department': staffMember.department || '',
           'Job Title': staffMember.jobTitle || '',
         };
 
@@ -2430,7 +2428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   <div class="export-date">Generated on ${exportDate}</div>
                 </div>
                 <div class="header-right">
-                  ${organization.logoUrl ? `<img src="${req.protocol}://${req.hostname}${organization.logoUrl}" alt="${organization.displayName} Logo" class="logo">` : ''}
+                  ${organization.logoUrl ? `<img src="${organization.logoUrl.startsWith('http') ? organization.logoUrl : req.protocol + '://' + req.hostname + organization.logoUrl}" alt="${organization.displayName} Logo" class="logo" style="width: 80px; height: 60px; object-fit: contain;">` : ''}
                 </div>
               </div>
               <table>
@@ -2491,17 +2489,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--disable-web-security',
+            '--allow-running-insecure-content'
           ],
           executablePath: executablePath || undefined
         });
         const page = await browser.newPage();
-        await page.setContent(html);
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        
+        // Wait for images to load
+        await page.evaluate(async () => {
+          const images = Array.from(document.querySelectorAll('img'));
+          await Promise.all(images.map(img => {
+            return new Promise((resolve) => {
+              if (img.complete) {
+                resolve(void 0);
+              } else {
+                img.onload = () => resolve(void 0);
+                img.onerror = () => resolve(void 0);
+              }
+            });
+          }));
+        });
         
         const pdfBuffer = await page.pdf({ 
           format: 'A4',
           landscape: true,
-          margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
+          margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
+          printBackground: true
         });
         
         await browser.close();
