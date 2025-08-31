@@ -1461,7 +1461,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Courses routes
   app.get('/api/courses', requireAuth, async (req: any, res) => {
     try {
-      const courses = await storage.getCoursesByStatus('published');
+      // Fetch all courses (published and archived) for SuperAdmin
+      const courses = await storage.getAllCourses();
       res.json(courses);
     } catch (error) {
       console.error('Error fetching courses:', error);
