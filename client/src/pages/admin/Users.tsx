@@ -712,9 +712,35 @@ export function AdminUsers() {
       {showUserModal && selectedUser && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-4xl">
-            <h3 className="font-bold text-lg mb-4" data-testid="text-user-details-title">
-              {selectedUser.firstName} {selectedUser.lastName}
-            </h3>
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-xl" data-testid="text-user-details-title">
+                  {selectedUser.firstName} {selectedUser.lastName}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <div className={`badge ${selectedUser.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                    {selectedUser.status === 'active' ? 'Active' : 'Inactive'}
+                  </div>
+                  <div className="badge badge-primary">
+                    {selectedUser.role?.charAt(0).toUpperCase() + selectedUser.role?.slice(1)}
+                  </div>
+                </div>
+              </div>
+              <div className="text-sm text-base-content/70 space-y-1">
+                <div data-testid="text-user-email">{selectedUser.email}</div>
+                <div className="flex items-center gap-4">
+                  {selectedUser.jobTitle && (
+                    <span><i className="fas fa-briefcase w-4"></i> {selectedUser.jobTitle}</span>
+                  )}
+                  {selectedUser.department && (
+                    <span><i className="fas fa-building w-4"></i> {selectedUser.department}</span>
+                  )}
+                  {selectedUser.lastActive && (
+                    <span><i className="fas fa-clock w-4"></i> Last active: {new Date(selectedUser.lastActive).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+            </div>
             
             <div className="tabs tabs-bordered mb-4">
               <a className={`tab ${activeTab === 0 ? 'tab-active' : ''}`} onClick={() => setActiveTab(0)} data-testid="tab-overview">Overview</a>
