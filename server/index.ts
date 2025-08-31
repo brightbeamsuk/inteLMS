@@ -24,11 +24,27 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   }
 }));
 
-// Serve extracted SCORM files
-app.use('/scos', express.static(path.join(process.cwd(), 'public', 'scos'), {
+// Serve extracted SCORM files with iframe-friendly headers
+app.use('/scos', (req, res, next) => {
+  // Log 404/403 errors for debugging
+  const originalSend = res.send;
+  res.send = function(body) {
+    if (res.statusCode === 404 || res.statusCode === 403) {
+      const requestedUrl = req.originalUrl;
+      const resolvedDiskPath = path.join(process.cwd(), 'public', 'scos', req.path);
+      console.error(`🚫 SCORM static file error ${res.statusCode}: ${requestedUrl}`);
+      console.error(`📁 Resolved disk path: ${resolvedDiskPath}`);
+    }
+    return originalSend.call(this, body);
+  };
+  next();
+}, express.static(path.join(process.cwd(), 'public', 'scos'), {
   setHeaders: (res, filePath) => {
-    // Remove X-Frame-Options and allow embedding in iframes
+    // Remove X-Frame-Options to allow iframe embedding
     res.removeHeader('X-Frame-Options');
+    
+    // Set CSP to allow framing by same origin
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
     
     // Set appropriate Content-Type for SCORM files
     const ext = path.extname(filePath).toLowerCase();

@@ -40,6 +40,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   const [attemptId, setAttemptId] = useState<string>('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [scormInitialized, setScormInitialized] = useState(false);
+  const [showInitWarning, setShowInitWarning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const attemptStateRef = useRef<ScormAttemptState>({
     // SCORM 1.2 defaults
@@ -65,6 +67,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     'cmi.learner_name': ''
   });
   const startTimeRef = useRef<number>(Date.now());
+  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loggedKeys = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
   const addDebugLog = (message: string) => {
@@ -101,7 +105,14 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   // SCORM 1.2 API Implementation
   const scorm12API = {
     LMSInitialize: (param: string) => {
+      console.log('📡 SCO initialised (1.2)');
       addDebugLog('🎯 SCORM 1.2: LMSInitialize called');
+      setScormInitialized(true);
+      setShowInitWarning(false);
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
       startTimeRef.current = Date.now();
       return "true";
     },
@@ -113,6 +124,12 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     },
     
     LMSSetValue: (element: string, value: string) => {
+      // Log first 10 unique keys only
+      if (!loggedKeys.current.has(element) && loggedKeys.current.size < 10) {
+        console.log(`📊 SCORM SetValue key: ${element}`);
+        loggedKeys.current.add(element);
+      }
+      
       addDebugLog(`✏️ SCORM 1.2: LMSSetValue(${element}, ${value})`);
       
       // Update the attempt state
@@ -160,7 +177,14 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   // SCORM 2004 API Implementation
   const scorm2004API = {
     Initialize: (param: string) => {
+      console.log('📡 SCO initialised (2004)');
       addDebugLog('🎯 SCORM 2004: Initialize called');
+      setScormInitialized(true);
+      setShowInitWarning(false);
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
       startTimeRef.current = Date.now();
       return "true";
     },
@@ -172,6 +196,12 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     },
     
     SetValue: (element: string, value: string) => {
+      // Log first 10 unique keys only
+      if (!loggedKeys.current.has(element) && loggedKeys.current.size < 10) {
+        console.log(`📊 SCORM SetValue key: ${element}`);
+        loggedKeys.current.add(element);
+      }
+      
       addDebugLog(`✏️ SCORM 2004: SetValue(${element}, ${value})`);
       
       // Update the attempt state
@@ -235,7 +265,12 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         try {
           const launchResponse = await apiRequest('GET', `/api/scorm/${assignmentId}/launch`);
           console.log('✅ Launch data received:', launchResponse);
-          console.log(`🎯 Launch URL: ${launchResponse.launchUrl}`);
+          
+          // Use launch URL override if available, otherwise use parsed URL
+          const finalLaunchUrl = launchResponse.launchUrlOverride || launchResponse.launchUrl;
+          
+          // Log launch URL before setting iframe
+          console.log(`🎯 Launch URL set: ${finalLaunchUrl || '(none)'}`);
           console.log(`📋 SCORM Version: ${launchResponse.scormVersion}`);
           
           if (launchResponse.diagnostics) {
@@ -243,8 +278,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
             addDebugLog(`📊 Diagnostics: ${JSON.stringify(launchResponse.diagnostics, null, 2)}`);
           }
           
-          setScormUrl(launchResponse.launchUrl);
-          addDebugLog(`🎯 Launch URL set: ${launchResponse.launchUrl}`);
+          setScormUrl(finalLaunchUrl);
+          addDebugLog(`🎯 Launch URL set: ${finalLaunchUrl || '(none)'}`);
         } catch (launchError: any) {
           console.error('❌ SCORM launch failed:', launchError);
           
@@ -282,17 +317,12 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         addDebugLog(`👤 Learner: ${attemptStateRef.current['cmi.core.student_name']}`);
         addDebugLog(`🆔 Attempt ID: ${newAttemptId}`);
         
-        // Add timeout detection for SCORM API initialization
-        setTimeout(() => {
-          const apisCalled = debugLog.some(log => log.includes('Initialize called') || log.includes('LMSInitialize called'));
-          if (!apisCalled) {
+        // Set up 10-second timeout for SCORM initialization
+        initTimeoutRef.current = setTimeout(() => {
+          if (!scormInitialized) {
             console.warn('⚠️ SCORM API initialization timeout - SCO may not have called Initialize within 10 seconds');
-            addDebugLog('⚠️ API timeout - SCO didn\'t initialize within 10s (wrong SCORM version or launch file?)');
-            toast({
-              title: "Course Loading Issue",
-              description: "Course is taking longer than expected to initialize. This may indicate an issue with the SCORM package.",
-              variant: "destructive",
-            });
+            addDebugLog('⚠️ API timeout - SCO didn\'t initialize within 10s');
+            setShowInitWarning(true);
           }
         }, 10000);
         
@@ -315,10 +345,13 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     
     initializeCourse();
     
-    // Cleanup APIs on unmount
+    // Cleanup on unmount
     return () => {
       delete (window as any).API;
       delete (window as any).API_1484_11;
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+      }
     };
   }, [assignmentId]);
 
@@ -386,14 +419,49 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
               </div>
             </div>
           ) : scormUrl ? (
-            <iframe
-              ref={iframeRef}
-              src={scormUrl}
-              className="w-full h-full rounded-lg border-0"
-              title={courseTitle}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-              data-testid="iframe-scorm-content"
-            />
+            <>
+              {/* Initialization Warning */}
+              {showInitWarning && (
+                <div className="absolute top-0 left-0 right-0 z-10 bg-error text-error-content p-3 rounded-t-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <i className="fas fa-exclamation-triangle"></i>
+                    <span className="text-sm">
+                      SCO didn't initialise. Check that the launch URL is correct and not blocked by headers. Current src: {scormUrl}
+                    </span>
+                  </div>
+                  <button 
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => setShowInitWarning(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              
+              {/* SCORM Content Iframe */}
+              <iframe
+                ref={iframeRef}
+                src={scormUrl}
+                className={`w-full h-full rounded-lg border-0 ${showInitWarning ? 'mt-12' : ''}`}
+                title={courseTitle}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                data-testid="iframe-scorm-content"
+                onLoad={(e) => {
+                  console.log(`✅ Iframe loaded: ${(e.target as HTMLIFrameElement).src}`);
+                  addDebugLog(`🔄 Iframe loaded successfully`);
+                }}
+              />
+              
+              {/* Open in new tab button */}
+              <button
+                className="absolute bottom-2 left-2 btn btn-xs btn-ghost opacity-75 hover:opacity-100"
+                onClick={() => window.open(scormUrl, '_blank', 'noopener,noreferrer')}
+                title="Open launch URL in new tab"
+                data-testid="button-open-new-tab"
+              >
+                <i className="fas fa-external-link-alt"></i>
+              </button>
+            </>
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
