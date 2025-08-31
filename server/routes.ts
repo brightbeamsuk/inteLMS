@@ -181,7 +181,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update user profile
   app.put('/api/auth/profile', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      const userId = currentUser.id;
       const { firstName, lastName, jobTitle, department, phone, bio, profileImageUrl } = req.body;
 
       // Update user profile

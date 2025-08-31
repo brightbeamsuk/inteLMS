@@ -195,11 +195,11 @@ export function SuperAdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-accent">
-            <i className="fas fa-book text-3xl"></i>
+          <div className="stat-figure text-primary">
+            <i className="fas fa-book text-3xl opacity-100"></i>
           </div>
           <div className="stat-title">Total Courses</div>
-          <div className="stat-value text-accent" data-testid="stat-courses">
+          <div className="stat-value text-primary font-bold opacity-100" data-testid="stat-courses">
             {statsLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
