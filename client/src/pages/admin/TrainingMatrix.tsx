@@ -1,0 +1,405 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+
+interface TrainingMatrixData {
+  staff: StaffMember[];
+  courses: CourseInfo[];
+  matrix: MatrixCell[][];
+  summary: {
+    red: number;
+    amber: number;
+    green: number;
+    grey: number;
+  };
+}
+
+interface StaffMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  department?: string;
+  jobTitle?: string;
+  role: string;
+}
+
+interface CourseInfo {
+  id: string;
+  title: string;
+  category?: string;
+  certificateExpiryPeriod?: number; // months
+  status: string;
+}
+
+interface MatrixCell {
+  status: 'red' | 'amber' | 'green' | 'grey' | 'blank';
+  label: string;
+  date?: string;
+  score?: number;
+  completionDate?: string;
+  expiryDate?: string;
+  attemptCount: number;
+  assignmentId?: string;
+  completionId?: string;
+}
+
+interface FilterState {
+  departments: string[];
+  roles: string[];
+  courses: string[];
+  statuses: string[];
+  expiryWindow?: number; // days
+  mandatoryOnly: boolean;
+}
+
+interface SavedView {
+  id: string;
+  name: string;
+  filters: FilterState;
+  organisationId: string;
+}
+
+export function AdminTrainingMatrix() {
+  const [filters, setFilters] = useState<FilterState>({
+    departments: [],
+    roles: [],
+    courses: [],
+    statuses: [],
+    mandatoryOnly: false,
+  });
+  const [sortBy, setSortBy] = useState<'overdue' | 'name' | 'expiry'>('overdue');
+  const [selectedCell, setSelectedCell] = useState<{
+    staffId: string;
+    courseId: string;
+    cell: MatrixCell;
+  } | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showSaveViewModal, setShowSaveViewModal] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
+  const [activeView, setActiveView] = useState<SavedView | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
+
+  // Fetch training matrix data
+  const { data: matrixData, isLoading } = useQuery<TrainingMatrixData>({
+    queryKey: ['/api/training-matrix', currentUser?.organisationId, filters, sortBy],
+    enabled: !!currentUser?.organisationId,
+  });
+
+  // Fetch saved views
+  const { data: savedViews = [] } = useQuery<SavedView[]>({
+    queryKey: ['/api/training-matrix/views', currentUser?.organisationId],
+    enabled: !!currentUser?.organisationId,
+  });
+
+  // Save view mutation
+  const saveViewMutation = useMutation({
+    mutationFn: async (viewData: { name: string; filters: FilterState }) => {
+      return await apiRequest('POST', '/api/training-matrix/views', {
+        name: viewData.name,
+        filters: viewData.filters,
+        organisationId: currentUser?.organisationId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training-matrix/views'] });
+      setShowSaveViewModal(false);
+      setNewViewName('');
+      toast({
+        title: "Success",
+        description: "View saved successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save view",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Send reminders mutation
+  const sendRemindersMutation = useMutation({
+    mutationFn: async (data: { staffIds: string[]; courseIds: string[] }) => {
+      return await apiRequest('POST', '/api/training-matrix/reminders', {
+        ...data,
+        organisationId: currentUser?.organisationId,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Reminders sent successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to send reminders",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Status color mapping
+  const getStatusClasses = (status: MatrixCell['status']) => {
+    switch (status) {
+      case 'red': return 'bg-error text-error-content';
+      case 'amber': return 'bg-warning text-warning-content';
+      case 'green': return 'bg-success text-success-content';
+      case 'grey': return 'bg-base-300 text-base-content';
+      case 'blank': return 'bg-base-100 text-base-content opacity-50';
+      default: return 'bg-base-100 text-base-content';
+    }
+  };
+
+  const getStatusIcon = (status: MatrixCell['status']) => {
+    switch (status) {
+      case 'red': return 'fas fa-exclamation-triangle';
+      case 'amber': return 'fas fa-clock';
+      case 'green': return 'fas fa-check-circle';
+      case 'grey': return 'fas fa-minus-circle';
+      case 'blank': return 'fas fa-minus';
+      default: return 'fas fa-question';
+    }
+  };
+
+  // Filter helpers
+  const applyFilters = () => {
+    // Filters are applied server-side via query params
+    queryClient.invalidateQueries({ queryKey: ['/api/training-matrix'] });
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      departments: [],
+      roles: [],
+      courses: [],
+      statuses: [],
+      mandatoryOnly: false,
+    });
+    setActiveView(null);
+  };
+
+  const applyView = (view: SavedView) => {
+    setFilters(view.filters);
+    setActiveView(view);
+  };
+
+  const handleSaveView = () => {
+    if (!newViewName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a view name",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveViewMutation.mutate({ name: newViewName.trim(), filters });
+  };
+
+  const exportData = async (format: 'csv' | 'pdf') => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/training-matrix/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          format,
+          filters,
+          sortBy,
+          organisationId: currentUser?.organisationId,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `training-matrix-${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: `Matrix exported as ${format.toUpperCase()}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to export data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    );
+  }
+
+  if (!matrixData) {
+    return <div className="alert alert-error">Failed to load training matrix data</div>;
+  }
+
+  return (
+    <div>
+      {/* Breadcrumbs */}
+      <div className="text-sm breadcrumbs mb-6">
+        <ul>
+          <li><a data-testid="link-admin">Admin</a></li>
+          <li className="font-semibold" data-testid="text-current-page">Training Matrix</li>
+        </ul>
+      </div>
+
+      {/* Page Header */}
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="text-page-title">Training Matrix</h1>
+          <p className="text-base-content/70 mt-1">Track completion status across all staff and courses</p>
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
+          <button 
+            className="btn btn-outline btn-sm"
+            onClick={() => setShowSaveViewModal(true)}
+            data-testid="button-save-view"
+          >
+            <i className="fas fa-save"></i>
+            Save View
+          </button>
+          <div className="dropdown dropdown-end">
+            <div tabIndex={0} role="button" className="btn btn-outline btn-sm" data-testid="button-export">
+              <i className="fas fa-download"></i>
+              Export
+            </div>
+            <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+              <li>
+                <a onClick={() => exportData('csv')} data-testid="button-export-csv">
+                  <i className="fas fa-file-csv"></i>
+                  Export as CSV
+                </a>
+              </li>
+              <li>
+                <a onClick={() => exportData('pdf')} data-testid="button-export-pdf">
+                  <i className="fas fa-file-pdf"></i>
+                  Export as PDF
+                </a>
+              </li>
+            </ul>
+          </div>
+          <button 
+            className="btn btn-primary btn-sm"
+            onClick={() => sendRemindersMutation.mutate({ 
+              staffIds: matrixData.staff.map(s => s.id),
+              courseIds: matrixData.courses.map(c => c.id)
+            })}
+            disabled={sendRemindersMutation.isPending}
+            data-testid="button-send-reminders"
+          >
+            {sendRemindersMutation.isPending ? (
+              <span className="loading loading-spinner loading-sm"></span>
+            ) : (
+              <i className="fas fa-bell"></i>
+            )}
+            Send Reminders
+          </button>
+        </div>
+      </div>
+
+      {/* Legend and Summary */}
+      <div className="card bg-base-200 shadow-sm mb-6">
+        <div className="card-body p-4">
+          <div className="flex flex-col lg:flex-row lg:justify-between gap-4">
+            {/* Legend */}
+            <div className="flex flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs">Legend:</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="badge badge-error badge-sm">
+                  <i className="fas fa-exclamation-triangle text-xs mr-1"></i>
+                  Out of date
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="badge badge-warning badge-sm">
+                  <i className="fas fa-clock text-xs mr-1"></i>
+                  Expiring (30d)
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="badge badge-success badge-sm">
+                  <i className="fas fa-check-circle text-xs mr-1"></i>
+                  In date
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="badge badge-neutral badge-sm">
+                  <i className="fas fa-minus-circle text-xs mr-1"></i>
+                  Not completed
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Totals */}
+            <div className="flex flex-wrap gap-3">
+              <div className="stat stat-compact">
+                <div className="stat-title text-xs">Out of date</div>
+                <div className="stat-value text-error text-lg" data-testid="stat-red-count">
+                  {matrixData.summary.red}
+                </div>
+              </div>
+              <div className="stat stat-compact">
+                <div className="stat-title text-xs">Expiring</div>
+                <div className="stat-value text-warning text-lg" data-testid="stat-amber-count">
+                  {matrixData.summary.amber}
+                </div>
+              </div>
+              <div className="stat stat-compact">
+                <div className="stat-title text-xs">In date</div>
+                <div className="stat-value text-success text-lg" data-testid="stat-green-count">
+                  {matrixData.summary.green}
+                </div>
+              </div>
+              <div className="stat stat-compact">
+                <div className="stat-title text-xs">Not completed</div>
+                <div className="stat-value text-base-content text-lg" data-testid="stat-grey-count">
+                  {matrixData.summary.grey}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* TODO: Add filters section */}
+      {/* TODO: Add saved views section */}
+      {/* TODO: Add main matrix table */}
+      {/* TODO: Add detail modal */}
+      {/* TODO: Add save view modal */}
+
+      <div className="text-center py-10 text-base-content/60">
+        <p>Training Matrix implementation in progress...</p>
+        <p className="text-sm">Next: Adding filters, table, and modals</p>
+      </div>
+    </div>
+  );
+}

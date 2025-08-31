@@ -33,6 +33,7 @@ import { AdminCourses } from "@/pages/admin/Courses";
 import { AdminBilling } from "@/pages/admin/Billing";
 import { AdminOrganisationSettings } from "@/pages/admin/OrganisationSettings";
 import { AdminProfile } from "@/pages/admin/Profile";
+import { AdminTrainingMatrix } from "@/pages/admin/TrainingMatrix";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
@@ -186,6 +187,14 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminCourses />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/training-matrix">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminTrainingMatrix />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

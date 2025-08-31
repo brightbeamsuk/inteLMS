@@ -1553,6 +1553,175 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get training matrix data
+  app.get('/api/training-matrix', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = currentUser.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: 'Organisation ID required' });
+      }
+
+      // Get all staff members in the organisation
+      const staff = await storage.getUsersByOrganisation(organisationId);
+      const activeStaff = staff.filter(u => u.status === 'active' && u.role === 'user');
+
+      // Get all courses assigned to users in this organisation
+      const assignments = await storage.getAssignmentsByOrganisation(organisationId);
+      const courseIds = [...new Set(assignments.map(a => a.courseId))];
+      
+      const courses = await Promise.all(
+        courseIds.map(async (courseId) => {
+          return await storage.getCourse(courseId);
+        })
+      );
+      const validCourses = courses.filter(Boolean);
+
+      // Get all completions for this organisation
+      const completions = await storage.getCompletionsByOrganisation(organisationId);
+      
+      // Get all certificates for this organisation
+      const certificates = await storage.getCertificatesByOrganisation(organisationId);
+
+      // Calculate matrix data
+      const matrix: any[][] = [];
+      const summary = { red: 0, amber: 0, green: 0, grey: 0 };
+
+      // Current date for expiry calculations (Europe/London timezone)
+      const now = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(now.getDate() + 30);
+
+      for (const staffMember of activeStaff) {
+        const staffRow: any[] = [];
+        
+        for (const course of validCourses) {
+          // Find assignment for this staff member and course
+          const assignment = assignments.find(a => 
+            a.userId === staffMember.id && a.courseId === course.id
+          );
+
+          if (!assignment) {
+            // No assignment - blank cell
+            staffRow.push({
+              status: 'blank',
+              label: '-',
+              attemptCount: 0
+            });
+            continue;
+          }
+
+          // Find latest completion
+          const userCompletions = completions.filter(c => 
+            c.userId === staffMember.id && 
+            c.courseId === course.id &&
+            c.status === 'pass'
+          );
+          
+          const latestCompletion = userCompletions.sort((a, b) => 
+            new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+          )[0];
+
+          if (!latestCompletion) {
+            // Not completed - grey cell
+            staffRow.push({
+              status: 'grey',
+              label: 'Not completed',
+              attemptCount: completions.filter(c => 
+                c.userId === staffMember.id && c.courseId === course.id
+              ).length,
+              assignmentId: assignment.id
+            });
+            summary.grey++;
+            continue;
+          }
+
+          // Has completion - check expiry
+          const completionDate = new Date(latestCompletion.completedAt);
+          
+          // Calculate expiry date
+          let expiryDate: Date | null = null;
+          if (course.certificateExpiryPeriod) {
+            expiryDate = new Date(completionDate);
+            expiryDate.setMonth(expiryDate.getMonth() + course.certificateExpiryPeriod);
+          }
+
+          // Determine status
+          let status: 'red' | 'amber' | 'green';
+          let label: string;
+          let dateLabel: string = '';
+
+          if (!expiryDate) {
+            // No expiry
+            status = 'green';
+            label = 'Complete';
+            dateLabel = 'No expiry';
+          } else if (expiryDate < now) {
+            // Expired
+            status = 'red';
+            label = 'Expired';
+            dateLabel = `Exp: ${expiryDate.toLocaleDateString('en-GB')}`;
+          } else if (expiryDate <= thirtyDaysFromNow) {
+            // Expiring within 30 days
+            status = 'amber';
+            label = 'Expiring';
+            dateLabel = `Exp: ${expiryDate.toLocaleDateString('en-GB')}`;
+          } else {
+            // Valid and not expiring soon
+            status = 'green';
+            label = 'In date';
+            dateLabel = `Exp: ${expiryDate.toLocaleDateString('en-GB')}`;
+          }
+
+          staffRow.push({
+            status,
+            label,
+            date: dateLabel,
+            score: latestCompletion.score ? parseFloat(latestCompletion.score) : null,
+            completionDate: completionDate.toLocaleDateString('en-GB'),
+            expiryDate: expiryDate?.toLocaleDateString('en-GB') || null,
+            attemptCount: userCompletions.length,
+            assignmentId: assignment.id,
+            completionId: latestCompletion.id
+          });
+
+          summary[status]++;
+        }
+        
+        matrix.push(staffRow);
+      }
+
+      res.json({
+        staff: activeStaff.map(s => ({
+          id: s.id,
+          firstName: s.firstName,
+          lastName: s.lastName,
+          email: s.email,
+          department: s.department,
+          jobTitle: s.jobTitle,
+          role: s.role
+        })),
+        courses: validCourses.map(c => ({
+          id: c.id,
+          title: c.title,
+          category: c.category,
+          certificateExpiryPeriod: c.certificateExpiryPeriod,
+          status: c.status
+        })),
+        matrix,
+        summary
+      });
+    } catch (error) {
+      console.error('Error fetching training matrix:', error);
+      res.status(500).json({ message: 'Failed to fetch training matrix' });
+    }
+  });
+
   // Bulk import users from CSV
   app.post('/api/users/bulk-import', requireAuth, async (req: any, res) => {
     try {
