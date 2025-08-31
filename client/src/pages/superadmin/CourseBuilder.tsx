@@ -495,7 +495,7 @@ export function SuperAdminCourseBuilder() {
             <div className="w-full h-full bg-white rounded-lg overflow-hidden">
               {formData.scormPackageUrl ? (
                 <iframe
-                  src={formData.scormPackageUrl}
+                  src={`/api/scorm/preview?packageUrl=${encodeURIComponent(formData.scormPackageUrl)}`}
                   className="w-full h-full border-0"
                   title="SCORM Course Preview"
                   data-testid="iframe-scorm-preview"
