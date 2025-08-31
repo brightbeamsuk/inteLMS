@@ -34,6 +34,7 @@ import { AdminBilling } from "@/pages/admin/Billing";
 import { AdminOrganisationSettings } from "@/pages/admin/OrganisationSettings";
 import { AdminProfile } from "@/pages/admin/Profile";
 import { AdminTrainingMatrix } from "@/pages/admin/TrainingMatrix";
+import AdminCertificates from "@/pages/admin/Certificates";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
@@ -195,6 +196,14 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminTrainingMatrix />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/certificates">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminCertificates />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

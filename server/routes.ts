@@ -495,6 +495,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Certificates API
+  app.get('/api/certificates/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { organisationId } = req.params;
+      
+      if (!user || (user.role !== 'superadmin' && user.organisationId !== organisationId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get certificates for the organization with user and course details
+      const certificates = await storage.getCertificatesByOrganisation(organisationId);
+      
+      // Enrich certificates with user and course data
+      const enrichedCertificates = await Promise.all(
+        certificates.map(async (cert) => {
+          const [userDetails, course] = await Promise.all([
+            storage.getUser(cert.userId),
+            storage.getCourse(cert.courseId)
+          ]);
+          
+          return {
+            ...cert,
+            user: userDetails ? {
+              firstName: userDetails.firstName,
+              lastName: userDetails.lastName,
+              email: userDetails.email
+            } : null,
+            course: course ? {
+              title: course.title
+            } : null
+          };
+        })
+      );
+      
+      res.json(enrichedCertificates);
+    } catch (error) {
+      console.error('Error fetching certificates:', error);
+      res.status(500).json({ message: 'Failed to fetch certificates' });
+    }
+  });
+
   // SCORM Preview route
   app.get('/api/scorm/preview', requireAuth, async (req: any, res) => {
     try {

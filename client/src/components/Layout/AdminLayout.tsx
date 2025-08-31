@@ -48,6 +48,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { path: "/admin/users", icon: "fas fa-users", label: "Users" },
     { path: "/admin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
     { path: "/admin/training-matrix", icon: "fas fa-table", label: "Training Matrix" },
+    { path: "/admin/certificates", icon: "fas fa-certificate", label: "Certificates" },
     { path: "/admin/billing", icon: "fas fa-credit-card", label: "Billing" },
     { path: "/admin/settings", icon: "fas fa-cog", label: "Organisation Settings" },
   ];
