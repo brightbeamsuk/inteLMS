@@ -42,9 +42,25 @@ export function UserLayout({ children }: UserLayoutProps) {
           <div className="dropdown dropdown-end">
             <div tabIndex={0} role="button" className="btn btn-ghost" data-testid="button-user-menu">
               <div className="badge badge-accent">User</div>
-              <div className="avatar placeholder">
-                <div className="bg-neutral text-neutral-content rounded-full w-8">
-                  <span className="text-xs">U</span>
+              <div className="avatar">
+                <div className="w-8 h-8 rounded-full">
+                  {user?.profileImageUrl ? (
+                    <img 
+                      src={user.profileImageUrl} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover rounded-full"
+                      data-testid="img-user-avatar"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <div className={`bg-neutral text-neutral-content rounded-full w-8 h-8 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                    <span className="text-xs">
+                      {user?.firstName?.[0]}{user?.lastName?.[0] || 'U'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -87,14 +103,21 @@ export function UserLayout({ children }: UserLayoutProps) {
             <div className="p-4">
               <div className="flex items-center gap-3 mb-6">
                 <div className="avatar">
-                  <div className="w-12 rounded-full">
+                  <div className="w-12 h-12 rounded-full">
                     {user?.profileImageUrl ? (
-                      <img src={user.profileImageUrl} alt="Profile" />
-                    ) : (
-                      <div className="bg-neutral text-neutral-content rounded-full w-12 h-12 flex items-center justify-center">
-                        <span className="text-lg">{user?.firstName?.charAt(0) || 'U'}</span>
-                      </div>
-                    )}
+                      <img 
+                        src={user.profileImageUrl} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover rounded-full"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`bg-neutral text-neutral-content rounded-full w-12 h-12 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                      <span className="text-lg">{user?.firstName?.charAt(0) || 'U'}</span>
+                    </div>
                   </div>
                 </div>
                 <div>
