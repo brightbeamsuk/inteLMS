@@ -209,7 +209,11 @@ export function SuperAdminCourses() {
               <figure className="px-4 pt-4">
                 <div className="w-full h-32 bg-base-300 rounded-lg flex items-center justify-center">
                   {course.coverImageUrl ? (
-                    <img src={course.coverImageUrl} alt={course.title} className="w-full h-full object-cover rounded-lg" />
+                    <img 
+                      src={course.coverImageUrl.startsWith('https://storage.googleapis.com/') ? course.coverImageUrl : `/public-objects/${course.coverImageUrl}`} 
+                      alt={course.title} 
+                      className="w-full h-full object-cover rounded-lg" 
+                    />
                   ) : (
                     <i className="fas fa-graduation-cap text-4xl text-base-content/40"></i>
                   )}
@@ -273,7 +277,28 @@ export function SuperAdminCourses() {
             </h3>
             
             {!isEditing ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2">Course Image</h4>
+                    <div className="w-full h-48 bg-base-300 rounded-lg flex items-center justify-center">
+                      {selectedCourse.coverImageUrl ? (
+                        <img 
+                          src={selectedCourse.coverImageUrl.startsWith('https://storage.googleapis.com/') ? selectedCourse.coverImageUrl : `/public-objects/${selectedCourse.coverImageUrl}`} 
+                          alt={selectedCourse.title} 
+                          className="w-full h-full object-cover rounded-lg" 
+                          data-testid="img-course-cover"
+                        />
+                      ) : (
+                        <div className="text-center">
+                          <i className="fas fa-graduation-cap text-6xl text-base-content/40 mb-2"></i>
+                          <p className="text-sm text-base-content/60">No cover image</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-semibold mb-2">Basic Information</h4>

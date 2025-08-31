@@ -968,7 +968,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const updatedCourse = await storage.updateCourse(id, req.body);
+      
+      // Normalize cover image URL if provided
+      let updateData = { ...req.body };
+      if (updateData.coverImageUrl) {
+        const { ObjectStorageService } = await import('./objectStorage');
+        const objectStorageService = new ObjectStorageService();
+        updateData.coverImageUrl = objectStorageService.normalizeObjectEntityPath(updateData.coverImageUrl);
+      }
+      
+      const updatedCourse = await storage.updateCourse(id, updateData);
       res.json(updatedCourse);
     } catch (error) {
       console.error('Error updating course:', error);
