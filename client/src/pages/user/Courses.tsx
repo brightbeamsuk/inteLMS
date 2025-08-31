@@ -5,14 +5,22 @@ import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 interface Assignment {
   id: string;
   courseId: string;
-  courseTitle: string;
-  courseDescription: string;
+  userId: string;
+  organisationId: string;
   status: string;
   dueDate?: string;
-  progress?: number;
+  assignedBy: string;
+  assignedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  notificationsEnabled: boolean;
+  // Course details from join
+  courseTitle: string;
+  courseDescription?: string;
+  coverImageUrl?: string;
   estimatedDuration: number;
   passmark: number;
-  completedAt?: string;
+  progress?: number; // This would come from completions if we add it later
   score?: number;
   attemptNumber?: number;
 }
@@ -137,9 +145,20 @@ export function UserCourses() {
           </div>
         ) : (
           filteredAssignments.map((assignment) => (
-            <div key={assignment.id} className="card bg-base-200 shadow-sm hover:shadow-md transition-shadow" data-testid={`card-course-${assignment.id}`}>
+            <div key={assignment.id} className="card bg-base-100 shadow-lg hover:shadow-xl transition-shadow" data-testid={`card-course-${assignment.id}`}>
               <div className="card-body">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                  {/* Cover Image */}
+                  {assignment.coverImageUrl && (
+                    <div className="w-24 h-24 lg:w-20 lg:h-20 flex-shrink-0 rounded-lg overflow-hidden">
+                      <img 
+                        src={assignment.coverImageUrl} 
+                        alt={assignment.courseTitle}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="card-title text-xl" data-testid={`text-course-title-${assignment.id}`}>
@@ -148,9 +167,11 @@ export function UserCourses() {
                       {getStatusBadge(assignment.status)}
                     </div>
                     
-                    <p className="text-base-content/60 mb-3" data-testid={`text-course-description-${assignment.id}`}>
-                      {assignment.courseDescription}
-                    </p>
+                    {assignment.courseDescription && (
+                      <p className="text-base-content/60 mb-3" data-testid={`text-course-description-${assignment.id}`}>
+                        {assignment.courseDescription}
+                      </p>
+                    )}
                     
                     <div className="flex flex-wrap gap-4 text-sm">
                       <div data-testid={`text-course-duration-${assignment.id}`}>
