@@ -21,6 +21,7 @@ interface User {
 export function AdminUsers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -34,6 +35,17 @@ export function AdminUsers() {
 
   // Form states
   const [formData, setFormData] = useState({
+    email: "",
+    firstName: "",
+    lastName: "",
+    jobTitle: "",
+    department: "",
+    allowCertificateDownload: false,
+    status: "active",
+  });
+
+  // Edit form states
+  const [editFormData, setEditFormData] = useState({
     email: "",
     firstName: "",
     lastName: "",
@@ -175,6 +187,44 @@ export function AdminUsers() {
       allowCertificateDownload: false,
       status: "active",
     });
+  };
+
+  const resetEditForm = () => {
+    setEditFormData({
+      email: "",
+      firstName: "",
+      lastName: "",
+      jobTitle: "",
+      department: "",
+      allowCertificateDownload: false,
+      status: "active",
+    });
+  };
+
+  const openEditModal = (user: User) => {
+    setSelectedUser(user);
+    setEditFormData({
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      jobTitle: user.jobTitle || "",
+      department: user.department || "",
+      allowCertificateDownload: user.allowCertificateDownload,
+      status: user.status,
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedUser) {
+      updateUserMutation.mutate({
+        userId: selectedUser.id,
+        data: editFormData
+      });
+      setShowEditModal(false);
+      resetEditForm();
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -821,19 +871,19 @@ export function AdminUsers() {
                 <div className="stats shadow">
                   <div className="stat">
                     <div className="stat-title">Status</div>
-                    <div className={`stat-value ${selectedUser.status === 'active' ? 'text-success' : 'text-error'}`} data-testid="stat-user-status">
+                    <div className="stat-value text-base-content" data-testid="stat-user-status">
                       {selectedUser.status === 'active' ? 'Active' : 'Inactive'}
                     </div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Role</div>
-                    <div className="stat-value text-primary" data-testid="stat-user-role">
+                    <div className="stat-value text-base-content" data-testid="stat-user-role">
                       {selectedUser.role?.charAt(0).toUpperCase() + selectedUser.role?.slice(1)}
                     </div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Last Active</div>
-                    <div className="stat-value text-secondary text-sm" data-testid="stat-last-active">
+                    <div className="stat-value text-base-content" data-testid="stat-last-active">
                       {selectedUser.lastActive ? new Date(selectedUser.lastActive).toLocaleDateString() : 'Never'}
                     </div>
                   </div>
@@ -913,6 +963,17 @@ export function AdminUsers() {
             )}
 
             <div className="modal-action">
+              <button 
+                className="btn btn-primary"
+                onClick={() => {
+                  setShowUserModal(false);
+                  if (selectedUser) openEditModal(selectedUser);
+                }}
+                data-testid="button-edit-user"
+              >
+                <i className="fas fa-edit"></i>
+                Edit User
+              </button>
               <button 
                 className="btn"
                 onClick={() => setShowUserModal(false)}
@@ -1000,6 +1061,147 @@ export function AdminUsers() {
               setShowDeleteModal(false);
               setSelectedUser(null);
               setDeleteConfirmText("");
+            }}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-edit-user-title">Edit User</h3>
+            
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">First Name <span className="text-error">*</span></span>
+                  </label>
+                  <input 
+                    type="text"
+                    className="input input-bordered"
+                    value={editFormData.firstName}
+                    onChange={(e) => setEditFormData({...editFormData, firstName: e.target.value})}
+                    required
+                    data-testid="input-edit-first-name"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Last Name <span className="text-error">*</span></span>
+                  </label>
+                  <input 
+                    type="text"
+                    className="input input-bordered"
+                    value={editFormData.lastName}
+                    onChange={(e) => setEditFormData({...editFormData, lastName: e.target.value})}
+                    required
+                    data-testid="input-edit-last-name"
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Email <span className="text-error">*</span></span>
+                </label>
+                <input 
+                  type="email"
+                  className="input input-bordered"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
+                  required
+                  data-testid="input-edit-email"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Job Title</span>
+                  </label>
+                  <input 
+                    type="text"
+                    className="input input-bordered"
+                    value={editFormData.jobTitle}
+                    onChange={(e) => setEditFormData({...editFormData, jobTitle: e.target.value})}
+                    data-testid="input-edit-job-title"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Department</span>
+                  </label>
+                  <input 
+                    type="text"
+                    className="input input-bordered"
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({...editFormData, department: e.target.value})}
+                    data-testid="input-edit-department"
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Status</span>
+                </label>
+                <select 
+                  className="select select-bordered"
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                  data-testid="select-edit-status"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    className="toggle toggle-primary" 
+                    checked={editFormData.allowCertificateDownload}
+                    onChange={(e) => setEditFormData({...editFormData, allowCertificateDownload: e.target.checked})}
+                    data-testid="toggle-edit-cert-download"
+                  />
+                  <span className="label-text">Allow Certificate Downloads</span>
+                </label>
+              </div>
+
+              <div className="modal-action">
+                <button 
+                  type="button" 
+                  className="btn"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    resetEditForm();
+                  }}
+                  data-testid="button-cancel-edit-user"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={updateUserMutation.isPending || !editFormData.email || !editFormData.firstName || !editFormData.lastName}
+                  data-testid="button-save-edit-user"
+                >
+                  {updateUserMutation.isPending ? (
+                    <span className="loading loading-spinner loading-sm"></span>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => {
+              setShowEditModal(false);
+              resetEditForm();
             }}>close</button>
           </form>
         </dialog>
