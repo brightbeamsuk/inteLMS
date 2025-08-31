@@ -36,7 +36,7 @@ interface CourseInfo {
 }
 
 interface MatrixCell {
-  status: 'red' | 'amber' | 'green' | 'grey' | 'blank';
+  status: 'red' | 'amber' | 'green' | 'blue' | 'grey' | 'blank';
   label: string;
   date?: string;
   score?: number;
@@ -162,6 +162,7 @@ export function AdminTrainingMatrix() {
       case 'red': return 'bg-error text-error-content';
       case 'amber': return 'bg-warning text-warning-content';
       case 'green': return 'bg-success text-success-content';
+      case 'blue': return 'bg-info text-info-content';
       case 'grey': return 'bg-base-300 text-base-content';
       case 'blank': return 'bg-base-100 text-base-content opacity-50';
       default: return 'bg-base-100 text-base-content';
@@ -173,6 +174,7 @@ export function AdminTrainingMatrix() {
       case 'red': return 'fas fa-exclamation-triangle';
       case 'amber': return 'fas fa-clock';
       case 'green': return 'fas fa-check-circle';
+      case 'blue': return 'fas fa-spinner fa-spin';
       case 'grey': return 'fas fa-minus-circle';
       case 'blank': return 'fas fa-minus';
       default: return 'fas fa-question';
@@ -626,6 +628,10 @@ export function AdminTrainingMatrix() {
                   <span className="text-sm text-base-content">Overdue/expired</span>
                 </div>
                 <div className="flex items-center gap-2 whitespace-nowrap">
+                  <TrainingMatrixStatusIcon status="blue" size="sm" />
+                  <span className="text-sm text-base-content">In progress</span>
+                </div>
+                <div className="flex items-center gap-2 whitespace-nowrap">
                   <TrainingMatrixStatusIcon status="grey" size="sm" />
                   <span className="text-sm text-base-content">Not completed</span>
                 </div>
@@ -633,7 +639,7 @@ export function AdminTrainingMatrix() {
             </div>
 
             {/* Summary Totals */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 min-w-0">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 min-w-0">
               <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
                 <div className="text-xs font-medium text-base-content/70 mb-1">Out of date</div>
                 <div className="text-xl font-bold text-error" data-testid="stat-red-count">
@@ -650,6 +656,12 @@ export function AdminTrainingMatrix() {
                 <div className="text-xs font-medium text-base-content/70 mb-1">In date</div>
                 <div className="text-xl font-bold text-success" data-testid="stat-green-count">
                   {matrixData.summary.green}
+                </div>
+              </div>
+              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
+                <div className="text-xs font-medium text-base-content/70 mb-1">In progress</div>
+                <div className="text-xl font-bold text-info" data-testid="stat-blue-count">
+                  {matrixData.summary.blue || 0}
                 </div>
               </div>
               <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">

@@ -1687,7 +1687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Calculate matrix data only for filtered staff and courses
       const matrix: any[][] = [];
-      const summary = { red: 0, amber: 0, green: 0, grey: 0 };
+      const summary = { red: 0, amber: 0, green: 0, grey: 0, blue: 0 };
 
       // Current date for expiry calculations (Europe/London timezone)
       const now = new Date();
@@ -1726,16 +1726,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
           )[0];
 
           if (!latestCompletion) {
-            // Not completed - grey cell
+            // Not completed - check assignment status and due date
+            const now = new Date();
+            const sevenDaysFromNow = new Date();
+            sevenDaysFromNow.setDate(now.getDate() + 7);
+            
+            let cellStatus: 'red' | 'amber' | 'blue' | 'grey';
+            let cellLabel: string;
+            
+            // Check assignment status first
+            if (assignment.status === 'overdue') {
+              cellStatus = 'red';
+              cellLabel = 'Overdue';
+            } else if (assignment.status === 'in_progress') {
+              cellStatus = 'blue';
+              cellLabel = 'In progress';
+            } else {
+              // Check due date for assignments that aren't overdue
+              if (assignment.dueDate) {
+                const dueDate = new Date(assignment.dueDate);
+                if (dueDate < now) {
+                  cellStatus = 'red';
+                  cellLabel = 'Overdue';
+                } else if (dueDate <= sevenDaysFromNow) {
+                  cellStatus = 'amber';
+                  cellLabel = 'Due soon';
+                } else {
+                  cellStatus = 'grey';
+                  cellLabel = 'Not started';
+                }
+              } else {
+                cellStatus = 'grey';
+                cellLabel = 'Not started';
+              }
+            }
+            
             staffRow.push({
-              status: 'grey',
-              label: 'Not completed',
+              status: cellStatus,
+              label: cellLabel,
+              dueDate: assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString('en-GB') : null,
               attemptCount: completions.filter(c => 
                 c.userId === staffMember.id && c.courseId === course.id
               ).length,
               assignmentId: assignment.id
             });
-            summary.grey++;
+            
+            // Update summary counts
+            if (cellStatus === 'blue') {
+              if (!summary.blue) summary.blue = 0;
+              summary.blue++;
+            } else {
+              summary[cellStatus]++;
+            }
             continue;
           }
 

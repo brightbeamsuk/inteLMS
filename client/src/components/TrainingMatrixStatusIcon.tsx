@@ -1,5 +1,5 @@
 interface TrainingMatrixStatusIconProps {
-  status: 'red' | 'amber' | 'green' | 'grey' | 'blank';
+  status: 'red' | 'amber' | 'green' | 'blue' | 'grey' | 'blank';
   onClick?: () => void;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -37,6 +37,13 @@ export function TrainingMatrixStatusIcon({
           icon: 'fas fa-exclamation',
           iconColor: 'text-white',
           title: 'Expiring soon'
+        };
+      case 'blue':
+        return {
+          bgColor: 'bg-blue-500',
+          icon: 'fas fa-spinner fa-spin',
+          iconColor: 'text-white',
+          title: 'In progress'
         };
       case 'grey':
         return {
