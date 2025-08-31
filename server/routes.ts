@@ -346,18 +346,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { ScormService } = await import('./services/scormService');
       const scormService = new ScormService();
       
-      await scormService.extractPackage(packageUrl as string);
+      const extracted = await scormService.extractPackage(packageUrl as string);
       const extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
       
       if (!extractedPath) {
         return res.status(404).json({ message: 'Package not found' });
       }
 
-      const filePath = path.join(extractedPath, file as string);
+      let requestedFile = file as string;
+      
+      // Handle relative paths that are relative to the launch file
+      if (requestedFile.startsWith('./')) {
+        const launchFileDir = path.dirname(extracted.launchFile);
+        // If launch file is in a subdirectory (like res/index.html), resolve relative paths from that directory
+        if (launchFileDir !== '.') {
+          requestedFile = path.join(launchFileDir, requestedFile.substring(2));
+        } else {
+          requestedFile = requestedFile.substring(2);
+        }
+      }
+
+      const filePath = path.join(extractedPath, requestedFile);
       
       console.log(`🔍 SCORM Content Debug:
         - Package URL: ${packageUrl}
-        - Requested file: ${file}
+        - Original requested file: ${file}
+        - Resolved file path: ${requestedFile}
+        - Launch file: ${extracted.launchFile}
         - Extracted path: ${extractedPath}
         - Full file path: ${filePath}
         - File exists: ${fs.existsSync(filePath)}`);
@@ -423,13 +438,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (ext === '.html') {
         const content = await fs.promises.readFile(filePath, 'utf-8');
         const encodedPackageUrl = encodeURIComponent(packageUrl as string);
+        
+        // Helper function to resolve relative paths based on the current file's directory
+        const resolveRelativePath = (relativePath: string) => {
+          if (relativePath.startsWith('./')) {
+            const currentFileDir = path.dirname(requestedFile);
+            if (currentFileDir !== '.') {
+              return path.join(currentFileDir, relativePath.substring(2));
+            } else {
+              return relativePath.substring(2);
+            }
+          }
+          return relativePath;
+        };
+        
         const rewrittenContent = content
           .replace(/src\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
-            `src="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1"`)
+            (match, src) => {
+              const resolvedPath = resolveRelativePath(src);
+              return `src="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}"`;
+            })
           .replace(/href\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
-            `href="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1"`)
+            (match, href) => {
+              const resolvedPath = resolveRelativePath(href);
+              return `href="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}"`;
+            })
           .replace(/url\s*\(\s*["']?(?!https?:\/\/)(?!\/api\/scorm\/)([^"')]+)["']?\s*\)/gi, 
-            `url("/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1")`);
+            (match, url) => {
+              const resolvedPath = resolveRelativePath(url);
+              return `url("/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}")`;
+            });
         res.send(rewrittenContent);
       } else {
         res.sendFile(filePath);
