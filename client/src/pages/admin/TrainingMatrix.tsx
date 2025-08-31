@@ -87,10 +87,13 @@ export function AdminTrainingMatrix() {
   const { user: currentUser } = useAuth();
 
   // Fetch training matrix data
-  const { data: matrixData, isLoading } = useQuery<TrainingMatrixData>({
-    queryKey: ['/api/training-matrix', currentUser?.organisationId, filters, sortBy],
+  const { data: matrixData, isLoading, error } = useQuery<TrainingMatrixData>({
+    queryKey: ['/api/training-matrix'],
     enabled: !!currentUser?.organisationId,
   });
+
+  // Debug logging
+  console.log('Training Matrix Query:', { matrixData, isLoading, error, currentUser });
 
   // Fetch saved views
   const { data: savedViews = [] } = useQuery<SavedView[]>({
