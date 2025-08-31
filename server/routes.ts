@@ -203,6 +203,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Certificate Template routes
+  app.get('/api/certificate-templates', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const templates = await storage.getCertificateTemplates();
+      res.json(templates);
+    } catch (error) {
+      console.error('Error fetching certificate templates:', error);
+      res.status(500).json({ message: 'Failed to fetch certificate templates' });
+    }
+  });
+
+  app.post('/api/certificate-templates', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { name, template, isDefault } = req.body;
+      
+      if (!name || !template) {
+        return res.status(400).json({ message: 'Name and template are required' });
+      }
+
+      const newTemplate = await storage.createCertificateTemplate({
+        name,
+        template,
+        isDefault: isDefault || false,
+        organisationId: null
+      });
+      
+      res.status(201).json(newTemplate);
+    } catch (error) {
+      console.error('Error creating certificate template:', error);
+      res.status(500).json({ message: 'Failed to create certificate template' });
+    }
+  });
+
+  app.put('/api/certificate-templates/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const { name, template, isDefault } = req.body;
+      
+      const updatedTemplate = await storage.updateCertificateTemplate(id, {
+        name,
+        template,
+        isDefault
+      });
+      
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error('Error updating certificate template:', error);
+      res.status(500).json({ message: 'Failed to update certificate template' });
+    }
+  });
+
+  app.delete('/api/certificate-templates/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      await storage.deleteCertificateTemplate(id);
+      res.json({ message: 'Template deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting certificate template:', error);
+      res.status(500).json({ message: 'Failed to delete certificate template' });
+    }
+  });
+
   // Organisations routes
   app.get('/api/organisations', requireAuth, async (req: any, res) => {
     try {

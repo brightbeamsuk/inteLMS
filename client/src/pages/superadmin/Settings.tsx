@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -9,13 +9,20 @@ interface CertificateTemplate {
   template: string;
   isDefault: boolean;
   organisationId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export function SuperAdminSettings() {
   const [activeTab, setActiveTab] = useState(0);
   const [templateEditor, setTemplateEditor] = useState("");
   const [templateName, setTemplateName] = useState("");
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const availablePlaceholders = [
     '{{USERNAME}}',
@@ -27,7 +34,9 @@ export function SuperAdminSettings() {
     '{{SCORE_PERCENT}}',
     '{{PASS_FAIL}}',
     '{{DATE_COMPLETED}}',
-    '{{CERTIFICATE_ID}}'
+    '{{CERTIFICATE_ID}}',
+    '{{BACKGROUND_IMAGE}}',
+    '{{SIGNATURE_IMAGE}}'
   ];
 
   const [platformSettings, setPlatformSettings] = useState({
@@ -37,8 +46,131 @@ export function SuperAdminSettings() {
     footerLinks: 'Privacy Policy | Terms of Service | Contact Support',
   });
 
+  // Fetch existing templates
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
+    queryKey: ['/api/certificate-templates'],
+  });
+
+  // Save template mutation
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (templateData: { name: string; template: string; isDefault?: boolean }) => {
+      if (editingTemplateId) {
+        const response = await fetch(`/api/certificate-templates/${editingTemplateId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(templateData),
+        });
+        if (!response.ok) throw new Error('Failed to update template');
+        return response.json();
+      } else {
+        const response = await fetch('/api/certificate-templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(templateData),
+        });
+        if (!response.ok) throw new Error('Failed to create template');
+        return response.json();
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/certificate-templates'] });
+      toast({
+        title: "Success",
+        description: editingTemplateId ? "Template updated successfully" : "Template saved successfully",
+      });
+      clearEditor();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to save template",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Delete template mutation
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      const response = await fetch(`/api/certificate-templates/${templateId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete template');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/certificate-templates'] });
+      toast({
+        title: "Success",
+        description: "Template deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete template",
+        variant: "destructive",
+      });
+    }
+  });
+
   const insertPlaceholder = (placeholder: string) => {
     setTemplateEditor(prev => prev + placeholder);
+  };
+
+  const handleSaveTemplate = () => {
+    if (!templateName.trim() || !templateEditor.trim()) {
+      toast({
+        title: "Error",
+        description: "Please provide both template name and HTML content",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Include uploaded images in the template
+    let finalTemplate = templateEditor;
+    if (backgroundImage) {
+      finalTemplate = finalTemplate.replace(/{{BACKGROUND_IMAGE}}/g, backgroundImage);
+    }
+    if (signatureImage) {
+      finalTemplate = finalTemplate.replace(/{{SIGNATURE_IMAGE}}/g, signatureImage);
+    }
+
+    saveTemplateMutation.mutate({
+      name: templateName,
+      template: finalTemplate,
+      isDefault: false
+    });
+  };
+
+  const clearEditor = () => {
+    setTemplateEditor("");
+    setTemplateName("");
+    setBackgroundImage(null);
+    setSignatureImage(null);
+    setEditingTemplateId(null);
+    setShowPreview(false);
+  };
+
+  const editTemplate = (template: CertificateTemplate) => {
+    setTemplateEditor(template.template);
+    setTemplateName(template.name);
+    setEditingTemplateId(template.id);
+    setShowPreview(false);
+  };
+
+  const handleFileUpload = (file: File, type: 'background' | 'signature') => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (type === 'background') {
+        setBackgroundImage(result);
+      } else {
+        setSignatureImage(result);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const previewTemplate = () => {
@@ -52,7 +184,9 @@ export function SuperAdminSettings() {
       '{{SCORE_PERCENT}}': '92%',
       '{{PASS_FAIL}}': 'PASS',
       '{{DATE_COMPLETED}}': new Date().toLocaleDateString(),
-      '{{CERTIFICATE_ID}}': 'CERT-2024-001'
+      '{{CERTIFICATE_ID}}': 'CERT-2024-001',
+      '{{BACKGROUND_IMAGE}}': backgroundImage || '',
+      '{{SIGNATURE_IMAGE}}': signatureImage || ''
     };
 
     let preview = templateEditor;
@@ -134,16 +268,33 @@ export function SuperAdminSettings() {
                   <div className="flex gap-2 mb-4">
                     <button 
                       className="btn btn-primary"
+                      onClick={handleSaveTemplate}
+                      disabled={saveTemplateMutation.isPending}
                       data-testid="button-save-template"
                     >
-                      <i className="fas fa-save"></i> Save Template
+                      {saveTemplateMutation.isPending ? (
+                        <span className="loading loading-spinner loading-sm"></span>
+                      ) : (
+                        <i className="fas fa-save"></i>
+                      )}
+                      {editingTemplateId ? 'Update Template' : 'Save Template'}
                     </button>
                     <button 
                       className="btn btn-secondary"
+                      onClick={() => setShowPreview(!showPreview)}
                       data-testid="button-preview-template"
                     >
-                      <i className="fas fa-eye"></i> Preview
+                      <i className="fas fa-eye"></i> {showPreview ? 'Hide Preview' : 'Show Preview'}
                     </button>
+                    {editingTemplateId && (
+                      <button 
+                        className="btn btn-outline"
+                        onClick={clearEditor}
+                        data-testid="button-clear-template"
+                      >
+                        <i className="fas fa-times"></i> Cancel Edit
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -174,14 +325,54 @@ export function SuperAdminSettings() {
                       <label className="label">
                         <span className="label-text">Background Image</span>
                       </label>
-                      <input type="file" className="file-input file-input-bordered" accept="image/*" data-testid="input-background-image" />
+                      <input 
+                        type="file" 
+                        className="file-input file-input-bordered" 
+                        accept="image/*" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileUpload(file, 'background');
+                        }}
+                        data-testid="input-background-image" 
+                      />
+                      {backgroundImage && (
+                        <div className="mt-2">
+                          <img src={backgroundImage} alt="Background preview" className="w-24 h-16 object-cover rounded" />
+                          <button 
+                            className="btn btn-xs btn-error ml-2"
+                            onClick={() => setBackgroundImage(null)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-control">
                       <label className="label">
                         <span className="label-text">Signature Image</span>
                       </label>
-                      <input type="file" className="file-input file-input-bordered" accept="image/*" data-testid="input-signature-image" />
+                      <input 
+                        type="file" 
+                        className="file-input file-input-bordered" 
+                        accept="image/*" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileUpload(file, 'signature');
+                        }}
+                        data-testid="input-signature-image" 
+                      />
+                      {signatureImage && (
+                        <div className="mt-2">
+                          <img src={signatureImage} alt="Signature preview" className="w-24 h-16 object-cover rounded" />
+                          <button 
+                            className="btn btn-xs btn-error ml-2"
+                            onClick={() => setSignatureImage(null)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-control">
@@ -200,14 +391,65 @@ export function SuperAdminSettings() {
               </div>
 
               {/* Template Preview */}
+              {showPreview && (
+                <div className="card bg-base-100 shadow-sm">
+                  <div className="card-body">
+                    <h3 className="text-lg font-semibold mb-4">Preview with Sample Data</h3>
+                    <div 
+                      className="certificate-preview border p-4 bg-white rounded-lg min-h-[400px]" 
+                      dangerouslySetInnerHTML={{ __html: previewTemplate() }}
+                      data-testid="preview-certificate"
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Existing Templates */}
               <div className="card bg-base-100 shadow-sm">
                 <div className="card-body">
-                  <h3 className="text-lg font-semibold mb-4">Preview with Sample Data</h3>
-                  <div 
-                    className="certificate-preview border p-4 bg-white rounded-lg" 
-                    dangerouslySetInnerHTML={{ __html: previewTemplate() }}
-                    data-testid="preview-certificate"
-                  ></div>
+                  <h3 className="text-lg font-semibold mb-4">Existing Templates</h3>
+                  {templatesLoading ? (
+                    <div className="flex justify-center py-4">
+                      <span className="loading loading-spinner loading-lg"></span>
+                    </div>
+                  ) : (templates as CertificateTemplate[]).length === 0 ? (
+                    <p className="text-base-content/60 text-center py-4">No templates created yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {(templates as CertificateTemplate[]).map((template: CertificateTemplate) => (
+                        <div key={template.id} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div>
+                            <h4 className="font-semibold">{template.name}</h4>
+                            <p className="text-sm text-base-content/60">
+                              Created: {new Date(template.createdAt).toLocaleDateString()}
+                              {template.isDefault && <span className="badge badge-primary badge-sm ml-2">Default</span>}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button 
+                              className="btn btn-sm btn-outline"
+                              onClick={() => editTemplate(template)}
+                              data-testid={`button-edit-template-${template.id}`}
+                            >
+                              <i className="fas fa-edit"></i> Edit
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-error btn-outline"
+                              onClick={() => {
+                                if (window.confirm('Are you sure you want to delete this template?')) {
+                                  deleteTemplateMutation.mutate(template.id);
+                                }
+                              }}
+                              disabled={deleteTemplateMutation.isPending}
+                              data-testid={`button-delete-template-${template.id}`}
+                            >
+                              <i className="fas fa-trash"></i> Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
