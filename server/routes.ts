@@ -3121,31 +3121,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // NEW SCORM launch endpoint - provides launch URL for iframe
-  app.get('/api/scorm/:assignmentId/launch', (req: any, res: any, next: any) => {
-    console.log('🔥 SCORM launch route hit - BEFORE requireAuth');
-    requireAuth(req, res, next);
-  }, async (req: any, res) => {
-    console.log(`🚀 SCORM launch route called`);
+  app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
+    console.log('🚀 SCORM launch route called');
     try {
       const { assignmentId } = req.params;
-      console.log(`🚀 Assignment ID: ${assignmentId}`);
-      const userId = getUserIdFromSession(req);
-      console.log(`🚀 User ID from session: ${userId}`);
-
-      if (!userId) {
+      console.log('🚀 Assignment ID:', assignmentId);
+      
+      // Get user from session (multiple possible locations)
+      let userId = null;
+      if (req.session?.user?.claims?.sub) {
+        userId = req.session.user.claims.sub;
+        console.log('🚀 Found user ID from claims.sub:', userId);
+      } else if (req.session?.user?.id) {
+        userId = req.session.user.id;
+        console.log('🚀 Found user ID from user.id:', userId);
+      } else {
+        console.log('🚀 Session structure:', JSON.stringify(req.session, null, 2));
         return res.status(401).json({ message: 'User not authenticated' });
       }
 
       const assignment = await storage.getAssignment(assignmentId);
-      console.log(`🔍 SCORM launch debug - Assignment ID: ${assignmentId}`);
-      console.log(`🔍 Session user ID from getUserIdFromSession: ${userId}`);
-      console.log(`🔍 Raw session data:`, JSON.stringify(req.session, null, 2));
-      console.log(`🔍 Assignment found: ${!!assignment}`);
-      console.log(`🔍 Assignment userId: ${assignment?.userId}`);
-      console.log(`🔍 User ID match: ${assignment?.userId === userId}`);
+      console.log('🚀 Assignment found:', !!assignment);
+      console.log('🚀 Assignment userId:', assignment?.userId);
+      console.log('🚀 Session userId:', userId);
+      console.log('🚀 User ID match:', assignment?.userId === userId);
       
       if (!assignment || assignment.userId !== userId) {
-        console.log(`🚫 SCORM launch access denied - Assignment userId: ${assignment?.userId}, Session userId: ${userId}`);
+        console.log('🚫 SCORM launch access denied - Assignment userId:', assignment?.userId, 'Session userId:', userId);
         return res.status(403).json({ message: 'Assignment not found or access denied' });
       }
 
