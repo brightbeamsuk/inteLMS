@@ -104,6 +104,28 @@ export function SuperAdminCourses() {
     },
   });
 
+  const restoreCourseMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCourse) throw new Error('No course selected');
+      return await apiRequest('PUT', `/api/courses/${selectedCourse.id}`, { status: 'published' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      setShowDetailsModal(false);
+      toast({
+        title: "Course Restored",
+        description: "Course has been restored successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to restore course",
+        variant: "destructive",
+      });
+    },
+  });
+
   const deleteCourseMutation = useMutation({
     mutationFn: async () => {
       if (!selectedCourse) throw new Error('No course selected');
@@ -605,13 +627,28 @@ export function SuperAdminCourses() {
                     </>
                   )}
                   {selectedCourse?.status === 'archived' && (
-                    <button 
-                      className="btn btn-sm btn-error" 
-                      onClick={() => setShowDeleteModal(true)}
-                      data-testid="button-delete-course"
-                    >
-                      <i className="fas fa-trash"></i> Delete Permanently
-                    </button>
+                    <>
+                      <button 
+                        className="btn btn-sm btn-success" 
+                        onClick={() => restoreCourseMutation.mutate()}
+                        disabled={restoreCourseMutation.isPending}
+                        data-testid="button-restore-course"
+                      >
+                        {restoreCourseMutation.isPending ? (
+                          <span className="loading loading-spinner loading-sm"></span>
+                        ) : (
+                          <i className="fas fa-undo"></i>
+                        )}
+                        Restore
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-error" 
+                        onClick={() => setShowDeleteModal(true)}
+                        data-testid="button-delete-course"
+                      >
+                        <i className="fas fa-trash"></i> Delete Permanently
+                      </button>
+                    </>
                   )}
                 </>
               ) : (
