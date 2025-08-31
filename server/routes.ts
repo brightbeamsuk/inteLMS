@@ -81,7 +81,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           user: demoAccount.user,
           redirectUrl: demoAccount.user.role === 'superadmin' ? '/superadmin' 
             : demoAccount.user.role === 'admin' ? '/admin'
-            : '/dashboard'
+            : '/user'
         });
       }
 
