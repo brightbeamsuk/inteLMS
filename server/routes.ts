@@ -1323,11 +1323,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       let updateData = { ...req.body };
 
-      // Normalize logo URL if provided
+      // Normalize logo URL and set as public object if provided
       if (updateData.logoUrl) {
         const { ObjectStorageService } = await import('./objectStorage');
         const objectStorageService = new ObjectStorageService();
-        updateData.logoUrl = objectStorageService.normalizeObjectEntityPath(updateData.logoUrl);
+        try {
+          updateData.logoUrl = await objectStorageService.trySetObjectEntityAclPolicy(
+            updateData.logoUrl,
+            {
+              owner: user.id,
+              visibility: "public", // Organization logos should be publicly accessible
+            }
+          );
+        } catch (error) {
+          console.error('Error setting logo ACL policy:', error);
+          // Fallback to just normalizing the path
+          updateData.logoUrl = objectStorageService.normalizeObjectEntityPath(updateData.logoUrl);
+        }
       }
 
       const updatedOrganisation = await storage.updateOrganisation(id, updateData);
