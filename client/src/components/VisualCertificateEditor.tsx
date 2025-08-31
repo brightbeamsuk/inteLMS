@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { ImageUpload } from '@/components/ImageUpload';
 
 export interface TextElement {
   id: string;
@@ -335,15 +336,26 @@ export function VisualCertificateEditor({ onSave, initialTemplate }: VisualCerti
             
             <div className="form-control">
               <label className="label">
-                <span className="label-text">Background Color</span>
+                <span className="label-text">Background Image</span>
               </label>
-              <input 
-                type="color" 
-                className="input input-sm input-bordered"
-                value={template.backgroundColor}
-                onChange={(e) => setTemplate(prev => ({ ...prev, backgroundColor: e.target.value }))}
-                data-testid="input-background-color"
-              />
+              <ImageUpload
+                imageType="certificate-background"
+                currentImageUrl={template.backgroundImage}
+                onImageUploaded={(publicPath) => setTemplate(prev => ({ ...prev, backgroundImage: publicPath }))}
+                buttonClassName="btn btn-outline btn-sm w-full"
+                previewClassName="w-full h-16 object-cover rounded border"
+                buttonText={template.backgroundImage ? "Change Background" : "Upload Background"}
+              >
+                {template.backgroundImage && (
+                  <button 
+                    className="btn btn-xs btn-error ml-2"
+                    onClick={() => setTemplate(prev => ({ ...prev, backgroundImage: undefined }))}
+                    data-testid="button-remove-background"
+                  >
+                    Remove
+                  </button>
+                )}
+              </ImageUpload>
             </div>
           </div>
 
