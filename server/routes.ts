@@ -1269,11 +1269,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await getCurrentUser(req);
       
-      if (!user || user.role !== 'superadmin') {
+      if (!user) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const { id } = req.params;
+      
+      // SuperAdmins can update any organization, Admins can only update their own
+      if (user.role !== 'superadmin' && (user.role !== 'admin' || user.organisationId !== id)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       let updateData = { ...req.body };
 
       // Normalize logo URL if provided
