@@ -133,8 +133,8 @@ export function UserDashboard() {
         ) : assignments.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">📚</div>
-            <h3 className="text-2xl font-bold mb-2">No enrolled courses yet</h3>
-            <p className="text-base-content/60">Your enrolled courses will appear here when they're available</p>
+            <h3 className="text-2xl font-bold mb-2">No courses found</h3>
+            <p className="text-base-content/60">You don't have any assigned courses yet</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
