@@ -2167,9 +2167,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           </html>
         `;
         
+        // Try to find system Chromium binary
+        let executablePath = undefined;
+        try {
+          const { execSync } = await import('child_process');
+          executablePath = execSync('which chromium || which chromium-browser || which google-chrome', 
+            { encoding: 'utf8' }).trim();
+        } catch (e) {
+          console.warn('Could not find system browser, using default Puppeteer Chrome');
+        }
+
         const browser = await puppeteer.launch({ 
           headless: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox']
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+          ],
+          executablePath: executablePath || undefined
         });
         const page = await browser.newPage();
         await page.setContent(html);
