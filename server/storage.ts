@@ -124,6 +124,7 @@ export interface IStorage {
     totalCompletions: number;
   }>;
   getCompletionAnalytics(): Promise<any[]>;
+  getPopularCoursesThisMonth(): Promise<any[]>;
   getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
     coursesAssigned: number;
@@ -542,8 +543,8 @@ export class DatabaseStorage implements IStorage {
       .select({
         month: sql<string>`TO_CHAR(${completions.completedAt}, 'YYYY-MM')`,
         total: count(),
-        successful: sql<number>`COUNT(CASE WHEN ${completions.status} = 'completed' THEN 1 END)`,
-        failed: sql<number>`COUNT(CASE WHEN ${completions.status} = 'failed' THEN 1 END)`
+        successful: sql<number>`COUNT(CASE WHEN ${completions.status} = 'pass' THEN 1 END)`,
+        failed: sql<number>`COUNT(CASE WHEN ${completions.status} = 'fail' THEN 1 END)`
       })
       .from(completions)
       .where(sql`${completions.completedAt} >= NOW() - INTERVAL '12 months'`)
@@ -560,6 +561,37 @@ export class DatabaseStorage implements IStorage {
     }));
 
     return formattedData;
+  }
+
+  // Get popular courses analytics for current month
+  async getPopularCoursesThisMonth(): Promise<any[]> {
+    // Get course completion data for current month
+    const currentMonth = new Date();
+    const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+
+    const popularCourses = await db
+      .select({
+        courseId: assignments.courseId,
+        courseName: courses.title,
+        totalTaken: count()
+      })
+      .from(assignments)
+      .innerJoin(courses, eq(assignments.courseId, courses.id))
+      .where(
+        and(
+          sql`${assignments.assignedAt} >= ${startOfMonth}`,
+          sql`${assignments.assignedAt} <= ${endOfMonth}`
+        )
+      )
+      .groupBy(assignments.courseId, courses.title)
+      .orderBy(desc(count()))
+      .limit(3);
+
+    return popularCourses.map(course => ({
+      courseName: course.courseName,
+      totalTaken: course.totalTaken,
+    }));
   }
 
   async getOrganisationStats(organisationId: string): Promise<{

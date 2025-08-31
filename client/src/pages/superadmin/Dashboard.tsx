@@ -42,6 +42,11 @@ export function SuperAdminDashboard() {
     queryKey: ['/api/superadmin/analytics/completions'],
   });
 
+  // Fetch popular courses analytics
+  const { data: popularCoursesData = [], isLoading: popularCoursesLoading } = useQuery({
+    queryKey: ['/api/superadmin/analytics/popular-courses'],
+  });
+
   // Add todo mutation
   const addTodoMutation = useMutation({
     mutationFn: async (task: string) => {
@@ -275,35 +280,48 @@ export function SuperAdminDashboard() {
           </div>
         </div>
 
-        {/* Top Courses */}
+        {/* Popular Courses This Month */}
         <div className="card bg-base-200 shadow-sm">
           <div className="card-body">
             <h3 className="card-title">
-              <i className="fas fa-trophy text-warning"></i>
-              Popular Courses
+              <i className="fas fa-star text-primary"></i>
+              Popular Courses This Month
             </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div>
-                  <div className="font-semibold">Safeguarding Children — Level 1</div>
-                  <div className="text-sm text-base-content/60">Child Protection</div>
+            <div className="h-64 bg-base-100 rounded p-4">
+              {popularCoursesLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
                 </div>
-                <div className="badge badge-primary">High demand</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div>
-                  <div className="font-semibold">Data Protection Essentials</div>
-                  <div className="text-sm text-base-content/60">GDPR Compliance</div>
+              ) : popularCoursesData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">⭐</div>
+                    <p className="text-sm text-base-content/60">No course assignments this month yet</p>
+                  </div>
                 </div>
-                <div className="badge badge-secondary">Popular</div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-base-100 rounded">
-                <div>
-                  <div className="font-semibold">Fire Safety in the Workplace</div>
-                  <div className="text-sm text-base-content/60">Health & Safety</div>
-                </div>
-                <div className="badge badge-accent">Growing</div>
-              </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    totalTaken: {
+                      label: "Times Taken",
+                      color: "hsl(var(--chart-3))",
+                    },
+                  }}
+                >
+                  <BarChart data={popularCoursesData} layout="horizontal">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis 
+                      dataKey="courseName" 
+                      type="category" 
+                      tick={{ fontSize: 11 }}
+                      width={100}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="totalTaken" fill="var(--color-totalTaken)" />
+                  </BarChart>
+                </ChartContainer>
+              )}
             </div>
           </div>
         </div>
