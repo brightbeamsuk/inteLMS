@@ -62,6 +62,8 @@ export function SuperAdminOrganisations() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      // Also invalidate the specific organization query used by ThemeProvider
+      queryClient.invalidateQueries({ queryKey: [`/api/organisations/${data.organisation.id}`] });
       setShowCreateModal(false);
       resetForm();
       
@@ -88,6 +90,8 @@ export function SuperAdminOrganisations() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      // Also invalidate the specific organization query used by ThemeProvider
+      queryClient.invalidateQueries({ queryKey: [`/api/organisations/${data.id}`] });
       setShowEditModal(false);
       setSelectedOrg(null);
       toast({
