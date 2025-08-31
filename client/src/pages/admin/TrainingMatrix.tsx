@@ -611,63 +611,54 @@ export function AdminTrainingMatrix() {
       <div className="card bg-base-200 shadow-sm mb-6">
         <div className="card-body p-6">
           <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-6">
-            {/* Legend */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <span className="text-sm font-semibold text-base-content">Legend:</span>
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3">
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <TrainingMatrixStatusIcon status="green" size="sm" />
-                  <span className="text-sm text-base-content">Completed & current</span>
+            {/* Legend with Numbers Below */}
+            <div className="w-full">
+              <div className="text-sm font-semibold text-base-content mb-4">Legend:</div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div className="bg-base-100 rounded-lg p-4 text-center min-w-[120px]">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <TrainingMatrixStatusIcon status="green" size="sm" />
+                    <span className="text-sm text-base-content">Completed & current</span>
+                  </div>
+                  <div className="text-2xl font-bold text-success" data-testid="stat-green-count">
+                    {matrixData.summary.green}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <TrainingMatrixStatusIcon status="amber" size="sm" />
-                  <span className="text-sm text-base-content">Expiring soon</span>
+                <div className="bg-base-100 rounded-lg p-4 text-center min-w-[120px]">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <TrainingMatrixStatusIcon status="amber" size="sm" />
+                    <span className="text-sm text-base-content">Expiring soon</span>
+                  </div>
+                  <div className="text-2xl font-bold text-warning" data-testid="stat-amber-count">
+                    {matrixData.summary.amber}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <TrainingMatrixStatusIcon status="red" size="sm" />
-                  <span className="text-sm text-base-content">Overdue/expired</span>
+                <div className="bg-base-100 rounded-lg p-4 text-center min-w-[120px]">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <TrainingMatrixStatusIcon status="red" size="sm" />
+                    <span className="text-sm text-base-content">Overdue/expired</span>
+                  </div>
+                  <div className="text-2xl font-bold text-error" data-testid="stat-red-count">
+                    {matrixData.summary.red}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <TrainingMatrixStatusIcon status="blue" size="sm" />
-                  <span className="text-sm text-base-content">In progress</span>
+                <div className="bg-base-100 rounded-lg p-4 text-center min-w-[120px]">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <TrainingMatrixStatusIcon status="blue" size="sm" />
+                    <span className="text-sm text-base-content">In progress</span>
+                  </div>
+                  <div className="text-2xl font-bold text-info" data-testid="stat-blue-count">
+                    {matrixData.summary.blue || 0}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <TrainingMatrixStatusIcon status="grey" size="sm" />
-                  <span className="text-sm text-base-content">Not completed</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Summary Totals */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 min-w-0">
-              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
-                <div className="text-xs font-medium text-base-content/70 mb-1">Out of date</div>
-                <div className="text-xl font-bold text-error" data-testid="stat-red-count">
-                  {matrixData.summary.red}
-                </div>
-              </div>
-              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
-                <div className="text-xs font-medium text-base-content/70 mb-1">Expiring</div>
-                <div className="text-xl font-bold text-warning" data-testid="stat-amber-count">
-                  {matrixData.summary.amber}
-                </div>
-              </div>
-              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
-                <div className="text-xs font-medium text-base-content/70 mb-1">In date</div>
-                <div className="text-xl font-bold text-success" data-testid="stat-green-count">
-                  {matrixData.summary.green}
-                </div>
-              </div>
-              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
-                <div className="text-xs font-medium text-base-content/70 mb-1">In progress</div>
-                <div className="text-xl font-bold text-info" data-testid="stat-blue-count">
-                  {matrixData.summary.blue || 0}
-                </div>
-              </div>
-              <div className="bg-base-100 rounded-lg p-3 text-center min-w-[80px]">
-                <div className="text-xs font-medium text-base-content/70 mb-1">Not completed</div>
-                <div className="text-xl font-bold text-base-content" data-testid="stat-grey-count">
-                  {matrixData.summary.grey}
+                <div className="bg-base-100 rounded-lg p-4 text-center min-w-[120px]">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <TrainingMatrixStatusIcon status="grey" size="sm" />
+                    <span className="text-sm text-base-content">Not completed</span>
+                  </div>
+                  <div className="text-2xl font-bold text-base-content" data-testid="stat-grey-count">
+                    {matrixData.summary.grey}
+                  </div>
                 </div>
               </div>
             </div>
