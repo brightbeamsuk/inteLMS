@@ -30,7 +30,6 @@ export function AdminOrganisationSettings() {
 
   const [brandingData, setBrandingData] = useState({
     logoUrl: "",
-    theme: "corporate",
     displayName: "",
     subdomain: "",
   });
@@ -58,7 +57,6 @@ export function AdminOrganisationSettings() {
     if (organization) {
       setBrandingData({
         logoUrl: organization.logoUrl || "",
-        theme: organization.theme || "corporate",
         displayName: organization.displayName || "",
         subdomain: organization.subdomain || "",
       });
@@ -128,7 +126,6 @@ export function AdminOrganisationSettings() {
 
     const organizationData = {
       logoUrl: brandingData.logoUrl,
-      theme: brandingData.theme,
       displayName: brandingData.displayName,
       subdomain: brandingData.subdomain,
       accentColor: brandingData.accentColor,
@@ -196,51 +193,26 @@ export function AdminOrganisationSettings() {
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Branding & Appearance</h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">Organisation Logo</span>
-                  </label>
-                  <ObjectUploader
-                    maxNumberOfFiles={1}
-                    maxFileSize={5242880} // 5MB
-                    onGetUploadParameters={handleLogoUpload}
-                    onComplete={handleLogoComplete}
-                    buttonClassName="btn btn-outline w-full"
-                  >
-                    <i className="fas fa-upload mr-2"></i>
-                    {brandingData.logoUrl ? "Change Logo" : "Upload Logo"}
-                  </ObjectUploader>
-                  {brandingData.logoUrl && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <img src={brandingData.logoUrl} alt="Logo preview" className="w-12 h-12 object-contain" />
-                      <span className="text-sm text-success">Logo uploaded</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">DaisyUI Theme</span>
-                  </label>
-                  <select 
-                    className="select select-bordered"
-                    value={brandingData.theme}
-                    onChange={(e) => setBrandingData(prev => ({ ...prev, theme: e.target.value }))}
-                    data-testid="select-theme"
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                    <option value="corporate">Corporate</option>
-                    <option value="business">Business</option>
-                    <option value="emerald">Emerald</option>
-                    <option value="fantasy">Fantasy</option>
-                    <option value="pastel">Pastel</option>
-                  </select>
-                  <label className="label">
-                    <span className="label-text-alt">Choose a base DaisyUI theme for your organization</span>
-                  </label>
-                </div>
+              <div className="form-control max-w-md">
+                <label className="label">
+                  <span className="label-text">Organisation Logo</span>
+                </label>
+                <ObjectUploader
+                  maxNumberOfFiles={1}
+                  maxFileSize={5242880} // 5MB
+                  onGetUploadParameters={handleLogoUpload}
+                  onComplete={handleLogoComplete}
+                  buttonClassName="btn btn-outline w-full"
+                >
+                  <i className="fas fa-upload mr-2"></i>
+                  {brandingData.logoUrl ? "Change Logo" : "Upload Logo"}
+                </ObjectUploader>
+                {brandingData.logoUrl && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={brandingData.logoUrl} alt="Logo preview" className="w-12 h-12 object-contain" />
+                    <span className="text-sm text-success">Logo uploaded</span>
+                  </div>
+                )}
               </div>
 
 
