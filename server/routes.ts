@@ -471,10 +471,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         case '.gif':
           contentType = 'image/gif';
           break;
+        case '.svg':
+          contentType = 'image/svg+xml';
+          break;
+        case '.woff':
+        case '.woff2':
+          contentType = 'font/woff2';
+          break;
+        case '.ttf':
+          contentType = 'font/ttf';
+          break;
       }
 
       res.setHeader('Content-Type', contentType);
-      res.sendFile(filePath);
+      
+      // For HTML files, we need to rewrite relative paths to include packageUrl
+      if (ext === '.html') {
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const encodedPackageUrl = encodeURIComponent(packageUrl as string);
+        const rewrittenContent = content
+          .replace(/src\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
+            `src="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1"`)
+          .replace(/href\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
+            `href="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1"`)
+          .replace(/url\s*\(\s*["']?(?!https?:\/\/)(?!\/api\/scorm\/)([^"')]+)["']?\s*\)/gi, 
+            `url("/api/scorm/content?packageUrl=${encodedPackageUrl}&file=$1")`);
+        res.send(rewrittenContent);
+      } else {
+        res.sendFile(filePath);
+      }
     } catch (error) {
       console.error('Error serving SCORM content:', error);
       res.status(500).json({ message: 'Failed to serve content' });

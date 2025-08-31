@@ -390,13 +390,13 @@ export class ScormService {
       }
 
       const encodedPackageUrl = encodeURIComponent(packageUrl);
+      const iframeSrc = `/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${extracted.launchFile}`;
       
       return `
         <!DOCTYPE html>
         <html>
         <head>
           <title>SCORM Player - ${extracted.manifest?.metadata?.title || 'Course'}</title>
-          <base href="/api/scorm/?packageUrl=${encodedPackageUrl}&file=">
           <style>
             body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
             .scorm-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
@@ -408,7 +408,18 @@ export class ScormService {
               box-shadow: 0 2px 8px rgba(0,0,0,0.1);
               font-size: 14px;
             }
-            .scorm-content { flex: 1; overflow: auto; background: white; }
+            .scorm-content { 
+              flex: 1; 
+              overflow: hidden; 
+              background: white; 
+              position: relative;
+            }
+            .scorm-iframe {
+              width: 100%;
+              height: 100%;
+              border: none;
+              background: white;
+            }
           </style>
         </head>
         <body>
@@ -417,7 +428,12 @@ export class ScormService {
               🎓 ${extracted.manifest?.metadata?.title || 'SCORM Course'} - Interactive Learning Platform
             </div>
             <div class="scorm-content">
-              ${this.rewriteAssetPaths(courseContent, encodedPackageUrl)}
+              <iframe 
+                src="${iframeSrc}" 
+                class="scorm-iframe"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                loading="eager">
+              </iframe>
             </div>
           </div>
           <script>
