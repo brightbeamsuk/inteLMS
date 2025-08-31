@@ -3131,6 +3131,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const assignment = await storage.getAssignment(assignmentId);
+      console.log(`🔍 SCORM launch debug - Assignment ID: ${assignmentId}`);
+      console.log(`🔍 Session user ID from getUserIdFromSession: ${userId}`);
+      console.log(`🔍 Raw session data:`, JSON.stringify(req.session, null, 2));
+      console.log(`🔍 Assignment found: ${!!assignment}`);
+      console.log(`🔍 Assignment userId: ${assignment?.userId}`);
+      console.log(`🔍 User ID match: ${assignment?.userId === userId}`);
+      
       if (!assignment || assignment.userId !== userId) {
         console.log(`🚫 SCORM launch access denied - Assignment userId: ${assignment?.userId}, Session userId: ${userId}`);
         return res.status(403).json({ message: 'Assignment not found or access denied' });
