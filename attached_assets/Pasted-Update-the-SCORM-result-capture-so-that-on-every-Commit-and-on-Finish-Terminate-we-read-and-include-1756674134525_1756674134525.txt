@@ -1,0 +1,60 @@
+Update the SCORM result capture so that on every Commit and on Finish/Terminate, we read and include all key fields in the payload:
+
+SCORM 1.2: cmi.core.lesson_status, cmi.core.score.raw, cmi.core.score.min, cmi.core.score.max, cmi.core.lesson_location, cmi.suspend_data.
+
+SCORM 2004: cmi.completion_status, cmi.success_status, cmi.score.raw, cmi.score.scaled, cmi.progress_measure, cmi.location, cmi.suspend_data.
+The runtime should send these in JSON to /api/scorm/result with learnerId, courseId, attemptId, standard, and a reason field ("commit" or "finish").
+
+B) Persist attempts and compute derived fields
+
+In /api/scorm/result:
+
+Upsert the attempt by attemptId.
+
+Store the raw SCORM values listed above.
+
+Compute and store derived fields:
+
+progressPercent using the priority rules (progress_measure → completed/passed → bookmark/suspend heuristic).
+
+passed (true/false) using the status-first, then score-fallback rules.
+
+completed (true/false):
+
+1.2: lesson_status in ["completed","passed","failed"] → completed.
+
+2004: completion_status === "completed".
+
+Stamp lastCommitAt, and if reason === "finish", also stamp finishedAt.
+
+If passed changed from false → true, generate the certificate once and store certificateUrl.
+
+C) Expose progress & outcome in the UI
+
+On the learner’s dashboard, show Status (e.g., In progress / Completed / Passed / Failed), Score (either raw % or scaled×100), and Progress %.
+
+If certificateUrl exists, show a Download certificate button.
+
+On the course detail page, show the raw SCORM values for debugging (collapsed panel).
+
+D) Support resume
+
+When launching an existing, unfinished attempt, preload the runtime’s in-memory store with the last known lesson_location/location and suspend_data so GetValue returns these to the SCO on initialisation.
+
+Provide a setting: “New attempt on relaunch” vs “Resume previous attempt”. If new, close the old attempt as “abandoned”.
+
+E) Multi-SCO aggregation (if applicable)
+
+Track attempts per itemId (SCO) within a course.
+
+Compute course-level completed and passed using the aggregation rule described above.
+
+Show a checklist of SCO items with their individual statuses.
+
+F) Improve logging (helps you and content vendors)
+
+Log first calls to Initialize/LMSInitialize.
+
+Log the first 10 unique SetValue keys received in a session (throttled).
+
+On Commit and Finish, log the derived progressPercent, passed, completed, and numeric score used in the pass check.

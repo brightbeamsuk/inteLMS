@@ -9,6 +9,7 @@ import {
   organisationSettings,
   platformSettings,
   todoItems,
+  scormAttempts,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -30,6 +31,8 @@ import {
   type InsertPlatformSettings,
   type TodoItem,
   type InsertTodoItem,
+  type ScormAttempt,
+  type InsertScormAttempt,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull } from "drizzle-orm";
@@ -115,6 +118,15 @@ export interface IStorage {
   updateTodoItem(id: string, todoItem: Partial<InsertTodoItem>): Promise<TodoItem>;
   deleteTodoItem(id: string): Promise<void>;
   getTodoItemsByUser(userId: string): Promise<TodoItem[]>;
+
+  // SCORM attempt operations
+  getScormAttempt(id: string): Promise<ScormAttempt | undefined>;
+  getScormAttemptByAttemptId(attemptId: string): Promise<ScormAttempt | undefined>;
+  createScormAttempt(attempt: InsertScormAttempt): Promise<ScormAttempt>;
+  updateScormAttempt(attemptId: string, attempt: Partial<InsertScormAttempt>): Promise<ScormAttempt>;
+  getScormAttemptsByUser(userId: string): Promise<ScormAttempt[]>;
+  getScormAttemptsByAssignment(assignmentId: string): Promise<ScormAttempt[]>;
+  getActiveScormAttempt(userId: string, assignmentId: string): Promise<ScormAttempt | undefined>;
 
   // Analytics operations
   getPlatformStats(): Promise<{
@@ -705,6 +717,61 @@ export class DatabaseStorage implements IStorage {
       organizationsUsing: organizationsUsing.length,
       averageTimeToComplete,
     };
+  }
+
+  // SCORM attempt operations
+  async getScormAttempt(id: string): Promise<ScormAttempt | undefined> {
+    const [attempt] = await db.select().from(scormAttempts).where(eq(scormAttempts.id, id));
+    return attempt;
+  }
+
+  async getScormAttemptByAttemptId(attemptId: string): Promise<ScormAttempt | undefined> {
+    const [attempt] = await db.select().from(scormAttempts).where(eq(scormAttempts.attemptId, attemptId));
+    return attempt;
+  }
+
+  async createScormAttempt(attemptData: InsertScormAttempt): Promise<ScormAttempt> {
+    const [attempt] = await db.insert(scormAttempts).values(attemptData).returning();
+    return attempt;
+  }
+
+  async updateScormAttempt(attemptId: string, attemptData: Partial<InsertScormAttempt>): Promise<ScormAttempt> {
+    const [attempt] = await db
+      .update(scormAttempts)
+      .set({ ...attemptData, updatedAt: new Date() })
+      .where(eq(scormAttempts.attemptId, attemptId))
+      .returning();
+    return attempt;
+  }
+
+  async getScormAttemptsByUser(userId: string): Promise<ScormAttempt[]> {
+    return await db
+      .select()
+      .from(scormAttempts)
+      .where(eq(scormAttempts.userId, userId))
+      .orderBy(desc(scormAttempts.createdAt));
+  }
+
+  async getScormAttemptsByAssignment(assignmentId: string): Promise<ScormAttempt[]> {
+    return await db
+      .select()
+      .from(scormAttempts)
+      .where(eq(scormAttempts.assignmentId, assignmentId))
+      .orderBy(desc(scormAttempts.createdAt));
+  }
+
+  async getActiveScormAttempt(userId: string, assignmentId: string): Promise<ScormAttempt | undefined> {
+    const [attempt] = await db
+      .select()
+      .from(scormAttempts)
+      .where(and(
+        eq(scormAttempts.userId, userId),
+        eq(scormAttempts.assignmentId, assignmentId),
+        eq(scormAttempts.status, 'active')
+      ))
+      .orderBy(desc(scormAttempts.createdAt))
+      .limit(1);
+    return attempt;
   }
 }
 

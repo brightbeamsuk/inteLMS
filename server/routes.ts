@@ -3249,21 +3249,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // NEW SCORM runtime result endpoint - handles commit and finish events
+  // COMPREHENSIVE SCORM runtime result endpoint - handles commit and finish events
   app.post('/api/scorm/result', requireAuth, async (req: any, res) => {
     try {
       const {
         learnerId,
         courseId: assignmentId, // Frontend sends assignmentId as courseId
         attemptId,
-        scormVersion,
-        score,
-        status,
-        successStatus,
-        scaledScore,
-        reason,
-        sessionTime,
-        location
+        standard, // "1.2" or "2004"
+        reason, // "commit" or "finish"
+        scormData // Complete SCORM field data
       } = req.body;
 
       const userId = req.session.user?.id;
@@ -3271,6 +3266,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (learnerId !== userId) {
         return res.status(403).json({ message: 'Unauthorized - learner ID mismatch' });
       }
+
+      if (!scormData) {
+        return res.status(400).json({ message: 'Missing SCORM data' });
+      }
+
+      console.log(`📊 Processing SCORM ${standard} result (${reason}):`, {
+        attemptId: attemptId || '(generated)',
+        userId,
+        assignmentId,
+        dataKeys: Object.keys(scormData)
+      });
 
       // Get assignment and course details
       const assignment = await storage.getAssignment(assignmentId);
@@ -3285,101 +3291,223 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const passmark = course.passmark || 80;
 
-      // Determine pass/fail based on SCORM version and business rules
-      let passed = false;
+      // Generate attempt ID if not provided
+      const finalAttemptId = attemptId || `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Extract SCORM values based on standard
+      let attemptData: any = {
+        attemptId: finalAttemptId,
+        assignmentId,
+        userId,
+        courseId: assignment.courseId,
+        organisationId: assignment.organisationId,
+        standard,
+        passmark,
+        rawScormData: scormData
+      };
+
+      if (standard === '1.2') {
+        // SCORM 1.2 fields
+        attemptData = {
+          ...attemptData,
+          lessonStatus: scormData['cmi.core.lesson_status'],
+          lessonLocation: scormData['cmi.core.lesson_location'],
+          scoreRaw: scormData['cmi.core.score.raw'] ? parseFloat(scormData['cmi.core.score.raw']) : null,
+          scoreMin: scormData['cmi.core.score.min'] ? parseFloat(scormData['cmi.core.score.min']) : null,
+          scoreMax: scormData['cmi.core.score.max'] ? parseFloat(scormData['cmi.core.score.max']) : null,
+          sessionTime: scormData['cmi.core.session_time'],
+          suspendData: scormData['cmi.suspend_data']
+        };
+      } else if (standard === '2004') {
+        // SCORM 2004 fields
+        attemptData = {
+          ...attemptData,
+          completionStatus: scormData['cmi.completion_status'],
+          successStatus: scormData['cmi.success_status'],
+          location: scormData['cmi.location'],
+          progressMeasure: scormData['cmi.progress_measure'] ? parseFloat(scormData['cmi.progress_measure']) : null,
+          scoreRaw: scormData['cmi.score.raw'] ? parseFloat(scormData['cmi.score.raw']) : null,
+          scoreScaled: scormData['cmi.score.scaled'] ? parseFloat(scormData['cmi.score.scaled']) : null,
+          sessionTime: scormData['cmi.session_time'],
+          suspendData: scormData['cmi.suspend_data']
+        };
+      }
+
+      // Compute derived fields using priority rules
       
-      if (scormVersion === '1.2') {
-        // SCORM 1.2 logic
-        if (status === 'passed') {
+      // 1. Progress Percent (0-100)
+      let progressPercent = 0;
+      if (standard === '2004' && attemptData.progressMeasure !== null) {
+        // Priority 1: SCORM 2004 progress_measure (0-1 scale)
+        progressPercent = Math.round(attemptData.progressMeasure * 100);
+      } else if (standard === '1.2' && attemptData.lessonStatus) {
+        // Priority 2: Status-based heuristic for SCORM 1.2
+        if (['completed', 'passed'].includes(attemptData.lessonStatus)) {
+          progressPercent = 100;
+        } else if (attemptData.lessonStatus === 'incomplete') {
+          progressPercent = attemptData.suspendData ? 50 : 25; // Heuristic based on suspend data
+        }
+      } else if (standard === '2004' && attemptData.completionStatus === 'completed') {
+        progressPercent = 100;
+      } else if (attemptData.suspendData) {
+        // Fallback: Bookmark/suspend heuristic
+        progressPercent = 30; // Rough estimate when suspend data exists
+      }
+      
+      // 2. Completed (boolean)
+      let completed = false;
+      if (standard === '1.2') {
+        completed = ['completed', 'passed', 'failed'].includes(attemptData.lessonStatus);
+      } else if (standard === '2004') {
+        completed = attemptData.completionStatus === 'completed';
+      }
+      
+      // 3. Passed (boolean) - Status first, then score fallback
+      let passed = false;
+      if (standard === '1.2') {
+        // Status-first approach
+        if (attemptData.lessonStatus === 'passed') {
           passed = true;
-        } else if (score && parseFloat(score) >= passmark) {
+        } else if (attemptData.lessonStatus === 'failed') {
+          passed = false;
+        } else if (attemptData.scoreRaw !== null && attemptData.scoreRaw >= passmark) {
+          // Score fallback
           passed = true;
         }
-      } else if (scormVersion === '2004') {
-        // SCORM 2004 logic
-        if (successStatus === 'passed') {
+      } else if (standard === '2004') {
+        // Status-first approach
+        if (attemptData.successStatus === 'passed') {
           passed = true;
-        } else if (score && parseFloat(score) >= passmark) {
+        } else if (attemptData.successStatus === 'failed') {
+          passed = false;
+        } else if (attemptData.scoreRaw !== null && attemptData.scoreRaw >= passmark) {
+          // Score fallback with raw score
           passed = true;
-        } else if (scaledScore && parseFloat(scaledScore) >= (passmark / 100)) {
+        } else if (attemptData.scoreScaled !== null && attemptData.scoreScaled >= (passmark / 100)) {
+          // Score fallback with scaled score
           passed = true;
         }
       }
 
-      // Store attempt result (for now, use existing completion table)
-      // TODO: Implement dedicated SCORM attempts storage
-      console.log(`📊 SCORM ${scormVersion} result:`, {
-        attemptId,
-        status,
-        successStatus,
-        score,
-        scaledScore,
+      // Add derived fields to attempt data
+      attemptData.progressPercent = Math.max(0, Math.min(100, progressPercent));
+      attemptData.completed = completed;
+      attemptData.passed = passed;
+      attemptData.lastCommitAt = new Date();
+      
+      if (reason === 'finish') {
+        attemptData.finishedAt = new Date();
+        attemptData.status = 'completed';
+      } else {
+        attemptData.status = 'active';
+      }
+
+      console.log(`📊 SCORM ${standard} derived fields:`, {
+        attemptId: finalAttemptId,
+        progressPercent,
         passed,
+        completed,
+        rawScore: attemptData.scoreRaw,
         reason
       });
 
-      // If this is a finish event and the user passed, trigger completion
-      if (reason === 'finish' && passed) {
+      // Upsert SCORM attempt record
+      let wasAlreadyPassed = false;
+      try {
+        const existingAttempt = await storage.getScormAttemptByAttemptId(finalAttemptId);
+        if (existingAttempt) {
+          wasAlreadyPassed = existingAttempt.passed;
+          await storage.updateScormAttempt(finalAttemptId, attemptData);
+        } else {
+          await storage.createScormAttempt(attemptData);
+        }
+      } catch (attemptError) {
+        console.error('Error upserting SCORM attempt:', attemptError);
+        // Continue processing even if attempt storage fails
+      }
+
+      // Generate certificate if passed status changed from false to true
+      if (passed && !wasAlreadyPassed) {
         try {
-          // Check if completion already exists
-          const existingCompletion = await storage.getCompletionByAssignment(assignmentId);
+          const user = await storage.getUser(userId);
+          const organisation = await storage.getOrganisation(assignment.organisationId);
           
-          if (!existingCompletion) {
-            const completionData = {
+          if (user && organisation) {
+            const certificateService = (global as any).certificateService;
+            if (certificateService) {
+              const certificateUrl = await certificateService.generateCertificate({
+                id: finalAttemptId,
+                userId,
+                courseId: assignment.courseId,
+                organisationId: assignment.organisationId,
+                score: attemptData.scoreRaw?.toString() || '0'
+              }, user, course, organisation);
+              
+              // Update attempt with certificate URL
+              await storage.updateScormAttempt(finalAttemptId, {
+                certificateUrl,
+                certificateGeneratedAt: new Date()
+              });
+
+              console.log(`🏆 Certificate generated for attempt ${finalAttemptId}: ${certificateUrl}`);
+              attemptData.certificateUrl = certificateUrl;
+            }
+          }
+        } catch (certError) {
+          console.error('Certificate generation error:', certError);
+        }
+      }
+
+      // Update assignment status if needed
+      if (reason === 'finish' && completed) {
+        try {
+          await storage.updateAssignment(assignmentId, {
+            status: 'completed',
+            completedAt: new Date(),
+          });
+
+          // Create or update completion record for compatibility
+          const existingCompletions = await storage.getCompletionsByAssignment(assignmentId);
+          if (existingCompletions.length === 0) {
+            await storage.createCompletion({
               assignmentId,
               userId,
               courseId: assignment.courseId,
               organisationId: assignment.organisationId,
-              score: score || '0',
-              status: 'pass' as const,
-              timeSpent: sessionTime ? Math.floor(parseFloat(sessionTime) / 60) : 0,
-              scormData: req.body,
-            };
-
-            const completion = await storage.createCompletion(completionData);
-
-            // Update assignment status
-            await storage.updateAssignment(assignmentId, {
-              status: 'completed',
-              completedAt: new Date(),
+              score: attemptData.scoreRaw?.toString() || '0',
+              status: passed ? 'pass' : 'fail',
+              timeSpent: 0, // Could be derived from session time if needed
+              scormData: scormData,
             });
-
-            // Generate certificate if passed
-            const user = await storage.getUser(userId);
-            const organisation = await storage.getOrganisation(assignment.organisationId);
-            
-            if (user && organisation) {
-              try {
-                const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
-                
-                await storage.createCertificate({
-                  completionId: completion.id,
-                  userId,
-                  courseId: assignment.courseId,
-                  organisationId: assignment.organisationId,
-                  certificateUrl,
-                  expiryDate: course.certificateExpiryPeriod ? 
-                    new Date(Date.now() + course.certificateExpiryPeriod * 30 * 24 * 60 * 60 * 1000) : 
-                    null,
-                });
-
-                console.log(`🏆 Certificate generated for attempt ${attemptId}: ${certificateUrl}`);
-              } catch (certError) {
-                console.error('Certificate generation error:', certError);
-              }
-            }
           }
-        } catch (completionError) {
-          console.error('Completion processing error:', completionError);
+        } catch (statusError) {
+          console.error('Error updating assignment status:', statusError);
         }
       }
 
+      // Enhanced response with derived fields
+      const derivedFields = {
+        progressPercent: attemptData.progressPercent,
+        passed: attemptData.passed,
+        completed: attemptData.completed,
+        certificateUrl: attemptData.certificateUrl || null
+      };
+
+      console.log(`✅ SCORM ${standard} processing complete:`, {
+        attemptId: finalAttemptId,
+        reason,
+        ...derivedFields
+      });
+
       res.json({
         success: true,
-        passed,
+        attemptId: finalAttemptId,
         reason,
-        score: score || scaledScore,
-        message: `SCORM result processed (${reason})`
+        derivedFields,
+        message: `SCORM ${standard} result processed (${reason})`,
+        // Legacy fields for compatibility
+        passed: attemptData.passed,
+        score: attemptData.scoreRaw || attemptData.scoreScaled
       });
 
     } catch (error) {

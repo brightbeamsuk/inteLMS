@@ -81,22 +81,61 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       const state = attemptStateRef.current;
       const scormVersion = state['cmi.core.lesson_status'] !== undefined ? '1.2' : '2004';
       
-      const response = await apiRequest('POST', '/api/scorm/result', {
+      let payload: any = {
         learnerId: state['cmi.core.student_id'] || state['cmi.learner_id'],
         courseId: assignmentId,
         attemptId,
-        scormVersion,
-        score: state['cmi.core.score.raw'] || state['cmi.score.raw'],
-        status: state['cmi.core.lesson_status'] || state['cmi.completion_status'],
-        successStatus: state['cmi.success_status'],
-        scaledScore: state['cmi.score.scaled'],
-        reason,
-        sessionTime: state['cmi.core.session_time'] || state['cmi.session_time'],
-        location: state['cmi.core.lesson_location'] || state['cmi.location']
-      });
-      // Note: POST responses don't need JSON parsing if we don't use the result
+        standard: scormVersion,
+        reason
+      };
       
-      addDebugLog(`✅ SCORM result sent (${reason}): ${JSON.stringify({score: state['cmi.core.score.raw'] || state['cmi.score.raw'], status: state['cmi.core.lesson_status'] || state['cmi.completion_status']})}`);
+      if (scormVersion === '1.2') {
+        // SCORM 1.2 required fields
+        payload.scormData = {
+          'cmi.core.lesson_status': state['cmi.core.lesson_status'] || 'incomplete',
+          'cmi.core.score.raw': state['cmi.core.score.raw'] || '',
+          'cmi.core.score.min': state['cmi.core.score.min'] || '0',
+          'cmi.core.score.max': state['cmi.core.score.max'] || '100',
+          'cmi.core.lesson_location': state['cmi.core.lesson_location'] || '',
+          'cmi.suspend_data': state['cmi.suspend_data'] || '',
+          'cmi.core.session_time': state['cmi.core.session_time'] || '00:00:00'
+        };
+      } else {
+        // SCORM 2004 required fields
+        payload.scormData = {
+          'cmi.completion_status': state['cmi.completion_status'] || 'incomplete',
+          'cmi.success_status': state['cmi.success_status'] || 'unknown',
+          'cmi.score.raw': state['cmi.score.raw'] || '',
+          'cmi.score.scaled': state['cmi.score.scaled'] || '',
+          'cmi.progress_measure': state['cmi.progress_measure'] || '',
+          'cmi.location': state['cmi.location'] || '',
+          'cmi.suspend_data': state['cmi.suspend_data'] || '',
+          'cmi.session_time': state['cmi.session_time'] || 'PT0H0M0S'
+        };
+      }
+      
+      console.log(`📊 SCORM ${scormVersion} complete payload:`, payload);
+      
+      const response = await apiRequest('POST', '/api/scorm/result', payload);
+      const result = await response.json();
+      
+      console.log(`✅ SCORM result response:`, result);
+      
+      // Log derived fields if available
+      if (result.derivedFields) {
+        console.log(`📈 Derived fields: progressPercent=${result.derivedFields.progressPercent}%, passed=${result.derivedFields.passed}, completed=${result.derivedFields.completed}`);
+      }
+      
+      addDebugLog(`✅ SCORM result sent (${reason}): ${JSON.stringify({
+        score: payload.scormData['cmi.core.score.raw'] || payload.scormData['cmi.score.raw'],
+        status: payload.scormData['cmi.core.lesson_status'] || payload.scormData['cmi.completion_status'],
+        location: payload.scormData['cmi.core.lesson_location'] || payload.scormData['cmi.location'],
+        suspendData: payload.scormData['cmi.suspend_data'] ? 'present' : 'empty'
+      })}`);
+      
+      if (result.derivedFields) {
+        addDebugLog(`📈 Progress: ${result.derivedFields.progressPercent}% | Passed: ${result.derivedFields.passed} | Completed: ${result.derivedFields.completed}`);
+      }
     } catch (error) {
       console.error('Failed to send SCORM result:', error);
       addDebugLog(`❌ Failed to send SCORM result: ${error}`);

@@ -44,6 +44,12 @@ export const assignmentStatusEnum = pgEnum('assignment_status', ['not_started', 
 // Completion status enum
 export const completionStatusEnum = pgEnum('completion_status', ['pass', 'fail']);
 
+// SCORM standard enum
+export const scormStandardEnum = pgEnum('scorm_standard', ['1.2', '2004']);
+
+// SCORM attempt status enum
+export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['active', 'completed', 'abandoned']);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -161,7 +167,7 @@ export const certificateTemplates = pgTable("certificate_templates", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// SCORM attempts table
+// SCORM attempts table for comprehensive tracking
 export const scormAttempts = pgTable("scorm_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   attemptId: varchar("attempt_id").notNull().unique(), // client-generated unique ID
@@ -169,31 +175,46 @@ export const scormAttempts = pgTable("scorm_attempts", {
   userId: varchar("user_id").notNull(),
   courseId: varchar("course_id").notNull(),
   organisationId: varchar("organisation_id").notNull(),
-  scormVersion: varchar("scorm_version").notNull(), // "1.2" or "2004"
+  itemId: varchar("item_id"), // SCO identifier for multi-SCO support
+  standard: scormStandardEnum("standard").notNull(), // "1.2" or "2004"
+  status: scormAttemptStatusEnum("status").default('active'),
   
-  // SCORM tracking data
-  lessonStatus: varchar("lesson_status"), // SCORM 1.2: passed, completed, failed, incomplete, etc.
-  completionStatus: varchar("completion_status"), // SCORM 2004: completed, incomplete, not_attempted, unknown
-  successStatus: varchar("success_status"), // SCORM 2004: passed, failed, unknown
+  // Raw SCORM 1.2 values
+  lessonStatus: varchar("lesson_status"), // passed, completed, failed, incomplete, etc.
+  lessonLocation: text("lesson_location"), // bookmark location for SCORM 1.2
   
-  // Score information
-  scoreRaw: decimal("score_raw", { precision: 5, scale: 2 }),
+  // Raw SCORM 2004 values  
+  completionStatus: varchar("completion_status"), // completed, incomplete, not_attempted, unknown
+  successStatus: varchar("success_status"), // passed, failed, unknown
+  location: text("location"), // bookmark location for SCORM 2004
+  progressMeasure: decimal("progress_measure", { precision: 5, scale: 4 }), // 0-1 scale
+  
+  // Score information (both versions)
+  scoreRaw: decimal("score_raw", { precision: 7, scale: 2 }),
   scoreScaled: decimal("score_scaled", { precision: 5, scale: 4 }), // 0-1 scale for SCORM 2004
-  scoreMin: decimal("score_min", { precision: 5, scale: 2 }).default('0'),
-  scoreMax: decimal("score_max", { precision: 5, scale: 2 }).default('100'),
+  scoreMin: decimal("score_min", { precision: 7, scale: 2 }),
+  scoreMax: decimal("score_max", { precision: 7, scale: 2 }),
   
-  // Session information
+  // Session and tracking data
   sessionTime: varchar("session_time"), // SCORM format session time
-  location: varchar("location"), // bookmark location in course
+  suspendData: text("suspend_data"), // Critical for resume functionality
   
-  // Processing results
-  passed: boolean("passed").default(false), // derived pass/fail based on business rules
-  passmark: integer("passmark"), // course passmark at time of attempt
+  // Computed derived fields
+  progressPercent: integer("progress_percent").default(0), // 0-100%
+  passed: boolean("passed").default(false), // computed pass/fail
+  completed: boolean("completed").default(false), // computed completion status
+  
+  // Course configuration at attempt time
+  passmark: integer("passmark"), // course passmark when attempt was made
   
   // Attempt lifecycle
   isActive: boolean("is_active").default(true), // false when terminated/finished
   lastCommitAt: timestamp("last_commit_at"),
   finishedAt: timestamp("finished_at"),
+  
+  // Certificate generation
+  certificateUrl: varchar("certificate_url"), // generated certificate download link
+  certificateGeneratedAt: timestamp("certificate_generated_at"),
   
   // Raw SCORM data for debugging
   rawScormData: jsonb("raw_scorm_data"),
