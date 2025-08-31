@@ -3,6 +3,95 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom color system for organization themes */
+:root {
+  /* Custom color properties - will be set dynamically via JavaScript */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-secondary: #64748b;
+  --color-secondary-hover: #475569;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #d97706;
+  --color-neutral: #6b7280;
+  --color-neutral-hover: #4b5563;
+}
+
+/* Custom button classes that use the dynamic colors */
+.btn-custom-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.btn-custom-primary:hover {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.btn-custom-secondary {
+  background-color: var(--color-secondary);
+  border-color: var(--color-secondary);
+  color: white;
+}
+
+.btn-custom-secondary:hover {
+  background-color: var(--color-secondary-hover);
+  border-color: var(--color-secondary-hover);
+}
+
+.btn-custom-accent {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.btn-custom-accent:hover {
+  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.btn-outline-custom-primary {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background-color: transparent;
+}
+
+.btn-outline-custom-primary:hover {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+/* Override DaisyUI primary colors when custom colors are active */
+[data-custom-colors="true"] .btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+[data-custom-colors="true"] .btn-primary:hover {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+[data-custom-colors="true"] .btn-secondary {
+  background-color: var(--color-secondary);
+  border-color: var(--color-secondary);
+}
+
+[data-custom-colors="true"] .btn-secondary:hover {
+  background-color: var(--color-secondary-hover);
+  border-color: var(--color-secondary-hover);
+}
+
+[data-custom-colors="true"] .btn-accent {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+[data-custom-colors="true"] .btn-accent:hover {
+  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
 /* Override DaisyUI primary colors with CSS variables for dynamic theming */
 [data-theme="light"] {
   --primary: hsl(var(--primary-h) var(--primary-s) var(--primary-l));

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { generateColorPalette, applyColorPalette } from "@/utils/colorUtils";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,28 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     queryKey: ['/api/organisations', user?.organisationId],
     enabled: !!user?.organisationId,
   });
+
+  // Apply custom color palette when organization data loads
+  useEffect(() => {
+    if (organization && organization.useCustomColors && organization.primaryColor) {
+      const colorPalette = generateColorPalette(organization.primaryColor);
+      applyColorPalette(colorPalette);
+      // Add data attribute to enable custom color overrides
+      document.documentElement.setAttribute('data-custom-colors', 'true');
+    } else {
+      // Remove custom colors to use default theme colors
+      const root = document.documentElement;
+      const properties = [
+        '--color-primary', '--color-primary-hover',
+        '--color-secondary', '--color-secondary-hover', 
+        '--color-accent', '--color-accent-hover',
+        '--color-neutral', '--color-neutral-hover'
+      ];
+      properties.forEach(prop => root.style.removeProperty(prop));
+      // Remove data attribute to disable custom color overrides
+      document.documentElement.removeAttribute('data-custom-colors');
+    }
+  }, [organization]);
 
   const menuItems = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },

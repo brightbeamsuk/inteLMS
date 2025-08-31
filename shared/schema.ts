@@ -73,6 +73,8 @@ export const organisations = pgTable("organisations", {
   logoUrl: varchar("logo_url"),
   theme: varchar("theme").default('light'),
   accentColor: varchar("accent_color").default('#3b82f6'), // Default blue color
+  primaryColor: varchar("primary_color").default('#3b82f6'), // Primary brand color
+  useCustomColors: boolean("use_custom_colors").default(false), // Whether to use custom color palette
   contactEmail: varchar("contact_email"),
   contactPhone: varchar("contact_phone"),
   address: text("address"),

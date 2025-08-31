@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { VisualCertificateEditor } from "@/components/VisualCertificateEditor";
+import { generateColorPalette, applyColorPalette } from "@/utils/colorUtils";
 import type { UploadResult } from "@uppy/core";
 
 interface OrganisationSettings {
@@ -38,6 +39,8 @@ export function AdminOrganisationSettings() {
     displayName: "",
     subdomain: "",
     accentColor: "#3b82f6",
+    primaryColor: "#3b82f6",
+    useCustomColors: false,
   });
 
   const [contactData, setContactData] = useState({
@@ -73,6 +76,8 @@ export function AdminOrganisationSettings() {
         displayName: organization.displayName || "",
         subdomain: organization.subdomain || "",
         accentColor: organization.accentColor || "#3b82f6",
+        primaryColor: organization.primaryColor || "#3b82f6",
+        useCustomColors: organization.useCustomColors || false,
       });
       setContactData({
         email: organization.contactEmail || "",
@@ -81,6 +86,28 @@ export function AdminOrganisationSettings() {
       });
     }
   }, [organization]);
+
+  // Apply custom color palette when primary color or useCustomColors changes
+  useEffect(() => {
+    if (brandingData.useCustomColors && brandingData.primaryColor) {
+      const colorPalette = generateColorPalette(brandingData.primaryColor);
+      applyColorPalette(colorPalette);
+      // Add data attribute to enable custom color overrides
+      document.documentElement.setAttribute('data-custom-colors', 'true');
+    } else {
+      // Remove custom colors to use default theme colors
+      const root = document.documentElement;
+      const properties = [
+        '--color-primary', '--color-primary-hover',
+        '--color-secondary', '--color-secondary-hover', 
+        '--color-accent', '--color-accent-hover',
+        '--color-neutral', '--color-neutral-hover'
+      ];
+      properties.forEach(prop => root.style.removeProperty(prop));
+      // Remove data attribute to disable custom color overrides
+      document.documentElement.removeAttribute('data-custom-colors');
+    }
+  }, [brandingData.primaryColor, brandingData.useCustomColors]);
 
   const handleLogoUpload = async () => {
     try {
@@ -171,6 +198,8 @@ export function AdminOrganisationSettings() {
       displayName: brandingData.displayName,
       subdomain: brandingData.subdomain,
       accentColor: brandingData.accentColor,
+      primaryColor: brandingData.primaryColor,
+      useCustomColors: brandingData.useCustomColors,
       contactEmail: contactData.email,
       contactPhone: contactData.phone,
       address: contactData.address,
@@ -272,8 +301,92 @@ export function AdminOrganisationSettings() {
                     <option value="fantasy">Fantasy</option>
                     <option value="pastel">Pastel</option>
                   </select>
+                  <label className="label">
+                    <span className="label-text-alt">Choose a base DaisyUI theme for your organization</span>
+                  </label>
                 </div>
               </div>
+
+              {/* Custom Color Section */}
+              <div className="divider">Custom Colors</div>
+              
+              <div className="form-control">
+                <label className="cursor-pointer label justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    className="checkbox checkbox-primary" 
+                    checked={brandingData.useCustomColors}
+                    onChange={(e) => setBrandingData(prev => ({ ...prev, useCustomColors: e.target.checked }))}
+                    data-testid="checkbox-custom-colors"
+                  />
+                  <div>
+                    <span className="label-text font-semibold">Use Custom Colors</span>
+                    <div className="text-sm text-gray-500">Override theme colors with your own brand colors</div>
+                  </div>
+                </label>
+              </div>
+
+              {brandingData.useCustomColors && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-base-100 rounded-lg border">
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Primary Color</span>
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="color" 
+                        className="w-12 h-10 rounded border border-base-300 cursor-pointer"
+                        value={brandingData.primaryColor}
+                        onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                        data-testid="input-primary-color"
+                      />
+                      <input 
+                        type="text" 
+                        className="input input-bordered flex-1" 
+                        value={brandingData.primaryColor}
+                        onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                        placeholder="#3b82f6"
+                        data-testid="input-primary-color-text"
+                      />
+                    </div>
+                    <label className="label">
+                      <span className="label-text-alt">This will be used for primary buttons and key actions</span>
+                    </label>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Color Preview</span>
+                    </label>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <button 
+                          className="btn btn-sm"
+                          style={{ 
+                            backgroundColor: brandingData.primaryColor,
+                            borderColor: brandingData.primaryColor,
+                            color: 'white'
+                          }}
+                        >
+                          Primary Button
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline"
+                          style={{ 
+                            borderColor: brandingData.primaryColor,
+                            color: brandingData.primaryColor
+                          }}
+                        >
+                          Secondary
+                        </button>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Secondary and accent colors will be automatically generated
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="form-control">
