@@ -123,6 +123,7 @@ export function SuperAdminDashboard() {
           </button>
           <button 
             className="btn btn-secondary"
+            onClick={() => setLocation('/superadmin/course-builder')}
             data-testid="button-add-course"
           >
             <i className="fas fa-graduation-cap"></i> Add Course
