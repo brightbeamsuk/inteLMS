@@ -79,6 +79,27 @@ export function SuperAdminDashboard() {
     },
   });
 
+  // Delete todo mutation
+  const deleteTodoMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest('DELETE', `/api/todos/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/todos'] });
+      toast({
+        title: "Success",
+        description: "Task permanently deleted",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to delete task",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Seed demo data mutation
   const seedDataMutation = useMutation({
     mutationFn: async () => {
@@ -111,6 +132,12 @@ export function SuperAdminDashboard() {
       id: todo.id,
       updates: { completed: !todo.completed }
     });
+  };
+
+  const handleDeleteTodo = (id: string) => {
+    if (confirm('Are you sure you want to permanently delete this task?')) {
+      deleteTodoMutation.mutate(id);
+    }
   };
 
   // Filter todos based on completion status
@@ -389,21 +416,38 @@ export function SuperAdminDashboard() {
             ) : (
               displayedTodos.map((todo) => (
                 <div key={todo.id} className="form-control">
-                  <label className="label cursor-pointer justify-start gap-3">
-                    <input 
-                      type="checkbox" 
-                      className="checkbox checkbox-primary" 
-                      checked={todo.completed}
-                      onChange={() => handleToggleTodo(todo)}
-                      data-testid={`checkbox-todo-${todo.id}`}
-                    />
-                    <span 
-                      className={`label-text ${todo.completed ? 'line-through opacity-50' : ''}`}
-                      data-testid={`text-todo-${todo.id}`}
-                    >
-                      {todo.task}
-                    </span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="label cursor-pointer justify-start gap-3 flex-1">
+                      <input 
+                        type="checkbox" 
+                        className="checkbox checkbox-primary" 
+                        checked={todo.completed}
+                        onChange={() => handleToggleTodo(todo)}
+                        data-testid={`checkbox-todo-${todo.id}`}
+                      />
+                      <span 
+                        className={`label-text ${todo.completed ? 'line-through opacity-50' : ''}`}
+                        data-testid={`text-todo-${todo.id}`}
+                      >
+                        {todo.task}
+                      </span>
+                    </label>
+                    {showArchived && (
+                      <button
+                        className="btn btn-ghost btn-sm text-error hover:bg-error hover:text-error-content"
+                        onClick={() => handleDeleteTodo(todo.id)}
+                        disabled={deleteTodoMutation.isPending}
+                        data-testid={`button-delete-todo-${todo.id}`}
+                        title="Permanently delete this task"
+                      >
+                        {deleteTodoMutation.isPending ? (
+                          <span className="loading loading-spinner loading-xs"></span>
+                        ) : (
+                          <i className="fas fa-trash text-sm"></i>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
