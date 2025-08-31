@@ -439,8 +439,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const filePath = path.join(extractedPath, file as string);
       
+      console.log(`🔍 SCORM Content Debug:
+        - Package URL: ${packageUrl}
+        - Requested file: ${file}
+        - Extracted path: ${extractedPath}
+        - Full file path: ${filePath}
+        - File exists: ${fs.existsSync(filePath)}`);
+      
       // Check if file exists
       if (!fs.existsSync(filePath)) {
+        // List directory contents for debugging
+        try {
+          const dirContents = fs.readdirSync(extractedPath);
+          console.log(`📁 Directory contents: ${dirContents.join(', ')}`);
+          if (dirContents.includes('res')) {
+            const resContents = fs.readdirSync(path.join(extractedPath, 'res'));
+            console.log(`📁 res/ directory contents: ${resContents.join(', ')}`);
+          }
+        } catch (err) {
+          console.log(`❌ Error reading directory: ${err}`);
+        }
         return res.status(404).json({ message: 'File not found' });
       }
 
