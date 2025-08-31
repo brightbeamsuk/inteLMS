@@ -10,6 +10,8 @@ import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema } from "@shared/schema";
 import { z } from "zod";
+import * as path from "path";
+import * as fs from "fs";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session middleware for simple authentication
@@ -344,15 +346,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Package not found' });
       }
 
-      const filePath = require('path').join(extractedPath, file as string);
+      const filePath = path.join(extractedPath, file as string);
       
       // Check if file exists
-      if (!require('fs').existsSync(filePath)) {
+      if (!fs.existsSync(filePath)) {
         return res.status(404).json({ message: 'File not found' });
       }
 
       // Serve the file with appropriate content type
-      const ext = require('path').extname(file as string).toLowerCase();
+      const ext = path.extname(file as string).toLowerCase();
       let contentType = 'application/octet-stream';
       
       switch (ext) {

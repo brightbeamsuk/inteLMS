@@ -587,11 +587,11 @@ export class ScormService {
       
       // Directly embed the course content instead of using iframe
       const extracted = await this.extractPackage(packageUrl);
-      const indexPath = require('path').join(extracted.path, 'index.html');
+      const indexPath = path.join(extracted.path, 'index.html');
       let courseContent = '';
       
       try {
-        courseContent = await require('fs').promises.readFile(indexPath, 'utf-8');
+        courseContent = await fs.promises.readFile(indexPath, 'utf-8');
       } catch (error) {
         console.error('Error reading course content:', error);
         courseContent = '<h1>Error loading course content</h1>';
