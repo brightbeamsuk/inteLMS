@@ -210,7 +210,7 @@ export function SuperAdminCourses() {
                 <div className="w-full h-32 bg-base-300 rounded-lg flex items-center justify-center">
                   {course.coverImageUrl ? (
                     <img 
-                      src={course.coverImageUrl.startsWith('https://storage.googleapis.com/') ? course.coverImageUrl : `/public-objects/${course.coverImageUrl}`} 
+                      src={course.coverImageUrl.startsWith('https://storage.googleapis.com/') || course.coverImageUrl.startsWith('/objects/') ? course.coverImageUrl : `/public-objects/${course.coverImageUrl}`} 
                       alt={course.title} 
                       className="w-full h-full object-cover rounded-lg" 
                     />
@@ -284,7 +284,7 @@ export function SuperAdminCourses() {
                     <div className="w-full h-48 bg-base-300 rounded-lg flex items-center justify-center">
                       {selectedCourse.coverImageUrl ? (
                         <img 
-                          src={selectedCourse.coverImageUrl.startsWith('https://storage.googleapis.com/') ? selectedCourse.coverImageUrl : `/public-objects/${selectedCourse.coverImageUrl}`} 
+                          src={selectedCourse.coverImageUrl.startsWith('https://storage.googleapis.com/') || selectedCourse.coverImageUrl.startsWith('/objects/') ? selectedCourse.coverImageUrl : `/public-objects/${selectedCourse.coverImageUrl}`} 
                           alt={selectedCourse.title} 
                           className="w-full h-full object-cover rounded-lg" 
                           data-testid="img-course-cover"

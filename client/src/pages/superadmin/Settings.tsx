@@ -321,7 +321,7 @@ export function SuperAdminSettings() {
                   <div className="space-y-4">
                     <h4 className="font-semibold">Template Options</h4>
                     <div className="text-sm text-gray-600 mb-4">
-                      Upload images and use {{BACKGROUND_IMAGE}} and {{SIGNATURE_IMAGE}} placeholders in your template
+                      Upload images and use {`{{BACKGROUND_IMAGE}}`} and {`{{SIGNATURE_IMAGE}}`} placeholders in your template
                     </div>
                     
                     <div className="form-control">
