@@ -1,0 +1,238 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { CoursePlayer } from "@/components/scorm/CoursePlayer";
+
+interface Assignment {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  courseDescription: string;
+  status: string;
+  dueDate?: string;
+  progress?: number;
+  estimatedDuration: number;
+  passmark: number;
+  completedAt?: string;
+  score?: number;
+  attemptNumber?: number;
+}
+
+export function UserCourses() {
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
+    queryKey: ['/api/assignments'],
+  });
+
+  const handleStartCourse = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    setShowPlayer(true);
+  };
+
+  const handleClosePlayer = () => {
+    setShowPlayer(false);
+    setSelectedAssignment(null);
+  };
+
+  const handleCourseComplete = () => {
+    setShowPlayer(false);
+    setSelectedAssignment(null);
+    // Refresh assignments to show updated status
+  };
+
+  // Filter assignments based on search and status
+  const filteredAssignments = assignments.filter(assignment => {
+    const matchesSearch = assignment.courseTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         assignment.courseDescription?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = !statusFilter || assignment.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'not_started':
+        return <div className="badge badge-ghost">Not Started</div>;
+      case 'in_progress':
+        return <div className="badge badge-info">In Progress</div>;
+      case 'completed':
+        return <div className="badge badge-success">Completed</div>;
+      case 'overdue':
+        return <div className="badge badge-error">Overdue</div>;
+      default:
+        return <div className="badge badge-ghost">{status}</div>;
+    }
+  };
+
+  return (
+    <div>
+      {/* Breadcrumbs */}
+      <div className="text-sm breadcrumbs mb-6">
+        <ul>
+          <li className="font-semibold" data-testid="text-current-page">My Courses</li>
+        </ul>
+      </div>
+
+      {/* Page Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold" data-testid="text-page-title">My Courses</h1>
+      </div>
+
+      {/* Filters */}
+      <div className="card bg-base-200 shadow-sm mb-6">
+        <div className="card-body">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="form-control flex-1">
+              <input 
+                type="text" 
+                placeholder="Search courses..." 
+                className="input input-bordered"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-courses"
+              />
+            </div>
+            <div className="form-control">
+              <select 
+                className="select select-bordered"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                data-testid="select-filter-status"
+              >
+                <option value="">All Statuses</option>
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="overdue">Overdue</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Courses List */}
+      <div className="space-y-4">
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="card bg-base-200 shadow-sm">
+              <div className="card-body">
+                <div className="skeleton h-6 w-3/4 mb-2"></div>
+                <div className="skeleton h-4 w-full mb-4"></div>
+                <div className="skeleton h-10 w-24"></div>
+              </div>
+            </div>
+          ))
+        ) : filteredAssignments.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">📚</div>
+            <h3 className="text-2xl font-bold mb-2">No courses found</h3>
+            <p className="text-base-content/60">
+              {searchTerm || statusFilter ? 
+                "No courses match your current filters" : 
+                "You don't have any assigned courses yet"
+              }
+            </p>
+          </div>
+        ) : (
+          filteredAssignments.map((assignment) => (
+            <div key={assignment.id} className="card bg-base-200 shadow-sm hover:shadow-md transition-shadow" data-testid={`card-course-${assignment.id}`}>
+              <div className="card-body">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="card-title text-xl" data-testid={`text-course-title-${assignment.id}`}>
+                        {assignment.courseTitle}
+                      </h3>
+                      {getStatusBadge(assignment.status)}
+                    </div>
+                    
+                    <p className="text-base-content/60 mb-3" data-testid={`text-course-description-${assignment.id}`}>
+                      {assignment.courseDescription}
+                    </p>
+                    
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <div data-testid={`text-course-duration-${assignment.id}`}>
+                        <i className="fas fa-clock mr-1"></i>
+                        {assignment.estimatedDuration} minutes
+                      </div>
+                      <div data-testid={`text-course-passmark-${assignment.id}`}>
+                        <i className="fas fa-target mr-1"></i>
+                        {assignment.passmark}% pass mark
+                      </div>
+                      {assignment.dueDate && (
+                        <div data-testid={`text-course-due-${assignment.id}`}>
+                          <i className="fas fa-calendar mr-1"></i>
+                          Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                        </div>
+                      )}
+                      {assignment.completedAt && assignment.score !== undefined && (
+                        <div data-testid={`text-course-score-${assignment.id}`}>
+                          <i className="fas fa-star mr-1"></i>
+                          Score: {assignment.score}%
+                        </div>
+                      )}
+                    </div>
+                    
+                    {assignment.progress !== undefined && assignment.status !== 'completed' && (
+                      <div className="mt-3">
+                        <div className="flex justify-between text-sm mb-1">
+                          <span>Progress</span>
+                          <span data-testid={`text-course-progress-${assignment.id}`}>{assignment.progress}%</span>
+                        </div>
+                        <progress 
+                          className={`progress w-full ${
+                            assignment.status === 'in_progress' ? 'progress-info' : 'progress-warning'
+                          }`}
+                          value={assignment.progress} 
+                          max="100"
+                          data-testid={`progress-course-${assignment.id}`}
+                        ></progress>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-col items-end gap-2">
+                    <button 
+                      className={`btn ${
+                        assignment.status === 'not_started' ? 'btn-primary' :
+                        assignment.status === 'in_progress' ? 'btn-info' :
+                        assignment.status === 'completed' ? 'btn-success' :
+                        'btn-error'
+                      }`}
+                      onClick={() => handleStartCourse(assignment)}
+                      data-testid={`button-start-course-${assignment.id}`}
+                    >
+                      <i className="fas fa-play"></i> 
+                      {assignment.status === 'not_started' ? 'Start' :
+                       assignment.status === 'in_progress' ? 'Resume' :
+                       assignment.status === 'completed' ? 'Review' :
+                       'Continue'}
+                    </button>
+                    
+                    {assignment.status === 'completed' && assignment.attemptNumber && (
+                      <div className="text-xs text-base-content/60" data-testid={`text-course-attempts-${assignment.id}`}>
+                        Attempt {assignment.attemptNumber}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Course Player Modal */}
+      {showPlayer && selectedAssignment && (
+        <CoursePlayer
+          assignmentId={selectedAssignment.id}
+          courseTitle={selectedAssignment.courseTitle}
+          onComplete={handleCourseComplete}
+          onClose={handleClosePlayer}
+        />
+      )}
+    </div>
+  );
+}

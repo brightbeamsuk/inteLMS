@@ -1,0 +1,264 @@
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { isUnauthorizedError } from "@/lib/authUtils";
+
+// Layout components
+import { SuperAdminLayout } from "@/components/Layout/SuperAdminLayout";
+import { AdminLayout } from "@/components/Layout/AdminLayout";
+import { UserLayout } from "@/components/Layout/UserLayout";
+
+// Page components
+import { Landing } from "@/pages/Landing";
+import NotFound from "@/pages/not-found";
+
+// SuperAdmin pages
+import { SuperAdminDashboard } from "@/pages/superadmin/Dashboard";
+import { SuperAdminOrganisations } from "@/pages/superadmin/Organisations";
+import { SuperAdminUsers } from "@/pages/superadmin/Users";
+import { SuperAdminCourseBuilder } from "@/pages/superadmin/CourseBuilder";
+import { SuperAdminCourses } from "@/pages/superadmin/Courses";
+import { SuperAdminSettings } from "@/pages/superadmin/Settings";
+
+// Admin pages
+import { AdminDashboard } from "@/pages/admin/Dashboard";
+import { AdminUsers } from "@/pages/admin/Users";
+import { AdminCourses } from "@/pages/admin/Courses";
+import { AdminBilling } from "@/pages/admin/Billing";
+import { AdminOrganisationSettings } from "@/pages/admin/OrganisationSettings";
+
+// User pages
+import { UserDashboard } from "@/pages/user/Dashboard";
+import { UserCourses } from "@/pages/user/Courses";
+import { UserSettings } from "@/pages/user/Settings";
+
+function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      toast({
+        title: "Unauthorized",
+        description: "You are logged out. Logging in again...",
+        variant: "destructive",
+      });
+      setTimeout(() => {
+        window.location.href = "/api/login";
+      }, 500);
+      return;
+    }
+
+    if (!isLoading && isAuthenticated && requiredRole && user?.role !== requiredRole) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to access this page",
+        variant: "destructive",
+      });
+      // Redirect to appropriate dashboard based on user role
+      const redirectPath = user?.role === 'admin' ? '/admin' : user?.role === 'user' ? '/user' : '/superadmin';
+      setTimeout(() => {
+        window.location.href = redirectPath;
+      }, 500);
+    }
+  }, [isAuthenticated, isLoading, user, requiredRole, toast]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  if (requiredRole && user?.role !== requiredRole) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
+function Router() {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    );
+  }
+
+  // Show landing page if not authenticated
+  if (!isAuthenticated) {
+    return <Landing />;
+  }
+
+  return (
+    <Switch>
+      {/* SuperAdmin routes */}
+      <Route path="/superadmin">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminDashboard />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/organisations">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminOrganisations />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/users">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminUsers />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/course-builder">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminCourseBuilder />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/courses">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminCourses />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/settings">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminSettings />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin routes */}
+      <Route path="/admin">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/users">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminUsers />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/courses">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminCourses />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/billing">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminBilling />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/settings">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminOrganisationSettings />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* User routes */}
+      <Route path="/user">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserDashboard />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/user/courses">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserCourses />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/user/settings">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserSettings />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Default route - redirect based on role */}
+      <Route path="/">
+        <ProtectedRoute>
+          {user?.role === 'superadmin' && (
+            <SuperAdminLayout>
+              <SuperAdminDashboard />
+            </SuperAdminLayout>
+          )}
+          {user?.role === 'admin' && (
+            <AdminLayout>
+              <AdminDashboard />
+            </AdminLayout>
+          )}
+          {user?.role === 'user' && (
+            <UserLayout>
+              <UserDashboard />
+            </UserLayout>
+          )}
+        </ProtectedRoute>
+      </Route>
+
+      {/* Fallback to 404 */}
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <div data-theme="light">
+          <Toaster />
+          <Router />
+        </div>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
