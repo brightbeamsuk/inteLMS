@@ -81,7 +81,7 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       const state = attemptStateRef.current;
       const scormVersion = state['cmi.core.lesson_status'] !== undefined ? '1.2' : '2004';
       
-      await apiRequest('POST', '/api/scorm/result', {
+      const response = await apiRequest('POST', '/api/scorm/result', {
         learnerId: state['cmi.core.student_id'] || state['cmi.learner_id'],
         courseId: assignmentId,
         attemptId,
@@ -94,6 +94,7 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         sessionTime: state['cmi.core.session_time'] || state['cmi.session_time'],
         location: state['cmi.core.lesson_location'] || state['cmi.location']
       });
+      // Note: POST responses don't need JSON parsing if we don't use the result
       
       addDebugLog(`✅ SCORM result sent (${reason}): ${JSON.stringify({score: state['cmi.core.score.raw'] || state['cmi.score.raw'], status: state['cmi.core.lesson_status'] || state['cmi.completion_status']})}`);
     } catch (error) {
@@ -255,7 +256,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         setAttemptId(newAttemptId);
         
         // Get current user info
-        const userResponse = await apiRequest('GET', '/api/auth/user');
+        const userRes = await apiRequest('GET', '/api/auth/user');
+        const userResponse = await userRes.json();
         attemptStateRef.current['cmi.core.student_id'] = userResponse.id;
         attemptStateRef.current['cmi.core.student_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         attemptStateRef.current['cmi.learner_id'] = userResponse.id;
@@ -263,15 +265,30 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         
         // Get course launch URL using improved SCORM processing
         try {
-          const launchResponse = await apiRequest('GET', `/api/scorm/${assignmentId}/launch`);
+          console.log(`🚀 Requesting launch data for assignment: ${assignmentId}`);
+          const response = await apiRequest('GET', `/api/scorm/${assignmentId}/launch`);
+          const launchResponse = await response.json();
           console.log('✅ Launch data received:', launchResponse);
+          console.log('🚀 Launch response type:', typeof launchResponse);
+          console.log('🚀 Launch response keys:', Object.keys(launchResponse || {}));
+          
+          // Check if response is valid
+          if (!launchResponse || typeof launchResponse !== 'object') {
+            throw new Error('Invalid launch response received from server');
+          }
           
           // Use launch URL override if available, otherwise use parsed URL
           const finalLaunchUrl = launchResponse.launchUrlOverride || launchResponse.launchUrl;
           
+          if (!finalLaunchUrl) {
+            console.error('❌ No launch URL found in response:', launchResponse);
+            throw new Error('No launch URL provided by server');
+          }
+          
           // Log launch URL before setting iframe
-          console.log(`🎯 Launch URL set: ${finalLaunchUrl || '(none)'}`);
-          console.log(`📋 SCORM Version: ${launchResponse.scormVersion}`);
+          console.log(`🎯 Launch URL set: ${finalLaunchUrl}`);
+          console.log(`📋 SCORM Version: ${launchResponse.scormVersion || 'unknown'}`);
+          console.log(`📖 Course Title: ${launchResponse.courseTitle || 'unknown'}`);
           
           if (launchResponse.diagnostics) {
             console.log('🔍 SCORM Diagnostics:', launchResponse.diagnostics);
@@ -279,14 +296,27 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
           }
           
           setScormUrl(finalLaunchUrl);
-          addDebugLog(`🎯 Launch URL set: ${finalLaunchUrl || '(none)'}`);
+          addDebugLog(`🎯 Launch URL set: ${finalLaunchUrl}`);
+          addDebugLog(`📋 SCORM Version: ${launchResponse.scormVersion || 'unknown'}`);
+          addDebugLog(`📖 Course: ${launchResponse.courseTitle || 'unknown'}`);
         } catch (launchError: any) {
           console.error('❌ SCORM launch failed:', launchError);
+          console.error('❌ Error details:', {
+            message: launchError.message,
+            status: launchError.status,
+            response: launchError.response
+          });
           
           // Handle specific SCORM errors with user-friendly messages
           let errorMessage = 'Failed to launch course. Please contact support.';
           
-          if (launchError.message?.includes('LAUNCH_FILE_NOT_FOUND')) {
+          if (launchError.message?.includes('Unauthorized') || launchError.status === 401) {
+            errorMessage = 'You are not authorized to access this course. Please log in again.';
+          } else if (launchError.message?.includes('Invalid launch response')) {
+            errorMessage = 'Server returned invalid launch data. Please try refreshing the page.';
+          } else if (launchError.message?.includes('No launch URL provided')) {
+            errorMessage = 'Course launch URL not available. The SCORM package may not be properly configured.';
+          } else if (launchError.message?.includes('LAUNCH_FILE_NOT_FOUND')) {
             errorMessage = 'Course launch file not found. The SCORM package appears to be corrupted.';
           } else if (launchError.message?.includes('INVALID_MANIFEST')) {
             errorMessage = 'This SCORM package is missing required files. Please contact your administrator.';
