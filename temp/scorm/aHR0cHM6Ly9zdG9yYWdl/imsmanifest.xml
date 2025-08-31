@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<manifest identifier="f1087eb1-93ff-4358-8cc7-5ff4f813b9ef" xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:lom="http://www.imsglobal.org/xsd/imsmd_rootv1p2p1" xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.imsglobal.org/xsd/imsmd_rootv1p2p1 imsmd_rootv1p2p1.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">
+<manifest identifier="33c05fad-5e08-4048-b32e-96db29ae0443" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:imsss="http://www.imsglobal.org/xsd/imsss" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3" xmlns:adlseq="http://www.adlnet.org/xsd/adlseq_v1p3" xmlns:adlnav="http://www.adlnet.org/xsd/adlnav_v1p3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:lom="http://ltsc.ieee.org/xsd/LOM" xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd http://www.imsglobal.org/xsd/imsss imsss_v1p0.xsd http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd http://www.adlnet.org/xsd/adlseq_v1p3 adlseq_v1p3.xsd http://www.adlnet.org/xsd/adlnav_v1p3 adlnav_v1p3.xsd http://ltsc.ieee.org/xsd/LOM lom.xsd">
     <metadata>
         <schema>ADL SCORM</schema>
-        <schemaversion>1.2</schemaversion>
+        <schemaversion>2004 4th Edition</schemaversion>
         <lom:lom>
             <lom:general>
                 <lom:title>
-                    <lom:langstring>How to Create a Course in iSpring Cloud</lom:langstring>
+                    <lom:string>How to Create a Course in iSpring Cloud</lom:string>
                 </lom:title>
             </lom:general>
+            <lom:metaMetadata></lom:metaMetadata>
         </lom:lom>
     </metadata>
     <organizations default="72f7c50f-7396-11f0-ad2c-6eb5435ed02b_org">
@@ -16,11 +17,17 @@
             <title>How to Create a Course in iSpring Cloud</title>
             <item identifier="72f7c50f-7396-11f0-ad2c-6eb5435ed02b" identifierref="resource">
                 <title>How to Create a Course in iSpring Cloud</title>
+                <imsss:sequencing>
+                    <imsss:deliveryControls completionSetByContent="true" objectiveSetByContent="true"></imsss:deliveryControls>
+                </imsss:sequencing>
             </item>
+            <imsss:sequencing>
+                <imsss:controlMode flow="true"></imsss:controlMode>
+            </imsss:sequencing>
         </organization>
     </organizations>
     <resources>
-        <resource identifier="resource" type="webcontent" adlcp:scormtype="sco" href="res/index.html">
+        <resource identifier="resource" type="webcontent" adlcp:scormType="sco" href="res/index.html">
             <file href="res/js/fast-average-color-7.1.0.umd.js"></file>
             <file href="res/js/focus-visible-5.2.0.iife.js"></file>
             <file href="res/js/hyperhtml-2.34.2.umd.js"></file>
