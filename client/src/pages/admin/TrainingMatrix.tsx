@@ -89,7 +89,20 @@ export function AdminTrainingMatrix() {
 
   // Fetch training matrix data
   const { data: matrixData, isLoading, error } = useQuery<TrainingMatrixData>({
-    queryKey: ['/api/training-matrix'],
+    queryKey: ['/api/training-matrix', filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.departments.length > 0) params.append('departments', filters.departments.join(','));
+      if (filters.roles.length > 0) params.append('roles', filters.roles.join(','));
+      if (filters.courses.length > 0) params.append('courses', filters.courses.join(','));
+      if (filters.statuses.length > 0) params.append('statuses', filters.statuses.join(','));
+      if (filters.mandatoryOnly) params.append('mandatoryOnly', 'true');
+      
+      const url = `/api/training-matrix${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch training matrix');
+      return response.json();
+    },
     enabled: !!currentUser?.organisationId,
   });
 
@@ -175,11 +188,7 @@ export function AdminTrainingMatrix() {
     }
   };
 
-  // Filter helpers
-  const applyFilters = () => {
-    // Filters are applied server-side via query params
-    queryClient.invalidateQueries({ queryKey: ['/api/training-matrix'] });
-  };
+  // Filter helpers - no longer needed as filters are applied automatically via query
 
   const clearFilters = () => {
     setFilters({
@@ -327,6 +336,239 @@ export function AdminTrainingMatrix() {
           </button>
         </div>
       </div>
+
+      {/* Filters */}
+      <div className="card bg-base-100 shadow-sm mb-6">
+        <div className="card-body p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <div className="flex items-center gap-2">
+              <i className="fas fa-filter text-base-content/60"></i>
+              <span className="font-medium">Filters:</span>
+            </div>
+            
+            <div className="flex flex-wrap gap-3 flex-1">
+              {/* Department Filter */}
+              <div className="form-control min-w-[150px]">
+                <select 
+                  className="select select-bordered select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFilters(prev => ({
+                        ...prev,
+                        departments: prev.departments.includes(e.target.value) 
+                          ? prev.departments 
+                          : [...prev.departments, e.target.value]
+                      }));
+                      e.target.value = "";
+                    }
+                  }}
+                  data-testid="select-department-filter"
+                >
+                  <option value="">Add Department</option>
+                  {Array.from(new Set(
+                    matrixData.staff.map(s => s.department).filter(Boolean)
+                  )).map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Role Filter */}
+              <div className="form-control min-w-[120px]">
+                <select 
+                  className="select select-bordered select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFilters(prev => ({
+                        ...prev,
+                        roles: prev.roles.includes(e.target.value) 
+                          ? prev.roles 
+                          : [...prev.roles, e.target.value]
+                      }));
+                      e.target.value = "";
+                    }
+                  }}
+                  data-testid="select-role-filter"
+                >
+                  <option value="">Add Role</option>
+                  {Array.from(new Set(
+                    matrixData.staff.map(s => s.role).filter(Boolean)
+                  )).map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Course Filter */}
+              <div className="form-control min-w-[150px]">
+                <select 
+                  className="select select-bordered select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFilters(prev => ({
+                        ...prev,
+                        courses: prev.courses.includes(e.target.value) 
+                          ? prev.courses 
+                          : [...prev.courses, e.target.value]
+                      }));
+                      e.target.value = "";
+                    }
+                  }}
+                  data-testid="select-course-filter"
+                >
+                  <option value="">Add Course</option>
+                  {matrixData.courses.map((course) => (
+                    <option key={course.id} value={course.id}>{course.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div className="form-control min-w-[140px]">
+                <select 
+                  className="select select-bordered select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFilters(prev => ({
+                        ...prev,
+                        statuses: prev.statuses.includes(e.target.value) 
+                          ? prev.statuses 
+                          : [...prev.statuses, e.target.value]
+                      }));
+                      e.target.value = "";
+                    }
+                  }}
+                  data-testid="select-status-filter"
+                >
+                  <option value="">Add Status</option>
+                  <option value="green">Completed & current</option>
+                  <option value="amber">Expiring soon</option>
+                  <option value="red">Overdue/expired</option>
+                  <option value="grey">Not completed</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Clear Filters Button - Only show when filters are active */}
+            {(filters.departments.length > 0 || filters.roles.length > 0 || 
+              filters.courses.length > 0 || filters.statuses.length > 0) && (
+              <button 
+                className="btn btn-outline btn-sm"
+                onClick={clearFilters}
+                data-testid="button-clear-filters"
+              >
+                <i className="fas fa-times"></i>
+                Clear All Filters
+              </button>
+            )}
+          </div>
+
+          {/* Active Filter Tags */}
+          {(filters.departments.length > 0 || filters.roles.length > 0 || 
+            filters.courses.length > 0 || filters.statuses.length > 0) && (
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-base-300">
+              {filters.departments.map((dept) => (
+                <div key={`dept-${dept}`} className="badge badge-primary gap-2">
+                  <span>Dept: {dept}</span>
+                  <button
+                    className="btn btn-xs btn-circle btn-ghost"
+                    onClick={() => setFilters(prev => ({
+                      ...prev,
+                      departments: prev.departments.filter(d => d !== dept)
+                    }))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {filters.roles.map((role) => (
+                <div key={`role-${role}`} className="badge badge-secondary gap-2">
+                  <span>Role: {role}</span>
+                  <button
+                    className="btn btn-xs btn-circle btn-ghost"
+                    onClick={() => setFilters(prev => ({
+                      ...prev,
+                      roles: prev.roles.filter(r => r !== role)
+                    }))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {filters.courses.map((courseId) => {
+                const course = matrixData.courses.find(c => c.id === courseId);
+                return (
+                  <div key={`course-${courseId}`} className="badge badge-accent gap-2">
+                    <span>Course: {course?.title || courseId}</span>
+                    <button
+                      className="btn btn-xs btn-circle btn-ghost"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        courses: prev.courses.filter(c => c !== courseId)
+                      }))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+              {filters.statuses.map((status) => {
+                const statusLabels = {
+                  green: 'Completed & current',
+                  amber: 'Expiring soon', 
+                  red: 'Overdue/expired',
+                  grey: 'Not completed'
+                };
+                return (
+                  <div key={`status-${status}`} className="badge badge-neutral gap-2">
+                    <span>Status: {statusLabels[status as keyof typeof statusLabels]}</span>
+                    <button
+                      className="btn btn-xs btn-circle btn-ghost"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        statuses: prev.statuses.filter(s => s !== status)
+                      }))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Saved Views */}
+      {savedViews.length > 0 && (
+        <div className="card bg-base-100 shadow-sm mb-6">
+          <div className="card-body p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <i className="fas fa-bookmark text-base-content/60"></i>
+                <span className="font-medium">Saved Views:</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {savedViews.map((view) => (
+                  <button
+                    key={view.id}
+                    className={`btn btn-sm ${activeView?.id === view.id ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => applyView(view)}
+                    data-testid={`button-view-${view.id}`}
+                  >
+                    <i className="fas fa-bookmark"></i>
+                    {view.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Legend and Summary */}
       <div className="card bg-base-200 shadow-sm mb-6">
@@ -508,6 +750,97 @@ export function AdminTrainingMatrix() {
                 data-testid="button-close-detail"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save View Modal */}
+      {showSaveViewModal && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Save Current View</h3>
+            
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">View Name</span>
+                </label>
+                <input 
+                  type="text" 
+                  className="input input-bordered" 
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  placeholder="Enter a name for this view"
+                  data-testid="input-view-name"
+                />
+              </div>
+
+              {/* Show current filters */}
+              {(filters.departments.length > 0 || filters.roles.length > 0 || 
+                filters.courses.length > 0 || filters.statuses.length > 0) && (
+                <div>
+                  <label className="label">
+                    <span className="label-text">Current Filters</span>
+                  </label>
+                  <div className="bg-base-200 p-3 rounded-lg">
+                    <div className="flex flex-wrap gap-2">
+                      {filters.departments.map((dept) => (
+                        <span key={`save-dept-${dept}`} className="badge badge-primary">Dept: {dept}</span>
+                      ))}
+                      {filters.roles.map((role) => (
+                        <span key={`save-role-${role}`} className="badge badge-secondary">Role: {role}</span>
+                      ))}
+                      {filters.courses.map((courseId) => {
+                        const course = matrixData.courses.find(c => c.id === courseId);
+                        return (
+                          <span key={`save-course-${courseId}`} className="badge badge-accent">
+                            Course: {course?.title || courseId}
+                          </span>
+                        );
+                      })}
+                      {filters.statuses.map((status) => {
+                        const statusLabels = {
+                          green: 'Completed & current',
+                          amber: 'Expiring soon', 
+                          red: 'Overdue/expired',
+                          grey: 'Not completed'
+                        };
+                        return (
+                          <span key={`save-status-${status}`} className="badge badge-neutral">
+                            Status: {statusLabels[status as keyof typeof statusLabels]}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    {(filters.departments.length === 0 && filters.roles.length === 0 && 
+                      filters.courses.length === 0 && filters.statuses.length === 0) && (
+                      <p className="text-sm text-base-content/60">No filters applied</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-outline" 
+                onClick={() => {
+                  setShowSaveViewModal(false);
+                  setNewViewName('');
+                }}
+                data-testid="button-cancel-save-view"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-primary ${saveViewMutation.isPending ? 'loading' : ''}`}
+                onClick={handleSaveView}
+                disabled={saveViewMutation.isPending || !newViewName.trim()}
+                data-testid="button-confirm-save-view"
+              >
+                {saveViewMutation.isPending ? 'Saving...' : 'Save View'}
               </button>
             </div>
           </div>
