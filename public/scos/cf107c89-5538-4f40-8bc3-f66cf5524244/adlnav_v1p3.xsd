@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.adlnet.org/xsd/adlnav_v1p3"
+           targetNamespace="http://www.adlnet.org/xsd/adlnav_v1p3"
+           version="SCORM 2004 4th Edition"
+           elementFormDefault="qualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      This is the ADL Navigation Extension schema for SCORM 2004 4th Edition
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:element name="presentation">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="navigationInterface" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="hideLMSUI" minOccurs="0" maxOccurs="unbounded">
+                <xs:simpleType>
+                  <xs:restriction base="xs:string">
+                    <xs:enumeration value="previous"/>
+                    <xs:enumeration value="continue"/>
+                    <xs:enumeration value="exit"/>
+                    <xs:enumeration value="exitAll"/>
+                    <xs:enumeration value="abandon"/>
+                    <xs:enumeration value="abandonAll"/>
+                    <xs:enumeration value="suspendAll"/>
+                  </xs:restriction>
+                </xs:simpleType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema> 

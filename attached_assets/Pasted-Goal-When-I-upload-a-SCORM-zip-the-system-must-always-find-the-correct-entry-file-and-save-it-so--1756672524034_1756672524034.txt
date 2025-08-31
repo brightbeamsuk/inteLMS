@@ -1,0 +1,57 @@
+Goal: When I upload a SCORM zip, the system must always find the correct entry file and save it, so the launch page never has an undefined URL.
+
+Changes to implement:
+
+A. Find the manifest reliably
+
+After unzipping, search recursively inside the extracted folder for imsmanifest.xml.
+
+Set the “SCORM root” to the folder that directly contains imsmanifest.xml (do not assume it’s the zip root).
+
+B. Read the default launch item from the manifest
+
+Identify the default organisation (<organizations default="...">). If none is marked, use the first organisation.
+
+From that organisation, pick the first visible <item> (or the specific one targeted by the LMS if we’ve stored an item ID).
+
+Read that item’s identifierref. Use it to find the matching <resource> in <resources>.
+
+In that resource, prefer adlcp:href as the entry file. If it’s missing, use href.
+
+Respect any base paths (e.g., xml:base on the manifest or on the resources section) so the final path points to the real file on disk.
+
+C. Build and verify the launch path
+
+Combine the SCORM root + resource base (if any) + entry file.
+
+Verify the file exists on disk. If it doesn’t, try a fallback list in the same folder: index_lms.html, story.html, index.html.
+
+If found, save this as the course’s launch URL (e.g., /scos/<courseId>/…).
+
+If nothing is found, store a clear error with: the path we attempted, the resource href we read, and a short file listing of the SCORM root for support.
+
+D. Serve the files correctly
+
+Ensure the extracted SCORM root is under a static web path (e.g., /scos/<courseId>/…) and that this path allows iframes (no X-Frame-Options: DENY and no blocking CSP for children).
+
+The launch page must define the SCORM API before setting the iframe src.
+
+E. Multi-SCO packages
+
+If the organisation has multiple <item> entries, create a small table of contents and let me pick one. When I pick, launch that item’s resource as above.
+
+F. Better error messages
+
+Replace “Couldn’t Open Scorm File” with a specific reason:
+
+“Manifest not found”
+
+“No entry file on resource: [identifierref]”
+
+“Launch file missing on disk: [full path]”
+
+“Launch URL returned 404 (check static hosting for /scos/…)”
+
+G. Admin helper
+
+Add the “Launch URL override” field described above. If present, use it instead of the parsed one. Also add a small ‘Test launch URL’ button that opens it in a new tab.

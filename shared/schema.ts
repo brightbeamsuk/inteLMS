@@ -95,6 +95,11 @@ export const courses = pgTable("courses", {
   category: varchar("category"),
   tags: text("tags"), // comma-separated
   certificateExpiryPeriod: integer("certificate_expiry_period"), // in months, null = never expires
+  // Enhanced SCORM fields
+  launchUrlOverride: varchar("launch_url_override", { length: 500 }),
+  scormVersion: varchar("scorm_version", { length: 10 }),
+  scormOrganizations: jsonb("scorm_organizations"), // Store organizations and items for multi-SCO support
+  defaultOrganization: varchar("default_organization", { length: 191 }),
   status: courseStatusEnum("status").notNull().default('draft'),
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),

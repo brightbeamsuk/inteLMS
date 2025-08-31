@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.adlnet.org/xsd/adlcp_v1p3"
+           targetNamespace="http://www.adlnet.org/xsd/adlcp_v1p3"
+           version="SCORM 2004 4th Edition"
+           elementFormDefault="qualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      This is the ADL Content Packaging Extension schema for SCORM 2004 4th Edition
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:attribute name="scormType">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="sco"/>
+        <xs:enumeration value="asset"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+
+  <xs:element name="location" type="xs:string"/>
+  <xs:element name="prerequisites" type="xs:string"/>
+  <xs:element name="maxtimeallowed" type="xs:string"/>
+  <xs:element name="timelimitaction" type="xs:string"/>
+  <xs:element name="datafromlms" type="xs:string"/>
+  <xs:element name="masteryscore" type="xs:decimal"/>
+
+  <xs:element name="completionThreshold" type="xs:decimal"/>
+  <xs:element name="objectives">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="objective" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="id" type="xs:string"/>
+              <xs:element name="minNormalizedMeasure" type="xs:decimal" minOccurs="0"/>
+            </xs:sequence>
+            <xs:attribute name="satisfiedByMeasure" type="xs:boolean" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="timeLimitAction">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="exit,message"/>
+        <xs:enumeration value="exit,no message"/>
+        <xs:enumeration value="continue,message"/>
+        <xs:enumeration value="continue,no message"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:element>
+</xs:schema> 

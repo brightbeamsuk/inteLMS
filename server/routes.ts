@@ -729,17 +729,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`📦 Processing SCORM upload for user ${user.id}: ${packageUrl}`);
       
-      // Process the upload using improved SCORM service
-      const { ImprovedScormService } = await import('./services/improvedScormService');
-      const improvedScormService = new ImprovedScormService();
+      // Process the upload using enhanced SCORM service
+      const { EnhancedScormService } = await import('./services/enhancedScormService');
+      const enhancedScormService = new EnhancedScormService();
       
       // Generate a unique course ID for this upload
       const courseId = Buffer.from(`${Date.now()}_${Math.random()}`).toString('base64').replace(/[/+=]/g, '').substring(0, 16);
       
       try {
-        const packageInfo = await improvedScormService.processScormPackage(packageUrl, courseId);
+        const packageInfo = await enhancedScormService.processScormPackage(packageUrl, courseId);
         
-        res.json({
+        const response = {
           success: true,
           packageInfo: {
             packageId: courseId,
@@ -748,10 +748,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             version: packageInfo.version,
             launchFile: packageInfo.launchFile,
             launchUrl: packageInfo.launchUrl,
+            organizations: packageInfo.organizations,
+            defaultOrganization: packageInfo.defaultOrganization,
+            scormRoot: packageInfo.scormRoot,
             diagnostics: packageInfo.diagnostics
           },
           message: `Package processed successfully with ID: ${courseId}`
+        };
+
+        console.log('📤 Upload processing response:', {
+          title: response.packageInfo.title,
+          launchUrl: response.packageInfo.launchUrl,
+          organizationsCount: response.packageInfo.organizations.length,
+          itemsTotal: response.packageInfo.organizations.reduce((total, org) => total + org.items.length, 0)
         });
+        
+        res.json(response);
       } catch (scormError: any) {
         // Provide detailed error diagnostics
         const errorResponse: any = {
@@ -1066,22 +1078,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🚀 SCORM launch for assignment ${assignmentId}, course: ${course.title}`);
       
       try {
-        // Use improved SCORM service to process and verify the package
-        const { ImprovedScormService } = await import('./services/improvedScormService');
-        const improvedScormService = new ImprovedScormService();
+        let launchUrl: string;
+        let organizations: any[] = [];
+        let scormVersion = '1.2';
+        let diagnostics: any = {};
+
+        // G. Check for admin launch URL override first
+        if (course.launchUrlOverride) {
+          console.log(`🔧 Using admin launch URL override: ${course.launchUrlOverride}`);
+          launchUrl = course.launchUrlOverride;
+          
+          // Use stored SCORM data if available
+          if (course.scormOrganizations) {
+            organizations = course.scormOrganizations as any[];
+          }
+          if (course.scormVersion) {
+            scormVersion = course.scormVersion;
+          }
+        } else {
+          // Use enhanced SCORM service to process and verify the package
+          console.log('🔄 Loading EnhancedScormService...');
+          try {
+            const { EnhancedScormService } = await import('./services/enhancedScormService');
+            const enhancedScormService = new EnhancedScormService();
+            
+            console.log('✅ EnhancedScormService loaded, processing package...');
+            
+            // Use course ID as the extraction directory
+            const packageInfo = await enhancedScormService.processScormPackage(course.scormPackageUrl, assignment.courseId);
+            
+            console.log('📊 Enhanced processing complete:', {
+              title: packageInfo.title,
+              launchUrl: packageInfo.launchUrl,
+              version: packageInfo.version,
+              orgs: packageInfo.organizations?.length || 0
+            });
+            
+            launchUrl = packageInfo.launchUrl;
+            organizations = packageInfo.organizations || [];
+            scormVersion = packageInfo.version || '1.2';
+            diagnostics = packageInfo.diagnostics || {};
+            
+            // Store enhanced SCORM data in database for future use
+            try {
+              await storage.updateCourse(course.id, {
+                scormVersion: packageInfo.version,
+                scormOrganizations: packageInfo.organizations,
+                defaultOrganization: packageInfo.defaultOrganization
+              });
+              console.log('✅ Course updated with enhanced SCORM data');
+            } catch (updateError) {
+              console.warn('⚠️ Failed to update course with enhanced data:', updateError);
+            }
+          } catch (enhancedError) {
+            console.error('❌ Enhanced service failed, falling back to basic processing:', enhancedError);
+            
+            // Fallback to basic SCORM processing
+            const { ImprovedScormService } = await import('./services/improvedScormService');
+            const improvedScormService = new ImprovedScormService();
+            const packageInfo = await improvedScormService.processScormPackage(course.scormPackageUrl, assignment.courseId);
+            
+            launchUrl = packageInfo.launchUrl || '';
+            scormVersion = packageInfo.version || '1.2';
+            diagnostics = packageInfo.diagnostics || {};
+          }
+        }
         
-        // Use course ID as the extraction directory
-        const packageInfo = await improvedScormService.processScormPackage(course.scormPackageUrl, assignment.courseId);
+        console.log(`✅ SCORM package ready. Launch URL: ${launchUrl}`);
         
-        console.log(`✅ SCORM package verified. Launch URL: ${packageInfo.launchUrl}`);
-        
-        // Return direct launch URL using static hosting
-        res.json({ 
-          launchUrl: packageInfo.launchUrl, // This will be /scos/courseId/path/to/file.html
+        // Return comprehensive launch data
+        const response = {
+          launchUrl, // Primary launch URL (from override or processing)
           courseTitle: course.title,
-          scormVersion: packageInfo.version,
-          diagnostics: packageInfo.diagnostics
+          scormVersion,
+          organizations, // For multi-SCO support
+          defaultOrganization: course.defaultOrganization || (organizations.length > 0 ? organizations[0].id : ''),
+          diagnostics,
+          hasOverride: !!course.launchUrlOverride,
+          success: true
+        };
+        
+        // Debug the response structure
+        console.log('📤 Sending response keys:', Object.keys(response));
+        console.log('📤 Response details:', {
+          launchUrl: response.launchUrl,
+          courseTitle: response.courseTitle,
+          scormVersion: response.scormVersion,
+          organizationsCount: response.organizations.length,
+          hasOverride: response.hasOverride
         });
+        
+        // Ensure all fields are properly set
+        const finalResponse = {
+          launchUrl: launchUrl || '',
+          courseTitle: course.title || 'Unknown Course',
+          scormVersion: scormVersion || '1.2',
+          organizations: organizations || [],
+          defaultOrganization: course.defaultOrganization || (organizations.length > 0 ? organizations[0].id : ''),
+          diagnostics: diagnostics || {},
+          hasOverride: !!course.launchUrlOverride,
+          success: true
+        };
+        
+        console.log('🚀 Final response being sent:', JSON.stringify(finalResponse, null, 2));
+        
+        res.json(finalResponse);
       } catch (scormError: any) {
         console.error(`❌ SCORM processing failed for assignment ${assignmentId}:`, scormError);
         
