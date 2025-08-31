@@ -327,91 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SCORM Asset serving route - handles direct asset requests
-  app.get('/api/scorm/*', requireAuth, async (req: any, res) => {
-    try {
-      const user = await getCurrentUser(req);
-      
-      if (!user || user.role !== 'superadmin') {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      // Extract the asset path from the URL
-      const assetPath = req.params[0]; // This captures everything after /api/scorm/
-      
-      // Get packageUrl from query params or session
-      const { packageUrl } = req.query;
-      
-      if (!packageUrl) {
-        return res.status(400).json({ message: 'Package URL is required' });
-      }
-
-      // Import ScormService dynamically
-      const { ScormService } = await import('./services/scormService');
-      const scormService = new ScormService();
-      
-      await scormService.extractPackage(packageUrl as string);
-      const extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
-      
-      if (!extractedPath) {
-        return res.status(404).json({ message: 'Package not found' });
-      }
-
-      const filePath = path.join(extractedPath, assetPath);
-      
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: 'File not found' });
-      }
-
-      // Serve the file with appropriate content type
-      const ext = path.extname(assetPath).toLowerCase();
-      let contentType = 'application/octet-stream';
-      
-      switch (ext) {
-        case '.html':
-          contentType = 'text/html';
-          break;
-        case '.css':
-          contentType = 'text/css';
-          break;
-        case '.js':
-          contentType = 'application/javascript';
-          break;
-        case '.json':
-          contentType = 'application/json';
-          break;
-        case '.png':
-          contentType = 'image/png';
-          break;
-        case '.jpg':
-        case '.jpeg':
-          contentType = 'image/jpeg';
-          break;
-        case '.gif':
-          contentType = 'image/gif';
-          break;
-        case '.svg':
-          contentType = 'image/svg+xml';
-          break;
-        case '.woff':
-        case '.woff2':
-          contentType = 'font/woff2';
-          break;
-        case '.ttf':
-          contentType = 'font/ttf';
-          break;
-      }
-
-      res.setHeader('Content-Type', contentType);
-      res.sendFile(filePath);
-    } catch (error) {
-      console.error('Error serving SCORM asset:', error);
-      res.status(500).json({ message: 'Failed to serve asset' });
-    }
-  });
-
-  // SCORM Content serving route
+  // SCORM Content serving route - MUST be before wildcard route
   app.get('/api/scorm/content', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -521,6 +437,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error serving SCORM content:', error);
       res.status(500).json({ message: 'Failed to serve content' });
+    }
+  });
+
+  // SCORM Asset serving route - handles direct asset requests
+  app.get('/api/scorm/*', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Extract the asset path from the URL
+      const assetPath = req.params[0]; // This captures everything after /api/scorm/
+      
+      // Get packageUrl from query params or session
+      const { packageUrl } = req.query;
+      
+      if (!packageUrl) {
+        return res.status(400).json({ message: 'Package URL is required' });
+      }
+
+      // Import ScormService dynamically
+      const { ScormService } = await import('./services/scormService');
+      const scormService = new ScormService();
+      
+      await scormService.extractPackage(packageUrl as string);
+      const extractedPath = await scormService.getExtractedPackagePath(packageUrl as string);
+      
+      if (!extractedPath) {
+        return res.status(404).json({ message: 'Package not found' });
+      }
+
+      const filePath = path.join(extractedPath, assetPath);
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: 'File not found' });
+      }
+
+      // Serve the file with appropriate content type
+      const ext = path.extname(assetPath).toLowerCase();
+      let contentType = 'application/octet-stream';
+      
+      switch (ext) {
+        case '.html':
+          contentType = 'text/html';
+          break;
+        case '.css':
+          contentType = 'text/css';
+          break;
+        case '.js':
+          contentType = 'application/javascript';
+          break;
+        case '.json':
+          contentType = 'application/json';
+          break;
+        case '.png':
+          contentType = 'image/png';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          contentType = 'image/jpeg';
+          break;
+        case '.gif':
+          contentType = 'image/gif';
+          break;
+        case '.svg':
+          contentType = 'image/svg+xml';
+          break;
+        case '.woff':
+        case '.woff2':
+          contentType = 'font/woff2';
+          break;
+        case '.ttf':
+          contentType = 'font/ttf';
+          break;
+      }
+
+      res.setHeader('Content-Type', contentType);
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('Error serving SCORM asset:', error);
+      res.status(500).json({ message: 'Failed to serve asset' });
     }
   });
 
