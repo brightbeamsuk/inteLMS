@@ -5,92 +5,92 @@
 
 /* Custom color system for organization themes - inteLMS Branding */
 :root {
-  /* inteLMS Official Colors */
-  --color-primary: #634396;
-  --color-primary-hover: rgba(99, 67, 150, 0.5);
-  --color-secondary: #ec84b5;
-  --color-secondary-hover: rgba(236, 132, 181, 0.5);
-  --color-accent: #634396;
-  --color-accent-hover: rgba(99, 67, 150, 0.5);
+  /* inteLMS Official Colors - Switched */
+  --color-primary: #ec84b5;
+  --color-primary-hover: rgba(236, 132, 181, 0.5);
+  --color-secondary: #634396;
+  --color-secondary-hover: rgba(99, 67, 150, 0.5);
+  --color-accent: #ec84b5;
+  --color-accent-hover: rgba(236, 132, 181, 0.5);
   --color-neutral: #6B7280;
   --color-neutral-hover: #4B5563;
 }
 
 /* Custom button classes that use the dynamic colors */
 .btn-custom-primary {
-  background-color: #634396;
-  border-color: #634396;
-  color: white;
-}
-
-.btn-custom-primary:hover {
-  background-color: rgba(99, 67, 150, 0.8);
-  border-color: rgba(99, 67, 150, 0.8);
-  color: white;
-}
-
-.btn-custom-secondary {
   background-color: #ec84b5;
   border-color: #ec84b5;
   color: white;
 }
 
-.btn-custom-secondary:hover {
+.btn-custom-primary:hover {
   background-color: rgba(236, 132, 181, 0.8);
   border-color: rgba(236, 132, 181, 0.8);
   color: white;
 }
 
-.btn-custom-accent {
+.btn-custom-secondary {
   background-color: #634396;
   border-color: #634396;
   color: white;
 }
 
-.btn-custom-accent:hover {
+.btn-custom-secondary:hover {
   background-color: rgba(99, 67, 150, 0.8);
   border-color: rgba(99, 67, 150, 0.8);
   color: white;
 }
 
+.btn-custom-accent {
+  background-color: #ec84b5;
+  border-color: #ec84b5;
+  color: white;
+}
+
+.btn-custom-accent:hover {
+  background-color: rgba(236, 132, 181, 0.8);
+  border-color: rgba(236, 132, 181, 0.8);
+  color: white;
+}
+
 .btn-outline-custom-primary {
-  border-color: #634396;
-  color: #634396;
+  border-color: #ec84b5;
+  color: #ec84b5;
   background-color: transparent;
 }
 
 .btn-outline-custom-primary:hover {
-  background-color: #634396;
-  border-color: #634396;
+  background-color: #ec84b5;
+  border-color: #ec84b5;
   color: white;
 }
 
 /* Override DaisyUI button colors with inteLMS #634396 theme */
 .btn-primary,
 [data-custom-colors="true"] .btn-primary {
-  background-color: #634396;
-  border-color: #634396;
-  color: white;
-}
-
-.btn-primary:hover,
-[data-custom-colors="true"] .btn-primary:hover {
-  background-color: rgba(99, 67, 150, 0.8);
-  border-color: rgba(99, 67, 150, 0.8);
-  color: white;
-}
-
-.btn-secondary,
-[data-custom-colors="true"] .btn-secondary {
   background-color: #ec84b5;
   border-color: #ec84b5;
   color: white;
 }
 
-.btn-secondary:hover,
-[data-custom-colors="true"] .btn-secondary:hover {
+.btn-primary:hover,
+[data-custom-colors="true"] .btn-primary:hover {
   background-color: rgba(236, 132, 181, 0.8);
   border-color: rgba(236, 132, 181, 0.8);
+  color: white;
+}
+
+.btn-secondary,
+[data-custom-colors="true"] .btn-secondary {
+  background-color: #634396;
+  border-color: #634396;
+  color: white;
+}
+
+.btn-secondary:hover,
+[data-custom-colors="true"] .btn-secondary:hover {
+  background-color: rgba(99, 67, 150, 0.8);
+  border-color: rgba(99, 67, 150, 0.8);
   color: white;
 }
 
@@ -98,29 +98,29 @@
 .btn-outline-primary,
 [data-custom-colors="true"] .btn-outline {
   background-color: transparent;
-  border-color: #634396;
-  color: #634396;
+  border-color: #ec84b5;
+  color: #ec84b5;
 }
 
 .btn-outline:hover,
 .btn-outline-primary:hover,
 [data-custom-colors="true"] .btn-outline:hover {
-  background-color: #634396;
-  border-color: #634396;
+  background-color: #ec84b5;
+  border-color: #ec84b5;
   color: white;
 }
 
 .btn-accent,
 [data-custom-colors="true"] .btn-accent {
-  background-color: #634396;
-  border-color: #634396;
+  background-color: #ec84b5;
+  border-color: #ec84b5;
   color: white;
 }
 
 .btn-accent:hover,
 [data-custom-colors="true"] .btn-accent:hover {
-  background-color: rgba(99, 67, 150, 0.8);
-  border-color: rgba(99, 67, 150, 0.8);
+  background-color: rgba(236, 132, 181, 0.8);
+  border-color: rgba(236, 132, 181, 0.8);
   color: white;
 }
 
@@ -182,10 +182,10 @@
   color: #ef4444 !important; /* Red */
 }
 
-/* Left menu styling for selected items - inteLMS #634396 theme */
+/* Left menu styling for selected items - inteLMS #ec84b5 theme */
 .drawer-side .menu a.active,
 .menu a.active {
-  background-color: #634396 !important;
+  background-color: #ec84b5 !important;
   color: white !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
@@ -194,8 +194,8 @@
 
 .drawer-side .menu a:hover:not(.active),
 .menu a:hover:not(.active) {
-  background-color: rgba(99, 67, 150, 0.1) !important;
-  color: #634396 !important;
+  background-color: rgba(236, 132, 181, 0.1) !important;
+  color: #ec84b5 !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
 }
@@ -203,7 +203,7 @@
 /* Override for custom colors when active */
 [data-custom-colors="true"] .drawer-side .menu a.active,
 [data-custom-colors="true"] .menu a.active {
-  background-color: #634396 !important;
+  background-color: #ec84b5 !important;
   color: white !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
@@ -212,8 +212,8 @@
 
 [data-custom-colors="true"] .drawer-side .menu a:hover:not(.active),
 [data-custom-colors="true"] .menu a:hover:not(.active) {
-  background-color: rgba(99, 67, 150, 0.1) !important;
-  color: #634396 !important;
+  background-color: rgba(236, 132, 181, 0.1) !important;
+  color: #ec84b5 !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
 }
@@ -260,13 +260,13 @@
   --card-foreground: hsl(210, 25%, 7.8431%);
   --popover: hsl(0, 0%, 100%);
   --popover-foreground: hsl(210, 25%, 7.8431%);
-  --primary: hsl(262, 37%, 43%);
+  --primary: hsl(325, 67%, 71%);
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(325, 67%, 71%);
+  --secondary: hsl(262, 37%, 43%);
   --secondary-foreground: hsl(0, 0%, 100%);
   --muted: hsl(240, 1.9608%, 90%);
   --muted-foreground: hsl(220, 13%, 36%);
-  --accent: hsl(262, 37%, 43%);
+  --accent: hsl(325, 67%, 71%);
   --accent-foreground: hsl(0, 0%, 100%);
   --destructive: hsl(356.3033, 90.5579%, 54.3137%);
   --destructive-foreground: hsl(0, 0%, 100%);
@@ -291,26 +291,26 @@
   --font-mono: 'Fira Code', monospace;
   --radius: 1.3rem;
   
-  /* Dynamic theme variables for inteLMS colors */
-  --primary-h: 262;
-  --primary-s: 37%;
-  --primary-l: 43%;
-  --primary-focus-h: 262;
-  --primary-focus-s: 37%;
-  --primary-focus-l: 33%;
-  --primary-content-h: 262;
-  --primary-content-s: 37%;
-  --primary-content-l: 20%;
+  /* Dynamic theme variables for inteLMS colors - Switched */
+  --primary-h: 325;
+  --primary-s: 67%;
+  --primary-l: 71%;
+  --primary-focus-h: 325;
+  --primary-focus-s: 67%;
+  --primary-focus-l: 61%;
+  --primary-content-h: 325;
+  --primary-content-s: 67%;
+  --primary-content-l: 25%;
   
-  --secondary-h: 325;
-  --secondary-s: 67%;
-  --secondary-l: 71%;
-  --secondary-focus-h: 325;
-  --secondary-focus-s: 67%;
-  --secondary-focus-l: 61%;
-  --secondary-content-h: 325;
-  --secondary-content-s: 67%;
-  --secondary-content-l: 25%;
+  --secondary-h: 262;
+  --secondary-s: 37%;
+  --secondary-l: 43%;
+  --secondary-focus-h: 262;
+  --secondary-focus-s: 37%;
+  --secondary-focus-l: 33%;
+  --secondary-content-h: 262;
+  --secondary-content-s: 37%;
+  --secondary-content-l: 20%;
 }
 
 .dark {
@@ -360,13 +360,13 @@
 
 /* DaisyUI theme customizations for inteLMS branding */
 [data-theme="light"] {
-  --primary: hsl(262, 37%, 43%);
-  --secondary: hsl(325, 67%, 71%);
-  --accent: hsl(262, 37%, 43%);
+  --primary: hsl(325, 67%, 71%);
+  --secondary: hsl(262, 37%, 43%);
+  --accent: hsl(325, 67%, 71%);
   --neutral: hsl(220, 13%, 36%);
   --base-100: hsl(0, 0%, 100%);
-  --base-200: hsl(262, 20%, 97%);
-  --base-300: hsl(262, 15%, 90%);
+  --base-200: hsl(325, 20%, 97%);
+  --base-300: hsl(325, 15%, 90%);
   --base-content: hsl(220, 13%, 36%);
 }
 
