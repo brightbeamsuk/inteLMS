@@ -112,14 +112,13 @@ export function SignIn() {
         {/* Content */}
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <div className="max-w-md">
-            <div className="flex items-center gap-3 mb-8">
+            <div className="mb-8">
               <img 
                 src={inteLMSLogo} 
                 alt="inteLMS" 
-                className="h-12 w-auto brightness-0 invert"
+                className="h-20 w-auto brightness-0 invert"
                 data-testid="img-intelms-logo-left"
               />
-              <h1 className="text-2xl font-bold">inteLMS</h1>
             </div>
             
             <h2 className="text-4xl font-bold mb-6 leading-tight">
@@ -155,7 +154,7 @@ export function SignIn() {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+      <div className="w-full lg:w-1/2 flex items-start justify-center p-8 bg-white pt-32">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
