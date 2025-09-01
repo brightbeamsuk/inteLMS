@@ -125,10 +125,13 @@ export function SuperAdminCourseBuilder() {
         const { packageInfo } = data;
         setScormPackageInfo(packageInfo);
         
+        // Safely access validation status with fallback
+        const validationStatus = packageInfo.validation?.status || 'unknown';
+        
         toast({
           title: "SCORM Package Processed",
-          description: `Package validated with status: ${packageInfo.validation.status}`,
-          variant: packageInfo.validation.status === 'valid' ? 'default' : 'destructive'
+          description: `Package validated with status: ${validationStatus}`,
+          variant: validationStatus === 'valid' ? 'default' : 'destructive'
         });
         
         // Auto-fill title if not already set and package has one
@@ -295,25 +298,25 @@ export function SuperAdminCourseBuilder() {
                             <p className="text-sm text-base-content/60">Package ID: {scormPackageInfo.packageId}</p>
                           </div>
                           <div className={`badge ${
-                            scormPackageInfo.validation.status === 'valid' ? 'badge-success' : 
-                            scormPackageInfo.validation.status === 'draft' ? 'badge-warning' : 'badge-error'
+                            scormPackageInfo.validation?.status === 'valid' ? 'badge-success' : 
+                            scormPackageInfo.validation?.status === 'draft' ? 'badge-warning' : 'badge-error'
                           }`} data-testid="badge-validation-status">
-                            {scormPackageInfo.validation.status.toUpperCase()}
+                            {(scormPackageInfo.validation?.status || 'unknown').toUpperCase()}
                           </div>
                         </div>
                         
                         {/* Validation Details */}
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div className="flex items-center gap-2">
-                            <i className={`fas ${scormPackageInfo.validation.manifestFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <i className={`fas ${scormPackageInfo.validation?.manifestFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
                             <span>Manifest Found</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <i className={`fas ${scormPackageInfo.validation.launchFileFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <i className={`fas ${scormPackageInfo.validation?.launchFileFound ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
                             <span>Launch File Found</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <i className={`fas ${scormPackageInfo.validation.launchFileCanOpen ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
+                            <i className={`fas ${scormPackageInfo.validation?.launchFileCanOpen ? 'fa-check text-success' : 'fa-times text-error'}`}></i>
                             <span>Launch File Accessible</span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -323,7 +326,7 @@ export function SuperAdminCourseBuilder() {
                         </div>
                         
                         {/* Error Messages */}
-                        {scormPackageInfo.validation.errors.length > 0 && (
+                        {scormPackageInfo.validation?.errors && scormPackageInfo.validation.errors.length > 0 && (
                           <div className="alert alert-error text-sm">
                             <i className="fas fa-exclamation-triangle"></i>
                             <div>
@@ -351,7 +354,7 @@ export function SuperAdminCourseBuilder() {
                             type="button"
                             className="btn btn-sm btn-primary"
                             onClick={handlePreviewCourse}
-                            disabled={scormPackageInfo.validation.status === 'error'}
+                            disabled={scormPackageInfo.validation?.status === 'error'}
                             data-testid="button-preview-package"
                           >
                             <i className="fas fa-eye"></i> Preview Course

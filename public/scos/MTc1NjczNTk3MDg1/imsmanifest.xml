@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest identifier="L4LBU79FxXrJB" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:imsss="http://www.imsglobal.org/xsd/imsss" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3" xmlns:adlseq="http://www.adlnet.org/xsd/adlseq_v1p3" xmlns:adlnav="http://www.adlnet.org/xsd/adlnav_v1p3" xmlns:lom="http://ltsc.ieee.org/xsd/LOM" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd http://www.imsglobal.org/xsd/imsss imsss_v1p0.xsd http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd http://www.adlnet.org/xsd/adlseq_v1p3 adlseq_v1p3.xsd http://www.adlnet.org/xsd/adlnav_v1p3 adlnav_v1p3.xsd http://ltsc.ieee.org/xsd/LOM lom.xsd">
+<metadata>
+<schema>ADL SCORM</schema>
+<schemaversion>2004 4th Edition</schemaversion>
+<lom:lom>
+<lom:general>
+<lom:title>
+<lom:string>Safeguarding Children</lom:string>
+</lom:title>
+</lom:general>
+<lom:educational>
+<lom:typicalLearningTime>
+<lom:duration>PT1H0M0S</lom:duration>
+</lom:typicalLearningTime>
+</lom:educational>
+</lom:lom>
+</metadata>
+<organizations default="safeguarding_children_organization">
+<organization identifier="safeguarding_children_organization">
+<title>Safeguarding Children</title>
+<item identifier="B419FD96-9D03-420A-B563-9637E62E70CA" identifierref="resource">
+<title>Safeguarding Children</title>
+<imsss:sequencing>
+<imsss:deliveryControls completionSetByContent="true" objectiveSetByContent="true"/>
+</imsss:sequencing>
+</item>
+<imsss:sequencing>
+<imsss:controlMode flow="true"/>
+</imsss:sequencing>
+</organization>
+</organizations>
+<resources>
+<resource identifier="resource" type="webcontent" adlcp:scormType="sco" href="res/index.html">
+<file href="res/index.html"/>
+<file href="res/lms.js"/>
+<file href="res/data/thmb1.png"/>
+<file href="res/data/slide1.js"/>
+<file href="res/data/slide1.css"/>
+<file href="res/data/thmb2.png"/>
+<file href="res/data/slide2.js"/>
+<file href="res/data/slide2.css"/>
+<file href="res/data/thmb3.png"/>
+<file href="res/data/slide3.js"/>
+<file href="res/data/slide3.css"/>
+<file href="res/data/thmb4.png"/>
+<file href="res/data/intr1.js"/>
+<file href="res/data/intr1/fonts/fnt0.woff"/>
+<file href="res/data/intr1/fonts/fnt1.woff"/>
+<file href="res/data/intr1/fonts/fnt2.woff"/>
+<file href="res/data/intr1/fonts/fnt3.woff"/>
+<file href="res/data/intr1/fonts/fnt4.woff"/>
+<file href="res/data/intr1/fonts/fnt5.woff"/>
+<file href="res/data/intr1/images/interaction_bg_0.png"/>
+<file href="res/data/thmb5.png"/>
+<file href="res/data/quiz1.js"/>
+<file href="res/data/quiz1/fonts/fnt0.woff"/>
+<file href="res/data/quiz1/fonts/fnt1.woff"/>
+<file href="res/data/quiz1/fonts/fnt2.woff"/>
+<file href="res/data/quiz1/fonts/fnt3.woff"/>
+<file href="res/data/quiz1/fonts/fnt4.woff"/>
+<file href="res/data/quiz1/images/img-02b5841de37abf2b82783c37e0ae140110450c69.png"/>
+<file href="res/data/quiz1/images/img-0d3610e88485531363be07937b4234065d2cc698.png"/>
+<file href="res/data/quiz1/images/img-1dec2b2d7d34b0467ffc9bbadfd1fbb17ef9818f.png"/>
+<file href="res/data/quiz1/images/img-1fa16f9587cc2e5a5254dcf386f043d8736fbef4.jpg"/>
+<file href="res/data/quiz1/images/img-457f2c7a289accc77f377faa90b6dfcabee27f16.png"/>
+<file href="res/data/quiz1/images/img-53958b3b081d7aab2c2cbf06082ce765165f6a1d.png"/>
+<file href="res/data/quiz1/images/img-62af2ae28c3644d00c5ac07e32229355e125025f.png"/>
+<file href="res/data/quiz1/images/img-7498733ada93ed5b566eff613501970a1e62c0f3.png"/>
+<file href="res/data/quiz1/images/img-7f708ff800f04159d16d5db6ff7168969682a413.png"/>
+<file href="res/data/quiz1/images/img-82bfc659be708382f93bb138fe3e459ac4274944.png"/>
+<file href="res/data/quiz1/images/img-9a064310811cbcc6df03826ee4b70f781780adc7.png"/>
+<file href="res/data/quiz1/images/img-a396a9918fbabd9f1863321cadc214966f9dd774.png"/>
+<file href="res/data/quiz1/images/img-a40eccafe74cfb0d6e41fc3b34c536cb21267031.png"/>
+<file href="res/data/quiz1/images/img-cf72be1ecb5a921d5365e4a846cf1d2aad8637ef.png"/>
+<file href="res/data/quiz1/images/img-de2904e5201cf156b38a7ff6808c525f1ea60171.png"/>
+<file href="res/data/quiz1/images/img-df0c4ee3fca6511bd770d78310239c2ece987aec.png"/>
+<file href="res/data/quiz1/images/img-e21b6d0962fe3021fa7b30207efa925087ec03da.png"/>
+<file href="res/data/quiz1/images/img-f83f36e81872264a161a914190b9ed3a2cabd37f.png"/>
+<file href="res/data/quiz1/images/quiz_bg_0.png"/>
+<file href="res/data/quizplayer.js"/>
+<file href="res/data/intplayer1.js"/>
+<file href="res/index.html"/>
+<file href="res/data/player.js"/>
+<file href="res/data/eraser.cur"/>
+<file href="res/data/highlighter.cur"/>
+<file href="res/data/marker.cur"/>
+<file href="res/data/lock.cur"/>
+<file href="res/data/browsersupport.js"/>
+<file href="res/data/apple-touch-icon.png"/>
+<file href="res/data/favicon.ico"/>
+<file href="res/data/fnt0.woff"/>
+<file href="res/data/fnt1.woff"/>
+<file href="res/data/fnt2.woff"/>
+<file href="res/data/fnt3.woff"/>
+<file href="res/data/fnt4.woff"/>
+<file href="res/data/fnt5.woff"/>
+<file href="res/data/fnt6.woff"/>
+<file href="res/data/fnt7.woff"/>
+<file href="res/data/fnt8.woff"/>
+<file href="res/data/html5-unsupported.html"/>
+<file href="res/data/img0.png"/>
+<file href="res/data/img1.png"/>
+<file href="res/data/img2.png"/>
+<file href="res/data/img3.png"/>
+<file href="res/data/img4.png"/>
+<file href="res/data/goodbye.html"/>
+</resource>
+</resources>
+</manifest>
