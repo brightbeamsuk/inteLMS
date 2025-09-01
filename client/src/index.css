@@ -3,13 +3,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom color system for organization themes - inteLMS Purple Branding */
+/* Custom color system for organization themes - inteLMS Branding */
 :root {
-  /* inteLMS Purple Theme - Official Color #634396 */
+  /* inteLMS Official Colors */
   --color-primary: #634396;
   --color-primary-hover: rgba(99, 67, 150, 0.5);
-  --color-secondary: #4B5563;
-  --color-secondary-hover: #374151;
+  --color-secondary: #ec84b5;
+  --color-secondary-hover: rgba(236, 132, 181, 0.5);
   --color-accent: #634396;
   --color-accent-hover: rgba(99, 67, 150, 0.5);
   --color-neutral: #6B7280;
@@ -30,14 +30,14 @@
 }
 
 .btn-custom-secondary {
-  background-color: #4B5563;
-  border-color: #4B5563;
+  background-color: #ec84b5;
+  border-color: #ec84b5;
   color: white;
 }
 
 .btn-custom-secondary:hover {
-  background-color: #374151;
-  border-color: #374151;
+  background-color: rgba(236, 132, 181, 0.8);
+  border-color: rgba(236, 132, 181, 0.8);
   color: white;
 }
 
@@ -82,15 +82,15 @@
 
 .btn-secondary,
 [data-custom-colors="true"] .btn-secondary {
-  background-color: #4B5563;
-  border-color: #4B5563;
+  background-color: #ec84b5;
+  border-color: #ec84b5;
   color: white;
 }
 
 .btn-secondary:hover,
 [data-custom-colors="true"] .btn-secondary:hover {
-  background-color: #374151;
-  border-color: #374151;
+  background-color: rgba(236, 132, 181, 0.8);
+  border-color: rgba(236, 132, 181, 0.8);
   color: white;
 }
 
@@ -237,7 +237,7 @@
   --popover-foreground: hsl(210, 25%, 7.8431%);
   --primary: hsl(262, 37%, 43%);
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(220, 13%, 36%);
+  --secondary: hsl(325, 67%, 71%);
   --secondary-foreground: hsl(0, 0%, 100%);
   --muted: hsl(240, 1.9608%, 90%);
   --muted-foreground: hsl(220, 13%, 36%);
@@ -266,7 +266,7 @@
   --font-mono: 'Fira Code', monospace;
   --radius: 1.3rem;
   
-  /* Dynamic theme variables for inteLMS official color #634396 */
+  /* Dynamic theme variables for inteLMS colors */
   --primary-h: 262;
   --primary-s: 37%;
   --primary-l: 43%;
@@ -276,6 +276,16 @@
   --primary-content-h: 262;
   --primary-content-s: 37%;
   --primary-content-l: 20%;
+  
+  --secondary-h: 325;
+  --secondary-s: 67%;
+  --secondary-l: 71%;
+  --secondary-focus-h: 325;
+  --secondary-focus-s: 67%;
+  --secondary-focus-l: 61%;
+  --secondary-content-h: 325;
+  --secondary-content-s: 67%;
+  --secondary-content-l: 25%;
 }
 
 .dark {
@@ -326,7 +336,7 @@
 /* DaisyUI theme customizations for inteLMS branding */
 [data-theme="light"] {
   --primary: hsl(262, 37%, 43%);
-  --secondary: hsl(220, 13%, 36%);
+  --secondary: hsl(325, 67%, 71%);
   --accent: hsl(262, 37%, 43%);
   --neutral: hsl(220, 13%, 36%);
   --base-100: hsl(0, 0%, 100%);
