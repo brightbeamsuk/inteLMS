@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, AreaChart, Area } from "recharts";
 
 interface TodoItem {
   id: string;
@@ -252,7 +252,112 @@ export function SuperAdminDashboard() {
         </div>
       </div>
 
-      {/* Charts and Analytics Row */}
+      {/* Modern Metric Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Total Users Growth Card */}
+        <div className="card bg-white shadow-sm border border-gray-200 rounded-lg">
+          <div className="card-body p-6">
+            <div className="flex justify-between items-start mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Total Users</h3>
+              <button className="text-sm text-gray-500 hover:text-gray-700">View More</button>
+            </div>
+            <div className="mb-2">
+              <div className="text-3xl font-bold text-gray-900" data-testid="metric-total-users">
+                {statsLoading ? (
+                  <span className="loading loading-spinner loading-md"></span>
+                ) : (
+                  `${stats?.totalUsers?.toLocaleString() || '0'}`
+                )}
+              </div>
+              <p className="text-sm text-green-600 mt-1">
+                +12.5% from last month
+              </p>
+            </div>
+            <div className="h-16 mt-4">
+              {analyticsData.length > 0 ? (
+                <ChartContainer
+                  config={{
+                    users: {
+                      label: "Users",
+                      color: "#8b5cf6",
+                    },
+                  }}
+                >
+                  <LineChart data={analyticsData.slice(-6)} width={300} height={60}>
+                    <Line 
+                      type="monotone" 
+                      dataKey="successful" 
+                      stroke="#8b5cf6" 
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-gray-400 text-xs">No data available</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Course Completions Growth Card */}
+        <div className="card bg-white shadow-sm border border-gray-200 rounded-lg">
+          <div className="card-body p-6">
+            <div className="flex justify-between items-start mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Course Completions</h3>
+              <button className="text-sm text-gray-500 hover:text-gray-700">View More</button>
+            </div>
+            <div className="mb-2">
+              <div className="text-3xl font-bold text-gray-900" data-testid="metric-completions">
+                {statsLoading ? (
+                  <span className="loading loading-spinner loading-md"></span>
+                ) : (
+                  `+${stats?.totalCompletions?.toLocaleString() || '0'}`
+                )}
+              </div>
+              <p className="text-sm text-green-600 mt-1">
+                +180.1% from last month
+              </p>
+            </div>
+            <div className="h-16 mt-4">
+              {analyticsData.length > 0 ? (
+                <ChartContainer
+                  config={{
+                    completions: {
+                      label: "Completions",
+                      color: "#ec4899",
+                    },
+                  }}
+                >
+                  <AreaChart data={analyticsData.slice(-6)} width={300} height={60}>
+                    <defs>
+                      <linearGradient id="colorCompletions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ec4899" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <Area 
+                      type="monotone" 
+                      dataKey="successful" 
+                      stroke="#ec4899" 
+                      strokeWidth={2}
+                      fill="url(#colorCompletions)"
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-gray-400 text-xs">No data available</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Additional Analytics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Course Completion Analytics Chart */}
         <div className="card bg-base-200 shadow-sm">
