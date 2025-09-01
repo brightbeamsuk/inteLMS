@@ -117,7 +117,7 @@ export function UserDashboard() {
         <div className="stats shadow">
           <div className="stat place-items-center">
             <div className="stat-title">Completed</div>
-            <div className="stat-value text-primary" data-testid="stat-completed-count">
+            <div className="stat-value stat-completions" data-testid="stat-completed-count">
               {statsLoading ? (
                 <span className="loading loading-spinner loading-sm"></span>
               ) : (
@@ -128,7 +128,7 @@ export function UserDashboard() {
           </div>
           <div className="stat place-items-center">
             <div className="stat-title">Avg Score</div>
-            <div className="stat-value text-secondary" data-testid="stat-avg-score">
+            <div className="stat-value stat-performance" data-testid="stat-avg-score">
               {statsLoading ? (
                 <span className="loading loading-spinner loading-sm"></span>
               ) : (

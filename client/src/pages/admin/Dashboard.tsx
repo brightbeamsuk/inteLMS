@@ -130,11 +130,11 @@ export function AdminDashboard() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-primary">
+          <div className="stat-figure stat-users">
             <i className="fas fa-users text-2xl"></i>
           </div>
           <div className="stat-title">Active Users</div>
-          <div className="stat-value text-primary" data-testid="stat-active-users">
+          <div className="stat-value stat-users" data-testid="stat-active-users">
             {isLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -145,11 +145,11 @@ export function AdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-secondary">
+          <div className="stat-figure stat-courses">
             <i className="fas fa-book-open text-2xl"></i>
           </div>
           <div className="stat-title">Courses Assigned</div>
-          <div className="stat-value text-secondary" data-testid="stat-courses-assigned">
+          <div className="stat-value stat-courses" data-testid="stat-courses-assigned">
             {isLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -160,11 +160,11 @@ export function AdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-success">
+          <div className="stat-figure stat-completions">
             <i className="fas fa-check-circle text-2xl"></i>
           </div>
           <div className="stat-title">Completed (30d)</div>
-          <div className="stat-value text-success" data-testid="stat-courses-completed">
+          <div className="stat-value stat-completions" data-testid="stat-courses-completed">
             {isLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -175,11 +175,11 @@ export function AdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-warning">
+          <div className="stat-figure stat-performance">
             <i className="fas fa-percentage text-2xl"></i>
           </div>
           <div className="stat-title">Compliance Rate</div>
-          <div className="stat-value text-warning" data-testid="stat-compliance-rate">
+          <div className="stat-value stat-performance" data-testid="stat-compliance-rate">
             {isLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (

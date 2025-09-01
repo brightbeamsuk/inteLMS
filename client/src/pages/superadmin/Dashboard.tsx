@@ -192,11 +192,11 @@ export function SuperAdminDashboard() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-primary">
+          <div className="stat-figure stat-organisations">
             <i className="fas fa-building text-3xl"></i>
           </div>
           <div className="stat-title">Total Organisations</div>
-          <div className="stat-value text-primary" data-testid="stat-organisations">
+          <div className="stat-value stat-organisations" data-testid="stat-organisations">
             {statsLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -207,11 +207,11 @@ export function SuperAdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-secondary">
+          <div className="stat-figure stat-users">
             <i className="fas fa-users text-3xl"></i>
           </div>
           <div className="stat-title">Total Users</div>
-          <div className="stat-value text-secondary" data-testid="stat-users">
+          <div className="stat-value stat-users" data-testid="stat-users">
             {statsLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -222,11 +222,11 @@ export function SuperAdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-primary">
+          <div className="stat-figure stat-courses">
             <i className="fas fa-book text-3xl opacity-100"></i>
           </div>
           <div className="stat-title">Total Courses</div>
-          <div className="stat-value text-primary font-bold opacity-100" data-testid="stat-courses">
+          <div className="stat-value stat-courses font-bold opacity-100" data-testid="stat-courses">
             {statsLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
@@ -237,11 +237,11 @@ export function SuperAdminDashboard() {
         </div>
         
         <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-success">
+          <div className="stat-figure stat-completions">
             <i className="fas fa-certificate text-3xl"></i>
           </div>
           <div className="stat-title">Courses Completed</div>
-          <div className="stat-value text-success" data-testid="stat-completions">
+          <div className="stat-value stat-completions" data-testid="stat-completions">
             {statsLoading ? (
               <span className="loading loading-spinner loading-md"></span>
             ) : (
