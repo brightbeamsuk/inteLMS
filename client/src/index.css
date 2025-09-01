@@ -157,6 +157,31 @@
   opacity: 1;
 }
 
+/* Dashboard Statistics Colors - Distinct from branding */
+.stat-organisations {
+  color: #8b5cf6 !important; /* Purple */
+}
+
+.stat-users {
+  color: #ec4899 !important; /* Pink */
+}
+
+.stat-courses {
+  color: #3b82f6 !important; /* Blue */
+}
+
+.stat-completions {
+  color: #10b981 !important; /* Green */
+}
+
+.stat-performance {
+  color: #f59e0b !important; /* Amber */
+}
+
+.stat-warning {
+  color: #ef4444 !important; /* Red */
+}
+
 /* Left menu styling for selected items - inteLMS #634396 theme */
 .drawer-side .menu a.active,
 .menu a.active {
