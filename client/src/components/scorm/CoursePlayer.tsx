@@ -124,6 +124,12 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       // Log derived fields if available
       if (result.derivedFields) {
         console.log(`📈 Derived fields: progressPercent=${result.derivedFields.progressPercent}%, passed=${result.derivedFields.passed}, completed=${result.derivedFields.completed}`);
+        
+        // Update the progress bar with the accurate backend calculation
+        if (typeof result.derivedFields.progressPercent === 'number') {
+          setProgress(result.derivedFields.progressPercent);
+          addDebugLog(`📊 Progress updated to: ${result.derivedFields.progressPercent}%`);
+        }
       }
       
       addDebugLog(`✅ SCORM result sent (${reason}): ${JSON.stringify({
@@ -177,14 +183,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         (attemptStateRef.current as any)[element] = value;
       }
       
-      // Calculate progress based on lesson status and score
-      if (element === 'cmi.core.lesson_status') {
-        if (value === 'completed' || value === 'passed') {
-          setProgress(100);
-        } else if (value === 'incomplete') {
-          setProgress(50);
-        }
-      }
+      // Don't hardcode progress - let the backend calculate accurate progress
+      // The backend will send the real progress via the SCORM result response
       
       return "true";
     },
@@ -249,14 +249,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         (attemptStateRef.current as any)[element] = value;
       }
       
-      // Calculate progress based on completion status and score
-      if (element === 'cmi.completion_status') {
-        if (value === 'completed') {
-          setProgress(100);
-        } else if (value === 'incomplete') {
-          setProgress(50);
-        }
-      }
+      // Don't hardcode progress - let the backend calculate accurate progress
+      // The backend will send the real progress via the SCORM result response
       
       return "true";
     },

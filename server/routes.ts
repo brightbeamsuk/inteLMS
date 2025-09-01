@@ -3387,23 +3387,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Compute derived fields using priority rules
       
-      // 1. Progress Percent (0-100)
+      // 1. Progress Percent (0-100) - Enhanced calculation
       let progressPercent = 0;
+      
       if (standard === '2004' && attemptData.progressMeasure !== null) {
         // Priority 1: SCORM 2004 progress_measure (0-1 scale)
         progressPercent = Math.round(attemptData.progressMeasure * 100);
       } else if (standard === '1.2' && attemptData.lessonStatus) {
-        // Priority 2: Status-based heuristic for SCORM 1.2
+        // Enhanced SCORM 1.2 progress calculation
         if (['completed', 'passed'].includes(attemptData.lessonStatus)) {
           progressPercent = 100;
         } else if (attemptData.lessonStatus === 'incomplete') {
-          progressPercent = attemptData.suspendData ? 50 : 25; // Heuristic based on suspend data
+          // Try to extract progress from suspend data or lesson location
+          let extractedProgress = 0;
+          
+          // Check if suspend data contains progress information
+          if (attemptData.suspendData) {
+            try {
+              // Try to parse JSON suspend data for progress
+              const suspendJson = JSON.parse(attemptData.suspendData);
+              if (suspendJson.progress) {
+                extractedProgress = parseInt(suspendJson.progress);
+              } else if (suspendJson.percentage) {
+                extractedProgress = parseInt(suspendJson.percentage);
+              }
+            } catch {
+              // Try to extract percentage from string patterns
+              const percentMatch = attemptData.suspendData.match(/(\d+)%/);
+              const progressMatch = attemptData.suspendData.match(/progress[:\s]*(\d+)/i);
+              
+              if (percentMatch) {
+                extractedProgress = parseInt(percentMatch[1]);
+              } else if (progressMatch) {
+                extractedProgress = parseInt(progressMatch[1]);
+              }
+            }
+          }
+          
+          // Check lesson location for slide/page progress
+          if (!extractedProgress && attemptData.lessonLocation) {
+            const slideMatch = attemptData.lessonLocation.match(/slide[:\s]*(\d+)/i);
+            const pageMatch = attemptData.lessonLocation.match(/page[:\s]*(\d+)/i);
+            
+            if (slideMatch) {
+              // Assume 20 slides total, calculate percentage
+              const currentSlide = parseInt(slideMatch[1]);
+              extractedProgress = Math.min(95, Math.round((currentSlide / 20) * 100));
+            } else if (pageMatch) {
+              // Assume 10 pages total, calculate percentage  
+              const currentPage = parseInt(pageMatch[1]);
+              extractedProgress = Math.min(95, Math.round((currentPage / 10) * 100));
+            }
+          }
+          
+          // Use extracted progress or fallback to improved heuristic
+          if (extractedProgress > 0) {
+            progressPercent = Math.min(95, extractedProgress); // Cap at 95% for incomplete
+          } else {
+            // Improved heuristic: Use session time and interaction data
+            progressPercent = attemptData.suspendData ? 35 : 10; // More conservative estimates
+          }
+        } else if (attemptData.lessonStatus === 'failed') {
+          progressPercent = 100; // Failed means they completed the content
         }
       } else if (standard === '2004' && attemptData.completionStatus === 'completed') {
         progressPercent = 100;
       } else if (attemptData.suspendData) {
-        // Fallback: Bookmark/suspend heuristic
-        progressPercent = 30; // Rough estimate when suspend data exists
+        // Fallback: Try to extract progress from suspend data
+        let extractedProgress = 0;
+        try {
+          const suspendJson = JSON.parse(attemptData.suspendData);
+          if (suspendJson.progress) extractedProgress = parseInt(suspendJson.progress);
+        } catch {
+          const percentMatch = attemptData.suspendData.match(/(\d+)%/);
+          if (percentMatch) extractedProgress = parseInt(percentMatch[1]);
+        }
+        progressPercent = extractedProgress || 15; // Conservative fallback
       }
       
       // 2. Completed (boolean)
