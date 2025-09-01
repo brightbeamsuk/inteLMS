@@ -187,9 +187,9 @@ export function SuperAdminCourseBuilder() {
       return;
     }
     
-    // Use the direct launch URL provided by the enhanced SCORM service
+    // Show the SCORM preview modal
     if (scormPackageInfo.launchUrl) {
-      window.open(scormPackageInfo.launchUrl, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
+      setShowScormPreview(true);
     } else {
       toast({
         title: "Preview Error",
@@ -651,9 +651,9 @@ export function SuperAdminCourseBuilder() {
             </div>
             
             <div className="w-full h-full bg-white rounded-lg overflow-hidden">
-              {formData.scormPackageUrl ? (
+              {scormPackageInfo?.launchUrl ? (
                 <iframe
-                  src={`/api/scorm/preview?packageUrl=${encodeURIComponent(formData.scormPackageUrl)}`}
+                  src={scormPackageInfo.launchUrl}
                   className="w-full h-full border-0"
                   title="SCORM Course Preview"
                   data-testid="iframe-scorm-preview"
