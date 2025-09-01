@@ -120,19 +120,11 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               <div className="flex items-center gap-3 mb-6">
                 <div className="avatar">
                   <div className="w-12 h-12 rounded-full">
-                    {user?.profileImageUrl ? (
-                      <img 
-                        src={user.profileImageUrl} 
-                        alt="Profile"
-                        className="object-cover w-full h-full rounded-full"
-                      />
-                    ) : (
-                      <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
-                        <span className="text-lg font-bold">
-                          {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
-                        </span>
-                      </div>
-                    )}
+                    <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
+                      <span className="text-lg font-bold">
+                        {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div>
