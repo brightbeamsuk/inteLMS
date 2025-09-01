@@ -739,6 +739,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const packageInfo = await enhancedScormService.processScormPackage(packageUrl, courseId);
         
+        // Create validation object based on processing results
+        const validation = {
+          status: packageInfo.launchUrl ? 'valid' : 'error',
+          manifestFound: true, // If we got here, manifest was found
+          launchFileFound: Boolean(packageInfo.launchFile),
+          launchFileCanOpen: Boolean(packageInfo.launchUrl),
+          errors: packageInfo.diagnostics?.errors || [],
+          warnings: packageInfo.diagnostics?.warnings || []
+        };
+
         const response = {
           success: true,
           packageInfo: {
@@ -751,7 +761,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             organizations: packageInfo.organizations,
             defaultOrganization: packageInfo.defaultOrganization,
             scormRoot: packageInfo.scormRoot,
-            diagnostics: packageInfo.diagnostics
+            diagnostics: packageInfo.diagnostics,
+            validation: validation
           },
           message: `Package processed successfully with ID: ${courseId}`
         };
