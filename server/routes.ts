@@ -3402,7 +3402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let extractedProgress = 0;
           
           // Check if suspend data contains progress information
-          if (attemptData.suspendData) {
+          if (attemptData.suspendData && attemptData.suspendData.trim()) {
             try {
               // Try to parse JSON suspend data for progress
               const suspendJson = JSON.parse(attemptData.suspendData);
@@ -3422,10 +3422,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 extractedProgress = parseInt(progressMatch[1]);
               }
             }
+            
+            // If suspend data exists but no percentage found, assume significant progress
+            if (!extractedProgress) {
+              extractedProgress = 60; // Assume 60% if suspend data exists but no specific progress
+            }
           }
           
           // Check lesson location for slide/page progress
-          if (!extractedProgress && attemptData.lessonLocation) {
+          if (!extractedProgress && attemptData.lessonLocation && attemptData.lessonLocation.trim()) {
             const slideMatch = attemptData.lessonLocation.match(/slide[:\s]*(\d+)/i);
             const pageMatch = attemptData.lessonLocation.match(/page[:\s]*(\d+)/i);
             
@@ -3437,15 +3442,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Assume 10 pages total, calculate percentage  
               const currentPage = parseInt(pageMatch[1]);
               extractedProgress = Math.min(95, Math.round((currentPage / 10) * 100));
+            } else {
+              // If lesson location exists but no specific pattern, assume progress
+              extractedProgress = 45;
             }
           }
           
-          // Use extracted progress or fallback to improved heuristic
-          if (extractedProgress > 0) {
-            progressPercent = Math.min(95, extractedProgress); // Cap at 95% for incomplete
+          // Use session time as a progress indicator if available
+          if (!extractedProgress && attemptData.sessionTime && attemptData.sessionTime !== '00:00:00') {
+            // Parse session time and estimate progress based on time spent
+            const timeMatch = attemptData.sessionTime.match(/(\d+):(\d+):(\d+)/);
+            if (timeMatch) {
+              const totalMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+              if (totalMinutes > 0) {
+                // Assume 20 minutes for full course, calculate progress
+                const timeProgress = Math.min(90, Math.round((totalMinutes / 20) * 100));
+                extractedProgress = Math.max(timeProgress, 25); // Minimum 25% if time spent
+              }
+            }
+          }
+          
+          // Dynamic heuristic based on multiple factors
+          if (!extractedProgress) {
+            // Check if there's any interaction data at all
+            const hasAnyData = attemptData.suspendData || attemptData.lessonLocation || 
+                             (attemptData.sessionTime && attemptData.sessionTime !== '00:00:00');
+            
+            if (hasAnyData) {
+              // User has started and is interacting, give reasonable progress
+              progressPercent = 40;
+            } else {
+              // Very beginning of course
+              progressPercent = 15;
+            }
           } else {
-            // Improved heuristic: Use session time and interaction data
-            progressPercent = attemptData.suspendData ? 35 : 10; // More conservative estimates
+            progressPercent = Math.min(95, extractedProgress); // Cap at 95% for incomplete
           }
         } else if (attemptData.lessonStatus === 'failed') {
           progressPercent = 100; // Failed means they completed the content

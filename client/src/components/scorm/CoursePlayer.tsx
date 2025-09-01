@@ -127,8 +127,9 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         
         // Update the progress bar with the accurate backend calculation
         if (typeof result.derivedFields.progressPercent === 'number') {
+          console.log(`🎯 Updating progress bar from ${progress}% to ${result.derivedFields.progressPercent}%`);
           setProgress(result.derivedFields.progressPercent);
-          addDebugLog(`📊 Progress updated to: ${result.derivedFields.progressPercent}%`);
+          addDebugLog(`📊 Progress updated: ${progress}% → ${result.derivedFields.progressPercent}%`);
         }
       }
       
