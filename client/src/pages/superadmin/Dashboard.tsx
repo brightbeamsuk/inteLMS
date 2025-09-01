@@ -273,24 +273,35 @@ export function SuperAdminDashboard() {
                 +12.5% from last month
               </p>
             </div>
-            <div className="h-16 mt-4 flex items-end">
-              {/* Simple SVG Chart */}
-              <svg viewBox="0 0 300 60" className="w-full h-full">
-                <path
-                  d="M10,50 C50,45 100,40 150,35 C200,30 250,25 290,20"
-                  stroke="#8b5cf6"
-                  strokeWidth="2"
-                  fill="none"
-                  className="opacity-80"
-                />
-                {/* Data points */}
-                <circle cx="50" cy="45" r="2" fill="#8b5cf6" />
-                <circle cx="100" cy="40" r="2" fill="#8b5cf6" />
-                <circle cx="150" cy="35" r="2" fill="#8b5cf6" />
-                <circle cx="200" cy="30" r="2" fill="#8b5cf6" />
-                <circle cx="250" cy="25" r="2" fill="#8b5cf6" />
-                <circle cx="290" cy="20" r="2" fill="#8b5cf6" />
-              </svg>
+            <div className="mt-4">
+              <div className="h-16 flex items-end">
+                {/* Simple SVG Chart */}
+                <svg viewBox="0 0 300 60" className="w-full h-full">
+                  <path
+                    d="M10,50 C50,45 100,40 150,35 C200,30 250,25 290,20"
+                    stroke="#8b5cf6"
+                    strokeWidth="2"
+                    fill="none"
+                    className="opacity-80"
+                  />
+                  {/* Data points */}
+                  <circle cx="50" cy="45" r="2" fill="#8b5cf6" />
+                  <circle cx="100" cy="40" r="2" fill="#8b5cf6" />
+                  <circle cx="150" cy="35" r="2" fill="#8b5cf6" />
+                  <circle cx="200" cy="30" r="2" fill="#8b5cf6" />
+                  <circle cx="250" cy="25" r="2" fill="#8b5cf6" />
+                  <circle cx="290" cy="20" r="2" fill="#8b5cf6" />
+                </svg>
+              </div>
+              {/* Month labels */}
+              <div className="flex justify-between text-xs text-gray-400 mt-1 px-2">
+                <span>Jul</span>
+                <span>Aug</span>
+                <span>Sep</span>
+                <span>Oct</span>
+                <span>Nov</span>
+                <span>Dec</span>
+              </div>
             </div>
           </div>
         </div>
@@ -314,28 +325,39 @@ export function SuperAdminDashboard() {
                 +180.1% from last month
               </p>
             </div>
-            <div className="h-16 mt-4 flex items-end">
-              {/* Simple SVG Area Chart */}
-              <svg viewBox="0 0 300 60" className="w-full h-full">
-                <defs>
-                  <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#ec4899" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#ec4899" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {/* Area fill */}
-                <path
-                  d="M10,60 L10,40 C60,35 120,25 180,30 C240,35 270,20 290,15 L290,60 Z"
-                  fill="url(#areaGradient)"
-                />
-                {/* Top line */}
-                <path
-                  d="M10,40 C60,35 120,25 180,30 C240,35 270,20 290,15"
-                  stroke="#ec4899"
-                  strokeWidth="2"
-                  fill="none"
-                />
-              </svg>
+            <div className="mt-4">
+              <div className="h-16 flex items-end">
+                {/* Simple SVG Area Chart */}
+                <svg viewBox="0 0 300 60" className="w-full h-full">
+                  <defs>
+                    <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#ec4899" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#ec4899" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  {/* Area fill */}
+                  <path
+                    d="M10,60 L10,40 C60,35 120,25 180,30 C240,35 270,20 290,15 L290,60 Z"
+                    fill="url(#areaGradient)"
+                  />
+                  {/* Top line */}
+                  <path
+                    d="M10,40 C60,35 120,25 180,30 C240,35 270,20 290,15"
+                    stroke="#ec4899"
+                    strokeWidth="2"
+                    fill="none"
+                  />
+                </svg>
+              </div>
+              {/* Month labels */}
+              <div className="flex justify-between text-xs text-gray-400 mt-1 px-2">
+                <span>Jul</span>
+                <span>Aug</span>
+                <span>Sep</span>
+                <span>Oct</span>
+                <span>Nov</span>
+                <span>Dec</span>
+              </div>
             </div>
           </div>
         </div>
