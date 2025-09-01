@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import inteLMSLogo from '@assets/inteLMS_1756700260326.png';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -54,8 +55,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <i className="fas fa-bars text-xl"></i>
               </div>
             </div>
-            <Link href="/admin" className="btn btn-ghost text-xl font-bold text-primary" data-testid="link-home">
-              inteLMS
+            <Link href="/admin" className="btn btn-ghost" data-testid="link-home">
+              <img 
+                src={inteLMSLogo} 
+                alt="inteLMS" 
+                className="h-8 w-auto object-contain"
+              />
             </Link>
           </div>
           

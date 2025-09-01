@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import inteLMSLogo from '@assets/inteLMS_1756700260326.png';
 
 interface SuperAdminLayoutProps {
   children: React.ReactNode;
@@ -36,8 +37,12 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               <i className="fas fa-bars text-xl"></i>
             </div>
           </div>
-          <Link href="/superadmin" className="btn btn-ghost text-xl font-bold text-primary" data-testid="link-home">
-            inteLMS
+          <Link href="/superadmin" className="btn btn-ghost" data-testid="link-home">
+            <img 
+              src={inteLMSLogo} 
+              alt="inteLMS" 
+              className="h-8 w-auto object-contain"
+            />
           </Link>
         </div>
         

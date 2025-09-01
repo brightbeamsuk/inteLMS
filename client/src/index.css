@@ -5,13 +5,13 @@
 
 /* Custom color system for organization themes - inteLMS Purple Branding */
 :root {
-  /* inteLMS Purple Theme - extracted from logo */
-  --color-primary: #8B5CF6;
-  --color-primary-hover: #7C3AED;
+  /* inteLMS Purple Theme - Official Color #634396 */
+  --color-primary: #634396;
+  --color-primary-hover: rgba(99, 67, 150, 0.5);
   --color-secondary: #4B5563;
   --color-secondary-hover: #374151;
-  --color-accent: #A855F7;
-  --color-accent-hover: #9333EA;
+  --color-accent: #634396;
+  --color-accent-hover: rgba(99, 67, 150, 0.5);
   --color-neutral: #6B7280;
   --color-neutral-hover: #4B5563;
 }
@@ -125,19 +125,38 @@
   opacity: 1;
 }
 
-/* Left menu styling for selected items */
-[data-custom-colors="true"] .drawer-side .menu a.active,
-[data-custom-colors="true"] .menu a.active {
-  background-color: var(--color-primary) !important;
+/* Left menu styling for selected items - inteLMS #634396 theme */
+.drawer-side .menu a.active,
+.menu a.active {
+  background-color: #634396 !important;
   color: white !important;
+  opacity: 1 !important;
+  border-radius: 0.5rem !important;
+  font-weight: 600 !important;
+}
+
+.drawer-side .menu a:hover:not(.active),
+.menu a:hover:not(.active) {
+  background-color: rgba(99, 67, 150, 0.1) !important;
+  color: #634396 !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
 }
 
+/* Override for custom colors when active */
+[data-custom-colors="true"] .drawer-side .menu a.active,
+[data-custom-colors="true"] .menu a.active {
+  background-color: #634396 !important;
+  color: white !important;
+  opacity: 1 !important;
+  border-radius: 0.5rem !important;
+  font-weight: 600 !important;
+}
+
 [data-custom-colors="true"] .drawer-side .menu a:hover:not(.active),
 [data-custom-colors="true"] .menu a:hover:not(.active) {
-  background-color: var(--color-nav-hover) !important;
-  color: var(--color-primary) !important;
+  background-color: rgba(99, 67, 150, 0.1) !important;
+  color: #634396 !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
 }
@@ -184,14 +203,14 @@
   --card-foreground: hsl(210, 25%, 7.8431%);
   --popover: hsl(0, 0%, 100%);
   --popover-foreground: hsl(210, 25%, 7.8431%);
-  --primary: hsl(266, 87%, 65%);
+  --primary: hsl(262, 37%, 43%);
   --primary-foreground: hsl(0, 0%, 100%);
   --secondary: hsl(220, 13%, 36%);
   --secondary-foreground: hsl(0, 0%, 100%);
   --muted: hsl(240, 1.9608%, 90%);
   --muted-foreground: hsl(220, 13%, 36%);
-  --accent: hsl(271, 91%, 70%);
-  --accent-foreground: hsl(266, 87%, 25%);
+  --accent: hsl(262, 37%, 43%);
+  --accent-foreground: hsl(0, 0%, 100%);
   --destructive: hsl(356.3033, 90.5579%, 54.3137%);
   --destructive-foreground: hsl(0, 0%, 100%);
   --border: hsl(201.4286, 30.4348%, 90.9804%);
@@ -215,16 +234,16 @@
   --font-mono: 'Fira Code', monospace;
   --radius: 1.3rem;
   
-  /* Dynamic theme variables for inteLMS purple branding */
-  --primary-h: 266;
-  --primary-s: 87%;
-  --primary-l: 65%;
-  --primary-focus-h: 266;
-  --primary-focus-s: 87%;
-  --primary-focus-l: 55%;
-  --primary-content-h: 266;
-  --primary-content-s: 87%;
-  --primary-content-l: 25%;
+  /* Dynamic theme variables for inteLMS official color #634396 */
+  --primary-h: 262;
+  --primary-s: 37%;
+  --primary-l: 43%;
+  --primary-focus-h: 262;
+  --primary-focus-s: 37%;
+  --primary-focus-l: 33%;
+  --primary-content-h: 262;
+  --primary-content-s: 37%;
+  --primary-content-l: 20%;
 }
 
 .dark {
@@ -274,13 +293,13 @@
 
 /* DaisyUI theme customizations for inteLMS branding */
 [data-theme="light"] {
-  --primary: hsl(266, 87%, 65%);
+  --primary: hsl(262, 37%, 43%);
   --secondary: hsl(220, 13%, 36%);
-  --accent: hsl(271, 91%, 70%);
+  --accent: hsl(262, 37%, 43%);
   --neutral: hsl(220, 13%, 36%);
   --base-100: hsl(0, 0%, 100%);
-  --base-200: hsl(270, 20%, 97%);
-  --base-300: hsl(270, 15%, 90%);
+  --base-200: hsl(262, 20%, 97%);
+  --base-300: hsl(262, 15%, 90%);
   --base-content: hsl(220, 13%, 36%);
 }
 
