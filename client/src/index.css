@@ -3,17 +3,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom color system for organization themes */
+/* Custom color system for organization themes - inteLMS Purple Branding */
 :root {
-  /* Custom color properties - will be set dynamically via JavaScript */
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-secondary: #64748b;
-  --color-secondary-hover: #475569;
-  --color-accent: #f59e0b;
-  --color-accent-hover: #d97706;
-  --color-neutral: #6b7280;
-  --color-neutral-hover: #4b5563;
+  /* inteLMS Purple Theme - extracted from logo */
+  --color-primary: #8B5CF6;
+  --color-primary-hover: #7C3AED;
+  --color-secondary: #4B5563;
+  --color-secondary-hover: #374151;
+  --color-accent: #A855F7;
+  --color-accent-hover: #9333EA;
+  --color-neutral: #6B7280;
+  --color-neutral-hover: #4B5563;
 }
 
 /* Custom button classes that use the dynamic colors */
@@ -184,14 +184,14 @@
   --card-foreground: hsl(210, 25%, 7.8431%);
   --popover: hsl(0, 0%, 100%);
   --popover-foreground: hsl(210, 25%, 7.8431%);
-  --primary: hsl(203.8863, 88.2845%, 53.1373%);
+  --primary: hsl(266, 87%, 65%);
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(210, 25%, 7.8431%);
+  --secondary: hsl(220, 13%, 36%);
   --secondary-foreground: hsl(0, 0%, 100%);
   --muted: hsl(240, 1.9608%, 90%);
-  --muted-foreground: hsl(210, 25%, 7.8431%);
-  --accent: hsl(211.5789, 51.3514%, 92.7451%);
-  --accent-foreground: hsl(203.8863, 88.2845%, 53.1373%);
+  --muted-foreground: hsl(220, 13%, 36%);
+  --accent: hsl(271, 91%, 70%);
+  --accent-foreground: hsl(266, 87%, 25%);
   --destructive: hsl(356.3033, 90.5579%, 54.3137%);
   --destructive-foreground: hsl(0, 0%, 100%);
   --border: hsl(201.4286, 30.4348%, 90.9804%);
@@ -215,16 +215,16 @@
   --font-mono: 'Fira Code', monospace;
   --radius: 1.3rem;
   
-  /* Dynamic theme variables for organization branding */
-  --primary-h: 221;
-  --primary-s: 83%;
-  --primary-l: 53%;
-  --primary-focus-h: 221;
-  --primary-focus-s: 83%;
-  --primary-focus-l: 43%;
-  --primary-content-h: 221;
-  --primary-content-s: 83%;
-  --primary-content-l: 20%;
+  /* Dynamic theme variables for inteLMS purple branding */
+  --primary-h: 266;
+  --primary-s: 87%;
+  --primary-l: 65%;
+  --primary-focus-h: 266;
+  --primary-focus-s: 87%;
+  --primary-focus-l: 55%;
+  --primary-content-h: 266;
+  --primary-content-s: 87%;
+  --primary-content-l: 25%;
 }
 
 .dark {
@@ -272,16 +272,16 @@
   }
 }
 
-/* DaisyUI theme customizations for white-labeling */
+/* DaisyUI theme customizations for inteLMS branding */
 [data-theme="light"] {
-  --primary: hsl(203.8863, 88.2845%, 53.1373%);
-  --secondary: hsl(210, 25%, 7.8431%);
-  --accent: hsl(211.5789, 51.3514%, 92.7451%);
-  --neutral: hsl(210, 25%, 7.8431%);
+  --primary: hsl(266, 87%, 65%);
+  --secondary: hsl(220, 13%, 36%);
+  --accent: hsl(271, 91%, 70%);
+  --neutral: hsl(220, 13%, 36%);
   --base-100: hsl(0, 0%, 100%);
-  --base-200: hsl(180, 6.6667%, 97.0588%);
-  --base-300: hsl(201.4286, 30.4348%, 90.9804%);
-  --base-content: hsl(210, 25%, 7.8431%);
+  --base-200: hsl(270, 20%, 97%);
+  --base-300: hsl(270, 15%, 90%);
+  --base-content: hsl(220, 13%, 36%);
 }
 
 [data-theme="corporate"] {

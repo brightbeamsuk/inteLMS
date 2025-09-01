@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import inteLMSLogo from '@assets/inteLMS_1756700260326.png';
 
 export function SignIn() {
   const [email, setEmail] = useState('');
@@ -122,11 +123,15 @@ export function SignIn() {
       <div className="relative z-10 card w-full max-w-md bg-base-100/95 backdrop-blur-sm shadow-2xl border border-base-content/10">
         <div className="card-body">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-full mb-4 shadow-lg">
-              <i className="fas fa-graduation-cap text-2xl text-white"></i>
+            <div className="flex justify-center mb-4">
+              <img 
+                src={inteLMSLogo} 
+                alt="inteLMS" 
+                className="h-20 w-auto object-contain"
+                data-testid="img-intelms-logo"
+              />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent" data-testid="text-app-title">LMS Platform</h1>
-            <p className="text-base-content/60 mt-2" data-testid="text-app-subtitle">White-label Learning Management System</p>
+            <p className="text-base-content/60 mt-2" data-testid="text-app-subtitle">E-Learning Platform</p>
           </div>
 
           {error && (

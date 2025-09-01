@@ -36,8 +36,8 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               <i className="fas fa-bars text-xl"></i>
             </div>
           </div>
-          <Link href="/superadmin" className="btn btn-ghost text-xl font-bold" data-testid="link-home">
-            LMS Platform
+          <Link href="/superadmin" className="btn btn-ghost text-xl font-bold text-primary" data-testid="link-home">
+            inteLMS
           </Link>
         </div>
         

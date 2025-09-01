@@ -54,8 +54,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <i className="fas fa-bars text-xl"></i>
               </div>
             </div>
-            <Link href="/admin" className="btn btn-ghost text-xl font-bold" data-testid="link-home">
-              LMS Platform
+            <Link href="/admin" className="btn btn-ghost text-xl font-bold text-primary" data-testid="link-home">
+              inteLMS
             </Link>
           </div>
           
