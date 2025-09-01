@@ -42,6 +42,40 @@ export function SuperAdminDashboard() {
     queryKey: ['/api/superadmin/analytics/completions'],
   });
 
+  // Calculate growth percentages from real data
+  const calculateGrowthPercentage = (data: any[]) => {
+    if (!data || data.length < 2) return null;
+    const current = data[data.length - 1];
+    const previous = data[data.length - 2];
+    const currentTotal = (current?.successful || 0) + (current?.failed || 0);
+    const previousTotal = (previous?.successful || 0) + (previous?.failed || 0);
+    if (previousTotal === 0) return null;
+    return ((currentTotal - previousTotal) / previousTotal * 100).toFixed(1);
+  };
+
+  // Get recent months for labels
+  const getRecentMonths = (data: any[]) => {
+    if (!data || data.length === 0) {
+      // Fallback to current months
+      const months = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return months;
+    }
+    return data.slice(-6).map(item => {
+      if (item.monthName) return item.monthName.slice(0, 3);
+      // Fallback parsing from month field like '2025-08'
+      if (item.month) {
+        const monthNum = parseInt(item.month.split('-')[1]);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return monthNames[monthNum - 1] || 'N/A';
+      }
+      return 'N/A';
+    });
+  };
+
+  const userGrowth = calculateGrowthPercentage(analyticsData);
+  const completionGrowth = calculateGrowthPercentage(analyticsData);
+  const recentMonths = getRecentMonths(analyticsData);
+
   // Fetch popular courses analytics
   const { data: popularCoursesData = [], isLoading: popularCoursesLoading } = useQuery<any[]>({
     queryKey: ['/api/superadmin/analytics/popular-courses'],
@@ -269,8 +303,16 @@ export function SuperAdminDashboard() {
                   `${stats?.totalUsers?.toLocaleString() || '0'}`
                 )}
               </div>
-              <p className="text-sm text-green-600 mt-1">
-                +12.5% from last month
+              <p className={`text-sm mt-1 ${
+                userGrowth && parseFloat(userGrowth) >= 0 ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {statsLoading ? (
+                  'Loading...'
+                ) : userGrowth ? (
+                  `${parseFloat(userGrowth) >= 0 ? '+' : ''}${userGrowth}% from last month`
+                ) : (
+                  'No previous data'
+                )}
               </p>
             </div>
             <div className="mt-4">
@@ -295,12 +337,9 @@ export function SuperAdminDashboard() {
               </div>
               {/* Month labels */}
               <div className="flex justify-between text-xs text-gray-400 mt-1 px-2">
-                <span>Jul</span>
-                <span>Aug</span>
-                <span>Sep</span>
-                <span>Oct</span>
-                <span>Nov</span>
-                <span>Dec</span>
+                {recentMonths.map((month, index) => (
+                  <span key={index}>{month}</span>
+                ))}
               </div>
             </div>
           </div>
@@ -318,11 +357,19 @@ export function SuperAdminDashboard() {
                 {statsLoading ? (
                   <span className="loading loading-spinner loading-md"></span>
                 ) : (
-                  `+${stats?.totalCompletions?.toLocaleString() || '0'}`
+                  `${stats?.totalCompletions?.toLocaleString() || '0'}`
                 )}
               </div>
-              <p className="text-sm text-green-600 mt-1">
-                +180.1% from last month
+              <p className={`text-sm mt-1 ${
+                completionGrowth && parseFloat(completionGrowth) >= 0 ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {statsLoading ? (
+                  'Loading...'
+                ) : completionGrowth ? (
+                  `${parseFloat(completionGrowth) >= 0 ? '+' : ''}${completionGrowth}% from last month`
+                ) : (
+                  'No previous data'
+                )}
               </p>
             </div>
             <div className="mt-4">
@@ -351,12 +398,9 @@ export function SuperAdminDashboard() {
               </div>
               {/* Month labels */}
               <div className="flex justify-between text-xs text-gray-400 mt-1 px-2">
-                <span>Jul</span>
-                <span>Aug</span>
-                <span>Sep</span>
-                <span>Oct</span>
-                <span>Nov</span>
-                <span>Dec</span>
+                {recentMonths.map((month, index) => (
+                  <span key={index}>{month}</span>
+                ))}
               </div>
             </div>
           </div>
