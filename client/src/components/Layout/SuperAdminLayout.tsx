@@ -41,7 +41,7 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
             <img 
               src={inteLMSLogo} 
               alt="inteLMS" 
-              className="h-8 w-auto object-contain"
+              className="h-12 w-auto object-contain"
             />
           </Link>
         </div>
