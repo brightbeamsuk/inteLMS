@@ -131,7 +131,6 @@ export function SignIn() {
                 data-testid="img-intelms-logo"
               />
             </div>
-            <p className="text-base-content/60 mt-2" data-testid="text-app-subtitle">E-Learning Platform</p>
           </div>
 
           {error && (
