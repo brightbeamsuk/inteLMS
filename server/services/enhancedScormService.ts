@@ -718,6 +718,70 @@ export class EnhancedScormService {
     return await this.processScormPackage(packageUrl, courseId);
   }
 
+  // Serve a file from an extracted SCORM package
+  async servePackageFile(packageId: string, filePath: string): Promise<{ content: Buffer; contentType: string } | null> {
+    try {
+      // Find the package info for this packageId
+      let packageInfo: EnhancedScormPackageInfo | null = null;
+      
+      // Look through cached packages to find one with this packageId
+      for (const [key, info] of this.extractedPackages) {
+        if (key.includes(packageId)) {
+          packageInfo = info;
+          break;
+        }
+      }
+      
+      if (!packageInfo || !packageInfo.scormRoot) {
+        console.log(`📦 Package not found in cache: ${packageId}`);
+        return null;
+      }
+      
+      // Construct the full file path
+      const fullPath = path.join(packageInfo.scormRoot, filePath);
+      
+      // Check if file exists
+      if (!fs.existsSync(fullPath)) {
+        console.log(`📄 File not found: ${fullPath}`);
+        return null;
+      }
+      
+      // Read the file
+      const content = await fs.promises.readFile(fullPath);
+      
+      // Determine content type
+      const contentType = this.getContentType(filePath);
+      
+      return { content, contentType };
+      
+    } catch (error) {
+      console.error(`Error serving file ${packageId}/${filePath}:`, error);
+      return null;
+    }
+  }
+
+  private getContentType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentTypes: { [key: string]: string } = {
+      '.html': 'text/html',
+      '.htm': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.pdf': 'application/pdf',
+      '.xml': 'application/xml',
+      '.txt': 'text/plain'
+    };
+    
+    return contentTypes[ext] || 'application/octet-stream';
+  }
+
   // Get specific item launch URL (for multi-SCO support)
   async getItemLaunchUrl(packageUrl: string, courseId: string, organizationId: string, itemId: string): Promise<string | null> {
     const packageInfo = await this.processScormPackage(packageUrl, courseId);

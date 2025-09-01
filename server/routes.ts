@@ -837,6 +837,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Enhanced SCORM service file serving - NO AUTH REQUIRED for SCORM runtime
+  app.get('/scos/:packageId/*', async (req: any, res) => {
+    try {
+      const { packageId } = req.params;
+      const filePath = req.params[0] || 'index.html';
+      
+      console.log(`📁 Serving enhanced SCORM file: ${packageId}/${filePath}`);
+      
+      // Import enhanced SCORM service
+      const { EnhancedScormService } = await import('./services/enhancedScormService');
+      const enhancedScormService = new EnhancedScormService();
+      
+      // Get the file from the enhanced service
+      const fileResult = await enhancedScormService.servePackageFile(packageId, filePath);
+      
+      if (!fileResult) {
+        console.log(`❌ Enhanced SCORM file not found: ${packageId}/${filePath}`);
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>File Not Found</title></head>
+          <body>
+            <h1>404 - File Not Found</h1>
+            <p>File <code>${filePath}</code> not found in SCORM package <code>${packageId}</code></p>
+          </body>
+          </html>
+        `);
+      }
+      
+      res.setHeader('Content-Type', fileResult.contentType);
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.send(fileResult.content);
+      
+    } catch (error) {
+      console.error('Error serving enhanced SCORM file:', error);
+      res.status(500).send('Error loading file');
+    }
+  });
+
   // SCORM Preview file serving - NO AUTH REQUIRED for iframe loading
   app.get('/scorm-preview/:packageId/test', async (req: any, res) => {
     try {

@@ -187,9 +187,16 @@ export function SuperAdminCourseBuilder() {
       return;
     }
     
-    // Open preview in new window
-    const previewUrl = `/scorm-preview/${scormPackageInfo.packageId}/${scormPackageInfo.launchFilePath}`;
-    window.open(previewUrl, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
+    // Use the direct launch URL provided by the enhanced SCORM service
+    if (scormPackageInfo.launchUrl) {
+      window.open(scormPackageInfo.launchUrl, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
+    } else {
+      toast({
+        title: "Preview Error",
+        description: "No launch URL available for this SCORM package",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
