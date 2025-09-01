@@ -403,18 +403,23 @@ export class EnhancedScormService {
       const identifierref = itemMatch[2];
       const itemContent = itemMatch[3];
       
-      if (!identifierref) continue; // Skip non-launchable items
-
       const itemTitleMatch = itemContent.match(/<title[^>]*>([^<]+)<\/title>/i);
       const itemTitle = itemTitleMatch ? itemTitleMatch[1].trim() : itemId;
 
-      // Find the resource href for this identifierref
-      const resourceHref = this.findResourceHref(fullManifest, identifierref);
+      // If no identifierref, still include the item but try to find a resource by other means
+      let resourceHref = '';
+      if (identifierref) {
+        resourceHref = this.findResourceHref(fullManifest, identifierref);
+      } else {
+        // For items without identifierref, try to find a default launch file
+        // This is common in some SCORM packages where the structure is simpler
+        resourceHref = this.findDefaultResourceHref(fullManifest);
+      }
 
       items.push({
         id: itemId,
         title: itemTitle,
-        identifierref,
+        identifierref: identifierref || '',
         resourceHref
       });
     }
@@ -432,6 +437,40 @@ export class EnhancedScormService {
 
     const hrefMatch = resourceMatch[0].match(/(?:adlcp:)?href\s*=\s*["']([^"']+)["']/i);
     return hrefMatch ? hrefMatch[1] : '';
+  }
+
+  private findDefaultResourceHref(manifestContent: string): string {
+    // Look for any resource with href attribute as fallback
+    const resourceRegex = /<resource[^>]*(?:adlcp:)?href\s*=\s*["']([^"']+)["'][^>]*>/gi;
+    let resourceMatch;
+    
+    // Prioritize common SCORM entry files
+    const priorityFiles = ['index.html', 'index_lms.html', 'story.html', 'start.html', 'launch.html'];
+    
+    while ((resourceMatch = resourceRegex.exec(manifestContent)) !== null) {
+      const href = resourceMatch[1];
+      
+      // Check if this is a priority file
+      for (const priorityFile of priorityFiles) {
+        if (href.toLowerCase().includes(priorityFile.toLowerCase())) {
+          return href;
+        }
+      }
+    }
+    
+    // If no priority file found, return the first HTML resource
+    resourceRegex.lastIndex = 0; // Reset regex
+    while ((resourceMatch = resourceRegex.exec(manifestContent)) !== null) {
+      const href = resourceMatch[1];
+      if (href.toLowerCase().endsWith('.html') || href.toLowerCase().endsWith('.htm')) {
+        return href;
+      }
+    }
+    
+    // As last resort, return the first resource with an href
+    resourceRegex.lastIndex = 0; // Reset regex
+    const firstMatch = resourceRegex.exec(manifestContent);
+    return firstMatch ? firstMatch[1] : '';
   }
 
   private async processOrganizations(
@@ -481,7 +520,8 @@ export class EnhancedScormService {
     diagnostics: any
   ): Promise<{ launchUrl: string; launchFile: string }> {
     if (!resourceHref) {
-      throw new Error('No href specified in resource');
+      // If no resourceHref, search for common entry files in the root
+      return this.findFallbackLaunchFile(scormRoot, courseId, diagnostics);
     }
 
     // Try the exact file first
@@ -519,14 +559,93 @@ export class EnhancedScormService {
       }
     }
 
+    // If nothing found in the specified directory, try root level fallback
+    return this.findFallbackLaunchFile(scormRoot, courseId, diagnostics, resourceHref);
+  }
+
+  private async findFallbackLaunchFile(
+    scormRoot: string, 
+    courseId: string, 
+    diagnostics: any, 
+    originalHref?: string
+  ): Promise<{ launchUrl: string; launchFile: string }> {
+    const fallbackFiles = [
+      'index.html',
+      'index_lms.html',
+      'story.html',
+      'start.html',
+      'launch.html',
+      'course.html',
+      'main.html'
+    ];
+
+    // Search in root directory first
+    for (const fallback of fallbackFiles) {
+      const fallbackPath = path.join(scormRoot, fallback);
+      if (fs.existsSync(fallbackPath)) {
+        const encodedPath = fallback.split('/').map(encodeURIComponent).join('/');
+        const launchUrl = `/scos/${courseId}/${encodedPath}`;
+        
+        const warningMsg = originalHref 
+          ? `Using fallback file: ${fallback} instead of ${originalHref}`
+          : `Using fallback file: ${fallback} (no resource href specified)`;
+        diagnostics.warnings.push(warningMsg);
+        
+        return { launchUrl, launchFile: fallback };
+      }
+    }
+
+    // Search in subdirectories
+    try {
+      const files = await this.findHtmlFilesRecursively(scormRoot);
+      if (files.length > 0) {
+        const firstHtmlFile = files[0];
+        const relativePath = path.relative(scormRoot, firstHtmlFile);
+        const encodedPath = relativePath.split(path.sep).map(encodeURIComponent).join('/');
+        const launchUrl = `/scos/${courseId}/${encodedPath}`;
+        
+        diagnostics.warnings.push(`Using first HTML file found: ${relativePath}`);
+        return { launchUrl, launchFile: relativePath };
+      }
+    } catch (searchError) {
+      diagnostics.errors.push(`Error searching for HTML files: ${searchError}`);
+    }
+
     // List available files for diagnostics
-    const availableFiles = await this.listFilesInDirectory(baseDir);
-    const error = new Error(`Launch file not found: ${resourceHref}`) as any;
+    const availableFiles = await this.listFilesInDirectory(scormRoot);
+    const error = new Error(`No launch file found. Original href: ${originalHref || 'none'}`) as any;
     error.code = 'LAUNCH_FILE_NOT_FOUND';
-    error.attemptedLaunchFile = resourceHref;
+    error.attemptedLaunchFile = originalHref;
     error.details = { availableFiles: availableFiles.slice(0, 10) };
     
     throw error;
+  }
+
+  private async findHtmlFilesRecursively(directory: string): Promise<string[]> {
+    const htmlFiles: string[] = [];
+    
+    const searchRecursive = async (dir: string, depth: number = 0): Promise<void> => {
+      if (depth > 3) return; // Limit recursion depth
+      
+      try {
+        const items = await fs.promises.readdir(dir, { withFileTypes: true });
+        
+        for (const item of items) {
+          const fullPath = path.join(dir, item.name);
+          
+          if (item.isFile() && /\.(html?|htm)$/i.test(item.name)) {
+            htmlFiles.push(fullPath);
+          } else if (item.isDirectory() && depth < 3) {
+            await searchRecursive(fullPath, depth + 1);
+          }
+        }
+      } catch (error) {
+        // Ignore directory access errors
+      }
+    };
+    
+    await searchRecursive(directory);
+    return htmlFiles;
   }
 
   private determinePrimaryLaunchUrl(
@@ -585,11 +704,13 @@ export class EnhancedScormService {
       this.extractedPackages.delete(`${packageUrl}-${courseId}`);
     } else {
       // Clear all entries for this package URL
-      for (const [key] of this.extractedPackages) {
+      const keysToDelete: string[] = [];
+      this.extractedPackages.forEach((value, key) => {
         if (key.startsWith(packageUrl)) {
-          this.extractedPackages.delete(key);
+          keysToDelete.push(key);
         }
-      }
+      });
+      keysToDelete.forEach(key => this.extractedPackages.delete(key));
     }
   }
 
