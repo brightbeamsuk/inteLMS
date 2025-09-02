@@ -24,15 +24,15 @@ export function UserLayout({ children }: UserLayoutProps) {
       <div className="navbar bg-base-300 shadow-lg">
         <div className="navbar-start">
           <div className="dropdown">
-            <div 
+            <label 
+              htmlFor="user-drawer-toggle"
               tabIndex={0} 
               role="button" 
-              className="btn btn-ghost btn-circle lg:hidden"
-              onClick={() => setDrawerOpen(!drawerOpen)}
+              className="btn btn-ghost btn-circle lg:hidden cursor-pointer"
               data-testid="button-menu-toggle"
             >
               <i className="fas fa-bars text-xl"></i>
-            </div>
+            </label>
           </div>
           <Link href="/user" className="btn btn-ghost" data-testid="link-home">
             <img 
