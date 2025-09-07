@@ -19,7 +19,8 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
     queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
     queryFn: async () => {
       const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/state`, {
-        credentials: 'include'
+        credentials: 'include',
+        cache: 'no-store' // Ensure no stale cache
       });
       if (!response.ok) {
         throw new Error('Failed to fetch attempt state');
@@ -27,6 +28,8 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
       return response.json();
     },
     staleTime: 0, // Always revalidate to get latest state
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) {
