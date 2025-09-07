@@ -1,0 +1,213 @@
+1) Ultra-short triage (prove where the break is)
+
+While the “Congratulations, you passed!” page is showing, open the browser console on the SCO window and run ONE of these:
+
+SCORM 2004
+
+API_1484_11 && {
+  completion: API_1484_11.GetValue('cmi.completion_status'),
+  success: API_1484_11.GetValue('cmi.success_status'),
+  score: API_1484_11.GetValue('cmi.score.raw'),
+  pm: API_1484_11.GetValue('cmi.progress_measure')
+}
+
+
+SCORM 1.2
+
+API && {
+  status: API.LMSGetValue('cmi.core.lesson_status'),
+  score: API.LMSGetValue('cmi.core.score.raw'),
+  loc: API.LMSGetValue('cmi.core.lesson_location')
+}
+
+
+If you see completed/passed → the LMS is ignoring SCORM status (fix LMS mapping).
+
+If you see incomplete/unknown → the iSpring publish settings aren’t sending completion (republish with Track using quiz result or 100% slides).
+
+Either way, the hot-fix below will still work.
+
+2) Emergency hot-fix (drop-in script)
+
+This wraps the SCORM API in the learner’s window, catches completion, and tells your LMS to mark the attempt complete and 100%. Add it to the page that hosts the SCO (the launch page). Adjust the /lms/attempt/complete endpoint to match your LMS.
+
+<script>
+(function () {
+  // === utility to call your LMS ===
+  async function markComplete(payload){
+    try {
+      await fetch('/lms/attempt/complete', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+        credentials:'include'
+      });
+    } catch(e) { console.error('complete-post failed', e); }
+  }
+
+  // === central checker ===
+  function shouldComplete(v){
+    // v: object with relevant SCORM fields as strings
+    // Accept EITHER completion OR pass (do not require both)
+    return (
+      v.lesson_status === 'completed' || v.lesson_status === 'passed' ||
+      v.completion_status === 'completed' || v.success_status === 'passed'
+    );
+  }
+
+  function progressFrom(v){
+    if (v.progress_measure && !isNaN(parseFloat(v.progress_measure))) {
+      return Math.round(Math.max(0, Math.min(1, parseFloat(v.progress_measure))) * 100);
+    }
+    if (shouldComplete(v)) return 100;
+    if (v.lesson_status === 'incomplete' || v.completion_status === 'incomplete') return 50;
+    return 0;
+  }
+
+  // === wrap SCORM 1.2 ===
+  if (window.API) {
+    const A = window.API, S = A.LMSSetValue.bind(A), C = A.LMSCommit?.bind(A), F = A.LMSFinish?.bind(A);
+    window.API.LMSSetValue = function (el, val) {
+      const r = S(el, val);
+      try {
+        const v = {
+          version:'1.2',
+          lesson_status: A.LMSGetValue('cmi.core.lesson_status'),
+          score: A.LMSGetValue('cmi.core.score.raw')
+        };
+        if (shouldComplete(v)) {
+          markComplete({ version:'1.2', status:v.lesson_status, success:null, score:v.score, progress:100 });
+        }
+      } catch(e){}
+      return r;
+    };
+    window.API.LMSCommit = function (arg) {
+      const r = C ? C(arg) : 'true';
+      try {
+        const v = {
+          version:'1.2',
+          lesson_status: A.LMSGetValue('cmi.core.lesson_status'),
+          score: A.LMSGetValue('cmi.core.score.raw')
+        };
+        markComplete({ version:'1.2', status:v.lesson_status, success:null, score:v.score, progress:progressFrom(v) });
+      } catch(e){}
+      return r;
+    };
+    window.API.LMSFinish = function (arg) {
+      try {
+        const v = {
+          version:'1.2',
+          lesson_status: A.LMSGetValue('cmi.core.lesson_status'),
+          score: A.LMSGetValue('cmi.core.score.raw')
+        };
+        markComplete({ version:'1.2', status:v.lesson_status, success:null, score:v.score, progress:progressFrom(v) });
+      } catch(e){}
+      return F ? F(arg) : 'true';
+    };
+  }
+
+  // === wrap SCORM 2004 ===
+  if (window.API_1484_11) {
+    const A = window.API_1484_11,
+          S = A.SetValue.bind(A),
+          C = A.Commit?.bind(A),
+          T = A.Terminate?.bind(A);
+    window.API_1484_11.SetValue = function (el, val) {
+      const r = S(el, val);
+      try {
+        const v = {
+          version:'2004',
+          completion_status: A.GetValue('cmi.completion_status'),
+          success_status: A.GetValue('cmi.success_status'),
+          progress_measure: A.GetValue('cmi.progress_measure'),
+          score: A.GetValue('cmi.score.raw')
+        };
+        if (shouldComplete(v)) {
+          markComplete({ version:'2004', completion:v.completion_status, success:v.success_status, score:v.score, progress:progressFrom(v) });
+        }
+      } catch(e){}
+      return r;
+    };
+    window.API_1484_11.Commit = function (arg) {
+      const r = C ? C(arg) : 'true';
+      try {
+        const v = {
+          version:'2004',
+          completion_status: A.GetValue('cmi.completion_status'),
+          success_status: A.GetValue('cmi.success_status'),
+          progress_measure: A.GetValue('cmi.progress_measure'),
+          score: A.GetValue('cmi.score.raw')
+        };
+        markComplete({ version:'2004', completion:v.completion_status, success:v.success_status, score:v.score, progress:progressFrom(v) });
+      } catch(e){}
+      return r;
+    };
+    window.API_1484_11.Terminate = function (arg) {
+      try {
+        const v = {
+          version:'2004',
+          completion_status: A.GetValue('cmi.completion_status'),
+          success_status: A.GetValue('cmi.success_status'),
+          progress_measure: A.GetValue('cmi.progress_measure'),
+          score: A.GetValue('cmi.score.raw')
+        };
+        markComplete({ version:'2004', completion:v.completion_status, success:v.success_status, score:v.score, progress:progressFrom(v) });
+      } catch(e){}
+      return T ? T(arg) : 'true';
+    };
+  }
+})();
+</script>
+
+
+Server side (example Express route)
+
+// Marks attempt complete/updates progress based on the payload above
+app.post('/lms/attempt/complete', requireAuth, async (req, res) => {
+  const { version, status, completion, success, score, progress } = req.body;
+  const attemptId = req.session.currentAttemptId; // however you store it
+  // Derive completion
+  const isComplete =
+    (version === '1.2'  && (status === 'completed' || status === 'passed')) ||
+    (version === '2004' && (completion === 'completed' || success === 'passed'));
+
+  // Persist
+  await db.updateAttempt(attemptId, {
+    scorm_version: version,
+    lesson_status: status ?? null,
+    completion_status: completion ?? null,
+    success_status: success ?? null,
+    score_raw: score ?? null,
+    progress: isFinite(progress) ? Math.max(0, Math.min(100, progress)) : (isComplete ? 100 : null),
+    completed: isComplete
+  });
+
+  res.json({ ok:true, completed:isComplete });
+});
+
+
+This does two things:
+
+Unblocks “Finish” by updating the LMS attempt as soon as the SCO sets completed/passed (or on any Commit/Terminate).
+
+Shows live progress (2004 uses progress_measure; 1.2 uses status as a fallback).
+
+3) Proper fix (replace the gating rule)
+
+After the hot-fix, update your LMS Finish button logic and progress mapping:
+
+Treat either of these as completion:
+
+SCORM 1.2: cmi.core.lesson_status ∈ { completed, passed }
+
+SCORM 2004: cmi.completion_status = completed OR cmi.success_status = passed
+
+Progress bar:
+
+SCORM 2004: use cmi.progress_measure × 100.
+
+SCORM 1.2: if completed/passed → 100; if incomplete → interim (e.g. 50) or compute from lesson_location if you store total slides.
+
+Persist on every Commit and on Finish/Terminate.
+
+Remove any hard-coded cap (15%/0%) and any rule that requires both completed and passed unless you’ve explicitly configured that.
