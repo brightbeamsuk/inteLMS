@@ -2394,6 +2394,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all certificates for this organisation
       const certificates = await storage.getCertificatesByOrganisation(organisationId);
+      
+      // Get all SCORM attempts for this organisation to show attempt status
+      const scormAttempts = await storage.getScormAttemptsByOrganisation(organisationId);
 
       // Calculate matrix data only for filtered staff and courses
       const matrix: any[][] = [];

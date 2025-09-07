@@ -126,6 +126,7 @@ export interface IStorage {
   updateScormAttempt(attemptId: string, attempt: Partial<InsertScormAttempt>): Promise<ScormAttempt>;
   getScormAttemptsByUser(userId: string): Promise<ScormAttempt[]>;
   getScormAttemptsByAssignment(assignmentId: string): Promise<ScormAttempt[]>;
+  getScormAttemptsByOrganisation(organisationId: string): Promise<ScormAttempt[]>;
   getActiveScormAttempt(userId: string, assignmentId: string): Promise<ScormAttempt | undefined>;
 
   // Analytics operations
@@ -760,6 +761,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(scormAttempts.createdAt));
   }
 
+  async getScormAttemptsByOrganisation(organisationId: string): Promise<ScormAttempt[]> {
+    return await db
+      .select()
+      .from(scormAttempts)
+      .where(eq(scormAttempts.organisationId, organisationId))
+      .orderBy(desc(scormAttempts.createdAt));
+  }
+
   async getActiveScormAttempt(userId: string, assignmentId: string): Promise<ScormAttempt | undefined> {
     const [attempt] = await db
       .select()
@@ -767,7 +776,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(scormAttempts.userId, userId),
         eq(scormAttempts.assignmentId, assignmentId),
-        eq(scormAttempts.status, 'active')
+        eq(scormAttempts.isActive, true)
       ))
       .orderBy(desc(scormAttempts.createdAt))
       .limit(1);
