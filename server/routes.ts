@@ -1104,6 +1104,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // SCORM Debugging Log Endpoint - Captures raw SCORM API calls
+  app.post('/api/scorm/log', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const logEntry = req.body;
+      
+      // Enhanced logging with user context
+      const enrichedLog = {
+        ...logEntry,
+        userId: user.id,
+        userEmail: user.email,
+        timestamp: logEntry.timestamp || Date.now(),
+        sessionId: req.session.id
+      };
+      
+      // Log to console with detailed formatting for debugging
+      if (logEntry.function === 'SetValue' || logEntry.function === 'LMSSetValue') {
+        console.log(`🔧 SCORM ${logEntry.scormVersion} SetValue: ${logEntry.arguments[0]} = "${logEntry.arguments[1]}" (${user.email})`);
+      } else if (logEntry.function === 'GetValue' || logEntry.function === 'LMSGetValue') {
+        console.log(`📖 SCORM ${logEntry.scormVersion} GetValue: ${logEntry.arguments[0]} => "${logEntry.result}" (${user.email})`);
+      } else {
+        console.log(`📡 SCORM ${logEntry.scormVersion} ${logEntry.function}(${logEntry.arguments?.join(', ')}) => ${logEntry.result} (${user.email})`);
+      }
+      
+      // TODO: Optionally persist to database for detailed analysis
+      // await storage.createScormLog(enrichedLog);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error logging SCORM call:', error);
+      res.status(500).json({ message: 'Failed to log SCORM call' });
+    }
+  });
+
   // SCORM launch endpoint - provides launch URL for iframe (MUST BE BEFORE WILDCARD)
   app.get('/api/scorm/:assignmentId/launch', requireAuth, async (req: any, res) => {
     try {

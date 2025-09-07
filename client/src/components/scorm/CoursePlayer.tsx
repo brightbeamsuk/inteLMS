@@ -385,7 +385,49 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         (window as any).API = scorm12API;
         (window as any).API_1484_11 = scorm2004API;
         
-        addDebugLog('🚀 SCORM APIs exposed to window');
+        // Add SCORM Logger to capture all API calls for debugging
+        const wrapApiForLogging = (api: any, version: string) => {
+          const methodNames = ['Initialize', 'LMSInitialize', 'GetValue', 'LMSGetValue', 'SetValue', 'LMSSetValue', 
+                              'Commit', 'LMSCommit', 'Terminate', 'LMSTerminate', 'GetLastError', 'LMSGetLastError', 
+                              'GetErrorString', 'LMSGetErrorString', 'GetDiagnostic', 'LMSGetDiagnostic'];
+          
+          methodNames.forEach(method => {
+            if (typeof api[method] === 'function') {
+              const originalMethod = api[method].bind(api);
+              api[method] = function(...args: any[]) {
+                const result = originalMethod.apply(this, args);
+                
+                // Log the call
+                const logEntry = {
+                  timestamp: Date.now(),
+                  scormVersion: version,
+                  function: method,
+                  arguments: Array.from(args),
+                  result: result,
+                  assignmentId: assignmentId,
+                  attemptId: attemptId
+                };
+                
+                console.debug(`[SCORM ${version}]`, method, args, '=>', result);
+                
+                // Send to server for detailed analysis
+                fetch('/api/scorm/log', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(logEntry)
+                }).catch(e => console.warn('SCORM log send failed:', e));
+                
+                return result;
+              };
+            }
+          });
+        };
+        
+        // Wrap both APIs with logging
+        wrapApiForLogging((window as any).API, '1.2');
+        wrapApiForLogging((window as any).API_1484_11, '2004');
+        
+        addDebugLog('🚀 SCORM APIs exposed to window with logging enabled');
         addDebugLog(`👤 Learner: ${attemptStateRef.current['cmi.core.student_name']}`);
         addDebugLog(`🆔 Attempt ID: ${newAttemptId}`);
         

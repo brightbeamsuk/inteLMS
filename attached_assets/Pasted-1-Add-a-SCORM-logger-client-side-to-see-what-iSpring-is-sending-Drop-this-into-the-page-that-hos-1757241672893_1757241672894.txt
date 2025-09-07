@@ -1,0 +1,188 @@
+1) Add a SCORM logger (client-side) to see what iSpring is sending
+
+Drop this into the page that hosts the SCO (before it launches). It logs every SCORM call and mirrors it to your server so you can persist/inspect.
+
+<script>
+(function () {
+  const send = (payload) => {
+    try {
+      navigator.sendBeacon('/scorm/log', new Blob([JSON.stringify(payload)], {type:'application/json'}));
+    } catch(e) {
+      fetch('/scorm/log', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    }
+  };
+  const wrapApi = (api, tag) => {
+    ['Initialize','GetValue','SetValue','Commit','Terminate','GetLastError','GetErrorString','GetDiagnostic'].forEach(fn => {
+      if (typeof api[fn] === 'function') {
+        const orig = api[fn].bind(api);
+        api[fn] = function () {
+          const args = Array.from(arguments);
+          const res = orig.apply(null, args);
+          const entry = { ts: Date.now(), scorm: tag, fn, args, res };
+          console.debug('[SCORM '+tag+']', fn, args, '=>', res);
+          send(entry);
+          return res;
+        }
+      }
+    });
+  };
+  // Wrap 1.2 if present
+  if (window.API) {
+    wrapApi(window.API, '1.2');
+  }
+  // Wrap 2004 if present
+  if (window.API_1484_11) {
+    wrapApi(window.API_1484_11, '2004');
+  }
+})();
+</script>
+
+
+What you should see while clicking through slides:
+
+Regular SetValue calls such as:
+
+SCORM 2004: SetValue("cmi.progress_measure","0.35"), SetValue("cmi.completion_status","incomplete"), later completed.
+
+SCORM 1.2: SetValue("cmi.core.lesson_location","..."), SetValue("cmi.core.lesson_status","incomplete"), later completed/passed.
+
+Periodic Commit("").
+
+If you see nothing: your SCO can’t “see” the API → fix launch (same-origin, no over-strict iframe sandbox, correct launch file per imsmanifest.xml).
+
+2) Persist the key runtime fields on every Commit
+
+On the server route that receives /scorm/log (or directly in your SCORM API shim), save these fields per user_id + course_id + attempt_id:
+
+SCORM 1.2
+
+cmi.core.lesson_status (complete logic: completed OR passed)
+
+cmi.core.score.raw (optional)
+
+cmi.core.lesson_location (bookmark)
+
+cmi.suspend_data (large text; don’t truncate)
+
+SCORM 2004
+
+cmi.completion_status (complete when completed)
+
+cmi.success_status (pass/fail)
+
+cmi.score.raw (optional)
+
+cmi.progress_measure (0..1) ← best for the progress bar
+
+cmi.location (bookmark)
+
+cmi.suspend_data (large text)
+
+If your API layer already stores these, verify they’re being updated on Commit (not only on Terminate).
+
+3) Drive your progress bar from the right fields
+
+Use this exact mapping so the UI reflects reality during the attempt:
+
+function computeProgress(scormVersion, get) {
+  // get = (name) => current runtime value string
+  if (scormVersion === '2004') {
+    const pm = parseFloat(get('cmi.progress_measure'));
+    if (!isNaN(pm)) return Math.max(0, Math.min(100, Math.round(pm * 100)));
+    const cs = get('cmi.completion_status'); // incomplete/completed/...
+    if (cs === 'completed') return 100;
+    // Fallback heuristic if course doesn’t send progress_measure:
+    return (cs === 'incomplete') ? 50 : 0;
+  } else { // 1.2
+    const ls = get('cmi.core.lesson_status'); // incomplete/completed/passed/failed
+    if (ls === 'completed' || ls === 'passed') return 100;
+
+    // Try to derive from lesson_location if iSpring populates it with slide index:
+    const loc = get('cmi.core.lesson_location'); // e.g. "s:12" or "12"
+    const totalSlides = window.SCORM_TOTAL_SLIDES || null; // set this if you know it
+    const idx = loc && /(\d+)$/.exec(loc) ? parseInt(RegExp.$1, 10) : NaN;
+    if (totalSlides && !isNaN(idx) && totalSlides > 0) {
+      return Math.max(0, Math.min(100, Math.round((idx / totalSlides) * 100)));
+    }
+    // Fallback
+    return (ls === 'incomplete') ? 50 : 0;
+  }
+}
+
+
+Notes
+
+iSpring (SCORM 2004) usually sends cmi.progress_measure. Use it if present.
+
+SCORM 1.2 doesn’t have a native progress %; some iSpring packages put a slide index into lesson_location. If you know your slide count, you can compute a decent percentage. Otherwise, show interim states (0 → 50 → 100) and rely on completion for the final jump.
+
+4) Accept completion when the SCO says it’s complete (don’t wait for both flags)
+
+Many LMSs get stuck because they require BOTH “completed” AND “passed”. Use either:
+
+SCORM 1.2: complete when lesson_status ∈ {completed, passed}
+
+SCORM 2004: complete when completion_status=completed OR success_status=passed
+
+Then set your attempt row to Completed and progress to 100%.
+
+5) Common blockers that keep progress at 0%
+
+API not discoverable (content launched from another domain or sandboxed iframe without allow-same-origin).
+
+Only saving on Terminate (if learner closes tab without Terminate, nothing is saved). Save on every Commit.
+
+Truncating cmi.suspend_data (breaks resume and sometimes progress).
+
+UI reads wrong fields (e.g. expects progress_measure but the course is SCORM 1.2 and only sets lesson_location).
+
+LMS expects both completion & pass (see rule above).
+
+6) Minimal hotfix you can apply today
+
+Republish your iSpring package as SCORM 2004 (if your LMS supports it). iSpring will typically send cmi.progress_measure → easy, smooth progress bar.
+
+If you must stay on SCORM 1.2, set your UI to:
+
+show 0% at not attempted,
+
+50% at incomplete,
+
+100% at completed/passed.
+
+(Optionally enhance with lesson_location÷TOTAL_SLIDES if available.)
+
+7) Quick browser-console smoke tests (run while course is open)
+
+Find the API:
+
+(function f(w){
+  try{
+    if (w.API_1484_11) return console.log('Found 2004 API'), w.API_1484_11;
+    if (w.API) return console.log('Found 1.2 API'), w.API;
+    if (w.parent && w.parent !== w) return f(w.parent);
+  }catch(e){}
+  console.log('No SCORM API found');
+})(window);
+
+
+Read live progress (2004):
+
+API_1484_11 && console.log({
+  completion: API_1484_11.GetValue('cmi.completion_status'),
+  success: API_1484_11.GetValue('cmi.success_status'),
+  pm: API_1484_11.GetValue('cmi.progress_measure'),
+  score: API_1484_11.GetValue('cmi.score.raw')
+});
+
+
+Read live status (1.2):
+
+API && console.log({
+  status: API.LMSGetValue('cmi.core.lesson_status'),
+  loc: API.LMSGetValue('cmi.core.lesson_location'),
+  score: API.LMSGetValue('cmi.core.score.raw')
+});
+
+
+If these values never change while you click through slides, the SCO isn’t sending updates (republish settings). If they do change, wire your LMS UI to those fields and persist them on Commit.
