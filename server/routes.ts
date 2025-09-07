@@ -1555,17 +1555,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const impersonationToken = `temp_${Date.now()}_${adminUser.id}`;
       
       // Store the token temporarily (in a real app, use Redis or database)
-      global.impersonationTokens = global.impersonationTokens || new Map();
-      global.impersonationTokens.set(impersonationToken, {
+      (global as any).impersonationTokens = (global as any).impersonationTokens || new Map();
+      (global as any).impersonationTokens.set(impersonationToken, {
         userId: adminUser.id,
         createdAt: Date.now(),
         expiresAt: Date.now() + (5 * 60 * 1000) // 5 minutes
       });
       
       // Clean up expired tokens
-      for (const [token, data] of global.impersonationTokens.entries()) {
+      for (const [token, data] of (global as any).impersonationTokens.entries()) {
         if (data.expiresAt < Date.now()) {
-          global.impersonationTokens.delete(token);
+          (global as any).impersonationTokens.delete(token);
         }
       }
       
@@ -1589,13 +1589,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { token } = req.query;
       
-      if (!token || !global.impersonationTokens?.has(token)) {
+      if (!token || !(global as any).impersonationTokens?.has(token)) {
         return res.status(404).send('Invalid or expired impersonation token');
       }
       
-      const tokenData = global.impersonationTokens.get(token);
+      const tokenData = (global as any).impersonationTokens.get(token);
       if (tokenData.expiresAt < Date.now()) {
-        global.impersonationTokens.delete(token);
+        (global as any).impersonationTokens.delete(token);
         return res.status(404).send('Expired impersonation token');
       }
       
@@ -1614,7 +1614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Clean up the token
-      global.impersonationTokens.delete(token);
+      (global as any).impersonationTokens.delete(token);
       
       // Redirect to admin dashboard
       res.redirect('/');
@@ -2375,7 +2375,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all courses assigned to users in this organisation
       const assignments = await storage.getAssignmentsByOrganisation(organisationId);
-      let courseIds = [...new Set(assignments.map(a => a.courseId))];
+      let courseIds = Array.from(new Set(assignments.map(a => a.courseId)));
       
       const courses = await Promise.all(
         courseIds.map(async (courseId) => {
@@ -2556,7 +2556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const staffToKeep: boolean[] = new Array(activeStaff.length).fill(false);
         const coursesToKeep: boolean[] = new Array(validCourses.length).fill(false);
         const filteredMatrix: any[][] = [];
-        const filteredSummary = { red: 0, amber: 0, green: 0, grey: 0 };
+        const filteredSummary = { red: 0, amber: 0, green: 0, grey: 0, blue: 0 };
 
         // Check each staff row
         for (let staffIndex = 0; staffIndex < matrix.length; staffIndex++) {
@@ -2667,7 +2667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get courses and apply filters
       const assignments = await storage.getAssignmentsByOrganisation(organisationId);
-      let courseIds = [...new Set(assignments.map(a => a.courseId))];
+      let courseIds = Array.from(new Set(assignments.map(a => a.courseId)));
       
       const courses = await Promise.all(
         courseIds.map(async (courseId) => {
@@ -3664,7 +3664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error('Error processing SCORM result:', error);
-      res.status(500).json({ message: 'Failed to process SCORM result', error: error.message });
+      res.status(500).json({ message: 'Failed to process SCORM result', error: error instanceof Error ? error.message : String(error) });
     }
   });
 
