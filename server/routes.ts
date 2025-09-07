@@ -3461,10 +3461,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`⚠️ SCORM 2004: Invalid progress_measure value: ${attemptData.progressMeasure}`);
             progressPercent = 0;
           }
+        } else if (attemptData.suspendData) {
+          // Try to extract progress from SCORM 2004 suspend_data
+          let scormProgress = 0;
+          try {
+            // First try to decode base64 encoded data (common in HTML5/JS SCORM packages)
+            let decodedData = attemptData.suspendData;
+            if (attemptData.suspendData.length > 100 && !attemptData.suspendData.includes('{')) {
+              try {
+                decodedData = Buffer.from(attemptData.suspendData, 'base64').toString('utf-8');
+                console.log('📊 SCORM 2004: Decoded base64 suspend_data');
+              } catch {
+                // Not base64, use original data
+              }
+            }
+            
+            // Try to parse as JSON
+            try {
+              const suspendJson = JSON.parse(decodedData);
+              if (typeof suspendJson.progress === 'number') {
+                scormProgress = Math.round(suspendJson.progress);
+                console.log(`📊 SCORM 2004: Found progress in suspend_data: ${scormProgress}%`);
+              } else if (typeof suspendJson.percentage === 'number') {
+                scormProgress = Math.round(suspendJson.percentage);
+                console.log(`📊 SCORM 2004: Found percentage in suspend_data: ${scormProgress}%`);
+              } else if (typeof suspendJson.slideIndex === 'number' && typeof suspendJson.totalSlides === 'number') {
+                scormProgress = Math.round((suspendJson.slideIndex / suspendJson.totalSlides) * 100);
+                console.log(`📊 SCORM 2004: Calculated progress from slides ${suspendJson.slideIndex}/${suspendJson.totalSlides}: ${scormProgress}%`);
+              }
+            } catch {
+              // Try pattern matching for non-JSON suspend data
+              const progressMatch = decodedData.match(/(?:progress|percentage|slide)[":=\s]*(\d+(?:\.\d+)?)/i);
+              const slideMatch = decodedData.match(/slide[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i);
+              
+              if (slideMatch) {
+                const current = parseInt(slideMatch[1]);
+                const total = parseInt(slideMatch[2]);
+                if (current > 0 && total > 0) {
+                  scormProgress = Math.round((current / total) * 100);
+                  console.log(`📊 SCORM 2004: Calculated progress from slide pattern ${current}/${total}: ${scormProgress}%`);
+                }
+              } else if (progressMatch) {
+                scormProgress = Math.round(parseFloat(progressMatch[1]));
+                console.log(`📊 SCORM 2004: Extracted progress from suspend_data: ${scormProgress}%`);
+              } else {
+                // Estimate progress based on suspend_data length/complexity (fallback)
+                const dataLength = decodedData.length;
+                if (dataLength > 500) {
+                  scormProgress = Math.min(75, Math.max(5, Math.round(dataLength / 100)));
+                  console.log(`📊 SCORM 2004: Estimated progress from data size (${dataLength} chars): ${scormProgress}%`);
+                }
+              }
+            }
+          } catch (error) {
+            console.log('📊 SCORM 2004: Error processing suspend_data:', error);
+          }
+          
+          progressPercent = Math.min(100, Math.max(0, scormProgress));
+          if (progressPercent === 0) {
+            console.log('📊 SCORM 2004: No progress data in suspend_data -> 0%');
+          }
         } else {
-          // No progress measure provided by SCORM
+          // No progress measure or suspend data provided by SCORM
           progressPercent = 0;
-          console.log('📊 SCORM 2004: No progress_measure provided -> 0%');
+          console.log('📊 SCORM 2004: No progress_measure or suspend_data provided -> 0%');
         }
       } else if (standard === '1.2') {
         // SCORM 1.2: Use lesson_status as primary indicator
