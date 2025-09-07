@@ -4072,6 +4072,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`💾 Updating attempt ${attemptId} with final state:`, updates);
       await storage.updateScormAttempt(attemptId, updates);
 
+      // Create or update completion record for admin interface
+      try {
+        const assignments = await storage.getAssignmentsByUser(userId);
+        const relatedAssignment = assignments.find((a: any) => 
+          a.courseId === attempt.courseId && a.status !== 'completed'
+        );
+
+        if (relatedAssignment) {
+          // Check if completion record already exists
+          const existingCompletions = await storage.getCompletionsByAssignment(relatedAssignment.id);
+          const existingCompletion = existingCompletions.find((c: any) => c.userId === userId && c.status === 'pass');
+
+          if (!existingCompletion) {
+            // Convert score to percentage format for admin interface
+            let percentageScore: number | null = null;
+            if (score !== null && score !== undefined) {
+              // Ensure score is a number for calculations
+              const numericScore = typeof score === 'string' ? parseFloat(score) : score;
+              if (!isNaN(numericScore)) {
+                // If it's in 0-1 format, multiply by 100 to get percentage
+                percentageScore = numericScore <= 1 ? numericScore * 100 : numericScore;
+              }
+            }
+
+            // Determine pass/fail status
+            const completionStatus = (success === 'passed' || status === 'passed') ? 'pass' : 'fail';
+
+            // Create completion record
+            const completionData = {
+              userId: userId,
+              courseId: attempt.courseId,
+              assignmentId: relatedAssignment.id,
+              organisationId: relatedAssignment.organisationId,
+              score: percentageScore?.toString() || null,
+              status: completionStatus as 'pass' | 'fail',
+              completedAt: now,
+              scormData: {} // Could include SCORM snapshot if needed
+            };
+
+            console.log(`📋 Creating completion record:`, completionData);
+            await storage.createCompletion(completionData);
+          }
+        }
+      } catch (completionError) {
+        console.warn('Warning: Could not create completion record:', completionError);
+        // Don't fail the finish process if completion creation fails
+      }
+
       // Also update assignment status if we can find it
       try {
         const assignments = await storage.getAssignmentsByUser(userId);
