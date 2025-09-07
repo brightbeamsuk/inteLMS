@@ -3398,7 +3398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (['completed', 'passed'].includes(attemptData.lessonStatus)) {
           progressPercent = 100;
         } else if (attemptData.lessonStatus === 'incomplete') {
-          // Try to extract progress from suspend data or lesson location
+          // Extract progress from suspend data or other indicators  
           let extractedProgress = 0;
           
           // Check if suspend data contains progress information
@@ -3406,9 +3406,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             try {
               // Try to parse JSON suspend data for progress
               const suspendJson = JSON.parse(attemptData.suspendData);
-              if (suspendJson.progress) {
+              if (suspendJson.progress && !isNaN(parseInt(suspendJson.progress))) {
                 extractedProgress = parseInt(suspendJson.progress);
-              } else if (suspendJson.percentage) {
+              } else if (suspendJson.percentage && !isNaN(parseInt(suspendJson.percentage))) {
                 extractedProgress = parseInt(suspendJson.percentage);
               }
             } catch {
@@ -3416,16 +3416,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const percentMatch = attemptData.suspendData.match(/(\d+)%/);
               const progressMatch = attemptData.suspendData.match(/progress[:\s]*(\d+)/i);
               
-              if (percentMatch) {
+              if (percentMatch && !isNaN(parseInt(percentMatch[1]))) {
                 extractedProgress = parseInt(percentMatch[1]);
-              } else if (progressMatch) {
+              } else if (progressMatch && !isNaN(parseInt(progressMatch[1]))) {
                 extractedProgress = parseInt(progressMatch[1]);
               }
             }
             
-            // If suspend data exists but no percentage found, assume significant progress
+            // If suspend data exists but no percentage found, assume progress based on data length
             if (!extractedProgress) {
-              extractedProgress = 60; // Assume 60% if suspend data exists but no specific progress
+              const dataLength = attemptData.suspendData.length;
+              if (dataLength > 1000) extractedProgress = 80;      // Substantial data
+              else if (dataLength > 500) extractedProgress = 60;  // Moderate data  
+              else if (dataLength > 100) extractedProgress = 40;  // Some data
+              else extractedProgress = 25;                        // Minimal data
             }
           }
           
@@ -3433,56 +3437,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!extractedProgress && attemptData.lessonLocation && attemptData.lessonLocation.trim()) {
             const slideMatch = attemptData.lessonLocation.match(/slide[:\s]*(\d+)/i);
             const pageMatch = attemptData.lessonLocation.match(/page[:\s]*(\d+)/i);
+            const sectionMatch = attemptData.lessonLocation.match(/section[:\s]*(\d+)/i);
             
-            if (slideMatch) {
-              // Assume 20 slides total, calculate percentage
+            if (slideMatch && !isNaN(parseInt(slideMatch[1]))) {
               const currentSlide = parseInt(slideMatch[1]);
-              extractedProgress = Math.min(95, Math.round((currentSlide / 20) * 100));
-            } else if (pageMatch) {
-              // Assume 10 pages total, calculate percentage  
+              extractedProgress = Math.min(90, Math.max(25, Math.round((currentSlide / 15) * 100))); // Assume 15 slides
+            } else if (pageMatch && !isNaN(parseInt(pageMatch[1]))) {
               const currentPage = parseInt(pageMatch[1]);
-              extractedProgress = Math.min(95, Math.round((currentPage / 10) * 100));
+              extractedProgress = Math.min(90, Math.max(25, Math.round((currentPage / 8) * 100))); // Assume 8 pages
+            } else if (sectionMatch && !isNaN(parseInt(sectionMatch[1]))) {
+              const currentSection = parseInt(sectionMatch[1]);
+              extractedProgress = Math.min(90, Math.max(25, Math.round((currentSection / 5) * 100))); // Assume 5 sections
             } else {
-              // If lesson location exists but no specific pattern, assume progress
-              extractedProgress = 45;
+              extractedProgress = 35; // Generic location bookmark exists
             }
           }
           
           // Use session time as a progress indicator if available
           if (!extractedProgress && attemptData.sessionTime && attemptData.sessionTime !== '00:00:00') {
-            // Parse session time and estimate progress based on time spent
             const timeMatch = attemptData.sessionTime.match(/(\d+):(\d+):(\d+)/);
             if (timeMatch) {
-              const totalMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+              const totalMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) + Math.floor(parseInt(timeMatch[3]) / 60);
               if (totalMinutes > 0) {
-                // Assume 20 minutes for full course, calculate progress
-                const timeProgress = Math.min(90, Math.round((totalMinutes / 20) * 100));
-                extractedProgress = Math.max(timeProgress, 25); // Minimum 25% if time spent
+                // Progressive time-based calculation
+                if (totalMinutes >= 30) extractedProgress = 85;      // 30+ minutes = substantial progress
+                else if (totalMinutes >= 20) extractedProgress = 70; // 20+ minutes = good progress
+                else if (totalMinutes >= 10) extractedProgress = 50; // 10+ minutes = moderate progress
+                else if (totalMinutes >= 5) extractedProgress = 35;  // 5+ minutes = some progress
+                else extractedProgress = 20;                        // < 5 minutes = minimal progress
               }
             }
           }
           
-          // Dynamic heuristic based on multiple factors
-          if (!extractedProgress) {
-            // Check if there's any interaction data at all
+          // Final progress assignment
+          if (extractedProgress > 0) {
+            progressPercent = Math.min(95, Math.max(10, extractedProgress)); // Cap incomplete at 95%, minimum 10%
+          } else {
+            // No indicators - check if any data exists at all
             const hasAnyData = attemptData.suspendData || attemptData.lessonLocation || 
                              (attemptData.sessionTime && attemptData.sessionTime !== '00:00:00');
-            
-            if (hasAnyData) {
-              // User has started and is interacting, give reasonable progress
-              progressPercent = 40;
-            } else {
-              // Very beginning of course
-              progressPercent = 15;
-            }
-          } else {
-            progressPercent = Math.min(95, extractedProgress); // Cap at 95% for incomplete
+            progressPercent = hasAnyData ? 25 : 5; // Minimal progress if any data, otherwise near-zero
           }
         } else if (attemptData.lessonStatus === 'failed') {
           progressPercent = 100; // Failed means they completed the content
+        } else if (attemptData.lessonStatus === 'browsed') {
+          progressPercent = 90; // Browsed typically means substantial interaction
+        } else {
+          progressPercent = 0; // Default for other statuses
         }
-      } else if (standard === '2004' && attemptData.completionStatus === 'completed') {
-        progressPercent = 100;
+      } else if (standard === '2004') {
+        // Enhanced SCORM 2004 progress calculation
+        const completionStatus = attemptData.completionStatus;
+        const successStatus = attemptData.successStatus;
+        const progressMeasure = attemptData.progressMeasure ? parseFloat(attemptData.progressMeasure) : null;
+        
+        // Completion logic: completed OR passed = course complete
+        if (completionStatus === 'completed' || successStatus === 'passed') {
+          progressPercent = 100;
+        } else if (successStatus === 'failed') {
+          progressPercent = 100; // Failed means they completed the assessment
+        } else if (progressMeasure !== null && !isNaN(progressMeasure) && progressMeasure >= 0 && progressMeasure <= 1) {
+          // Use cmi.progress_measure if valid (0-1 scale)
+          progressPercent = Math.round(progressMeasure * 100);
+        } else if (completionStatus === 'incomplete') {
+          // Similar logic to SCORM 1.2 for incomplete content
+          let extractedProgress = 0;
+          
+          if (attemptData.suspendData && attemptData.suspendData.trim()) {
+            try {
+              const suspendJson = JSON.parse(attemptData.suspendData);
+              if (suspendJson.progress && !isNaN(parseInt(suspendJson.progress))) {
+                extractedProgress = parseInt(suspendJson.progress);
+              }
+            } catch {
+              const percentMatch = attemptData.suspendData.match(/(\d+)%/);
+              if (percentMatch && !isNaN(parseInt(percentMatch[1]))) {
+                extractedProgress = parseInt(percentMatch[1]);
+              }
+            }
+            
+            if (!extractedProgress) {
+              const dataLength = attemptData.suspendData.length;
+              if (dataLength > 1000) extractedProgress = 75;
+              else if (dataLength > 500) extractedProgress = 55;
+              else if (dataLength > 100) extractedProgress = 35;
+              else extractedProgress = 20;
+            }
+          }
+          
+          if (!extractedProgress && attemptData.location && attemptData.location.trim()) {
+            extractedProgress = 40; // Has bookmark location
+          }
+          
+          if (!extractedProgress && attemptData.sessionTime && attemptData.sessionTime !== 'PT0H0M0S') {
+            // Parse ISO 8601 duration format PT[n]H[n]M[n]S
+            const timeMatch = attemptData.sessionTime.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+            if (timeMatch) {
+              const hours = parseInt(timeMatch[1] || '0');
+              const minutes = parseInt(timeMatch[2] || '0');
+              const totalMinutes = hours * 60 + minutes;
+              
+              if (totalMinutes >= 25) extractedProgress = 80;
+              else if (totalMinutes >= 15) extractedProgress = 60;
+              else if (totalMinutes >= 8) extractedProgress = 45;
+              else if (totalMinutes >= 3) extractedProgress = 30;
+              else extractedProgress = 15;
+            }
+          }
+          
+          progressPercent = extractedProgress > 0 ? Math.min(95, Math.max(10, extractedProgress)) : 5;
+        } else {
+          progressPercent = 0; // not attempted, unknown, etc.
+        }
       } else if (attemptData.suspendData) {
         // Fallback: Try to extract progress from suspend data
         let extractedProgress = 0;

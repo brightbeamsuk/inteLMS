@@ -1,0 +1,80 @@
+Implement/verify the following
+1) API discovery & exposure
+
+Expose window.API (1.2) and/or window.API_1484_11 (2004) to the SCO via the standard parent/opener traversal.
+
+If the SCO is in an iframe: the API object must be reachable up the frame chain.
+
+Only one API object should be returned; cache it for performance.
+
+2) Initialisation / Termination
+
+1.2: respond to LMSInitialize(""), LMSCommit(""), LMSFinish("") with "true" when successful.
+
+2004: respond to Initialize(""), Commit(""), Terminate("") with "true".
+
+Store attempt_id on initialise; close it on terminate. Support multiple attempts per user/course.
+
+3) Data model fields to persist
+
+SCORM 1.2
+
+cmi.core.lesson_status ∈ {not attempted,incomplete,completed,passed,failed}
+
+cmi.core.score.raw (and min,max if provided)
+
+cmi.suspend_data (string; expect large payloads from iSpring)
+
+cmi.core.lesson_location (bookmark)
+
+SCORM 2004
+
+cmi.completion_status ∈ {not attempted,unknown,incomplete,completed}
+
+cmi.success_status ∈ {unknown,passed,failed}
+
+cmi.score.raw (and min,max)
+
+cmi.suspend_data, cmi.location
+
+DB schema (simplified): attempts table with user_id, course_id, attempt_id, scorm_version, completion_status, success_status, lesson_status, score_raw, score_min, score_max, suspend_data, location, last_commit_at, terminated_at, launch_count.
+
+4) Completion logic (the common bug)
+
+Treat either of these as “course complete”:
+
+1.2: lesson_status is completed or passed.
+
+2004: completion_status is completed (irrespective of success_status) or success_status = passed.
+
+Do not require both completion and success unless the LMS course settings explicitly demand it.
+
+Update overall LMS attempt state to “Completed” when the above is true.
+
+5) Progress percentage
+
+If package provides objective progress, map it; otherwise:
+
+1.2: derive a coarse progress measure from lesson_status changes and (optionally) iSpring’s internal progress in suspend_data if present. Fallback: 0%=not attempted, 50%=incomplete, 100%=completed|passed|failed.
+
+2004: if cmi.progress_measure is present (0..1), multiply by 100. Else use the fallback as above.
+
+Never cap progress at an arbitrary fixed value (e.g. 15%). Progress should reach 100% when complete.
+
+6) Commit & exit safety
+
+Persist on every Commit.
+
+Also persist on beforeunload/pagehide if the SCO window is closing and last status is not stored (send a final Commit then respect Terminate if the SCO calls it).
+
+Implement exponential backoff retry for Commit if the network hiccups (up to 3 tries within 2–3 seconds).
+
+7) Resume (suspend_data)
+
+Persist suspend_data as a large text field (64k+). Do not truncate.
+
+On re-launch, return the exact suspend_data to the SCO so iSpring resumes at the correct slide.
+
+8) Attempt control (optional but recommended)
+
+If the LMS enforces “one attempt”, close the previous attempt on next launch and open a new one only if the previous is complete. Otherwise resume the existing attempt.

@@ -184,8 +184,11 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         (attemptStateRef.current as any)[element] = value;
       }
       
-      // Don't hardcode progress - let the backend calculate accurate progress
-      // The backend will send the real progress via the SCORM result response
+      // Immediately commit critical status changes for real-time progress updates
+      if (element === 'cmi.core.lesson_status' && (value === 'completed' || value === 'passed' || value === 'failed')) {
+        console.log(`🎯 Critical status change: ${element} = ${value}, auto-committing`);
+        sendScormResult('commit');
+      }
       
       return "true";
     },
@@ -250,8 +253,13 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         (attemptStateRef.current as any)[element] = value;
       }
       
-      // Don't hardcode progress - let the backend calculate accurate progress
-      // The backend will send the real progress via the SCORM result response
+      // Immediately commit critical status changes for real-time progress updates
+      if ((element === 'cmi.completion_status' && value === 'completed') ||
+          (element === 'cmi.success_status' && (value === 'passed' || value === 'failed')) ||
+          (element === 'cmi.progress_measure' && parseFloat(value) >= 1.0)) {
+        console.log(`🎯 Critical status change: ${element} = ${value}, auto-committing`);
+        sendScormResult('commit');
+      }
       
       return "true";
     },
