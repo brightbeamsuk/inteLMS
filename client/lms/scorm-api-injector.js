@@ -463,6 +463,48 @@
       }
     });
     
+    // SCORM 2004 (3rd Ed.) Auto-commit safety features
+    let autoCommitTimer = null;
+    
+    function performAutoCommit() {
+      if (apiInitialized && Object.keys(scormData).length > 0) {
+        log('🔄 Auto-commit triggered - saving SCORM data');
+        commitToServer(scormData).catch(err => {
+          error('Auto-commit failed:', err);
+        });
+      }
+    }
+    
+    // Auto-commit every 60 seconds
+    function startAutoCommitTimer() {
+      if (autoCommitTimer) {
+        clearInterval(autoCommitTimer);
+      }
+      autoCommitTimer = setInterval(performAutoCommit, 60000); // 60 seconds
+      log('⏰ Auto-commit timer started (60s intervals)');
+    }
+    
+    // Auto-commit on visibility changes (when tab becomes hidden)
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'hidden') {
+        log('👁️ Page hidden - triggering auto-commit');
+        performAutoCommit();
+      }
+    });
+    
+    // Auto-commit on page hide (more reliable than beforeunload)
+    window.addEventListener('pagehide', function() {
+      log('🚪 Page hide - triggering auto-commit');
+      // Use beacon for reliability during page transitions
+      if (apiInitialized && Object.keys(scormData).length > 0) {
+        navigator.sendBeacon('/api/scorm/runtime/' + currentAttemptId + '/commit', 
+                           JSON.stringify(scormData));
+      }
+    });
+    
+    // Start the auto-commit timer
+    startAutoCommitTimer();
+    
     log('🚀 SCORM API Injector initialized successfully');
     return true;
   }
