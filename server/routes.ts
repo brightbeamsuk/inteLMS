@@ -3443,7 +3443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         location: attemptData.lessonLocation || attemptData.location
       });
 
-      // Debug: Show all received SCORM data keys 
+      // Debug: Show all received SCORM data keys and check for progress indicators
       if (scormData) {
         console.log('📊 All SCORM data keys:', Object.keys(scormData));
         // Look for any fields that might contain slide/page information
@@ -3454,6 +3454,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             /\d+/.test(value)
           )) {
             console.log(`📊 SCORM field "${key}" contains potential progress data: "${value}"`);
+          }
+        }
+      }
+      
+      // Special handling: Try to extract progress from common course patterns
+      // This handles courses that display "X of Y" but don't store it in SCORM fields
+      let estimatedProgressFromTime = 0;
+      if (attemptData.sessionTime) {
+        // Parse session time and estimate progress (rough heuristic)
+        const timeMatch = attemptData.sessionTime.match(/PT(\d+)H(\d+)M(\d+)S/);
+        if (timeMatch) {
+          const totalSeconds = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]);
+          // Assume average course takes 10-15 minutes, scale accordingly
+          estimatedProgressFromTime = Math.min(85, Math.round((totalSeconds / 600) * 100)); // Max 85% from time
+          if (estimatedProgressFromTime > 5) {
+            console.log(`⏱️ Estimated progress from session time (${totalSeconds}s): ${estimatedProgressFromTime}%`);
           }
         }
       }
@@ -3577,13 +3593,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           progressPercent = Math.min(100, Math.max(0, scormProgress));
-          if (progressPercent === 0) {
+          if (progressPercent === 0 && estimatedProgressFromTime > 5) {
+            progressPercent = estimatedProgressFromTime;
+            console.log(`📊 SCORM 2004: Using time-based progress estimate: ${progressPercent}%`);
+          } else if (progressPercent === 0) {
             console.log('📊 SCORM 2004: No progress data in suspend_data -> 0%');
           }
         } else {
-          // No progress measure or suspend data provided by SCORM
-          progressPercent = 0;
-          console.log('📊 SCORM 2004: No progress_measure or suspend_data provided -> 0%');
+          // No progress measure or suspend data provided by SCORM - try time estimation
+          if (estimatedProgressFromTime > 5) {
+            progressPercent = estimatedProgressFromTime;
+            console.log(`📊 SCORM 2004: Using time-based progress estimate: ${progressPercent}%`);
+          } else {
+            progressPercent = 0;
+            console.log('📊 SCORM 2004: No progress_measure or suspend_data provided -> 0%');
+          }
         }
       } else if (standard === '1.2') {
         // SCORM 1.2: Use lesson_status as primary indicator
@@ -3709,7 +3733,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           progressPercent = Math.min(100, Math.max(0, scormProgress));
-          if (progressPercent === 0) {
+          if (progressPercent === 0 && estimatedProgressFromTime > 5) {
+            progressPercent = estimatedProgressFromTime;
+            console.log(`📊 SCORM 1.2: Using time-based progress estimate: ${progressPercent}%`);
+          } else if (progressPercent === 0) {
             console.log('📊 SCORM 1.2: No progress data found in lesson_location or suspend_data -> 0%');
           }
         }
