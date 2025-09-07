@@ -2470,7 +2470,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           if (!latestCompletion) {
-            // Not completed - check assignment status and due date
+            // Not completed - check SCORM attempt status and assignment due date
+            const userAttempts = scormAttempts.filter(a => 
+              a.userId === staffMember.id && a.courseId === course.id
+            );
+            
+            const latestAttempt = userAttempts.sort((a, b) => 
+              new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+            )[0];
+            
             const now = new Date();
             const sevenDaysFromNow = new Date();
             sevenDaysFromNow.setDate(now.getDate() + 7);
@@ -2478,30 +2486,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
             let cellStatus: 'red' | 'amber' | 'blue' | 'grey' | 'failed';
             let cellLabel: string;
             
-            // Check assignment status first
-            if (assignment.status === 'overdue') {
-              cellStatus = 'red';
-              cellLabel = 'Overdue';
-            } else if (assignment.status === 'in_progress') {
-              cellStatus = 'blue';
-              cellLabel = 'In progress';
+            // Check SCORM attempt status first for accurate lifecycle tracking
+            if (latestAttempt) {
+              if (latestAttempt.status === 'completed') {
+                // This shouldn't happen as we already checked for completions above
+                cellStatus = 'grey';
+                cellLabel = 'Completed';
+              } else if (latestAttempt.status === 'in_progress') {
+                cellStatus = 'blue';
+                cellLabel = 'In Progress';
+              } else {
+                // not_started or abandoned
+                cellStatus = 'grey';
+                cellLabel = 'Not Started';
+              }
             } else {
-              // Check due date for assignments that aren't overdue
-              if (assignment.dueDate) {
-                const dueDate = new Date(assignment.dueDate);
-                if (dueDate < now) {
-                  cellStatus = 'red';
-                  cellLabel = 'Overdue';
-                } else if (dueDate <= sevenDaysFromNow) {
-                  cellStatus = 'amber';
-                  cellLabel = 'Due soon';
+              // No attempt yet - check assignment status and due date
+              if (assignment.status === 'overdue') {
+                cellStatus = 'red';
+                cellLabel = 'Overdue';
+              } else {
+                // Check due date for assignments that aren't overdue
+                if (assignment.dueDate) {
+                  const dueDate = new Date(assignment.dueDate);
+                  if (dueDate < now) {
+                    cellStatus = 'red';
+                    cellLabel = 'Overdue';
+                  } else if (dueDate <= sevenDaysFromNow) {
+                    cellStatus = 'amber';
+                    cellLabel = 'Due Soon';
+                  } else {
+                    cellStatus = 'grey';
+                    cellLabel = 'Not Started';
+                  }
                 } else {
                   cellStatus = 'grey';
-                  cellLabel = 'Not started';
+                  cellLabel = 'Not Started';
                 }
-              } else {
-                cellStatus = 'grey';
-                cellLabel = 'Not started';
               }
             }
             
