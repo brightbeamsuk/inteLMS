@@ -373,6 +373,27 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         attemptStateRef.current['cmi.learner_id'] = userResponse.id;
         attemptStateRef.current['cmi.learner_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         
+        // SCORM 2004 (3rd Ed.) - Start attempt and mark as In Progress on first launch
+        try {
+          console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
+          const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
+            courseId: assignment.courseId
+          });
+          const attemptResult = await attemptStartRes.json();
+          
+          if (attemptResult.ok && attemptResult.attemptId) {
+            // Use the server-provided attempt ID
+            setAttemptId(attemptResult.attemptId);
+            console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
+            addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
+          } else {
+            console.log('📄 Using generated attempt ID:', newAttemptId);
+          }
+        } catch (attemptError) {
+          console.error('⚠️ Failed to start attempt, using generated ID:', attemptError);
+          addDebugLog(`⚠️ Failed to start attempt: ${attemptError}`);
+        }
+        
         // Get course launch URL using improved SCORM processing
         try {
           console.log(`🚀 Requesting launch data for assignment: ${assignmentId}`);
