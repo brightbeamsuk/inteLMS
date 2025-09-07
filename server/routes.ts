@@ -3440,6 +3440,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /lms/attempt/save - Save & resume later endpoint
+  app.post('/api/lms/attempt/save', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const { courseId, attemptId, location, suspend_data } = req.body;
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      // Find the assignment for this user and course
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId);
+      
+      if (!assignment) {
+        return res.status(404).json({ message: 'Assignment not found' });
+      }
+
+      // 1) Find or create open attempt
+      let attempt = null;
+      if (attemptId) {
+        attempt = await storage.getScormAttemptByAttemptId(attemptId);
+      }
+      if (!attempt) {
+        attempt = await storage.getActiveScormAttempt(userId, assignment.id);
+      }
+      if (!attempt) {
+        // Create new attempt
+        const newAttemptId = `attempt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        attempt = await storage.createScormAttempt({
+          attemptId: newAttemptId,
+          assignmentId: assignment.id,
+          userId,
+          courseId: assignment.courseId,
+          organisationId: assignment.organisationId,
+          standard: '2004',
+          status: 'in_progress',
+          completed: false,
+          closed: false,
+          launchedAt: new Date(),
+          passmark: 80,
+          location: location || null,
+          suspendData: suspend_data || null
+        });
+      } else {
+        // 2) Force "In Progress" and persist bookmark
+        await storage.updateScormAttempt(attempt.attemptId, {
+          status: 'in_progress',
+          location: location ?? attempt.location ?? null,
+          suspendData: suspend_data ?? attempt.suspendData ?? null,
+          lastCommitAt: new Date()
+        });
+        
+        // Get fresh attempt data
+        attempt = await storage.getScormAttemptByAttemptId(attempt.attemptId);
+      }
+
+      // 3) Return canonical state for UI
+      return res.json({
+        ok: true,
+        attemptId: attempt!.attemptId,
+        status: attempt!.status, // "in_progress"
+        canResume: (!attempt!.closed && attempt!.status === 'in_progress')
+      });
+    } catch (error) {
+      console.error('Error saving attempt:', error);
+      res.status(500).json({ message: 'Failed to save attempt' });
+    }
+  });
+
   // Get assignments for a specific user (admin only)
   app.get('/api/assignments/user/:userId', requireAuth, async (req: any, res) => {
     try {
