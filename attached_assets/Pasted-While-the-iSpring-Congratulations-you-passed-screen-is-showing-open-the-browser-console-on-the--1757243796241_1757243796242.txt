@@ -1,0 +1,99 @@
+While the iSpring “Congratulations, you passed!” screen is showing, open the browser console on the SCO window and run one of these (depending on SCORM version):
+
+If SCORM 2004
+
+API_1484_11 && {
+  completion: API_1484_11.GetValue('cmi.completion_status'),
+  success: API_1484_11.GetValue('cmi.success_status'),
+  score: API_1484_11.GetValue('cmi.score.raw'),
+  pm: API_1484_11.GetValue('cmi.progress_measure')
+}
+
+
+If SCORM 1.2
+
+API && {
+  status: API.LMSGetValue('cmi.core.lesson_status'),
+  score: API.LMSGetValue('cmi.core.score.raw'),
+  loc: API.LMSGetValue('cmi.core.lesson_location')
+}
+
+
+If you see completed/passed here → the LMS gating is wrong (it’s ignoring SCORM and blocking Finish).
+
+If you see incomplete/unknown here → the iSpring package tracking is wrong (it never set completion).
+
+If the course is the issue (iSpring settings)
+
+Publish tracking rule (Reporting & Tracking)
+
+Publish as SCORM 1.2 (safest) or SCORM 2004 3rd/4th.
+
+In Tracking choose ONE of:
+
+Track using quiz result (recommended for your quiz course), or
+
+Track using number of slides viewed (set to 100% of slides).
+
+Avoid mixed or conflicting rules until it’s working.
+
+Quiz must report to LMS
+
+Open the final quiz in QuizMaker → Result Slide → Enable “Report to LMS”.
+
+Set Passing score to match the course (e.g., 80%).
+
+Ensure the quiz is included in the course (not a preview or practice).
+
+Player navigation
+
+If you locked navigation, make sure the learner can reach the final tracked slide (some interactions don’t advance the slide index if you never click “Next”).
+
+Ensure there is a Commit/Finish event: reaching the final slide or closing the SCO after the result slide is usually enough.
+
+Republish and re-import the ZIP (don’t unzip), then reset the learner’s previous attempt in the LMS before testing again.
+
+If the LMS is the issue (Finish button gating)
+
+Your LMS is currently waiting for its own “complete course content first” condition. Change it to accept the SCORM signal.
+
+What to change (plain English)
+
+Accept either status for completion:
+
+SCORM 1.2 → treat cmi.core.lesson_status = completed or passed as Complete.
+
+SCORM 2004 → treat cmi.completion_status = completed or cmi.success_status = passed as Complete.
+
+Drive the progress bar from:
+
+cmi.progress_measure (if SCORM 2004 and provided),
+
+else from status (0% not-attempted, 50% incomplete, 100% completed/passed),
+
+or derive from lesson_location vs total slides (1.2), if you’ve implemented that.
+
+“Fix the Finish button” prompt for your Replit dev
+
+Update the Finish gating logic for SCORM attempts. When a SCO reports:
+
+SCORM 1.2: cmi.core.lesson_status ∈ {completed, passed} → set attempt completed=true, progress=100, enable Finish.
+
+SCORM 2004: cmi.completion_status=completed OR cmi.success_status=passed → set attempt completed=true, progress=100, enable Finish.
+Persist these on every Commit and on Finish/Terminate. The UI “Finish” button must reflect the persisted state, not an internal slide-count or time rule unless explicitly configured. Remove any hard-coded threshold (e.g., 15%) that caps progress.
+
+Also check these three LMS settings
+
+Completion rule source: “Use SCORM completion” (not “view X% of slides”).
+
+Minimum time spent: OFF (some LMSs block Finish on min-time; disable for testing).
+
+Multi-SCO manifests: If your package has multiple items in imsmanifest.xml, ensure the LMS is launching the correct SCO and not waiting for other items.
+
+Typical combinations that work first time
+
+SCORM 2004 + Track by Quiz Result
+LMS reads completion_status & success_status; progress bar uses progress_measure when available → Finish unlocks when passed or completed.
+
+SCORM 1.2 + Track by Slides (100%)
+LMS reads lesson_status → Finish unlocks at completed/passed.

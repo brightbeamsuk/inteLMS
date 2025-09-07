@@ -3505,7 +3505,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (standard === '1.2') {
         completed = ['completed', 'passed', 'failed'].includes(attemptData.lessonStatus);
       } else if (standard === '2004') {
-        completed = attemptData.completionStatus === 'completed';
+        // SCORM 2004: completed when completion_status = "completed" OR success_status = "passed" (per debugging guide)
+        completed = (attemptData.completionStatus === 'completed') || (attemptData.successStatus === 'passed');
       }
       
       // 3. Passed (boolean) - Status first, then score fallback
