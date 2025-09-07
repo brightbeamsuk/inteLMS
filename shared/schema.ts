@@ -48,7 +48,7 @@ export const completionStatusEnum = pgEnum('completion_status', ['pass', 'fail']
 export const scormStandardEnum = pgEnum('scorm_standard', ['1.2', '2004']);
 
 // SCORM attempt status enum
-export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['active', 'completed', 'abandoned']);
+export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['not_started', 'in_progress', 'completed', 'abandoned']);
 
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
@@ -177,7 +177,7 @@ export const scormAttempts = pgTable("scorm_attempts", {
   organisationId: varchar("organisation_id").notNull(),
   itemId: varchar("item_id"), // SCO identifier for multi-SCO support
   standard: scormStandardEnum("standard").notNull(), // "1.2" or "2004"
-  status: scormAttemptStatusEnum("status").default('active'),
+  status: scormAttemptStatusEnum("status").default('not_started'),
   
   // Raw SCORM 1.2 values
   lessonStatus: varchar("lesson_status"), // passed, completed, failed, incomplete, etc.
