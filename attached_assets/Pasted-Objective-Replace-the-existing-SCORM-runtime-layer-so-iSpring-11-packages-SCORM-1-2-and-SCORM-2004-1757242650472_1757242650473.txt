@@ -1,0 +1,250 @@
+Objective: Replace the existing SCORM runtime layer so iSpring 11 packages (SCORM 1.2 and SCORM 2004 3rd/4th Ed.) initialise, report progress, save state, and correctly mark Completed/Passed. Fixes “stuck at 0–15%” issues.
+
+Tech & Project Setup
+
+Stack: Node.js + Express (server), Postgres (or SQLite as a fallback) for persistence, TypeScript preferred.
+
+Repo structure:
+
+/server
+  /src
+    scorm/
+      api-dispatch.ts
+      api-12.ts
+      api-2004.ts
+      persist.ts
+      logger.ts
+    routes/
+      scorm.ts
+    db/
+      schema.sql
+      repo.ts
+    index.ts
+/client
+  /lms
+    launch.html
+    player.js
+    progress-ui.js
+    scorm-api-injector.js
+
+
+Environment:
+
+DATABASE_URL
+
+SESSION_SECRET
+
+ALLOWED_CONTENT_HOSTS (comma-separated list of domains allowed to host SCOs, e.g. the same host as LMS)
+
+Core Requirements
+1) API Discovery & Exposure (browser)
+
+Implement a SCORM API injector (client/lms/scorm-api-injector.js) that:
+
+Exposes SCORM 1.2 API as window.API.
+
+Exposes SCORM 2004 API as window.API_1484_11.
+
+Supports standard frame traversal (SCO can find the API up the frame/opener chain).
+
+Works when the SCO is launched in an iframe or a new window.
+
+The injector must not rely on cross-origin parent access (avoid mixed origins). If content must be on a different subdomain, provide a same-origin launch proxy route (see “Launch & CORS”).
+
+2) Runtime Functions (must return SCORM-correct codes)
+
+SCORM 1.2 (object API):
+
+LMSInitialize(""), LMSFinish("")
+
+LMSGetValue(element), LMSSetValue(element, value)
+
+LMSCommit("")
+
+LMSGetLastError(), LMSGetErrorString(code), LMSGetDiagnostic(code)
+
+SCORM 2004 (object API_1484_11):
+
+Initialize(""), Terminate("")
+
+GetValue(element), SetValue(element, value)
+
+Commit("")
+
+GetLastError(), GetErrorString(code), GetDiagnostic(code)
+
+Return "true"/"false" and numeric error codes as per spec.
+
+3) Data to Persist (DB schema)
+
+Create an Attempts table storing:
+
+attempt_id (uuid), user_id, course_id, scorm_version ("1.2" or "2004"),
+
+Status fields
+
+1.2: lesson_status (not attempted|incomplete|completed|passed|failed)
+
+2004: completion_status (not attempted|unknown|incomplete|completed)
+success_status (unknown|passed|failed)
+
+Score fields: score_raw, score_min, score_max
+
+Progress fields: progress_measure (0..1 for 2004), lesson_location/location
+
+State: suspend_data (TEXT, do not truncate)
+
+launched_at, last_commit_at, terminated_at, closed (boolean)
+
+4) Mapping & Completion Logic (the crucial bit)
+
+Mark Complete when:
+
+1.2: lesson_status ∈ { "completed", "passed" }
+
+2004: completion_status = "completed" OR success_status = "passed"
+
+Do not require both completion and pass unless a course rule explicitly demands it.
+
+Compute progress like this:
+
+2004: if cmi.progress_measure is set (0..1), progress = round(pm * 100).
+
+1.2: if lesson_status is completed|passed, progress = 100; if incomplete, show intermediate (e.g., 50) or, if lesson_location contains a slide index and we know TOTAL_SLIDES, compute a percentage.
+
+5) Commit & Exit Handling
+
+Save on every Commit (and update last_commit_at).
+
+On Terminate/Finish, close the attempt (set terminated_at).
+
+Add a beforeunload/pagehide listener in player.js to call Commit when users close the window mid-course.
+
+6) Resume
+
+On a new launch, if there’s an open attempt (not terminated), resume it and provide the last suspend_data, location, and statuses to the SCO.
+
+If your product policy is “one attempt per enrolment”, open a new attempt only after the last one is closed/complete.
+
+7) Launch & CORS
+
+Provide /lms/launch/:courseId that:
+
+Validates user session,
+
+Creates/loads the attempt,
+
+Serves the SCO same-origin (either by static hosting of the package or via a reverse proxy to the package files) so the SCO can discover window.parent.API*.
+
+If you must iframe: the iframe must include allow="*", no restrictive sandbox OR include at least allow-same-origin allow-scripts allow-forms allow-popups.
+
+8) Progress UI (client)
+
+Implement client/lms/progress-ui.js which subscribes to runtime value changes and updates a visible progress bar:
+
+2004: use cmi.progress_measure if present; else fall back to completion.
+
+1.2: use lesson_status (and optional derived % from lesson_location).
+
+Progress must reach 100% on completion.
+
+9) Logging & Diagnostics
+
+Add a lightweight logger that records every API call (fn, args, result, timestamp) to server (/scorm/log) and console (development only).
+
+Toggle via SCORM_DEBUG=true.
+
+Keep last 200 lines per attempt for easy support diagnostics.
+
+10) Error Handling
+
+Return SCORM-correct error codes/strings.
+
+If SetValue is called for unknown elements, return false and code.
+
+Never crash the runtime—log and continue.
+
+Endpoints (server)
+
+POST /scorm/runtime/:attemptId/commit – internal use from API layer to persist batch of name/value pairs atomically.
+
+POST /scorm/log – optional debug ingestion.
+
+GET /scorm/attempt/:attemptId – return current state (for UI).
+
+POST /lms/launch/:courseId – creates/loads an attempt and serves the launch page with injected API objects.
+
+Security
+
+Validate user_id and course_id per session before opening/continuing attempts.
+
+Whitelist allowed SCO asset paths for a course.
+
+Force HTTPS; prevent mixed content.
+
+Acceptance Criteria
+
+SCORM Cloud parity: An iSpring 11 package that completes in SCORM Cloud also completes here with Completed/Passed and progress 100%.
+
+Mid-course resume: Exit mid-way → relaunch → resumes where left off (bookmark via suspend_data).
+
+Both versions work: SCORM 1.2 and 2004 packages report status, score, and progress correctly.
+
+UI reflects reality: The LMS progress bar updates during study and reaches 100% on completion.
+
+Multiple attempts: Past attempts are preserved; new attempt starts only when policy allows.
+
+No cross-origin failures: API discovery works in iframe/new window launch without console errors.
+
+Test Plan (use iSpring 11 publishes)
+
+1.2 (slides-based completion): set “complete by viewing all slides”. Expect lesson_status=completed, 100%.
+
+1.2 (quiz-based): pass mark 80%. Fail once (expect failed/incomplete), then pass (Completed/Passed).
+
+2004 (slides-based): ensure cmi.completion_status=completed; verify progress_measure if provided.
+
+2004 (quiz-based): ensure success_status=passed leads to completion in LMS.
+
+Resume & Commit: Complete half → close → reopen → continue → finish, all persisted.
+
+Network blip: Temporarily block network on Commit, verify retry then stored.
+
+Implementation Notes (helpers)
+
+Server persist (pseudo-TypeScript)
+
+// persist.ts
+export async function persistRuntime(attemptId: string, pairs: Record<string,string>) {
+  // Upsert known fields by scorm version; store others in a JSON column if you wish.
+  // Update last_commit_at. If completion condition becomes true, mark attempt completed.
+}
+
+
+API dispatcher
+
+// api-dispatch.ts
+export function makeScormApis({ attemptId, version }) {
+  return {
+    API: makeScorm12({ attemptId }),
+    API_1484_11: makeScorm2004({ attemptId })
+  }
+}
+
+
+Client injector (snippet idea)
+
+// scorm-api-injector.js
+(function(){
+  // attach APIs to window; expose Get/Set/Commit that POST to /scorm/runtime/:attemptId/commit
+  // cache last error code; maintain in-memory model mirroring SCO values
+  // ensure functions return "true"/"false" as strings (SCORM spec)
+})();
+
+Migration/Clean-up
+
+Remove any legacy progress logic that caps at 15% or reads only one status flag.
+
+Ensure LMS completion rules accept either completion or success per spec above.
+
+Deliverables: Working runtime; DB migration; launch route; injector; updated progress UI; tests passing; short README for future devs.
