@@ -3829,8 +3829,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Find active assignment for this user and course
-      const assignments = await storage.getAssignmentsForUser(userId);
-      const assignment = assignments.find(a => a.courseId === courseId && a.status !== 'completed');
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find((a: any) => a.courseId === courseId && a.status !== 'completed');
       
       if (!assignment) {
         return res.status(403).json({ error: 'No active assignment found for this course' });
