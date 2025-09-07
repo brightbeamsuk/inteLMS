@@ -1,0 +1,129 @@
+Objective: Learners can exit and resume where they left off. Admins can see the current status of each course attempt as “Not Started” → “In Progress” → “Completed”.
+
+Requirements
+1. API exposure (unchanged)
+
+Expose window.API_1484_11 for SCORM 2004 runtime.
+
+Ensure same-origin launch or proxy so SCO can reach the API.
+
+2. Attempt lifecycle
+
+On launch (Initialize)
+
+If no attempt exists → create new row with:
+status = "In Progress",
+launched_at = now.
+
+If an open attempt exists → resume it. If its status was "Not Started", switch to "In Progress".
+
+On every Commit
+
+Persist runtime values (cmi.suspend_data, cmi.location, etc).
+
+Ensure attempt status = "In Progress" until complete.
+
+On Finish / completion condition
+
+When completion_status="completed" OR success_status="passed", set:
+
+status = "Completed"
+
+completed = true
+
+Save score_raw and pass/fail.
+
+terminated_at = now, closed=true.
+
+DB schema additions
+
+Add/ensure a column:
+
+status (Not Started | In Progress | Completed)
+
+Existing fields stay (completion_status, success_status, score, progress, suspend_data, etc.).
+
+Server changes
+
+Commit endpoint (update):
+
+app.post('/scorm/runtime/commit', requireAuth, async (req, res) => {
+  const { attemptId, values } = req.body;
+  if (!attemptId) return res.status(400).json({ ok:false, message:'No attempt' });
+  const get = k => (values?.[k] ?? '').toString();
+
+  const patch = {
+    location: get('cmi.location') || null,
+    suspend_data: get('cmi.suspend_data') || null,
+    completion_status: get('cmi.completion_status') || null,
+    success_status: get('cmi.success_status') || null,
+    score_raw: get('cmi.score.raw') || null,
+    progress_measure: get('cmi.progress_measure') || null,
+    last_commit_at: new Date()
+  };
+
+  // Default to In Progress if not complete
+  patch.status = 'In Progress';
+
+  const completed = (patch.completion_status === 'completed') || (patch.success_status === 'passed');
+  if (completed) {
+    patch.completed = true;
+    patch.status = 'Completed';
+  }
+
+  await db.updateAttempt(attemptId, patch);
+  res.json({ ok:true, status:patch.status, completed });
+});
+
+
+Finish endpoint (update):
+
+app.post('/lms/attempt/finish', requireAuth, async (req, res) => {
+  const attemptId = req.session.currentAttemptId;
+  if (!attemptId) return res.status(400).json({ ok:false, message:'No active attempt' });
+
+  const snap = req.body?.snapshot || {};
+  const attempt = await db.getAttempt(attemptId);
+  if (!attempt) return res.status(404).json({ ok:false, message:'Attempt not found' });
+
+  const completion_status = snap.completion_status || attempt.completion_status || 'unknown';
+  const success_status    = snap.success_status    || attempt.success_status    || 'unknown';
+  const score_raw         = snap.score_raw ?? attempt.score_raw ?? null;
+
+  const isComplete = (completion_status === 'completed') || (success_status === 'passed');
+
+  await db.updateAttempt(attemptId, {
+    completion_status, success_status, score_raw,
+    status: isComplete ? 'Completed' : 'In Progress',
+    completed: isComplete,
+    last_commit_at: new Date(),
+    terminated_at: new Date(),
+    closed: true
+  });
+
+  res.json({ ok:true, status:isComplete?'Completed':'In Progress', completed:isComplete });
+});
+
+Admin view
+
+When admin queries attempts:
+
+Not Started = no launch yet.
+
+In Progress = launched, commits happening, not yet completed.
+
+Completed = finished (pass/fail + score available).
+
+Add this to the admin dashboard query/endpoint to include status.
+
+Acceptance criteria
+
+Learner starts course → attempt row created with status="In Progress".
+
+Learner exits mid-way → on admin dashboard, attempt shows "In Progress".
+
+Learner resumes → course resumes from suspend_data; admin still sees "In Progress".
+
+Learner completes → attempt switches to "Completed", with score and pass/fail saved.
+
+Admin dashboard shows the correct status for each learner/course.
