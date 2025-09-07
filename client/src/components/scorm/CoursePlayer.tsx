@@ -644,15 +644,27 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     try {
       console.log('🎯 Finishing course - forcing final SCORM commit...');
       
-      // Force final commit for both SCORM versions
+      let scormSnapshot = { version: 'none' };
+      
+      // Force final commit for both SCORM versions and capture snapshot
       if (typeof (window as any).API_1484_11 !== 'undefined') {
         const api = (window as any).API_1484_11;
         try {
           api.Commit('');
           console.log('📊 SCORM 2004: Final commit completed');
+          
+          // Capture SCORM 2004 snapshot
+          scormSnapshot = {
+            version: '2004',
+            completion_status: api.GetValue('cmi.completion_status') || 'unknown',
+            success_status: api.GetValue('cmi.success_status') || 'unknown',
+            score_raw: api.GetValue('cmi.score.raw') || '',
+            progress_measure: api.GetValue('cmi.progress_measure') || ''
+          };
         } catch (e) {
           console.warn('SCORM 2004 commit warning:', e);
         }
+        
         try {
           api.Terminate('');
           console.log('📊 SCORM 2004: Terminated successfully');
@@ -664,9 +676,18 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         try {
           api.LMSCommit('');
           console.log('📊 SCORM 1.2: Final commit completed');
+          
+          // Capture SCORM 1.2 snapshot
+          scormSnapshot = {
+            version: '1.2',
+            lesson_status: api.LMSGetValue('cmi.core.lesson_status') || 'not attempted',
+            score_raw: api.LMSGetValue('cmi.core.score.raw') || '',
+            lesson_location: api.LMSGetValue('cmi.core.lesson_location') || ''
+          };
         } catch (e) {
           console.warn('SCORM 1.2 commit warning:', e);
         }
+        
         try {
           api.LMSFinish('');
           console.log('📊 SCORM 1.2: Finished successfully');
@@ -675,20 +696,59 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         }
       }
 
-      // Send final result to LMS
-      await sendScormResult('finish');
-      
-      toast({
-        title: "Course Completed!",
-        description: score ? `Score: ${score}%` : "Course completed successfully",
+      // Determine completion status
+      const isComplete = scormSnapshot.version === '2004' 
+        ? (scormSnapshot.completion_status === 'completed' || scormSnapshot.success_status === 'passed')
+        : (scormSnapshot.lesson_status === 'completed' || scormSnapshot.lesson_status === 'passed');
+
+      const progressPercent = scormSnapshot.version === '2004' && scormSnapshot.progress_measure 
+        ? Math.round(Math.max(0, Math.min(1, parseFloat(scormSnapshot.progress_measure))) * 100)
+        : (isComplete ? 100 : 0);
+
+      console.log('🏁 Sending finish request with snapshot:', { 
+        snapshot: scormSnapshot, 
+        complete: isComplete, 
+        progress: progressPercent 
       });
+
+      // Call the idempotent finish endpoint
+      const response = await fetch('/lms/attempt/finish', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          snapshot: scormSnapshot,
+          complete: isComplete,
+          progress: progressPercent
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.ok) {
+        toast({
+          title: "Course Completed!",
+          description: score ? `Score: ${score}%` : "Course completed successfully",
+        });
+        
+        // Close the course player
+        onComplete();
+      } else {
+        // Show server message but allow retry
+        toast({
+          title: "Course Completion",
+          description: result.message || 'Could not finalize the attempt. Please try again.',
+          variant: result.message?.includes('not reported completion') ? 'default' : 'destructive',
+        });
+      }
       
-      onComplete();
     } catch (error) {
-      console.error('Error completing course:', error);
+      console.error('❌ Error finishing course:', error);
       toast({
-        title: "Error",
-        description: "Failed to complete course. Please try again.",
+        title: "Network Error",
+        description: "Failed to complete course due to network error. Please try again.",
         variant: "destructive",
       });
     }
