@@ -2397,7 +2397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Calculate matrix data only for filtered staff and courses
       const matrix: any[][] = [];
-      const summary = { red: 0, amber: 0, green: 0, grey: 0, blue: 0 };
+      const summary = { red: 0, amber: 0, green: 0, grey: 0, blue: 0, failed: 0 };
 
       // Current date for expiry calculations (Europe/London timezone)
       const now = new Date();
@@ -2424,7 +2424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Find latest completion
+          // Find latest successful completion
           const userCompletions = completions.filter(c => 
             c.userId === staffMember.id && 
             c.courseId === course.id &&
@@ -2435,13 +2435,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
             new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()
           )[0];
 
+          // Check for failed attempts
+          const failedCompletions = completions.filter(c => 
+            c.userId === staffMember.id && 
+            c.courseId === course.id &&
+            c.status === 'fail'
+          );
+
+          const latestFailedCompletion = failedCompletions.sort((a, b) => 
+            new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()
+          )[0];
+
+          // If there are failed attempts but no successful completion, show failed status
+          if (!latestCompletion && latestFailedCompletion) {
+            staffRow.push({
+              status: 'failed',
+              label: 'Failed',
+              score: latestFailedCompletion.score ? parseFloat(latestFailedCompletion.score) : null,
+              completionDate: new Date(latestFailedCompletion.completedAt!).toLocaleDateString('en-GB'),
+              attemptCount: completions.filter(c => 
+                c.userId === staffMember.id && c.courseId === course.id
+              ).length,
+              assignmentId: assignment.id,
+              completionId: latestFailedCompletion.id
+            });
+            
+            // Update summary counts for failed attempts
+            if (!summary.failed) summary.failed = 0;
+            summary.failed++;
+            continue;
+          }
+
           if (!latestCompletion) {
             // Not completed - check assignment status and due date
             const now = new Date();
             const sevenDaysFromNow = new Date();
             sevenDaysFromNow.setDate(now.getDate() + 7);
             
-            let cellStatus: 'red' | 'amber' | 'blue' | 'grey';
+            let cellStatus: 'red' | 'amber' | 'blue' | 'grey' | 'failed';
             let cellLabel: string;
             
             // Check assignment status first

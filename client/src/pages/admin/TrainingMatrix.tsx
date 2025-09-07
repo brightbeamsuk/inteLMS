@@ -36,7 +36,7 @@ interface CourseInfo {
 }
 
 interface MatrixCell {
-  status: 'red' | 'amber' | 'green' | 'blue' | 'grey' | 'blank';
+  status: 'red' | 'amber' | 'green' | 'blue' | 'grey' | 'blank' | 'failed';
   label: string;
   date?: string;
   score?: number;
