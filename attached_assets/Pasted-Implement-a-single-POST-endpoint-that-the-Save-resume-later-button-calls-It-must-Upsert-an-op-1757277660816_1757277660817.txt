@@ -1,0 +1,133 @@
+Implement a single POST endpoint that the “Save & resume later” button calls. It must:
+
+Upsert an open attempt for (user_id, course_id) if none exists.
+
+Set status = "In Progress" every time it’s called.
+
+Persist cmi.location and cmi.suspend_data (if provided).
+
+Return the new state so the UI can update immediately.
+
+1) Backend (Express example)
+// POST /lms/attempt/save
+// Body: { courseId, attemptId? (optional), location?, suspend_data? }
+app.post('/lms/attempt/save', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const { courseId, attemptId, location, suspend_data } = req.body;
+
+  // 1) Find or create open attempt
+  let attempt = null;
+  if (attemptId) attempt = await db.getAttempt(attemptId);
+  if (!attempt) attempt = await db.findOpenAttempt(userId, courseId);
+  if (!attempt) {
+    attempt = await db.createAttempt({
+      user_id: userId,
+      course_id: courseId,
+      scorm_version: '2004',
+      status: 'In Progress',
+      completed: false,
+      closed: false,
+      launched_at: new Date()
+    });
+  }
+
+  // 2) Force "In Progress" and persist bookmark
+  await db.updateAttempt(attempt.id, {
+    status: 'In Progress',
+    location: location ?? attempt.location ?? null,
+    suspend_data: suspend_data ?? attempt.suspend_data ?? null,
+    last_commit_at: new Date()
+  });
+
+  // 3) Return canonical state for UI
+  const fresh = await db.getAttempt(attempt.id);
+  return res.json({
+    ok: true,
+    attemptId: fresh.id,
+    status: fresh.status,                // "In Progress"
+    canResume: (!fresh.closed && fresh.status === 'In Progress')
+  });
+});
+
+
+DB fields needed: id, user_id, course_id, status, location, suspend_data, scorm_version, completed, closed, launched_at, last_commit_at.
+
+2) Front-end (wire the button)
+
+Replace the current save click with this minimal call and UI refresh:
+
+async function saveAndResumeLater(courseId, attemptId, location, suspendData){
+  // Optional: ask the SCO to commit before saving (best effort)
+  try { window.API_1484_11?.Commit(""); } catch {}
+
+  const res = await fetch('/lms/attempt/save', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    credentials: 'include',
+    body: JSON.stringify({ courseId, attemptId, location, suspend_data: suspendData })
+  }).then(r => r.json());
+
+  if (res?.ok) {
+    // Tell the parent/profile to refresh the card
+    window.parent?.postMessage({ type:'ATTEMPT_UPDATED', courseId }, '*');
+    alert('Progress saved. You can resume later.');
+  } else {
+    alert('Could not save progress. Please try again.');
+  }
+}
+
+// Hook your existing button:
+document.querySelector('[data-save-resume]')?.addEventListener('click', () => {
+  const courseId = window.COURSE_ID;
+  const attemptId = window.ATTEMPT_ID || null;
+  const A = window.API_1484_11;
+  const location = A ? A.GetValue('cmi.location') : '';
+  const sdata = A ? A.GetValue('cmi.suspend_data') : '';
+  saveAndResumeLater(courseId, attemptId, location, sdata);
+});
+
+
+And on the profile/course card page:
+
+window.addEventListener('message', (e) => {
+  if (e?.data?.type === 'ATTEMPT_UPDATED') {
+    renderCourseCard(e.data.courseId); // re-fetch /state and re-render buttons
+  }
+});
+
+3) Profile/course card must read state (no caching)
+// GET /lms/enrolments/:courseId/state must return { status, canResume, attemptId }
+async function renderCourseCard(courseId){
+  const s = await fetch(`/lms/enrolments/${courseId}/state`, {
+    credentials:'include',
+    cache:'no-store'
+  }).then(r=>r.json());
+
+  document.querySelector('[data-status]').textContent = s.status || 'Not Started';
+  document.querySelector('[data-start]').style.display  = (s.status === 'Not Started') ? '' : 'none';
+  document.querySelector('[data-resume]').style.display = (s.canResume) ? '' : 'none';
+}
+
+4) Acceptance criteria (must pass)
+
+Click Save & resume later → /lms/attempt/save is called, DB status becomes In Progress; profile updates to show Resume (no page reload needed).
+
+Admin list shows the same In Progress with updated Last activity.
+
+If the user never saved before and clicks Don’t save, profile shows Not Started.
+
+On completion (separate flow), status becomes Completed with score/pass.
+
+5) Two ultra-quick checks to verify it’s working
+
+A. Watch the network call in DevTools
+Click Save & resume later → you must see POST /lms/attempt/save → HTTP 200 with { ok:true, status:"In Progress" }.
+
+B. Manually query the state (replace host, cookie, ids):
+
+curl -s https://<host>/lms/enrolments/<COURSE_ID>/state \
+  --cookie "sid=<session>" 
+# Expect: {"status":"In Progress", "canResume":true, ...}
+
+
+If you don’t see HTTP 200 or the JSON above, the save endpoint isn’t being hit or isn’t updating the DB — fix that first. Once this endpoint is wired, the UI will reflect In Progress and the Resume button will appear.
