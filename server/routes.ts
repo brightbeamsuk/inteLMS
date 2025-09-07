@@ -3352,24 +3352,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SCORM 2004 (3rd Ed.) - Commit runtime data for Save & resume later
+  // POST /scorm/runtime/commit - Exact patch implementation
   app.post('/api/scorm/runtime/commit', requireAuth, async (req: any, res) => {
     try {
       const { attemptId, values } = req.body;
-      const userId = getUserIdFromSession(req);
-      
-      if (!userId) {
-        return res.status(401).json({ message: 'User not authenticated' });
-      }
+      const get = (k: string) => (values?.[k] ?? '').toString();
 
-      if (!attemptId || !values) {
-        return res.status(400).json({ message: 'Missing attemptId or values' });
-      }
-
-      // Helper function to safely get SCORM values
-      const get = (key: string) => (values?.[key] ?? '').toString();
-
-      // Extract SCORM 2004 runtime values
       const patch: any = {
         location: get('cmi.location') || null,
         suspendData: get('cmi.suspend_data') || null,
@@ -3377,47 +3365,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         successStatus: get('cmi.success_status') || null,
         scoreRaw: get('cmi.score.raw') ? parseFloat(get('cmi.score.raw')) : null,
         progressMeasure: get('cmi.progress_measure') ? parseFloat(get('cmi.progress_measure')) : null,
-        lastCommitAt: new Date()
+        lastCommitAt: new Date(),
+        status: 'in_progress'
       };
 
-      // Determine completion status - SCORM 2004 (3rd Ed.) compliant
-      let status = 'in_progress';
       const completed = (patch.completionStatus === 'completed') || (patch.successStatus === 'passed');
-      
       if (completed) {
-        status = 'completed';
-        patch.completed = true;
-        patch.closed = true;
-        patch.terminatedAt = new Date();
-      } else {
-        // Force status to "In Progress" for any commit (never leave as "Not Started")
-        status = 'in_progress';
-        patch.completed = false;
-        patch.closed = false;
+        Object.assign(patch, {
+          status: 'completed',
+          completed: true, 
+          closed: true, 
+          terminatedAt: new Date()
+        });
       }
 
-      patch.status = status;
-
-      // Update SCORM attempt record
-      const updatedAttempt = await storage.updateScormAttempt(attemptId, patch);
-
-      // Also update assignment status if completed
-      if (completed) {
-        // Find assignment by attemptId
-        const attempt = await storage.getScormAttemptByAttemptId(attemptId);
-        if (attempt) {
-          await storage.updateAssignment(attempt.assignmentId, {
-            status: 'completed',
-            completedAt: new Date()
-          });
-          console.log(`✅ Assignment ${attempt.assignmentId} marked as completed`);
-        }
-      }
-
-      console.log(`💾 SCORM commit saved for attempt ${attemptId}, status: ${status}`);
-      res.json({ 
+      await storage.updateScormAttempt(attemptId, patch);
+      return res.json({ 
         ok: true, 
-        status, 
+        status: patch.status, 
         completed 
       });
     } catch (error) {
