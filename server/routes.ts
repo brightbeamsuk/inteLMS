@@ -3997,13 +3997,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('⚠️ No active attempt ID found in session, trying to find latest...');
         
         // Try to find from recent SCORM activity
-        const recentAttempts = await storage.getScormAttemptsByUserId(userId);
+        const recentAttempts = await storage.getScormAttemptsByUser(userId);
         if (recentAttempts.length === 0) {
           return res.status(400).json({ ok: false, message: 'No active attempt found' });
         }
         
         // Use the most recent attempt that's not closed
-        const activeAttempt = recentAttempts.find(a => !a.closed) || recentAttempts[0];
+        const activeAttempt = recentAttempts.find((a: any) => !a.closed) || recentAttempts[0];
         req.session.currentAttemptId = activeAttempt.attemptId;
       }
 
@@ -4057,12 +4057,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Persist final state (idempotent updates)
       const finalProgress = Number.isFinite(progress) ? progress : (isComplete ? 100 : attempt.progressPercent || 0);
       const updates = {
-        scormVersion: snap.version || attempt.scormVersion,
+        standard: (snap.version === '2004' ? '2004' : '1.2') as '1.2' | '2004',
         completionStatus: status,
         successStatus: success,
-        scoreRaw: score,
+        scoreRaw: score !== null ? score.toString() : null,
         progressPercent: finalProgress,
-        completed: true,
+        completed: isComplete,
         closed: true,
         finishedAt: now,
         lastCommitAt: now,
