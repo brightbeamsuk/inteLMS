@@ -131,6 +131,11 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
           setProgress(result.derivedFields.progressPercent);
           addDebugLog(`📊 Progress updated: ${progress}% → ${result.derivedFields.progressPercent}%`);
         }
+        
+        // Update completion status based on backend calculation
+        if (result.derivedFields.completed !== undefined) {
+          setIsCompleted(result.derivedFields.completed);
+        }
       }
       
       addDebugLog(`✅ SCORM result sent (${reason}): ${JSON.stringify({
@@ -589,6 +594,9 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     };
   }, [assignmentId]);
 
+  // Track if course is completed based on SCORM status
+  const [isCompleted, setIsCompleted] = useState(false);
+
   const handleComplete = async () => {
     const state = attemptStateRef.current;
     const score = state['cmi.core.score.raw'] || state['cmi.score.raw'];
@@ -629,9 +637,6 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-lg" data-testid="text-course-title">{courseTitle}</h3>
           <div className="flex gap-2">
-            <div className="badge badge-info" data-testid="text-course-progress">
-              Progress: {progress}%
-            </div>
             <button 
               className="btn btn-sm btn-circle"
               onClick={onClose}
@@ -757,26 +762,16 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
             <div className="text-sm text-base-content/60">
               Status: {attemptStateRef.current['cmi.core.lesson_status'] || attemptStateRef.current['cmi.completion_status'] || 'Not Started'}
             </div>
-            
-            <progress 
-              className="progress progress-primary w-64" 
-              value={progress} 
-              max="100"
-              data-testid="progress-course"
-            ></progress>
-            
-            <div className="text-sm font-mono">
-              {progress}%
-            </div>
           </div>
           
           <button 
-            className={`btn btn-sm ${progress === 100 ? 'btn-success' : 'btn-primary'}`}
+            className={`btn btn-sm ${isCompleted ? 'btn-success' : 'btn-primary btn-disabled'}`}
             onClick={handleComplete}
+            disabled={!isCompleted}
             data-testid="button-complete-course"
           >
             <i className="fas fa-check"></i> 
-            {progress === 100 ? 'Complete' : 'Finish'}
+            {isCompleted ? 'Complete' : 'Finish'}
           </button>
         </div>
       </div>
