@@ -431,6 +431,126 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         addDebugLog(`👤 Learner: ${attemptStateRef.current['cmi.core.student_name']}`);
         addDebugLog(`🆔 Attempt ID: ${newAttemptId}`);
         
+        // Expose debugging functions to browser console for live SCORM inspection
+        (window as any).scormDebug = {
+          // Get all current SCORM data
+          getData: () => {
+            console.log('📊 Current SCORM Data State:', attemptStateRef.current);
+            return attemptStateRef.current;
+          },
+          
+          // Get specific SCORM field
+          getField: (field: string) => {
+            const value = attemptStateRef.current[field];
+            console.log(`📋 SCORM Field "${field}":`, value);
+            return value;
+          },
+          
+          // Set SCORM field (for testing)
+          setField: (field: string, value: string) => {
+            console.log(`🔧 Setting SCORM field "${field}" = "${value}"`);
+            const api = scormUrl?.includes('2004') ? (window as any).API_1484_11 : (window as any).API;
+            if (api && api.SetValue) {
+              api.SetValue(field, value);
+              console.log('✅ Field set successfully');
+            } else {
+              console.error('❌ SCORM API not available');
+            }
+          },
+          
+          // Force progress calculation
+          calculateProgress: () => {
+            console.log('📊 Triggering progress calculation...');
+            sendScormResult('commit');
+          },
+          
+          // Show progress details
+          showProgress: () => {
+            console.log(`📈 Current Progress: ${progress}%`);
+            console.log('📊 Detailed Progress Analysis:');
+            const standard = scormUrl?.includes('2004') ? '2004' : '1.2';
+            
+            if (standard === '2004') {
+              console.log(`   completion_status: "${attemptStateRef.current['cmi.completion_status']}"`);
+              console.log(`   success_status: "${attemptStateRef.current['cmi.success_status']}"`);
+              console.log(`   progress_measure: "${attemptStateRef.current['cmi.progress_measure']}"`);
+            } else {
+              console.log(`   lesson_status: "${attemptStateRef.current['cmi.core.lesson_status']}"`);
+              console.log(`   suspend_data length: ${(attemptStateRef.current['cmi.suspend_data'] || '').length} chars`);
+            }
+          },
+          
+          // Simulate course completion (for testing)
+          markComplete: () => {
+            console.log('🎯 Simulating course completion...');
+            const standard = scormUrl?.includes('2004') ? '2004' : '1.2';
+            if (standard === '2004') {
+              (window as any).scormDebug.setField('cmi.completion_status', 'completed');
+              (window as any).scormDebug.setField('cmi.success_status', 'passed');
+              (window as any).scormDebug.setField('cmi.progress_measure', '1.0');
+            } else {
+              (window as any).scormDebug.setField('cmi.core.lesson_status', 'completed');
+            }
+            (window as any).scormDebug.calculateProgress();
+          },
+          
+          // Export current state for analysis
+          export: () => {
+            const exportData = {
+              timestamp: new Date().toISOString(),
+              attemptId: attemptId,
+              assignmentId: assignmentId,
+              standard: scormUrl?.includes('2004') ? '2004' : '1.2',
+              progress: progress,
+              scormData: {...attemptStateRef.current}
+            };
+            console.log('💾 Export Data:', exportData);
+            
+            // Create downloadable file
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `scorm-debug-${attemptId}-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            return exportData;
+          },
+          
+          // Show help for debugging functions
+          help: () => {
+            console.log(`
+🔧 SCORM Debug Console Functions:
+  
+📊 Data Inspection:
+  scormDebug.getData()           - Show all SCORM data
+  scormDebug.getField(field)     - Get specific field value
+  scormDebug.showProgress()      - Show progress analysis
+  
+🛠️ Data Manipulation (for testing):
+  scormDebug.setField(field, value) - Set SCORM field value
+  scormDebug.markComplete()      - Simulate completion
+  scormDebug.calculateProgress() - Force progress calculation
+  
+💾 Export & Analysis:
+  scormDebug.export()            - Download current state as JSON
+  scormDebug.help()              - Show this help
+  
+📋 Examples:
+  scormDebug.getField('cmi.core.lesson_status')  
+  scormDebug.setField('cmi.core.score.raw', '85')
+  scormDebug.showProgress()
+            `);
+          }
+        };
+        
+        // Show console message about debugging tools
+        console.log('🔧 SCORM Debug Tools Available! Use scormDebug.help() for commands.');
+        addDebugLog('🔧 Debug tools: scormDebug.help() in console');
+        
         // Set up 10-second timeout for SCORM initialization
         initTimeoutRef.current = setTimeout(() => {
           if (!scormInitialized) {
