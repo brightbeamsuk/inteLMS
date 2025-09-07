@@ -79,7 +79,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   const sendScormResult = async (reason: 'commit' | 'finish') => {
     try {
       const state = attemptStateRef.current;
-      const scormVersion = state['cmi.core.lesson_status'] !== undefined ? '1.2' : '2004';
+      // Improved SCORM version detection - prioritize 2004 if completion status fields are present
+      const scormVersion = (state['cmi.completion_status'] !== undefined || state['cmi.success_status'] !== undefined) ? '2004' : '1.2';
       
       let payload: any = {
         learnerId: state['cmi.core.student_id'] || state['cmi.learner_id'],

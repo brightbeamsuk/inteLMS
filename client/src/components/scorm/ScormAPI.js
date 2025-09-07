@@ -628,7 +628,7 @@ class ScormAPI {
         console.log('🚪 Page unloading - auto-commit and terminate');
         if (this.data['cmi.core.lesson_status'] || this.data['cmi.completion_status']) {
           this.commitWithRetry(
-            this.data['cmi.core.lesson_status'] !== undefined ? '1.2' : '2004', 
+            (this.data['cmi.completion_status'] !== undefined || this.data['cmi.success_status'] !== undefined) ? '2004' : '1.2', 
             'finish'
           );
         }
