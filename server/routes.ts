@@ -4094,6 +4094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scoreRaw: score !== null ? score.toString() : null,
         progressPercent: finalProgress,
         completed: isComplete,
+        status: isComplete ? 'completed' : 'in_progress',
         closed: true,
         finishedAt: now,
         lastCommitAt: now,

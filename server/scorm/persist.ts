@@ -36,7 +36,7 @@ export class ScormPersistence {
       organisationId: data.organisationId,
       itemId: data.itemId,
       standard: data.standard,
-      status: 'active',
+      status: 'not_started',
       
       // Initialize with proper defaults based on SCORM version
       ...(data.standard === '1.2' ? {
@@ -129,6 +129,9 @@ export class ScormPersistence {
     
     // Calculate completion status
     this.calculateCompletion(standard, updateData, currentAttempt);
+    
+    // Handle status lifecycle management
+    this.updateStatusLifecycle(updateData, currentAttempt);
     
     // Update the attempt
     await db
@@ -327,5 +330,35 @@ export class ScormPersistence {
     }
     
     return attempt[0];
+  }
+
+  /**
+   * Handle SCORM attempt status lifecycle management
+   * Not Started → In Progress → Completed
+   */
+  private updateStatusLifecycle(updateData: any, currentAttempt: any): void {
+    const currentStatus = currentAttempt.status || 'not_started';
+    
+    // Default to In Progress if not complete
+    updateData.status = 'in_progress';
+    
+    // Check if we're completing the attempt
+    const completed = updateData.completed ?? currentAttempt.completed ?? false;
+    
+    if (completed) {
+      // Mark as completed when completion conditions are met
+      updateData.status = 'completed';
+      updateData.isActive = false;
+      
+      // Set terminated timestamp if not already set
+      if (!currentAttempt.finishedAt && !updateData.finishedAt) {
+        updateData.finishedAt = new Date();
+      }
+    } else {
+      // Keep active and in progress for ongoing attempts
+      updateData.isActive = true;
+    }
+    
+    console.log(`📊 Status lifecycle: ${currentStatus} → ${updateData.status} (Completed: ${completed})`);
   }
 }
