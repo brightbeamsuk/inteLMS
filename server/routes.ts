@@ -3300,6 +3300,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // SCORM 2004 (3rd Ed.) - Start attempt and mark as In Progress on first launch
+  app.post('/api/lms/attempt/start', requireAuth, async (req: any, res) => {
+    try {
+      const { courseId } = req.body;
+      const userId = getUserIdFromSession(req);
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      // Find the assignment for this user and course
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId);
+      
+      if (!assignment) {
+        return res.status(404).json({ message: 'Assignment not found' });
+      }
+
+      // Look for existing open attempt
+      let attempt = await storage.getActiveScormAttempt(userId, assignment.id);
+      
+      if (!attempt) {
+        // Create new attempt with status "in_progress"
+        const attemptData = {
+          attemptId: `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          assignmentId: assignment.id,
+          userId,
+          courseId: assignment.courseId,
+          organisationId: assignment.organisationId,
+          scormVersion: '2004', // Default to SCORM 2004
+          status: 'in_progress',
+          completed: false,
+          closed: false,
+          launchedAt: new Date(),
+          passmark: 80
+        };
+
+        attempt = await storage.createScormAttempt(attemptData);
+        
+        // Also update assignment status to in_progress
+        await storage.updateAssignment(assignment.id, {
+          status: 'in_progress',
+          startedAt: new Date()
+        });
+        
+        console.log(`🚀 Created new SCORM attempt ${attempt.attemptId} for user ${userId}, course ${courseId}`);
+      } else if (attempt.status !== 'completed') {
+        // Update existing attempt to in_progress if not completed
+        await storage.updateScormAttempt(attempt.attemptId, { status: 'in_progress' });
+        
+        // Also update assignment status
+        if (assignment.status === 'not_started') {
+          await storage.updateAssignment(assignment.id, {
+            status: 'in_progress',
+            startedAt: new Date()
+          });
+        }
+        
+        console.log(`📄 Updated existing attempt ${attempt.attemptId} to in_progress`);
+      }
+
+      res.json({ 
+        ok: true, 
+        attemptId: attempt.attemptId, 
+        status: 'in_progress' 
+      });
+    } catch (error) {
+      console.error('Error starting attempt:', error);
+      res.status(500).json({ message: 'Failed to start attempt' });
+    }
+  });
+
   // Get assignments for a specific user (admin only)
   app.get('/api/assignments/user/:userId', requireAuth, async (req: any, res) => {
     try {
