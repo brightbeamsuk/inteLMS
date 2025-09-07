@@ -598,22 +598,84 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   // Track if course is completed based on SCORM status
   const [isCompleted, setIsCompleted] = useState(false);
 
+  // Monitor SCORM state changes to update completion status
+  useEffect(() => {
+    const checkCompletion = () => {
+      const state = attemptStateRef.current;
+      
+      // Check SCORM 2004 completion (prioritize)
+      const completionStatus = state['cmi.completion_status'];
+      const successStatus = state['cmi.success_status'];
+      
+      // Check SCORM 1.2 completion (fallback)
+      const lessonStatus = state['cmi.core.lesson_status'];
+      
+      // Determine if course is complete based on SCORM standards
+      let courseComplete = false;
+      
+      if (completionStatus !== undefined || successStatus !== undefined) {
+        // SCORM 2004: Check completion_status OR success_status
+        courseComplete = (completionStatus === 'completed') || (successStatus === 'passed');
+      } else if (lessonStatus !== undefined) {
+        // SCORM 1.2: Check lesson_status
+        courseComplete = (lessonStatus === 'completed') || (lessonStatus === 'passed');
+      }
+      
+      if (courseComplete !== isCompleted) {
+        setIsCompleted(courseComplete);
+        if (courseComplete) {
+          console.log('🎯 Course completion detected - enabling finish button');
+        }
+      }
+    };
+
+    // Check completion initially and set up periodic checks
+    checkCompletion();
+    const interval = setInterval(checkCompletion, 1000); // Check every second
+    
+    return () => clearInterval(interval);
+  }, [isCompleted]);
+
   const handleComplete = async () => {
     const state = attemptStateRef.current;
     const score = state['cmi.core.score.raw'] || state['cmi.score.raw'];
-    const status = state['cmi.core.lesson_status'] || state['cmi.completion_status'];
     
-    if (status !== 'completed' && status !== 'passed') {
-      toast({
-        title: "Course Incomplete",
-        description: "Please complete the course content first",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    // Force a final SCORM commit and terminate before finishing
     try {
-      // Final commit of SCORM data
+      console.log('🎯 Finishing course - forcing final SCORM commit...');
+      
+      // Force final commit for both SCORM versions
+      if (typeof (window as any).API_1484_11 !== 'undefined') {
+        const api = (window as any).API_1484_11;
+        try {
+          api.Commit('');
+          console.log('📊 SCORM 2004: Final commit completed');
+        } catch (e) {
+          console.warn('SCORM 2004 commit warning:', e);
+        }
+        try {
+          api.Terminate('');
+          console.log('📊 SCORM 2004: Terminated successfully');
+        } catch (e) {
+          console.warn('SCORM 2004 terminate warning:', e);
+        }
+      } else if (typeof (window as any).API !== 'undefined') {
+        const api = (window as any).API;
+        try {
+          api.LMSCommit('');
+          console.log('📊 SCORM 1.2: Final commit completed');
+        } catch (e) {
+          console.warn('SCORM 1.2 commit warning:', e);
+        }
+        try {
+          api.LMSFinish('');
+          console.log('📊 SCORM 1.2: Finished successfully');
+        } catch (e) {
+          console.warn('SCORM 1.2 finish warning:', e);
+        }
+      }
+
+      // Send final result to LMS
       await sendScormResult('finish');
       
       toast({
@@ -626,7 +688,7 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       console.error('Error completing course:', error);
       toast({
         title: "Error",
-        description: "Failed to complete course",
+        description: "Failed to complete course. Please try again.",
         variant: "destructive",
       });
     }
