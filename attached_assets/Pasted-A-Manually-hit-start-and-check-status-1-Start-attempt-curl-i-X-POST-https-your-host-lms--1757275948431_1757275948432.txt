@@ -1,0 +1,170 @@
+A. Manually hit “start” and check status
+# 1) Start attempt
+curl -i -X POST https://<your-host>/lms/attempt/start \
+  -H "Content-Type: application/json" \
+  --cookie "sid=<your-session-cookie>" \
+  -d '{"courseId":"<COURSE_ID>"}'
+
+# 2) Read state
+curl -s https://<your-host>/lms/enrolments/<COURSE_ID>/state \
+  --cookie "sid=<your-session-cookie>"
+
+
+Expected JSON right now (after start):
+
+{ "status":"In Progress", "hasOpenAttempt":true, "canResume":true, ... }
+
+
+If it doesn’t say In Progress, your /lms/attempt/start isn’t updating the DB (fix step 2).
+
+B. Save & resume later: verify commit flips status
+curl -i -X POST https://<your-host>/scorm/runtime/commit \
+  -H "Content-Type: application/json" \
+  --cookie "sid=<your-session-cookie)" \
+  -d '{
+    "attemptId":"<ATTEMPT_ID>",
+    "values":{
+      "cmi.location":"slide-5",
+      "cmi.suspend_data":"TEST",
+      "cmi.completion_status":"incomplete",
+      "cmi.success_status":"unknown"
+    }
+  }'
+curl -s https://<your-host>/lms/enrolments/<COURSE_ID>/state \
+  --cookie "sid=<your-session-cookie>"
+
+
+Expected: still In Progress, hasOpenAttempt:true, canResume:true.
+
+If both A and B look right in curl but the profile still shows “Not Started”, the front end isn’t reading /state properly or is cached.
+
+2) Make status definitely persist (DB-first fix)
+
+Ask Replit to paste this exact patch:
+
+A. Update the “start” endpoint to always set In Progress
+
+// POST /lms/attempt/start
+app.post('/lms/attempt/start', requireAuth, async (req, res) => {
+  const { courseId } = req.body;
+  const userId = req.user.id;
+
+  let attempt = await db.findOpenAttempt(userId, courseId);
+  if (!attempt) {
+    attempt = await db.createAttempt({
+      user_id: userId, course_id: courseId,
+      scorm_version: '2004',
+      status: 'In Progress',
+      completed: false, closed: false,
+      launched_at: new Date()
+    });
+  } else if (attempt.status !== 'Completed') {
+    await db.updateAttempt(attempt.id, { status: 'In Progress' });
+  }
+
+  req.session.currentAttemptId = attempt.id;
+  return res.json({ ok:true, attemptId: attempt.id, status:'In Progress' });
+});
+
+
+B. Commit endpoint forces “In Progress” until completed
+
+// POST /scorm/runtime/commit
+app.post('/scorm/runtime/commit', requireAuth, async (req, res) => {
+  const { attemptId, values } = req.body;
+  const get = k => (values?.[k] ?? '').toString();
+
+  const patch = {
+    location: get('cmi.location') || null,
+    suspend_data: get('cmi.suspend_data') || null,
+    completion_status: get('cmi.completion_status') || null,
+    success_status: get('cmi.success_status') || null,
+    score_raw: get('cmi.score.raw') || null,
+    progress_measure: get('cmi.progress_measure') || null,
+    last_commit_at: new Date(),
+    status: 'In Progress'
+  };
+
+  const completed = (patch.completion_status === 'completed') || (patch.success_status === 'passed');
+  if (completed) {
+    Object.assign(patch, {
+      status: 'Completed',
+      completed: true, closed: true, terminated_at: new Date()
+    });
+  }
+
+  await db.updateAttempt(attemptId, patch);
+  return res.json({ ok:true, status:patch.status, completed });
+});
+
+
+C. State endpoint drives the UI
+
+// GET /lms/enrolments/:courseId/state
+app.get('/lms/enrolments/:courseId/state', requireAuth, async (req, res) => {
+  const userId = req.user.id, { courseId } = req.params;
+  const attempt = await db.getLatestAttempt(userId, courseId); // prefer open
+  if (!attempt) return res.json({ status:'Not Started', hasOpenAttempt:false, canResume:false });
+
+  const canResume = (!attempt.closed && attempt.status === 'In Progress');
+  return res.json({
+    status: attempt.status,
+    hasOpenAttempt: !attempt.closed,
+    canResume,
+    attemptId: attempt.id,
+    lastActivity: attempt.last_commit_at || attempt.launched_at,
+    score: attempt.completed ? Number(attempt.score_raw ?? 0) : null,
+    pass: attempt.completed ? (attempt.success_status === 'passed') : null
+  });
+});
+
+3) Make the profile/course card actually use the state
+
+On the front end, do not hard-code “Not Started”. Bind to /state:
+
+async function loadState(courseId){
+  const r = await fetch(`/lms/enrolments/${courseId}/state`, { credentials:'include', cache:'no-store' });
+  return r.json();
+}
+
+async function renderCourseCard(courseId){
+  const s = await loadState(courseId);
+  const startBtn  = document.querySelector('[data-start]');
+  const resumeBtn = document.querySelector('[data-resume]');
+  const statusEl  = document.querySelector('[data-status]');
+
+  statusEl.textContent = s.status || 'Not Started';
+  startBtn.style.display  = (s.status === 'Not Started') ? '' : 'none';
+  resumeBtn.style.display = (s.canResume) ? '' : 'none';
+}
+
+
+Important: pass cache:'no-store' or add Cache-Control: no-store on the API to avoid stale “Not Started”.
+
+4) Wire the “Save & resume later” button to refresh the card
+
+After the learner clicks Save & resume later inside the SCO:
+
+// after showing the success toast:
+window.parent?.postMessage({ type:'ATTEMPT_UPDATED' }, '*');
+
+
+In the parent/profile page:
+
+window.addEventListener('message', (e) => {
+  if (e?.data?.type === 'ATTEMPT_UPDATED') {
+    renderCourseCard(COURSE_ID); // re-fetch /state and update buttons
+  }
+});
+
+5) Admin list: show the same status
+
+Ensure the admin list query selects the status column from the latest attempt per user/course and renders Not Started / In Progress / Completed along with last_commit_at and score_raw. No extra logic—just the same field.
+
+Quick acceptance steps (end-to-end)
+
+Click Start → call /lms/attempt/start → /state returns In Progress → profile shows Resume.
+
+Click Save & resume later → calls /scorm/runtime/commit → /state still In Progress; profile shows Resume; admin sees In Progress.
+
+Complete course → commit sets Completed → profile shows Completed (no Resume), admin shows score/pass.

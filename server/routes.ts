@@ -3690,8 +3690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         courseId: assignment.courseId,
         organisationId: assignment.organisationId,
-        standard,
-        scormVersion: standard, // Fix: Map standard to scorm_version field
+        scormVersion: standard, // Map to scormVersion field (not standard)
         passmark,
         rawScormData: scormData
       };
