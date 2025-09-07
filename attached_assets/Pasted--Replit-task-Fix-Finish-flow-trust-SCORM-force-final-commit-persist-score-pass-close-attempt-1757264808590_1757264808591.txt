@@ -1,0 +1,227 @@
+🔧 Replit task: Fix Finish flow — trust SCORM, force final commit, persist score/pass, close attempt
+
+Problem now: The Finish button lights up but clicking it still triggers “Please complete the course content first”. We also need the LMS to reliably store score and pass/fail when the course closes.
+
+Objectives
+
+Gate Finish by SCORM completion/success (not internal slide/time rules).
+
+On Finish click, force a final SCORM snapshot: read status + score, Commit, then Terminate.
+
+Persist: completion status, success status, score, progress, timestamps.
+
+Make Finish idempotent (safe to click twice), then close attempt and redirect/close cleanly.
+
+1) Client: Finish button handler (drop-in)
+
+Add this to the SCO launch page (where the Finish button lives). Replace the POST URL to match your LMS.
+
+<script>
+(function(){
+  const finishBtn = document.querySelector('[data-finish]');
+  if (!finishBtn) return;
+
+  const is2004 = () => !!window.API_1484_11;
+  const is12   = () => !!window.API;
+
+  function read2004(A) {
+    return {
+      version: '2004',
+      completion_status: A.GetValue('cmi.completion_status') || 'unknown',
+      success_status:    A.GetValue('cmi.success_status')    || 'unknown',
+      score_raw:         A.GetValue('cmi.score.raw')         || '',
+      progress_measure:  A.GetValue('cmi.progress_measure')  || ''
+    };
+  }
+  function read12(A) {
+    return {
+      version: '1.2',
+      lesson_status: A.LMSGetValue('cmi.core.lesson_status') || 'not attempted',
+      score_raw:     A.LMSGetValue('cmi.core.score.raw')     || '',
+      lesson_loc:    A.LMSGetValue('cmi.core.lesson_location') || ''
+    };
+  }
+  function isComplete(v) {
+    return (v.version === '2004')
+      ? (v.completion_status === 'completed' || v.success_status === 'passed')
+      : (v.lesson_status === 'completed' || v.lesson_status === 'passed');
+  }
+  function percent(v){
+    if (v.version === '2004' && v.progress_measure && !isNaN(parseFloat(v.progress_measure))) {
+      return Math.round(Math.max(0, Math.min(1, parseFloat(v.progress_measure))) * 100);
+    }
+    return isComplete(v) ? 100 : 0;
+  }
+
+  async function postFinish(payload){
+    return fetch('/lms/attempt/finish', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify(payload)
+    }).then(r=>r.json());
+  }
+
+  async function onFinishClick(){
+    finishBtn.disabled = true;
+
+    let snap = { version:'none' };
+    try {
+      if (is2004()) {
+        const A = window.API_1484_11;
+        snap = read2004(A);
+        // one more Commit and Terminate for safety
+        try { A.Commit(''); } catch {}
+        try { snap = read2004(A); } catch {}
+        try { A.Terminate(''); } catch {}
+      } else if (is12()) {
+        const A = window.API;
+        snap = read12(A);
+        try { A.LMSCommit(''); } catch {}
+        try { snap = read12(A); } catch {}
+        try { A.LMSFinish(''); } catch {}
+      }
+    } catch (e) {
+      console.debug('Finish SCORM close error (non-fatal):', e);
+    }
+
+    // Always tell the LMS; server will verify completion and persist
+    try {
+      const res = await postFinish({
+        snapshot: snap,
+        complete: isComplete(snap),
+        progress: percent(snap)
+      });
+
+      if (res?.ok) {
+        // close SCO window/tab or redirect to completion page
+        document.body.classList.add('attempt-finished');
+        // If in a modal/iframe, postMessage to parent to close/refresh:
+        try { window.parent.postMessage({ type:'SCO_FINISHED', ok:true }, '*'); } catch {}
+        // Optional fallback:
+        // window.close();
+      } else {
+        // Show server reason but DO NOT block re-try
+        alert(res?.message || 'Could not finalise the attempt. Please try again.');
+        finishBtn.disabled = false;
+      }
+    } catch (e) {
+      alert('Network error while finalising. Please try again.');
+      finishBtn.disabled = false;
+    }
+  }
+
+  finishBtn.addEventListener('click', onFinishClick);
+})();
+</script>
+
+
+What this does
+
+Reads the current runtime (completion/success/score).
+
+Forces a final Commit and Terminate.
+
+POSTs a Finish request to the LMS with the snapshot (server persists + closes attempt).
+
+Closes/flags the attempt in the UI.
+
+2) Server: Finish endpoint (Express example)
+
+Implement an idempotent endpoint that trusts SCORM and closes the attempt.
+
+// POST /lms/attempt/finish
+// Body: { snapshot: {...}, complete: boolean, progress: number }
+app.post('/lms/attempt/finish', requireAuth, async (req, res) => {
+  const attemptId = req.session.currentAttemptId; // however you store it
+  if (!attemptId) return res.status(400).json({ ok:false, message:'No active attempt' });
+
+  const snap = req.body?.snapshot || {};
+  const completeFlag = !!req.body?.complete;
+  const now = new Date();
+
+  // Read existing attempt state from DB
+  const attempt = await db.getAttempt(attemptId);
+  if (!attempt) return res.status(404).json({ ok:false, message:'Attempt not found' });
+
+  // Derive completion from snapshot (accept either signal)
+  let isComplete = completeFlag;
+  let status = null, success = null, score = null, progress = null;
+
+  if (snap.version === '2004') {
+    status  = snap.completion_status || attempt.completion_status || 'unknown';
+    success = snap.success_status    || attempt.success_status    || 'unknown';
+    score   = (snap.score_raw ?? attempt.score_raw) ?? null;
+    if (snap.progress_measure && !isNaN(parseFloat(snap.progress_measure)))
+      progress = Math.round(parseFloat(snap.progress_measure) * 100);
+    isComplete = isComplete || (status === 'completed') || (success === 'passed');
+  } else if (snap.version === '1.2') {
+    status  = snap.lesson_status || attempt.lesson_status || 'not attempted';
+    success = attempt.success_status || null; // 1.2 doesn’t have success_status
+    score   = (snap.score_raw ?? attempt.score_raw) ?? null;
+    isComplete = isComplete || (status === 'completed' || status === 'passed');
+    // Optional: if you computed progress elsewhere, bring it in
+  }
+
+  // If not complete, don’t block with the old “complete content first” message.
+  // Return a gentle failure so the client can re-try or the learner can re-open the SCO.
+  if (!isComplete) {
+    return res.status(409).json({ ok:false, message:'Course has not reported completion yet. Please re-open the course and reach the final screen.' });
+  }
+
+  // Persist final state (idempotent)
+  await db.updateAttempt(attemptId, {
+    scorm_version: snap.version || attempt.scorm_version,
+    completion_status: status,
+    success_status: success,
+    score_raw: score,
+    progress: Number.isFinite(progress) ? progress : 100,
+    completed: true,
+    terminated_at: now,
+    last_commit_at: now,
+    closed: true
+  });
+
+  return res.json({ ok:true, completed:true, status, success, score, progress: Number.isFinite(progress) ? progress : 100 });
+});
+
+
+Key points
+
+No internal “content checklist” gate. We trust SCORM statuses.
+
+Accept either completion or success as complete:
+
+2004: completion_status=completed OR success_status=passed
+
+1.2: lesson_status ∈ { completed, passed }
+
+Idempotent: multiple POSTs won’t duplicate or error.
+
+3) Remove the legacy gate
+
+Find and remove/disable any previous Finish-button precondition like:
+
+“Viewed X% of slides”, or
+
+“Minimum time spent”, or
+
+A local isComplete flag unrelated to SCORM.
+
+The only gate should be the DB attempt row with SCORM-derived completion/success.
+
+4) Acceptance criteria
+
+On pass screen (iSpring): clicking Finish no longer shows “Please complete course content first”.
+
+The attempt is marked Completed; score and pass/fail are saved.
+
+Re-loading the course page shows the attempt finished; the Finish button remains enabled/“Done”.
+
+Idempotent: double-clicking Finish or re-posting does not create errors or duplicate rows.
+
+Works for SCORM 2004 packages (your current publish) and SCORM 1.2 (if you republish).
+
+5) Optional: add a safety net snapshot on every Commit
+
+If you have a SCORM shim already, POST a snapshot of runtime values to /scorm/runtime/snapshot on every Commit and Terminate. That way the Finish endpoint always has up-to-date values, even if the SCO window is closed before Finish is clicked.
