@@ -3264,6 +3264,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reset assignment status to not_started for SCORM 2004 "Don't save" functionality
+  app.post('/api/assignments/:id/reset-status', requireAuth, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = getUserIdFromSession(req);
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      // Get the assignment to verify ownership
+      const assignment = await storage.getAssignment(id);
+      if (!assignment) {
+        return res.status(404).json({ message: 'Assignment not found' });
+      }
+
+      // Verify user owns this assignment
+      if (assignment.userId !== userId) {
+        return res.status(403).json({ message: 'Not authorized to modify this assignment' });
+      }
+
+      // Reset assignment status to not_started
+      const updatedAssignment = await storage.updateAssignment(id, {
+        status: 'not_started',
+        startedAt: null,
+        completedAt: null
+      });
+
+      console.log(`🔄 Assignment ${id} reset to not_started for user ${userId}`);
+      res.json(updatedAssignment);
+    } catch (error) {
+      console.error('Error resetting assignment status:', error);
+      res.status(500).json({ message: 'Failed to reset assignment status' });
+    }
+  });
+
   // Get assignments for a specific user (admin only)
   app.get('/api/assignments/user/:userId', requireAuth, async (req: any, res) => {
     try {

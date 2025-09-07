@@ -42,6 +42,8 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   const [showDebug, setShowDebug] = useState(false);
   const [scormInitialized, setScormInitialized] = useState(false);
   const [showInitWarning, setShowInitWarning] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [hasCommittedData, setHasCommittedData] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const attemptStateRef = useRef<ScormAttemptState>({
     // SCORM 1.2 defaults
@@ -120,6 +122,11 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       const response = await apiRequest('POST', '/api/scorm/result', payload);
       const result = await response.json();
       
+      // Track that we've successfully committed data during this session
+      if (reason === 'commit') {
+        setHasCommittedData(true);
+      }
+      
       console.log(`✅ SCORM result response:`, result);
       
       // Log derived fields if available
@@ -153,6 +160,61 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       console.error('Failed to send SCORM result:', error);
       addDebugLog(`❌ Failed to send SCORM result: ${error}`);
     }
+  };
+
+  // Exit modal handlers for SCORM 2004 (3rd Ed.) requirements
+  const handleExitRequest = () => {
+    setShowExitModal(true);
+  };
+
+  const handleSaveAndExit = async () => {
+    try {
+      // Commit current SCORM data
+      await sendScormResult('commit');
+      toast({
+        title: "Progress saved",
+        description: "You can resume later.",
+      });
+      setShowExitModal(false);
+      onClose();
+    } catch (error) {
+      console.error('Failed to save progress:', error);
+      toast({
+        title: "Save failed",
+        description: "There was an error saving your progress.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDontSaveExit = async () => {
+    try {
+      if (!hasCommittedData) {
+        // No commits happened - revert assignment to "not_started"
+        await apiRequest('POST', `/api/assignments/${assignmentId}/reset-status`);
+        toast({
+          title: "Progress discarded",
+          description: "Course has been reset to Not Started.",
+        });
+      } else {
+        // Commits already exist - keep "In Progress" to avoid losing saved progress
+        toast({
+          title: "Progress preserved",
+          description: "Your saved progress has been kept.",
+        });
+      }
+      setShowExitModal(false);
+      onClose();
+    } catch (error) {
+      console.error('Failed to handle exit:', error);
+      // Still allow exit even if status update fails
+      setShowExitModal(false);
+      onClose();
+    }
+  };
+
+  const handleCancelExit = () => {
+    setShowExitModal(false);
   };
 
   // SCORM 1.2 API Implementation
@@ -636,6 +698,23 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
     return () => clearInterval(interval);
   }, [isCompleted]);
 
+  // Add beforeunload listener for SCORM 2004 (3rd Ed.) exit modal
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (scormInitialized) {
+        e.preventDefault();
+        e.returnValue = '';
+        // Show exit modal when user tries to leave
+        setShowExitModal(true);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [scormInitialized]);
+
   const handleComplete = async () => {
     const state = attemptStateRef.current;
     const score = state['cmi.core.score.raw'] || state['cmi.score.raw'];
@@ -755,14 +834,15 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
   };
 
   return (
-    <dialog className="modal modal-open">
+    <>
+      <dialog className="modal modal-open">
       <div className="modal-box w-11/12 max-w-5xl h-5/6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-lg" data-testid="text-course-title">{courseTitle}</h3>
           <div className="flex gap-2">
             <button 
               className="btn btn-sm btn-circle"
-              onClick={onClose}
+              onClick={handleExitRequest}
               data-testid="button-close-player"
             >
               <i className="fas fa-times"></i>
@@ -900,8 +980,53 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       </div>
       
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
+        <button onClick={handleExitRequest}>close</button>
       </form>
     </dialog>
+
+    {/* Exit Modal for SCORM 2004 (3rd Ed.) Save & Resume */}
+    {showExitModal && (
+      <div className="modal modal-open">
+        <div className="modal-box">
+          <h3 className="font-bold text-lg mb-4">Save your progress?</h3>
+          <p className="text-base-content/80 mb-6">
+            You're about to exit the course. What would you like to do with your progress?
+          </p>
+          
+          <div className="modal-action flex gap-3">
+            <button 
+              className="btn btn-primary"
+              onClick={handleSaveAndExit}
+              data-testid="button-save-exit"
+            >
+              <i className="fas fa-save"></i>
+              Save & resume later
+            </button>
+            
+            <button 
+              className="btn btn-outline btn-error"
+              onClick={handleDontSaveExit}
+              data-testid="button-discard-exit"
+            >
+              <i className="fas fa-trash"></i>
+              Don't save
+            </button>
+            
+            <button 
+              className="btn btn-ghost"
+              onClick={handleCancelExit}
+              data-testid="button-cancel-exit"
+            >
+              Continue course
+            </button>
+          </div>
+        </div>
+        
+        <form method="dialog" className="modal-backdrop">
+          <button type="button" onClick={handleCancelExit}>close</button>
+        </form>
+      </div>
+    )}
+    </>
   );
 }

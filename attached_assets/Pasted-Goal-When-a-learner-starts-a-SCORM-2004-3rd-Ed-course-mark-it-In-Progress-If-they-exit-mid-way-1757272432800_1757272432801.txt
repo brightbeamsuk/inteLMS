@@ -1,0 +1,85 @@
+Goal:
+When a learner starts a SCORM 2004 (3rd Ed.) course, mark it In Progress.
+If they exit mid-way, show a Save & resume later / Don’t save prompt.
+If they save, show a Resume button next time.
+All statuses must be visible to Admins.
+
+Requirements (keep it simple)
+
+Statuses
+
+Possible values: Not Started, In Progress, Completed.
+
+On first successful SCORM Initialize("") → set status to In Progress.
+
+On completion (either cmi.completion_status = "completed" or cmi.success_status = "passed") → set Completed, store cmi.score.raw.
+
+Save & Resume prompt on exit
+
+On tab close/back/navigation (use beforeunload or exit button), show modal:
+
+Save & resume later → call SCORM Commit(""), persist cmi.location and cmi.suspend_data, keep status In Progress.
+
+Don’t save → do not commit; discard unsaved changes and set status back to Not Started only if no commit has ever happened for this attempt. (If commits already exist, keep In Progress.)
+
+Resume button (learner side)
+
+If there is an open attempt with status In Progress, show Resume on the course card.
+
+Clicking Resume launches the same attempt; the SCO reads cmi.suspend_data and returns to the saved point.
+
+Admin visibility
+
+Admin list must show per user/course: Status, Last activity (timestamp), Score (if completed).
+
+Filter by status.
+
+Persistence (SCORM 2004)
+On every Commit("") and on Terminate(""), store (do not truncate):
+
+cmi.location, cmi.suspend_data, cmi.completion_status, cmi.success_status, cmi.score.raw, cmi.progress_measure, and timestamps (launched_at, last_commit_at, terminated_at).
+
+Only one open attempt per user/course at a time. Start a new attempt only after the previous is Completed or explicitly closed.
+
+No extra gating
+
+Do not add minimum time or slide-count rules. Trust SCORM statuses.
+
+Keep the UI logic minimal: status drives buttons; SCORM drives status.
+
+Minimal UI logic
+
+On launch → create/open attempt → set In Progress.
+
+On exit modal:
+
+Save → show toast “Progress saved. You can resume later.”; keep In Progress.
+
+Don’t save → if no prior commit, set Not Started; else keep In Progress.
+
+Course card (learner):
+
+Not Started → Start
+
+In Progress → Resume
+
+Completed → View Certificate (optional)
+
+Acceptance criteria
+
+Starting a course instantly shows In Progress to Admins.
+
+Exiting and choosing Save & resume later preserves location; Resume button appears; Admin sees In Progress with updated Last activity.
+
+Exiting and choosing Don’t save:
+
+If no prior commit → status reverts to Not Started; Resume hidden.
+
+If there were commits → keep In Progress (so progress isn’t accidentally lost).
+
+Completing the course switches status to Completed, stores score/pass, hides Resume.
+
+Behaviour matches in SCORM Cloud (for completion/pass), and resume returns to the saved point.
+
+If you need quick field names for the DB:
+attempt_id, user_id, course_id, status, completion_status, success_status, score_raw, location, suspend_data (TEXT), progress_measure, launched_at, last_commit_at, terminated_at, closed
