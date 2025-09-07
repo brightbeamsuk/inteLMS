@@ -3978,6 +3978,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Idempotent finish endpoint - trusts SCORM completion status
+  app.post('/lms/attempt/finish', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      if (!userId) {
+        return res.status(401).json({ ok: false, message: 'User not authenticated' });
+      }
+
+      const { snapshot, complete: completeFlag, progress: clientProgress } = req.body;
+      const snap = snapshot || { version: 'none' };
+      const now = new Date();
+
+      // Find current active attempt based on session or latest attempt
+      // For now, we'll use the latest attempt for this user (you may need to adjust based on your session management)
+      const currentAttemptId = req.session.currentAttemptId; 
+      if (!currentAttemptId) {
+        console.log('⚠️ No active attempt ID found in session, trying to find latest...');
+        
+        // Try to find from recent SCORM activity
+        const recentAttempts = await storage.getScormAttemptsByUserId(userId);
+        if (recentAttempts.length === 0) {
+          return res.status(400).json({ ok: false, message: 'No active attempt found' });
+        }
+        
+        // Use the most recent attempt that's not closed
+        const activeAttempt = recentAttempts.find(a => !a.closed) || recentAttempts[0];
+        req.session.currentAttemptId = activeAttempt.attemptId;
+      }
+
+      const attemptId = req.session.currentAttemptId;
+      console.log(`🏁 Processing finish request for attempt: ${attemptId}`);
+
+      // Get existing attempt from database
+      const attempt = await storage.getScormAttemptByAttemptId(attemptId);
+      if (!attempt) {
+        return res.status(404).json({ ok: false, message: 'Attempt not found' });
+      }
+
+      // Derive completion status from SCORM snapshot
+      let isComplete = !!completeFlag;
+      let status = null, success = null, score = null, progress = null;
+
+      if (snap.version === '2004') {
+        status = snap.completion_status || attempt.completionStatus || 'unknown';
+        success = snap.success_status || attempt.successStatus || 'unknown'; 
+        score = snap.score_raw !== undefined ? parseFloat(snap.score_raw) : attempt.scoreRaw;
+        if (snap.progress_measure && !isNaN(parseFloat(snap.progress_measure))) {
+          progress = Math.round(parseFloat(snap.progress_measure) * 100);
+        }
+        // SCORM 2004: completion_status="completed" OR success_status="passed"
+        isComplete = isComplete || (status === 'completed') || (success === 'passed');
+      } else if (snap.version === '1.2') {
+        status = snap.lesson_status || attempt.lessonStatus || 'not attempted';
+        success = attempt.successStatus || null; // 1.2 doesn't have success_status
+        score = snap.score_raw !== undefined ? parseFloat(snap.score_raw) : attempt.scoreRaw;
+        // SCORM 1.2: lesson_status in ["completed", "passed"]  
+        isComplete = isComplete || (status === 'completed' || status === 'passed');
+      } else {
+        // Use existing attempt data if no valid snapshot
+        isComplete = attempt.completed || false;
+        status = attempt.completionStatus || attempt.lessonStatus;
+        success = attempt.successStatus;
+        score = attempt.scoreRaw;
+        progress = attempt.progressPercent;
+      }
+
+      console.log(`🔍 Finish analysis: complete=${isComplete}, status=${status}, success=${success}, score=${score}`);
+
+      // If not complete according to SCORM, return gentle failure (allow retry)
+      if (!isComplete) {
+        return res.status(409).json({ 
+          ok: false, 
+          message: 'Course has not reported completion yet. Please re-open the course and reach the final screen.' 
+        });
+      }
+
+      // Persist final state (idempotent updates)
+      const finalProgress = Number.isFinite(progress) ? progress : (isComplete ? 100 : attempt.progressPercent || 0);
+      const updates = {
+        scormVersion: snap.version || attempt.scormVersion,
+        completionStatus: status,
+        successStatus: success,
+        scoreRaw: score,
+        progressPercent: finalProgress,
+        completed: true,
+        closed: true,
+        finishedAt: now,
+        lastCommitAt: now,
+        updatedAt: now
+      };
+
+      console.log(`💾 Updating attempt ${attemptId} with final state:`, updates);
+      await storage.updateScormAttempt(attemptId, updates);
+
+      // Also update assignment status if we can find it
+      try {
+        const assignments = await storage.getAssignmentsByUser(userId);
+        const relatedAssignment = assignments.find((a: any) => 
+          a.courseId === attempt.courseId && a.status !== 'completed'
+        );
+        
+        if (relatedAssignment) {
+          await storage.updateAssignment(relatedAssignment.id, {
+            status: 'completed',
+            completedAt: now
+          });
+          console.log(`✅ Updated assignment ${relatedAssignment.id} to completed`);
+        }
+      } catch (assignmentError) {
+        console.warn('Warning: Could not update assignment status:', assignmentError);
+        // Don't fail the finish process if assignment update fails
+      }
+
+      // Clear the current attempt from session
+      delete req.session.currentAttemptId;
+
+      console.log(`🏁 Finish completed successfully for attempt ${attemptId}`);
+      
+      return res.json({ 
+        ok: true, 
+        completed: true, 
+        status, 
+        success, 
+        score, 
+        progress: finalProgress,
+        message: 'Course finished successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Error in finish endpoint:', error);
+      return res.status(500).json({ 
+        ok: false, 
+        message: 'Server error during finish processing. Please try again.' 
+      });
+    }
+  });
+
   // Todo items routes
   app.get('/api/todos', requireAuth, async (req: any, res) => {
     try {
