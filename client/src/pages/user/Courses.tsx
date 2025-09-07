@@ -2,6 +2,88 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 
+// SCORM 2004 (3rd Ed.) attempt state interface
+interface AttemptState {
+  status: 'not_started' | 'in_progress' | 'completed';
+  hasOpenAttempt: boolean;
+  attemptId?: string;
+  lastActivity?: string;
+  score?: number;
+  pass?: boolean;
+  canResume: boolean;
+}
+
+// Course action button component with real-time state
+function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
+  const { data: attemptState, isLoading } = useQuery<AttemptState>({
+    queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
+    queryFn: async () => {
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/state`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch attempt state');
+      }
+      return response.json();
+    },
+    staleTime: 0, // Always revalidate to get latest state
+  });
+
+  if (isLoading) {
+    return (
+      <button className="btn btn-ghost loading" disabled>
+        <span className="loading loading-spinner"></span>
+        Loading...
+      </button>
+    );
+  }
+
+  const state = attemptState || { status: 'not_started', canResume: false };
+  
+  // Determine button appearance and text based on SCORM 2004 (3rd Ed.) state
+  const getButtonProps = () => {
+    switch (state.status) {
+      case 'not_started':
+        return {
+          className: 'btn btn-primary',
+          text: 'Start',
+          icon: 'fas fa-play'
+        };
+      case 'in_progress':
+        return {
+          className: state.canResume ? 'btn btn-info' : 'btn btn-primary',
+          text: state.canResume ? 'Resume' : 'Start',
+          icon: state.canResume ? 'fas fa-play-circle' : 'fas fa-play'
+        };
+      case 'completed':
+        return {
+          className: 'btn btn-success',
+          text: 'Review',
+          icon: 'fas fa-eye'
+        };
+      default:
+        return {
+          className: 'btn btn-primary',
+          text: 'Start',
+          icon: 'fas fa-play'
+        };
+    }
+  };
+
+  const buttonProps = getButtonProps();
+
+  return (
+    <button 
+      className={buttonProps.className}
+      onClick={() => onStartCourse(assignment)}
+      data-testid={`button-start-course-${assignment.id}`}
+    >
+      <i className={buttonProps.icon}></i>
+      {buttonProps.text}
+    </button>
+  );
+}
+
 interface Assignment {
   id: string;
   courseId: string;
@@ -215,22 +297,10 @@ export function UserCourses() {
                   </div>
                   
                   <div className="flex flex-col items-end gap-2">
-                    <button 
-                      className={`btn ${
-                        assignment.status === 'not_started' ? 'btn-primary' :
-                        assignment.status === 'in_progress' ? 'btn-info' :
-                        assignment.status === 'completed' ? 'btn-success' :
-                        'btn-error'
-                      }`}
-                      onClick={() => handleStartCourse(assignment)}
-                      data-testid={`button-start-course-${assignment.id}`}
-                    >
-                      <i className="fas fa-play"></i> 
-                      {assignment.status === 'not_started' ? 'Start' :
-                       assignment.status === 'in_progress' ? 'Resume' :
-                       assignment.status === 'completed' ? 'Review' :
-                       'Continue'}
-                    </button>
+                    <CourseActionButton 
+                      assignment={assignment} 
+                      onStartCourse={handleStartCourse} 
+                    />
                     
                     {assignment.status === 'completed' && assignment.attemptNumber && (
                       <div className="text-xs text-base-content/60" data-testid={`text-course-attempts-${assignment.id}`}>
