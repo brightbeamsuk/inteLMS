@@ -3442,6 +3442,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sessionTime: attemptData.sessionTime,
         location: attemptData.lessonLocation || attemptData.location
       });
+
+      // Debug: Show all received SCORM data keys 
+      if (scormData) {
+        console.log('📊 All SCORM data keys:', Object.keys(scormData));
+        // Look for any fields that might contain slide/page information
+        for (const [key, value] of Object.entries(scormData)) {
+          if (typeof value === 'string' && (
+            value.includes('of') || 
+            value.includes('/') || 
+            /\d+/.test(value)
+          )) {
+            console.log(`📊 SCORM field "${key}" contains potential progress data: "${value}"`);
+          }
+        }
+      }
       
       if (standard === '2004') {
         // SCORM 2004: Use direct SCORM data only
@@ -3476,7 +3491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
             
-            // Try to parse as JSON
+            // Try to parse as JSON first
             try {
               const suspendJson = JSON.parse(decodedData);
               if (typeof suspendJson.progress === 'number') {
@@ -3488,28 +3503,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
               } else if (typeof suspendJson.slideIndex === 'number' && typeof suspendJson.totalSlides === 'number') {
                 scormProgress = Math.round((suspendJson.slideIndex / suspendJson.totalSlides) * 100);
                 console.log(`📊 SCORM 2004: Calculated progress from slides ${suspendJson.slideIndex}/${suspendJson.totalSlides}: ${scormProgress}%`);
+              } else if (typeof suspendJson.currentPage === 'number' && typeof suspendJson.totalPages === 'number') {
+                scormProgress = Math.round((suspendJson.currentPage / suspendJson.totalPages) * 100);
+                console.log(`📊 SCORM 2004: Calculated progress from pages ${suspendJson.currentPage}/${suspendJson.totalPages}: ${scormProgress}%`);
               }
             } catch {
-              // Try pattern matching for non-JSON suspend data
-              const progressMatch = decodedData.match(/(?:progress|percentage|slide)[":=\s]*(\d+(?:\.\d+)?)/i);
-              const slideMatch = decodedData.match(/slide[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i);
+              // Try comprehensive pattern matching for non-JSON suspend data
+              console.log(`📊 SCORM 2004: Decoded data sample (first 200 chars): ${decodedData.substring(0, 200)}`);
               
-              if (slideMatch) {
-                const current = parseInt(slideMatch[1]);
-                const total = parseInt(slideMatch[2]);
-                if (current > 0 && total > 0) {
-                  scormProgress = Math.round((current / total) * 100);
-                  console.log(`📊 SCORM 2004: Calculated progress from slide pattern ${current}/${total}: ${scormProgress}%`);
+              // Enhanced slide/page pattern matching with multiple formats
+              const slidePatterns = [
+                /(\d+)\s*of\s*(\d+)/i,                          // "4 of 12"
+                /(\d+)\s*\/\s*(\d+)/,                           // "4/12" 
+                /slide[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,  // "slide: 4 of 12"
+                /page[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,   // "page: 4 of 12"
+                /current[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i, // "current: 4 total: 12"
+                /index[":=\s]*(\d+).*?(?:of|total|max|count)[":=\s]*(\d+)/i, // "index: 4 count: 12"
+              ];
+              
+              // Direct progress patterns
+              const progressPatterns = [
+                /(?:progress|percentage)[":=\s]*(\d+(?:\.\d+)?)/i,
+                /completion[":=\s]*(\d+(?:\.\d+)?)/i,
+                /percent[":=\s]*(\d+(?:\.\d+)?)/i,
+              ];
+              
+              let matchFound = false;
+              
+              // Try slide/page patterns first
+              for (const pattern of slidePatterns) {
+                const match = decodedData.match(pattern);
+                if (match) {
+                  const current = parseInt(match[1]);
+                  const total = parseInt(match[2]);
+                  if (current > 0 && total > 0 && current <= total) {
+                    scormProgress = Math.round((current / total) * 100);
+                    console.log(`📊 SCORM 2004: Found progress from pattern "${match[0]}" -> ${current}/${total} = ${scormProgress}%`);
+                    matchFound = true;
+                    break;
+                  }
                 }
-              } else if (progressMatch) {
-                scormProgress = Math.round(parseFloat(progressMatch[1]));
-                console.log(`📊 SCORM 2004: Extracted progress from suspend_data: ${scormProgress}%`);
-              } else {
-                // Estimate progress based on suspend_data length/complexity (fallback)
+              }
+              
+              // Try direct progress patterns if no slide pattern found
+              if (!matchFound) {
+                for (const pattern of progressPatterns) {
+                  const match = decodedData.match(pattern);
+                  if (match) {
+                    const progressValue = parseFloat(match[1]);
+                    if (!isNaN(progressValue) && progressValue >= 0 && progressValue <= 100) {
+                      scormProgress = Math.round(progressValue);
+                      console.log(`📊 SCORM 2004: Found progress from pattern "${match[0]}" = ${scormProgress}%`);
+                      matchFound = true;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // Fallback: estimate from data complexity
+              if (!matchFound) {
                 const dataLength = decodedData.length;
                 if (dataLength > 500) {
                   scormProgress = Math.min(75, Math.max(5, Math.round(dataLength / 100)));
-                  console.log(`📊 SCORM 2004: Estimated progress from data size (${dataLength} chars): ${scormProgress}%`);
+                  console.log(`📊 SCORM 2004: No patterns found, estimated progress from data size (${dataLength} chars): ${scormProgress}%`);
+                } else {
+                  console.log('📊 SCORM 2004: No progress patterns found in suspend_data');
                 }
               }
             }
@@ -3535,30 +3594,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
           progressPercent = 100;
           console.log('❌ SCORM 1.2: Failed -> 100% (completed assessment)');
         } else {
-          // For incomplete, look for explicit progress in suspend_data
+          // For incomplete, look for explicit progress in suspend_data or lesson_location
           let scormProgress = 0;
-          if (attemptData.suspendData) {
-            try {
-              const suspendJson = JSON.parse(attemptData.suspendData);
-              if (typeof suspendJson.progress === 'number') {
-                scormProgress = Math.round(suspendJson.progress);
-                console.log(`📊 SCORM 1.2: Found progress in suspend_data: ${scormProgress}%`);
-              } else if (typeof suspendJson.percentage === 'number') {
-                scormProgress = Math.round(suspendJson.percentage);
-                console.log(`📊 SCORM 1.2: Found percentage in suspend_data: ${scormProgress}%`);
-              }
-            } catch {
-              // Try pattern matching for non-JSON suspend data
-              const progressMatch = attemptData.suspendData.match(/(?:progress|percentage)[":=\s]*(\d+(?:\.\d+)?)/i);
-              if (progressMatch) {
-                scormProgress = Math.round(parseFloat(progressMatch[1]));
-                console.log(`📊 SCORM 1.2: Extracted progress from suspend_data: ${scormProgress}%`);
+          let progressFound = false;
+          
+          // Check lesson_location first (common for slide-based progress)
+          if (attemptData.lessonLocation) {
+            console.log(`📊 SCORM 1.2: Checking lesson_location: ${attemptData.lessonLocation}`);
+            const slidePatterns = [
+              /(\d+)\s*of\s*(\d+)/i,                          // "4 of 12"
+              /(\d+)\s*\/\s*(\d+)/,                           // "4/12"
+              /slide[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,
+              /page[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,
+            ];
+            
+            for (const pattern of slidePatterns) {
+              const match = attemptData.lessonLocation.match(pattern);
+              if (match) {
+                const current = parseInt(match[1]);
+                const total = parseInt(match[2]);
+                if (current > 0 && total > 0 && current <= total) {
+                  scormProgress = Math.round((current / total) * 100);
+                  console.log(`📊 SCORM 1.2: Found progress from lesson_location "${match[0]}" -> ${current}/${total} = ${scormProgress}%`);
+                  progressFound = true;
+                  break;
+                }
               }
             }
           }
+          
+          // If no progress in lesson_location, check suspend_data
+          if (!progressFound && attemptData.suspendData) {
+            try {
+              // First try to decode base64 encoded data
+              let decodedData = attemptData.suspendData;
+              if (attemptData.suspendData.length > 100 && !attemptData.suspendData.includes('{')) {
+                try {
+                  decodedData = Buffer.from(attemptData.suspendData, 'base64').toString('utf-8');
+                  console.log('📊 SCORM 1.2: Decoded base64 suspend_data');
+                } catch {
+                  // Not base64, use original data
+                }
+              }
+              
+              // Try to parse as JSON
+              try {
+                const suspendJson = JSON.parse(decodedData);
+                if (typeof suspendJson.progress === 'number') {
+                  scormProgress = Math.round(suspendJson.progress);
+                  console.log(`📊 SCORM 1.2: Found progress in suspend_data: ${scormProgress}%`);
+                  progressFound = true;
+                } else if (typeof suspendJson.percentage === 'number') {
+                  scormProgress = Math.round(suspendJson.percentage);
+                  console.log(`📊 SCORM 1.2: Found percentage in suspend_data: ${scormProgress}%`);
+                  progressFound = true;
+                } else if (typeof suspendJson.currentPage === 'number' && typeof suspendJson.totalPages === 'number') {
+                  scormProgress = Math.round((suspendJson.currentPage / suspendJson.totalPages) * 100);
+                  console.log(`📊 SCORM 1.2: Calculated progress from pages ${suspendJson.currentPage}/${suspendJson.totalPages}: ${scormProgress}%`);
+                  progressFound = true;
+                }
+              } catch {
+                // Try comprehensive pattern matching for non-JSON suspend data
+                console.log(`📊 SCORM 1.2: Decoded data sample (first 200 chars): ${decodedData.substring(0, 200)}`);
+                
+                const slidePatterns = [
+                  /(\d+)\s*of\s*(\d+)/i,                          // "4 of 12"
+                  /(\d+)\s*\/\s*(\d+)/,                           // "4/12" 
+                  /slide[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,
+                  /page[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,
+                  /current[":=\s]*(\d+).*?(?:of|total|max)[":=\s]*(\d+)/i,
+                  /index[":=\s]*(\d+).*?(?:of|total|max|count)[":=\s]*(\d+)/i,
+                ];
+                
+                const progressPatterns = [
+                  /(?:progress|percentage)[":=\s]*(\d+(?:\.\d+)?)/i,
+                  /completion[":=\s]*(\d+(?:\.\d+)?)/i,
+                  /percent[":=\s]*(\d+(?:\.\d+)?)/i,
+                ];
+                
+                // Try slide/page patterns first
+                for (const pattern of slidePatterns) {
+                  const match = decodedData.match(pattern);
+                  if (match) {
+                    const current = parseInt(match[1]);
+                    const total = parseInt(match[2]);
+                    if (current > 0 && total > 0 && current <= total) {
+                      scormProgress = Math.round((current / total) * 100);
+                      console.log(`📊 SCORM 1.2: Found progress from pattern "${match[0]}" -> ${current}/${total} = ${scormProgress}%`);
+                      progressFound = true;
+                      break;
+                    }
+                  }
+                }
+                
+                // Try direct progress patterns if no slide pattern found
+                if (!progressFound) {
+                  for (const pattern of progressPatterns) {
+                    const match = decodedData.match(pattern);
+                    if (match) {
+                      const progressValue = parseFloat(match[1]);
+                      if (!isNaN(progressValue) && progressValue >= 0 && progressValue <= 100) {
+                        scormProgress = Math.round(progressValue);
+                        console.log(`📊 SCORM 1.2: Found progress from pattern "${match[0]}" = ${scormProgress}%`);
+                        progressFound = true;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.log('📊 SCORM 1.2: Error processing suspend_data:', error);
+            }
+          }
+          
           progressPercent = Math.min(100, Math.max(0, scormProgress));
           if (progressPercent === 0) {
-            console.log('📊 SCORM 1.2: No progress data in suspend_data -> 0%');
+            console.log('📊 SCORM 1.2: No progress data found in lesson_location or suspend_data -> 0%');
           }
         }
       }
