@@ -3841,11 +3841,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       attemptData.passed = passed;
       attemptData.lastCommitAt = new Date();
       
-      if (reason === 'finish') {
-        attemptData.finishedAt = new Date();
+      // SCORM 2004 (3rd Ed.) compliant attempt lifecycle
+      if (completed) {
+        // When either cmi.completion_status = "completed" OR cmi.success_status = "passed"
         attemptData.status = 'completed';
+        attemptData.completed = true;
+        if (reason === 'finish') {
+          attemptData.finishedAt = new Date();
+        }
       } else {
-        attemptData.status = 'active';
+        // Keep as "In Progress" until completion is achieved
+        attemptData.status = 'in_progress';
       }
 
       console.log(`📊 SCORM ${standard} derived fields:`, {
