@@ -1,0 +1,171 @@
+Problem: Buttons (“Save & resume later” / “Resume later”) were added in the SCO view, but the user profile still shows Not Started and there is no Resume button on the course card.
+Cause: Attempt status isn’t being saved server-side and/or the profile view isn’t reading the live attempt state.
+
+Requirements (keep it simple)
+1) Update status to In Progress on first launch
+
+On first SCORM 2004 Initialize("") for a user/course:
+
+Create (or resume) an open attempt.
+
+Persist in DB:
+
+status = "In Progress"
+
+launched_at = now
+
+completed = false, closed = false
+
+If an open attempt already exists, do not create a new one.
+
+2) Save & resume later (modal choice)
+
+When the learner clicks Save & resume later:
+
+Call API_1484_11.Commit("").
+
+Server endpoint POST /scorm/runtime/commit must persist:
+cmi.location, cmi.suspend_data, cmi.completion_status, cmi.success_status, cmi.score.raw, cmi.progress_measure, last_commit_at = now.
+
+Force status = "In Progress" on this attempt (do not leave as Not Started).
+
+Return JSON { ok:true, status:"In Progress" }.
+
+When they click Don’t save:
+
+If no prior commit exists for this attempt, set status = "Not Started" and close/delete the open attempt.
+
+If there was a commit already, keep status = "In Progress" (so progress isn’t lost).
+
+3) Completion
+
+When either cmi.completion_status = "completed" or cmi.success_status = "passed":
+
+Set status = "Completed", completed = true, closed = true, terminated_at = now.
+
+Persist score_raw and (if present) progress_measure.
+
+4) Profile / course card API
+
+Create/adjust GET /lms/enrolments/:courseId/state to return the current attempt state for the logged-in user:
+
+{
+  "status": "In Progress",   // Not Started | In Progress | Completed
+  "hasOpenAttempt": true,    // true if an open attempt exists
+  "attemptId": "uuid",
+  "lastActivity": "2025-09-07T12:34:56Z",
+  "score": null,             // number when Completed
+  "pass": null,              // true/false when Completed
+  "canResume": true          // true when status=In Progress AND hasOpenAttempt
+}
+
+
+Admin list endpoint must expose the same fields per user/course.
+
+5) Front-end binding (course card/profile)
+
+Render buttons based on the state above:
+
+status === "Not Started" → show Start.
+
+status === "In Progress" && canResume → show Resume (link to launch same attempt).
+
+status === "Completed" → show Completed (+ certificate if applicable).
+
+After Save/Don’t Save/Complete, re-fetch …/state and update the UI (or invalidate cache).
+
+6) Caching & reactivity
+
+Disable/stale-while-revalidate any cache on …/state so updates are visible immediately.
+
+When the Save/Complete endpoints return { ok:true }, trigger a UI refresh of the profile/course card.
+
+Minimal server changes (examples)
+
+Mark In Progress on initialise (called once at first launch):
+
+// POST /lms/attempt/start
+app.post('/lms/attempt/start', requireAuth, async (req, res) => {
+  const { courseId } = req.body;
+  const userId = req.user.id;
+
+  let attempt = await db.findOpenAttempt(userId, courseId);
+  if (!attempt) {
+    attempt = await db.createAttempt({
+      user_id: userId, course_id: courseId,
+      status: 'In Progress',
+      scorm_version: '2004',
+      completed: false, closed: false,
+      launched_at: new Date()
+    });
+  } else if (attempt.status !== 'Completed') {
+    await db.updateAttempt(attempt.id, { status: 'In Progress' });
+  }
+
+  res.json({ ok:true, attemptId: attempt.id, status: 'In Progress' });
+});
+
+
+Commit (always set In Progress unless already completed):
+
+// POST /scorm/runtime/commit
+app.post('/scorm/runtime/commit', requireAuth, async (req, res) => {
+  const { attemptId, values } = req.body;
+  const get = k => (values?.[k] ?? '').toString();
+
+  const patch = {
+    location: get('cmi.location') || null,
+    suspend_data: get('cmi.suspend_data') || null,
+    completion_status: get('cmi.completion_status') || null,
+    success_status: get('cmi.success_status') || null,
+    score_raw: get('cmi.score.raw') || null,
+    progress_measure: get('cmi.progress_measure') || null,
+    last_commit_at: new Date()
+  };
+
+  let status = 'In Progress';
+  const completed = (patch.completion_status === 'completed') || (patch.success_status === 'passed');
+  if (completed) { status = 'Completed'; patch.completed = true; patch.closed = true; patch.terminated_at = new Date(); }
+
+  patch.status = status;
+  await db.updateAttempt(attemptId, patch);
+  res.json({ ok:true, status, completed });
+});
+
+
+State for profile/course card:
+
+// GET /lms/enrolments/:courseId/state
+app.get('/lms/enrolments/:courseId/state', requireAuth, async (req, res) => {
+  const userId = req.user.id, { courseId } = req.params;
+  const attempt = await db.getLatestAttempt(userId, courseId); // prefer open attempt
+  if (!attempt) return res.json({ status:'Not Started', hasOpenAttempt:false, canResume:false });
+
+  const canResume = (!attempt.closed && attempt.status === 'In Progress');
+  res.json({
+    status: attempt.status,
+    hasOpenAttempt: !attempt.closed,
+    attemptId: attempt.id,
+    lastActivity: attempt.last_commit_at || attempt.launched_at,
+    score: attempt.completed ? Number(attempt.score_raw ?? 0) : null,
+    pass: attempt.completed ? (attempt.success_status === 'passed') : null,
+    canResume
+  });
+});
+
+
+Admin list should use the same status field and show last_commit_at/ launched_at.
+
+Acceptance criteria
+
+Start course → /lms/attempt/start sets status="In Progress". Profile & admin both show In Progress quickly.
+
+Save & resume later → commit persists data; profile shows Resume button (canResume: true), admin sees updated Last activity.
+
+Don’t save:
+
+If no prior commits → status returns to Not Started, no Resume button, no open attempt.
+
+If there were commits → keep In Progress, Resume still available.
+
+Complete → status becomes Completed, score/pass visible to admin and user; Resume hidden.
