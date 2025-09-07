@@ -169,19 +169,49 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
 
   const handleSaveAndExit = async () => {
     try {
-      // Commit current SCORM data
-      await sendScormResult('commit');
-      toast({
-        title: "Progress saved",
-        description: "You can resume later.",
+      // Optional: ask the SCO to commit before saving (best effort)
+      try { 
+        (window as any).API_1484_11?.Commit(""); 
+      } catch {}
+
+      // Get current SCORM data
+      const api = (window as any).API_1484_11;
+      const location = api ? api.GetValue('cmi.location') : '';
+      const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
+
+      // Call the new save endpoint
+      const response = await apiRequest('POST', '/api/lms/attempt/save', {
+        courseId: assignmentId, // Using assignmentId as courseId context
+        attemptId: attemptId,
+        location: location,
+        suspend_data: suspendData
       });
-      setShowExitModal(false);
-      onClose();
+
+      if (response?.ok) {
+        // Tell the parent/profile to refresh the card
+        window.parent?.postMessage({ 
+          type: 'ATTEMPT_UPDATED', 
+          courseId: assignmentId 
+        }, '*');
+        
+        toast({
+          title: "Progress saved",
+          description: "You can resume later.",
+        });
+        setShowExitModal(false);
+        onClose();
+      } else {
+        toast({
+          title: "Save failed", 
+          description: "Could not save progress. Please try again.",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
       console.error('Failed to save progress:', error);
       toast({
         title: "Save failed",
-        description: "There was an error saving your progress.",
+        description: "Could not save progress. Please try again.",
         variant: "destructive"
       });
     }

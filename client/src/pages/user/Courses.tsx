@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
 
 // SCORM 2004 (3rd Ed.) attempt state interface
@@ -115,10 +115,33 @@ export function UserCourses() {
   const [showPlayer, setShowPlayer] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
     queryKey: ['/api/assignments'],
   });
+
+  // Listen for ATTEMPT_UPDATED messages from CoursePlayer
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e?.data?.type === 'ATTEMPT_UPDATED') {
+        // Refresh course card state queries
+        const courseId = e.data.courseId;
+        queryClient.invalidateQueries({
+          queryKey: ['/api/lms/enrolments', courseId, 'state']
+        });
+        // Also refresh assignments in case status changed
+        queryClient.invalidateQueries({
+          queryKey: ['/api/assignments']
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [queryClient]);
 
   const handleStartCourse = (assignment: Assignment) => {
     setSelectedAssignment(assignment);
