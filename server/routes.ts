@@ -3391,7 +3391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SCORM 2004 (3rd Ed.) - Get current attempt state for profile/course card
+  // GET /lms/enrolments/:courseId/state - Exact patch implementation
   app.get('/api/lms/enrolments/:courseId/state', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserIdFromSession(req);
@@ -3413,36 +3413,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Get latest attempt for this assignment
+      // Get latest attempt (prefer open attempt)
       const attempt = await storage.getActiveScormAttempt(userId, assignment.id);
       
       if (!attempt) {
         return res.json({ 
-          status: assignment.status || 'not_started', 
+          status: 'not_started', 
           hasOpenAttempt: false, 
           canResume: false 
         });
       }
 
-      // Determine if user can resume
       const canResume = (!attempt.closed && attempt.status === 'in_progress');
-      
-      // Map attempt status to user-friendly status
-      let status = 'not_started';
-      if (attempt.status === 'in_progress') {
-        status = 'in_progress';
-      } else if (attempt.status === 'completed') {
-        status = 'completed';
-      }
-
-      res.json({
-        status,
+      return res.json({
+        status: attempt.status,
         hasOpenAttempt: !attempt.closed,
+        canResume,
         attemptId: attempt.attemptId,
         lastActivity: attempt.lastCommitAt || attempt.launchedAt,
         score: attempt.completed ? Number(attempt.scoreRaw ?? 0) : null,
-        pass: attempt.completed ? (attempt.successStatus === 'passed') : null,
-        canResume
+        pass: attempt.completed ? (attempt.successStatus === 'passed') : null
       });
     } catch (error) {
       console.error('Error getting enrolment state:', error);
