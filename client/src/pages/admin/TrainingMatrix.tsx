@@ -14,6 +14,8 @@ interface TrainingMatrixData {
     amber: number;
     green: number;
     grey: number;
+    blue: number;
+    failed: number;
   };
 }
 
