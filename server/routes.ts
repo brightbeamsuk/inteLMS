@@ -14,6 +14,8 @@ import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
 import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema } from "@shared/schema";
+import { scormRoutes } from "./scorm/routes";
+import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { z } from "zod";
 
 // Extend Express session to include user property
@@ -3800,6 +3802,178 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to delete todo' });
     }
   });
+
+  // Serve SCORM API Injector as static file
+  app.get('/client/lms/scorm-api-injector.js', (req, res) => {
+    const injectorPath = path.join(process.cwd(), 'client', 'lms', 'scorm-api-injector.js');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache'); // Disable caching for development
+    res.sendFile(injectorPath);
+  });
+
+  // New iSpring 11 Compatible Launch Route
+  app.get('/lms/launch/:courseId', requireAuth, async (req: any, res) => {
+    try {
+      const { courseId } = req.params;
+      const userId = req.session.user?.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user || !user.organisationId) {
+        return res.status(403).json({ error: 'User not found or not associated with organisation' });
+      }
+
+      // Find the course
+      const course = await storage.getCourse(courseId);
+      if (!course || course.createdBy !== user.organisationId) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      // Find active assignment for this user and course
+      const assignments = await storage.getAssignmentsForUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId && a.status !== 'completed');
+      
+      if (!assignment) {
+        return res.status(403).json({ error: 'No active assignment found for this course' });
+      }
+
+      // Generate unique attempt ID
+      const attemptId = `attempt_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
+      // Determine SCORM version (default to 1.2 if not specified)
+      const scormVersion = course.scormVersion || '1.2';
+      const standard = scormVersion.includes('2004') ? '2004' : '1.2';
+      
+      console.log(`🚀 LMS Launch: Course ${courseId}, User ${userId}, SCORM ${standard}`);
+      
+      // Create SCORM API configuration
+      const apiConfig = {
+        attemptId,
+        assignmentId: assignment.id,
+        userId,
+        courseId,
+        organisationId: user.organisationId,
+        itemId: assignment.itemId || undefined,
+        standard: standard as '1.2' | '2004',
+        learnerId: userId,
+        learnerName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Learner'
+      };
+
+      // Initialize SCORM APIs
+      const scormApiDispatcher = new ScormApiDispatcher();
+      const scormApis = await scormApiDispatcher.createApis(apiConfig);
+      
+      console.log(`✅ SCORM APIs created for attempt: ${attemptId}`);
+      
+      // Generate launch page HTML with embedded SCORM content
+      const launchHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${course.title} - Launch</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .launch-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    .header { background: #634396; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .course-title { font-size: 1.2rem; font-weight: 600; }
+    .progress-indicator { background: rgba(255,255,255,0.2); border-radius: 8px; padding: 0.5rem 1rem; }
+    .content-frame { flex: 1; border: none; width: 100%; }
+    .loading { display: flex; justify-content: center; align-items: center; height: 200px; color: #666; }
+    @media (max-width: 768px) { .header { flex-direction: column; gap: 1rem; } }
+  </style>
+</head>
+<body>
+  <div class="launch-container">
+    <div class="header">
+      <div class="course-title">${course.title}</div>
+      <div class="progress-indicator" id="progress">Starting...</div>
+    </div>
+    <iframe id="content-frame" class="content-frame" 
+            src="${course.scormPackageUrl}" 
+            allow="fullscreen"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals">
+      <div class="loading">Loading course content...</div>
+    </iframe>
+  </div>
+
+  <!-- Load SCORM API Injector -->
+  <script src="/client/lms/scorm-api-injector.js"></script>
+  
+  <!-- Initialize SCORM APIs -->
+  <script>
+    // Configuration from server
+    const scormConfig = ${JSON.stringify(apiConfig)};
+    const initialData = ${JSON.stringify({})}; // Resume data would go here
+    
+    // Initialize SCORM APIs
+    if (window.initializeScormAPI) {
+      const success = window.initializeScormAPI({
+        ...scormConfig,
+        initialData
+      });
+      
+      if (success) {
+        console.log('✅ SCORM APIs initialized for launch');
+      } else {
+        console.error('❌ Failed to initialize SCORM APIs');
+      }
+    } else {
+      console.error('❌ SCORM API Injector not loaded');
+    }
+    
+    // Progress polling
+    setInterval(async () => {
+      try {
+        const response = await fetch('/api/scorm/attempt/${attemptId}');
+        if (response.ok) {
+          const data = await response.json();
+          const progress = document.getElementById('progress');
+          if (progress && data.progressPercent !== undefined) {
+            progress.textContent = \`Progress: \${data.progressPercent}%\`;
+            if (data.completed) {
+              progress.textContent += data.passed ? ' ✅ Passed' : ' ❌ Failed';
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Progress update failed:', err);
+      }
+    }, 5000); // Update every 5 seconds
+    
+    // Handle iframe load errors
+    document.getElementById('content-frame').onerror = function() {
+      console.error('Failed to load SCORM content');
+      const progress = document.getElementById('progress');
+      if (progress) {
+        progress.textContent = 'Content load failed';
+        progress.style.background = '#dc3545';
+      }
+    };
+  </script>
+</body>
+</html>`;
+
+      // Set CORS headers for SCORM content
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      res.setHeader('Content-Security-Policy', "frame-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none';");
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      
+      console.log(`🎯 Serving launch page for attempt: ${attemptId}`);
+      res.send(launchHtml);
+
+    } catch (error) {
+      console.error('❌ LMS Launch error:', error);
+      res.status(500).json({ 
+        error: 'Failed to launch course',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Register new SCORM runtime routes
+  app.use('/api/scorm', scormRoutes);
 
   const httpServer = createServer(app);
   
