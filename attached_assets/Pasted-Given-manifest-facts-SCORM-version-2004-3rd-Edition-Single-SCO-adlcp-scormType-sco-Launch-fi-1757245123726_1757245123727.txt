@@ -1,0 +1,139 @@
+Given manifest facts
+
+SCORM version: 2004 3rd Edition
+
+Single SCO (adlcp:scormType="sco")
+
+Launch file (href): res/index.html
+
+Sequencing/controls: completionSetByContent="true" and objectiveSetByContent="true"
+
+Therefore: the SCO will set cmi.completion_status, cmi.success_status, cmi.score.raw (and optionally cmi.progress_measure). The LMS must consume these.
+
+Do these checks/fixes
+1) Launch correctness
+
+Ensure the LMS launches exactly res/index.html from the package root, not a wrapper.
+
+Launch must be same-origin with the LMS page or proxied so the SCO can reach window.parent.API_1484_11.
+
+If using an iframe, do not sandbox it, or include at least:
+allow-same-origin allow-scripts allow-forms allow-popups.
+
+2) SCORM 2004 API discovery
+
+Expose a single window.API_1484_11 object accessible to the SCO via frame/opener traversal.
+
+On course launch, confirm the SCO calls Initialize("") and receives "true".
+
+3) Runtime logging (temporary)
+
+Add a wrapper to log/inspect all calls (dev mode only):
+
+(function () {
+  if (!window.API_1484_11) return;
+  const A = window.API_1484_11;
+  ['Initialize','GetValue','SetValue','Commit','Terminate',
+   'GetLastError','GetErrorString','GetDiagnostic'].forEach(fn=>{
+    if (typeof A[fn] !== 'function') return;
+    const orig = A[fn].bind(A);
+    A[fn] = function (...args){
+      const res = orig(...args);
+      console.debug('[SCORM2004]', fn, args, '=>', res);
+      try {
+        navigator.sendBeacon?.('/scorm/log', new Blob([JSON.stringify({t:Date.now(),fn,args,res})],{type:'application/json'}));
+      } catch {}
+      return res;
+    };
+  });
+})();
+
+
+Expect to see SetValue calls during progress, and at the end one or more of:
+
+SetValue("cmi.completion_status","completed")
+
+SetValue("cmi.success_status","passed")
+
+SetValue("cmi.score.raw","NN")
+
+Optionally SetValue("cmi.progress_measure","1.0")
+
+Ensure Commit("") returns "true" and the LMS persists values on each commit.
+
+4) Persist the right fields
+
+On every Commit and Terminate, persist these per user_id + course_id + attempt_id:
+
+cmi.completion_status (not attempted|unknown|incomplete|completed)
+
+cmi.success_status (unknown|passed|failed)
+
+cmi.score.raw, cmi.score.min, cmi.score.max (if present)
+
+cmi.progress_measure (0..1) if present
+
+cmi.location and cmi.suspend_data (text; do not truncate)
+
+5) Completion mapping (accept either signal)
+
+Mark attempt Complete when either is true:
+
+completion_status == "completed" OR
+
+success_status == "passed"
+Do not require both unless explicitly configured.
+
+6) Progress bar mapping
+
+If cmi.progress_measure present → progress = Math.round(progress_measure * 100).
+
+Else: if completion_status == "completed" or success_status == "passed" → progress = 100.
+
+Else: show an interim value (e.g., 50) or derive from cmi.location if you implemented slide indexing.
+
+7) Resume/bookmark
+
+Store and restore cmi.suspend_data and cmi.location on relaunch of the same attempt.
+
+Confirm Initialize("") followed by GetValue('cmi.suspend_data') returns the saved value.
+
+8) Finish gating (the “Please complete course content first” issue)
+
+The Finish button must unlock when the persisted attempt meets the rule in step 5.
+Remove/override any internal gate that requires extra LMS-side thresholds (slide count/time) unless explicitly enabled per course.
+
+9) SCORM 1.2 fallback (optional)
+
+Add support for SCORM 1.2 as a fallback (if you republish). Map:
+
+Complete when cmi.core.lesson_status ∈ { "completed","passed" }.
+
+Use cmi.core.score.raw; optionally infer progress from lesson_status or lesson_location.
+
+Acceptance criteria
+
+With this package (SCORM 2004 3rd Ed, launch res/index.html), after passing the quiz the LMS shows:
+
+Status: Completed (and Passed where shown),
+
+Progress: 100%,
+
+Score: matches cmi.score.raw.
+
+Progress updates during study if cmi.progress_measure is sent.
+
+Resume works: exit mid-course, relaunch, continues where left.
+
+No console errors about API not found, and all runtime calls return "true".
+
+Quick console smoke test (run at end of attempt)
+API_1484_11 && {
+  completion: API_1484_11.GetValue('cmi.completion_status'),
+  success: API_1484_11.GetValue('cmi.success_status'),
+  score: API_1484_11.GetValue('cmi.score.raw'),
+  pm: API_1484_11.GetValue('cmi.progress_measure')
+}
+
+
+Expected: { completion: "completed" } and/or { success: "passed" }, score set, pm often 1.
