@@ -288,14 +288,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const completions = await storage.getCompletionsByUser(user.id);
-      const completedCourses = completions.filter(c => c.status === 'completed');
+      const assignments = await storage.getAssignmentsByUser(user.id);
+      const completedCourses = assignments.filter(c => c.status === 'completed');
       const completedCount = completedCourses.length;
       
-      // Calculate average score from completed courses
-      const scoresWithValues = completedCourses.filter(c => c.score !== null && c.score !== undefined);
+      // Get completions for completed assignments to calculate average score
+      const completions = await storage.getCompletionsByUser(user.id);
+      const scoresWithValues = completions.filter(c => c.score !== null && c.score !== undefined);
       const averageScore = scoresWithValues.length > 0 
-        ? Math.round(scoresWithValues.reduce((sum, c) => sum + (c.score || 0), 0) / scoresWithValues.length)
+        ? Math.round(scoresWithValues.reduce((sum, c) => sum + (Number(c.score) || 0), 0) / scoresWithValues.length)
         : 0;
 
       res.json({
@@ -1064,7 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For HTML files, we need to rewrite relative paths to include packageUrl
       if (ext === '.html') {
-        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const content = await fs.readFile(filePath, 'utf-8');
         const encodedPackageUrl = encodeURIComponent(packageUrl as string);
         
         // Helper function to resolve relative paths based on the current file's directory
@@ -1082,17 +1083,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const rewrittenContent = content
           .replace(/src\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
-            (match, src) => {
+            (match: string, src: string) => {
               const resolvedPath = resolveRelativePath(src);
               return `src="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}"`;
             })
           .replace(/href\s*=\s*["'](?!https?:\/\/)(?!\/api\/scorm\/)([^"']+)["']/gi, 
-            (match, href) => {
+            (match: string, href: string) => {
               const resolvedPath = resolveRelativePath(href);
               return `href="/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}"`;
             })
           .replace(/url\s*\(\s*["']?(?!https?:\/\/)(?!\/api\/scorm\/)([^"')]+)["']?\s*\)/gi, 
-            (match, url) => {
+            (match: string, url: string) => {
               const resolvedPath = resolveRelativePath(url);
               return `url("/api/scorm/content?packageUrl=${encodedPackageUrl}&file=${resolvedPath}")`;
             });
@@ -1111,6 +1112,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await getCurrentUser(req);
       const logEntry = req.body;
+      
+      if (!user) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
       
       // Enhanced logging with user context
       const enrichedLog = {
@@ -1924,7 +1929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Invalid status. Must be active or inactive.' });
       }
 
-      const updatedUser = await storage.updateUser(id, { status, updatedAt: new Date() });
+      const updatedUser = await storage.updateUser(id, { status });
       res.json(updatedUser);
     } catch (error) {
       console.error('Error updating user status:', error);
