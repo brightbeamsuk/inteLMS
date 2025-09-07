@@ -3446,6 +3446,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // SCORM 2004 (3rd Ed.) - Get current attempt state for profile/course card
+  app.get('/api/lms/enrolments/:courseId/state', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const { courseId } = req.params;
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      // Find the assignment for this user and course
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId);
+      
+      if (!assignment) {
+        return res.json({ 
+          status: 'not_started', 
+          hasOpenAttempt: false, 
+          canResume: false 
+        });
+      }
+
+      // Get latest attempt for this assignment
+      const attempt = await storage.getActiveScormAttempt(userId, assignment.id);
+      
+      if (!attempt) {
+        return res.json({ 
+          status: assignment.status || 'not_started', 
+          hasOpenAttempt: false, 
+          canResume: false 
+        });
+      }
+
+      // Determine if user can resume
+      const canResume = (!attempt.closed && attempt.status === 'in_progress');
+      
+      // Map attempt status to user-friendly status
+      let status = 'not_started';
+      if (attempt.status === 'in_progress') {
+        status = 'in_progress';
+      } else if (attempt.status === 'completed') {
+        status = 'completed';
+      }
+
+      res.json({
+        status,
+        hasOpenAttempt: !attempt.closed,
+        attemptId: attempt.attemptId,
+        lastActivity: attempt.lastCommitAt || attempt.launchedAt,
+        score: attempt.completed ? Number(attempt.scoreRaw ?? 0) : null,
+        pass: attempt.completed ? (attempt.successStatus === 'passed') : null,
+        canResume
+      });
+    } catch (error) {
+      console.error('Error getting enrolment state:', error);
+      res.status(500).json({ message: 'Failed to get enrolment state' });
+    }
+  });
+
   // Get assignments for a specific user (admin only)
   app.get('/api/assignments/user/:userId', requireAuth, async (req: any, res) => {
     try {
