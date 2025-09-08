@@ -440,34 +440,52 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
             courseId: assignment.courseId
           });
-          const attemptResult = await attemptStartRes.json();
           
-          if (attemptResult.ok && attemptResult.attemptId) {
-            // Use the server-provided attempt ID
-            setAttemptId(attemptResult.attemptId);
-            console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
-            addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
+          console.log(`📡 Attempt start response status: ${attemptStartRes.status}`);
+          
+          if (attemptStartRes.ok) {
+            const attemptResult = await attemptStartRes.json();
+            console.log(`📦 Attempt start result:`, attemptResult);
             
-            // CRITICAL: Initialize SCORM state with saved data BEFORE course loads
-            if (attemptResult.location || attemptResult.suspendData) {
-              console.log(`🔄 Resuming with saved data: location="${attemptResult.location}", suspend_data="${attemptResult.suspendData}"`);
-              addDebugLog(`🔄 Resuming: location="${attemptResult.location}", suspend_data present: ${!!attemptResult.suspendData}`);
+            if (attemptResult.ok && attemptResult.attemptId) {
+              // Use the server-provided attempt ID
+              setAttemptId(attemptResult.attemptId);
+              console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
+              addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
               
-              // Update SCORM state with saved values BEFORE the course initializes
-              attemptStateRef.current = {
-                ...attemptStateRef.current,
-                'cmi.core.lesson_location': attemptResult.location || '',
-                'cmi.location': attemptResult.location || '',
-                'cmi.suspend_data': attemptResult.suspendData || ''
-              };
+              // CRITICAL: Initialize SCORM state with saved data BEFORE course loads
+              if (attemptResult.location || attemptResult.suspendData) {
+                console.log(`🔄 Resuming with saved data: location="${attemptResult.location}", suspend_data="${attemptResult.suspendData}"`);
+                addDebugLog(`🔄 Resuming: location="${attemptResult.location}", suspend_data present: ${!!attemptResult.suspendData}`);
+                
+                // Update SCORM state with saved values BEFORE the course initializes
+                attemptStateRef.current = {
+                  ...attemptStateRef.current,
+                  'cmi.core.lesson_location': attemptResult.location || '',
+                  'cmi.location': attemptResult.location || '',
+                  'cmi.suspend_data': attemptResult.suspendData || '',
+                  // Set entry mode for resume
+                  'cmi.entry': attemptResult.suspendData ? 'resume' : 'ab-initio'
+                };
+                
+                console.log(`🎯 SCORM state hydrated with entry mode: ${attemptResult.suspendData ? 'resume' : 'ab-initio'}`);
+              } else {
+                console.log(`🆕 New attempt - no saved data to restore`);
+                attemptStateRef.current['cmi.entry'] = 'ab-initio';
+              }
+            } else {
+              console.log('📄 Invalid attempt result, using generated attempt ID:', newAttemptId);
+              setAttemptId(newAttemptId);
             }
           } else {
+            const errorText = await attemptStartRes.text();
+            console.error(`❌ Attempt start failed with status ${attemptStartRes.status}:`, errorText);
             console.log('📄 Using generated attempt ID:', newAttemptId);
             setAttemptId(newAttemptId);
           }
         } catch (attemptError) {
           console.error('⚠️ Failed to start attempt, using generated ID:', attemptError);
-          addDebugLog(`⚠️ Failed to start attempt: ${attemptError}`);
+          addDebugLog(`⚠️ Failed to start attempt: ${attemptError.message || attemptError}`);
           setAttemptId(newAttemptId);
         }
         
