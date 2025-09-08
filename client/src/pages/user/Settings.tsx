@@ -15,6 +15,7 @@ interface Certificate {
 
 export function UserSettings() {
   const [activeTab, setActiveTab] = useState(0);
+  const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -35,6 +36,12 @@ export function UserSettings() {
   const { data: certificates = [], isLoading: certificatesLoading } = useQuery<Certificate[]>({
     queryKey: ['/api/user/certificates'],
     enabled: user?.allowCertificateDownload === true,
+  });
+
+  // Fetch organization data for the access denied message
+  const { data: organisation } = useQuery<{ displayName: string }>({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
   });
 
 
@@ -88,6 +95,10 @@ export function UserSettings() {
   };
 
   const downloadCertificate = (certificate: Certificate) => {
+    if (!user?.allowCertificateDownload) {
+      setShowAccessDeniedModal(true);
+      return;
+    }
     // Create a temporary link to download the certificate
     const link = document.createElement('a');
     link.href = certificate.certificateUrl;
@@ -337,6 +348,39 @@ export function UserSettings() {
           )}
         </div>
       </div>
+      
+      {/* Certificate Access Denied Modal */}
+      {showAccessDeniedModal && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4 text-center">
+              <i className="fas fa-lock text-warning text-2xl mb-2"></i>
+              <br />
+              Certificate Access Restricted
+            </h3>
+            
+            <div className="text-center space-y-4">
+              <p className="text-base-content/80">
+                I'm sorry, <strong>{organisation?.displayName || 'your organization'}</strong> has not allowed you access to your certificates.
+              </p>
+              <p className="text-base-content/80">
+                Get in touch with them to gain access.
+              </p>
+            </div>
+
+            <div className="modal-action justify-center">
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowAccessDeniedModal(false)}
+                data-testid="button-close-access-denied"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowAccessDeniedModal(false)}></div>
+        </div>
+      )}
     </div>
   );
 }
