@@ -176,6 +176,17 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
     try {
       const api = (window as any).API_1484_11;
       
+      // Get current SCORM data BEFORE commit (critical for data preservation)
+      const location = api ? api.GetValue('cmi.location') : '';
+      const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
+      const progressMeasure = api ? api.GetValue('cmi.progress_measure') : '';
+      
+      console.log('📊 SCORM data captured before commit:', {
+        location: location || 'none',
+        suspendData: suspendData ? `${suspendData.length} chars` : 'none',
+        progressMeasure: progressMeasure || '0'
+      });
+      
       // Set exit mode to "suspend" before committing
       try {
         api?.SetValue('cmi.exit', 'suspend');
@@ -186,11 +197,6 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
       try { 
         api?.Commit(""); 
       } catch {}
-
-      // Get current SCORM data after commit
-      const location = api ? api.GetValue('cmi.location') : '';
-      const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
-      const progressMeasure = api ? api.GetValue('cmi.progress_measure') : '';
       
       console.log('📊 SCORM data to save:', {
         location: location || 'none',
