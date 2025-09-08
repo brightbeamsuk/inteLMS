@@ -433,8 +433,23 @@ export class DatabaseStorage implements IStorage {
     return certificate;
   }
 
-  async getCertificatesByUser(userId: string): Promise<Certificate[]> {
-    return await db.select().from(certificates).where(eq(certificates.userId, userId)).orderBy(desc(certificates.issuedAt));
+  async getCertificatesByUser(userId: string): Promise<any[]> {
+    return await db.select({
+      id: certificates.id,
+      completionId: certificates.completionId,
+      userId: certificates.userId,
+      courseId: certificates.courseId,
+      organisationId: certificates.organisationId,
+      certificateUrl: certificates.certificateUrl,
+      expiryDate: certificates.expiryDate,
+      issuedAt: certificates.issuedAt,
+      courseTitle: courses.title,
+      score: completions.score,
+    }).from(certificates)
+      .leftJoin(courses, eq(certificates.courseId, courses.id))
+      .leftJoin(completions, eq(certificates.completionId, completions.id))
+      .where(eq(certificates.userId, userId))
+      .orderBy(desc(certificates.issuedAt));
   }
 
   async getCertificatesByOrganisation(organisationId: string): Promise<Certificate[]> {
