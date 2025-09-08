@@ -369,6 +369,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (certificate.certificateUrl.startsWith('/objects/')) {
           return res.redirect(certificate.certificateUrl);
         }
+        
+        // If it's our demo certificate, serve the HTML directly
+        if (certificate.certificateUrl === '/api/demo/certificate-html') {
+          const certificateHTML = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Certificate of Completion</title>
+              <style>
+                body { 
+                  font-family: Georgia, serif; 
+                  text-align: center; 
+                  padding: 50px; 
+                  background: #f8f9fa; 
+                  margin: 0;
+                }
+                .certificate { 
+                  background: white; 
+                  border: 5px solid #007bff; 
+                  padding: 40px; 
+                  margin: 20px auto; 
+                  max-width: 600px; 
+                  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                  border-radius: 10px;
+                }
+                h1 { color: #007bff; font-size: 2.5em; margin-bottom: 10px; }
+                h2 { color: #333; margin-bottom: 30px; }
+                .recipient { font-size: 1.8em; color: #007bff; text-decoration: underline; margin: 20px 0; }
+                .course { font-size: 1.4em; font-weight: bold; margin: 20px 0; }
+                .details { margin-top: 30px; font-size: 0.9em; color: #666; }
+                .seal { 
+                  width: 80px; 
+                  height: 80px; 
+                  border: 3px solid #007bff; 
+                  border-radius: 50%; 
+                  display: inline-flex; 
+                  align-items: center; 
+                  justify-content: center; 
+                  font-weight: bold; 
+                  color: #007bff; 
+                  margin: 20px 0; 
+                }
+              </style>
+            </head>
+            <body>
+              <div class="certificate">
+                <h1>CERTIFICATE</h1>
+                <h2>OF COMPLETION</h2>
+                <p>This is to certify that</p>
+                <div class="recipient">Alice Williams</div>
+                <p>has successfully completed</p>
+                <div class="course">Safeguarding Children (SCORM)</div>
+                <p>with a score of <strong>100%</strong> (PASSED)</p>
+                <div class="seal">CERTIFIED</div>
+                <div class="details">
+                  <p><strong>Date Completed:</strong> September 8, 2025</p>
+                  <p><strong>Organisation:</strong> Acme Care Services</p>
+                  <p><strong>Certificate ID:</strong> CERT-ALICE-2025-001</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+          
+          res.setHeader('Content-Type', 'text/html');
+          return res.send(certificateHTML);
+        }
       }
       
       return res.status(404).json({ message: 'Certificate file not found' });
@@ -4981,42 +5048,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new SCORM runtime routes
   app.use('/api/scorm', scormRoutes);
 
-  // Generate actual certificate PDF for demo certificate
-  app.post('/api/demo/generate-certificate-pdf', async (req: any, res) => {
-    try {
-      const certificateId = '5592e4ab-864a-4185-836d-ace5b7307940';
-      const userId = 'demo-user-alice';
-      const courseId = '816723e3-7924-4957-909a-f991138dd0e0';
-      const completionId = '87d11c47-a2dc-4124-80a0-161cc153d959';
-      
-      // Get required data
-      const user = await storage.getUser(userId);
-      const course = await storage.getCourse(courseId);
-      const completion = await storage.getCompletion(completionId);
-      const organisation = await storage.getOrganisation(user!.organisationId!);
-      
-      if (!user || !course || !completion || !organisation) {
-        return res.status(404).json({ message: 'Required data not found' });
-      }
-      
-      // Generate actual certificate PDF
-      const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
-      
-      // Update certificate record with real URL
-      await storage.updateCertificate(certificateId, { certificateUrl });
-      
-      console.log(`📜 Certificate PDF generated and updated for ${user.email}`);
-      
-      res.json({ 
-        success: true, 
-        certificateUrl,
-        message: `Certificate PDF generated for ${user.firstName} ${user.lastName}` 
-      });
-    } catch (error) {
-      console.error('Error generating certificate PDF:', error);
-      res.status(500).json({ message: 'Failed to generate certificate PDF', error: error.message });
-    }
-  });
 
   const httpServer = createServer(app);
   
