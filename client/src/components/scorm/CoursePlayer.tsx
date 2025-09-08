@@ -46,6 +46,14 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
   const [showExitModal, setShowExitModal] = useState(false);
   const [hasCommittedData, setHasCommittedData] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  
+  // Store current SCORM state for save functionality
+  const currentScormStateRef = useRef({
+    location: '',
+    suspendData: '',
+    progressMeasure: ''
+  });
+  
   const attemptStateRef = useRef<ScormAttemptState>({
     // SCORM 1.2 defaults
     'cmi.core.lesson_status': 'incomplete',
@@ -176,12 +184,12 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
     try {
       const api = (window as any).API_1484_11;
       
-      // Get current SCORM data BEFORE commit (critical for data preservation)
-      const location = api ? api.GetValue('cmi.location') : '';
-      const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
-      const progressMeasure = api ? api.GetValue('cmi.progress_measure') : '';
+      // Use captured SCORM data from SetValue interception (critical for data preservation)
+      const location = currentScormStateRef.current.location;
+      const suspendData = currentScormStateRef.current.suspendData;
+      const progressMeasure = currentScormStateRef.current.progressMeasure;
       
-      console.log('📊 SCORM data captured before commit:', {
+      console.log('📊 SCORM data captured from SetValue interception:', {
         location: location || 'none',
         suspendData: suspendData ? `${suspendData.length} chars` : 'none',
         progressMeasure: progressMeasure || '0'
@@ -710,6 +718,19 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
               const originalMethod = api[method].bind(api);
               api[method] = function(...args: any[]) {
                 const result = originalMethod.apply(this, args);
+                
+                // Capture current state when course sets location or suspend_data
+                if (method === 'SetValue' || method === 'LMSSetValue') {
+                  const [field, value] = args;
+                  
+                  if (field === 'cmi.location' || field === 'cmi.core.lesson_location') {
+                    currentScormStateRef.current.location = value || '';
+                  } else if (field === 'cmi.suspend_data') {
+                    currentScormStateRef.current.suspendData = value || '';
+                  } else if (field === 'cmi.progress_measure') {
+                    currentScormStateRef.current.progressMeasure = value || '';
+                  }
+                }
                 
                 // Log the call
                 const logEntry = {

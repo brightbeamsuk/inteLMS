@@ -1,0 +1,47 @@
+[SCORM 2004] SetValue 
+(2) ["cmi.exit", "suspend"]
+ => true
+🔄 Set cmi.exit = "suspend" for save & resume
+📊 SCORM 2004 complete payload: 
+Object {learnerId: "demo-user-alice", courseId: "ce365b9d-66b9-410e-bdba-22df44bdad62", attemptId: "", standard: "2004", reason: "commit", …}
+[SCORM 2004] Commit 
+Array [""]
+ => true
+📊 SCORM data to save: 
+Object {location: "none", suspendData: "none", progressMeasure: "0"}
+📤 Calling /api/lms/attempt/save
+✅ Save response: 
+Object {lastLocation: "", suspendData: "", progressPct: 0, status: "IN_PROGRESS", attemptId: "attempt_1757336095321_fqkq0kcs9"}
+💾 Saved to localStorage as fallback: 
+Object {attemptId: "attempt_1757336095321_fqkq0kcs9", lastLocation: "", suspendData: "", progressPct: 0, courseId: "1bc9d5fa-dda8-48c1-a261-058af997b990", …}
+[SCORM 2004] SetValue 
+(2) ["cmi.session_time", "PT0H2M12S"]
+ => true
+[SCORM 2004] SetValue 
+(2) ["cmi.suspend_data", "N4IgJiBcCMDMBMBWA7PANCANlADBgblANo4C6BAFseSAGrF7RrqxoAsaiaAbGsmgA40ATjTRGTaPBoAHKKEwBDAM4AXWgEsApgH…"]
+ => true
+[SCORM 2004] SetValue 
+(2) ["cmi.session_time", "PT0H2M12S"]
+ => true
+[SCORM 2004] SetValue 
+(2) ["cmi.suspend_data", "N4IgJiBcCMDMBMBWA7PANCANlADBgblANo4C6BAFseSAGrF7RrqxoAsaiaAbGsmgA40ATjTRGTaPBoAHKKEwBDAM4AXWgEsApgH…"]
+ => true
+[SCORM 2004] SetValue 
+(2) ["cmi.exit", "suspend"]
+ => true
+[SCORM 2004] SetValue 
+(2) ["adl.nav.request", "exitAll"]
+ => true
+📊 SCORM 2004 complete payload: 
+Object {learnerId: "demo-user-alice", courseId: "ce365b9d-66b9-410e-bdba-22df44bdad62", attemptId: "", standard: "2004", reason: "commit", …}
+[SCORM 2004] Commit 
+Array [""]
+ => true
+📊 SCORM 2004 complete payload: 
+Object {learnerId: "demo-user-alice", courseId: "ce365b9d-66b9-410e-bdba-22df44bdad62", attemptId: "", standard: "2004", reason: "finish", …}
+[SCORM 2004] Terminate 
+Array [""]
+ => true
+✅ SCORM result response: 
+Object {success: true, attemptId: "attempt_1757336233867_i7zi4qgpv", reason: "commit", derivedFields: {…}, message: "SCORM 2004 result processed (commit)", …}
+📈 Derived fields: progressPercent=21%, passed=false, completed=false
