@@ -196,6 +196,7 @@ function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assign
 
   const handleStartOver = async () => {
     setIsResetting(true);
+    setShowStartOverDialog(false);
     
     try {
       // Clear localStorage immediately for instant feedback
@@ -210,15 +211,7 @@ function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assign
         }
       });
       
-      // Update UI immediately
-      queryClient.setQueryData(
-        ['/api/lms/enrolments', assignment.courseId, 'state'],
-        { status: 'not_started', hasOpenAttempt: false, canResume: false }
-      );
-      
-      setShowStartOverDialog(false);
-      
-      // Call backend to reset the active attempt
+      // Call backend to reset the active attempt first
       const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/start-over`, {
         method: 'POST',
         credentials: 'include',
@@ -234,8 +227,14 @@ function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assign
       const result = await response.json();
       console.log(`✅ Course reset: ${result.message}`);
       
-      // Refresh the state to ensure it's accurate
-      queryClient.invalidateQueries({
+      // After successful backend reset, update the cache to reflect the new state
+      queryClient.setQueryData(
+        ['/api/lms/enrolments', assignment.courseId, 'state'],
+        { status: 'not_started', hasOpenAttempt: false, canResume: false }
+      );
+      
+      // Also invalidate to ensure consistency
+      await queryClient.invalidateQueries({
         queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
       });
       
