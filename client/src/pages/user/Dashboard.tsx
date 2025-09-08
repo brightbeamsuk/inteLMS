@@ -147,15 +147,15 @@ function CourseStatus({ assignment }: { assignment: Assignment }) {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'not_started':
-        return <div className="badge badge-ghost">Not Started</div>;
+        return <div className="badge badge-ghost badge-sm whitespace-nowrap">Not Started</div>;
       case 'in_progress':
-        return <div className="badge badge-info">In Progress</div>;
+        return <div className="badge badge-info badge-sm whitespace-nowrap">In Progress</div>;
       case 'completed':
-        return <div className="badge badge-success">Completed</div>;
+        return <div className="badge badge-success badge-sm whitespace-nowrap">Completed</div>;
       case 'overdue':
-        return <div className="badge badge-error">Overdue</div>;
+        return <div className="badge badge-error badge-sm whitespace-nowrap">Overdue</div>;
       default:
-        return <div className="badge badge-ghost">{status}</div>;
+        return <div className="badge badge-ghost badge-sm whitespace-nowrap">{status}</div>;
     }
   };
 
