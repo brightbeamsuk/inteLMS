@@ -4981,52 +4981,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new SCORM runtime routes
   app.use('/api/scorm', scormRoutes);
 
-  // Demo certificate generation endpoint (temporary for testing)
-  app.post('/api/demo/create-certificate', async (req: any, res) => {
-    try {
-      // Create demo certificate for Alice Williams
-      const userId = 'demo-user-alice';
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'Demo user not found' });
-      }
-      
-      // Get organisation
-      const organisation = await storage.getOrganisation(user.organisationId!);
-      if (!organisation) {
-        return res.status(404).json({ message: 'Organisation not found' });
-      }
-      
-      // Find a course for demo certificate  
-      const allCourses = await storage.getAllCourses();
-      const course = allCourses.find(c => c.organisationId === organisation.id) || allCourses[0];
-      
-      if (!course) {
-        return res.status(404).json({ message: 'No courses found' });
-      }
-      
-      // Create certificate with demo data (without going through completion process)
-      const certificate = await storage.createCertificate({
-        completionId: 'demo-completion-' + Date.now(),
-        userId,
-        courseId: course.id,
-        organisationId: organisation.id,
-        certificateUrl: '/objects/certificates/demo-certificate-alice.pdf',
-        expiryDate: null,
-      });
-      
-      console.log(`📜 Demo certificate created for ${user.email} - Course: ${course.title}`);
-      
-      res.json({ 
-        success: true, 
-        certificate,
-        message: `Demo certificate created for ${user.firstName} ${user.lastName}` 
-      });
-    } catch (error) {
-      console.error('Error creating demo certificate:', error);
-      res.status(500).json({ message: 'Failed to create demo certificate', error: error.message });
-    }
-  });
 
   const httpServer = createServer(app);
   
