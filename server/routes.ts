@@ -688,6 +688,178 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Plan Management API (SuperAdmin only)
+  // Get all plans
+  app.get('/api/plans', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const plans = await storage.getAllPlans();
+      res.json(plans);
+    } catch (error) {
+      console.error('Error fetching plans:', error);
+      res.status(500).json({ message: 'Failed to fetch plans' });
+    }
+  });
+
+  // Get a single plan with features
+  app.get('/api/plans/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const plan = await storage.getPlanWithFeatures(id);
+      
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      res.json(plan);
+    } catch (error) {
+      console.error('Error fetching plan:', error);
+      res.status(500).json({ message: 'Failed to fetch plan' });
+    }
+  });
+
+  // Create a new plan
+  app.post('/api/plans', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { name, description, pricePerUser, featureIds } = req.body;
+      
+      if (!name || !pricePerUser) {
+        return res.status(400).json({ message: 'Name and price per user are required' });
+      }
+
+      const newPlan = await storage.createPlan({
+        name,
+        description: description || null,
+        pricePerUser: parseFloat(pricePerUser),
+        status: 'active',
+        createdBy: user.id
+      });
+
+      // Set plan features if provided
+      if (featureIds && featureIds.length > 0) {
+        await storage.setPlanFeatures(newPlan.id, featureIds);
+      }
+      
+      res.status(201).json(newPlan);
+    } catch (error) {
+      console.error('Error creating plan:', error);
+      res.status(500).json({ message: 'Failed to create plan' });
+    }
+  });
+
+  // Update a plan
+  app.put('/api/plans/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const { name, description, pricePerUser, status, featureIds } = req.body;
+      
+      const updatedPlan = await storage.updatePlan(id, {
+        name,
+        description,
+        pricePerUser: pricePerUser ? parseFloat(pricePerUser) : undefined,
+        status
+      });
+
+      // Update plan features if provided
+      if (featureIds !== undefined) {
+        await storage.setPlanFeatures(id, featureIds);
+      }
+      
+      res.json(updatedPlan);
+    } catch (error) {
+      console.error('Error updating plan:', error);
+      res.status(500).json({ message: 'Failed to update plan' });
+    }
+  });
+
+  // Delete a plan
+  app.delete('/api/plans/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      await storage.deletePlan(id);
+      res.json({ message: 'Plan deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      res.status(500).json({ message: 'Failed to delete plan' });
+    }
+  });
+
+  // Get all plan features
+  app.get('/api/plan-features', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const features = await storage.getAllPlanFeatures();
+      res.json(features);
+    } catch (error) {
+      console.error('Error fetching plan features:', error);
+      res.status(500).json({ message: 'Failed to fetch plan features' });
+    }
+  });
+
+  // Create a new plan feature
+  app.post('/api/plan-features', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { key, name, description, category, isDefault } = req.body;
+      
+      if (!key || !name) {
+        return res.status(400).json({ message: 'Key and name are required' });
+      }
+
+      const newFeature = await storage.createPlanFeature({
+        key,
+        name,
+        description: description || null,
+        category: category || null,
+        isDefault: isDefault || false
+      });
+      
+      res.status(201).json(newFeature);
+    } catch (error) {
+      console.error('Error creating plan feature:', error);
+      res.status(500).json({ message: 'Failed to create plan feature' });
+    }
+  });
+
   // Certificates API
   app.get('/api/certificates/:organisationId', requireAuth, async (req: any, res) => {
     try {

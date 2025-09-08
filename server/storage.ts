@@ -10,6 +10,9 @@ import {
   platformSettings,
   todoItems,
   scormAttempts,
+  plans,
+  planFeatures,
+  planFeatureMappings,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -33,6 +36,12 @@ import {
   type InsertTodoItem,
   type ScormAttempt,
   type InsertScormAttempt,
+  type Plan,
+  type InsertPlan,
+  type PlanFeature,
+  type InsertPlanFeature,
+  type PlanFeatureMapping,
+  type InsertPlanFeatureMapping,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull } from "drizzle-orm";
@@ -155,6 +164,28 @@ export interface IStorage {
     organizationsUsing: number;
     averageTimeToComplete: number;
   }>;
+
+  // Plan operations
+  getPlan(id: string): Promise<Plan | undefined>;
+  createPlan(plan: InsertPlan): Promise<Plan>;
+  updatePlan(id: string, plan: Partial<InsertPlan>): Promise<Plan>;
+  deletePlan(id: string): Promise<void>;
+  getAllPlans(): Promise<Plan[]>;
+  getPlanWithFeatures(id: string): Promise<Plan & { features: PlanFeature[] } | undefined>;
+
+  // Plan feature operations
+  getPlanFeature(id: string): Promise<PlanFeature | undefined>;
+  createPlanFeature(feature: InsertPlanFeature): Promise<PlanFeature>;
+  updatePlanFeature(id: string, feature: Partial<InsertPlanFeature>): Promise<PlanFeature>;
+  deletePlanFeature(id: string): Promise<void>;
+  getAllPlanFeatures(): Promise<PlanFeature[]>;
+
+  // Plan feature mapping operations
+  getPlanFeatureMapping(id: string): Promise<PlanFeatureMapping | undefined>;
+  createPlanFeatureMapping(mapping: InsertPlanFeatureMapping): Promise<PlanFeatureMapping>;
+  deletePlanFeatureMapping(id: string): Promise<void>;
+  getPlanFeatureMappings(planId: string): Promise<PlanFeatureMapping[]>;
+  setPlanFeatures(planId: string, featureIds: string[]): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -796,6 +827,124 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(scormAttempts.createdAt))
       .limit(1);
     return attempt;
+  }
+
+  // Plan operations
+  async getPlan(id: string): Promise<Plan | undefined> {
+    const [plan] = await db.select().from(plans).where(eq(plans.id, id));
+    return plan;
+  }
+
+  async createPlan(planData: InsertPlan): Promise<Plan> {
+    const [plan] = await db.insert(plans).values(planData).returning();
+    return plan;
+  }
+
+  async updatePlan(id: string, planData: Partial<InsertPlan>): Promise<Plan> {
+    const [plan] = await db
+      .update(plans)
+      .set({ ...planData, updatedAt: new Date() })
+      .where(eq(plans.id, id))
+      .returning();
+    return plan;
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    await db.delete(plans).where(eq(plans.id, id));
+  }
+
+  async getAllPlans(): Promise<Plan[]> {
+    return await db.select().from(plans).orderBy(desc(plans.createdAt));
+  }
+
+  async getPlanWithFeatures(id: string): Promise<Plan & { features: PlanFeature[] } | undefined> {
+    const [plan] = await db.select().from(plans).where(eq(plans.id, id));
+    if (!plan) return undefined;
+
+    const features = await db
+      .select({
+        id: planFeatures.id,
+        key: planFeatures.key,
+        name: planFeatures.name,
+        description: planFeatures.description,
+        category: planFeatures.category,
+        isDefault: planFeatures.isDefault,
+        createdAt: planFeatures.createdAt,
+        updatedAt: planFeatures.updatedAt,
+      })
+      .from(planFeatures)
+      .innerJoin(planFeatureMappings, eq(planFeatureMappings.featureId, planFeatures.id))
+      .where(and(
+        eq(planFeatureMappings.planId, id),
+        eq(planFeatureMappings.enabled, true)
+      ));
+
+    return { ...plan, features };
+  }
+
+  // Plan feature operations
+  async getPlanFeature(id: string): Promise<PlanFeature | undefined> {
+    const [feature] = await db.select().from(planFeatures).where(eq(planFeatures.id, id));
+    return feature;
+  }
+
+  async createPlanFeature(featureData: InsertPlanFeature): Promise<PlanFeature> {
+    const [feature] = await db.insert(planFeatures).values(featureData).returning();
+    return feature;
+  }
+
+  async updatePlanFeature(id: string, featureData: Partial<InsertPlanFeature>): Promise<PlanFeature> {
+    const [feature] = await db
+      .update(planFeatures)
+      .set({ ...featureData, updatedAt: new Date() })
+      .where(eq(planFeatures.id, id))
+      .returning();
+    return feature;
+  }
+
+  async deletePlanFeature(id: string): Promise<void> {
+    await db.delete(planFeatures).where(eq(planFeatures.id, id));
+  }
+
+  async getAllPlanFeatures(): Promise<PlanFeature[]> {
+    return await db.select().from(planFeatures).orderBy(asc(planFeatures.category), asc(planFeatures.name));
+  }
+
+  // Plan feature mapping operations
+  async getPlanFeatureMapping(id: string): Promise<PlanFeatureMapping | undefined> {
+    const [mapping] = await db.select().from(planFeatureMappings).where(eq(planFeatureMappings.id, id));
+    return mapping;
+  }
+
+  async createPlanFeatureMapping(mappingData: InsertPlanFeatureMapping): Promise<PlanFeatureMapping> {
+    const [mapping] = await db.insert(planFeatureMappings).values(mappingData).returning();
+    return mapping;
+  }
+
+  async deletePlanFeatureMapping(id: string): Promise<void> {
+    await db.delete(planFeatureMappings).where(eq(planFeatureMappings.id, id));
+  }
+
+  async getPlanFeatureMappings(planId: string): Promise<PlanFeatureMapping[]> {
+    return await db
+      .select()
+      .from(planFeatureMappings)
+      .where(eq(planFeatureMappings.planId, planId));
+  }
+
+  async setPlanFeatures(planId: string, featureIds: string[]): Promise<void> {
+    // First, delete existing mappings
+    await db.delete(planFeatureMappings).where(eq(planFeatureMappings.planId, planId));
+    
+    // Then, create new mappings
+    if (featureIds.length > 0) {
+      const mappings = featureIds.map(featureId => ({
+        planId,
+        featureId,
+        enabled: true,
+      }));
+      await db.insert(planFeatureMappings).values(mappings);
+    }
   }
 }
 

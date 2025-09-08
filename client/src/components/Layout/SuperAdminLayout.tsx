@@ -16,6 +16,7 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     { path: "/superadmin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/superadmin/organisations", icon: "fas fa-building", label: "Organisations" },
     { path: "/superadmin/users", icon: "fas fa-users", label: "Users" },
+    { path: "/superadmin/plans", icon: "fas fa-credit-card", label: "Plans" },
     { path: "/superadmin/course-builder", icon: "fas fa-hammer", label: "Course Builder" },
     { path: "/superadmin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
     { path: "/superadmin/settings", icon: "fas fa-cog", label: "Settings" },

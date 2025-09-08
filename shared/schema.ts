@@ -50,6 +50,9 @@ export const scormStandardEnum = pgEnum('scorm_standard', ['1.2', '2004']);
 // SCORM attempt status enum
 export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['not_started', 'in_progress', 'completed', 'abandoned']);
 
+// Plan status enum
+export const planStatusEnum = pgEnum('plan_status', ['active', 'inactive', 'archived']);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -85,6 +88,7 @@ export const organisations = pgTable("organisations", {
   contactPhone: varchar("contact_phone"),
   address: text("address"),
   status: organisationStatusEnum("status").notNull().default('active'),
+  planId: varchar("plan_id"), // Reference to the plan this organisation is subscribed to
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -260,6 +264,39 @@ export const todoItems = pgTable("todo_items", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Plans table
+export const plans = pgTable("plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(), // e.g., "Enterprise", "Premium", "Basic"
+  description: text("description"),
+  pricePerUser: decimal("price_per_user", { precision: 10, scale: 2 }).notNull(), // Monthly price per user
+  status: planStatusEnum("status").notNull().default('active'),
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Plan features table - defines available features that can be enabled/disabled
+export const planFeatures = pgTable("plan_features", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: varchar("key").notNull().unique(), // e.g., "custom_branding", "remove_branding", "custom_slug"
+  name: varchar("name").notNull(), // Human-readable name
+  description: text("description"),
+  category: varchar("category"), // e.g., "branding", "customization", "functionality"
+  isDefault: boolean("is_default").default(false), // Whether this feature is included by default
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Plan feature mappings table - maps which features are enabled for each plan
+export const planFeatureMappings = pgTable("plan_feature_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull(),
+  featureId: varchar("feature_id").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   organisation: one(organisations, {
@@ -279,6 +316,10 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   certificates: many(certificates),
   settings: one(organisationSettings),
   certificateTemplates: many(certificateTemplates),
+  plan: one(plans, {
+    fields: [organisations.planId],
+    references: [plans.id],
+  }),
 }));
 
 export const coursesRelations = relations(courses, ({ one, many }) => ({
@@ -374,6 +415,31 @@ export const todoItemsRelations = relations(todoItems, ({ one }) => ({
   }),
 }));
 
+// Plan relations
+export const plansRelations = relations(plans, ({ many, one }) => ({
+  organisations: many(organisations),
+  createdByUser: one(users, {
+    fields: [plans.createdBy],
+    references: [users.id],
+  }),
+  featureMappings: many(planFeatureMappings),
+}));
+
+export const planFeaturesRelations = relations(planFeatures, ({ many }) => ({
+  planMappings: many(planFeatureMappings),
+}));
+
+export const planFeatureMappingsRelations = relations(planFeatureMappings, ({ one }) => ({
+  plan: one(plans, {
+    fields: [planFeatureMappings.planId],
+    references: [plans.id],
+  }),
+  feature: one(planFeatures, {
+    fields: [planFeatureMappings.featureId],
+    references: [planFeatures.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -437,6 +503,24 @@ export const insertTodoItemSchema = createInsertSchema(todoItems).omit({
   updatedAt: true,
 });
 
+// Plan insert schemas
+export const insertPlanSchema = createInsertSchema(plans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPlanFeatureSchema = createInsertSchema(planFeatures).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPlanFeatureMappingSchema = createInsertSchema(planFeatureMappings).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -471,3 +555,13 @@ export type PlatformSettings = typeof platformSettings.$inferSelect;
 
 export type InsertTodoItem = z.infer<typeof insertTodoItemSchema>;
 export type TodoItem = typeof todoItems.$inferSelect;
+
+// Plan types
+export type InsertPlan = z.infer<typeof insertPlanSchema>;
+export type Plan = typeof plans.$inferSelect;
+
+export type InsertPlanFeature = z.infer<typeof insertPlanFeatureSchema>;
+export type PlanFeature = typeof planFeatures.$inferSelect;
+
+export type InsertPlanFeatureMapping = z.infer<typeof insertPlanFeatureMappingSchema>;
+export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
