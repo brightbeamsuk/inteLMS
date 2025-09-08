@@ -1,8 +1,20 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
+
+// SCORM 2004 (3rd Ed.) attempt state interface
+interface AttemptState {
+  status: 'not_started' | 'in_progress' | 'completed';
+  hasOpenAttempt: boolean;
+  attemptId?: string;
+  lastActivity?: string;
+  score?: number;
+  pass?: boolean;
+  canResume: boolean;
+  progressPercent?: number;
+}
 
 interface Assignment {
   id: string;
@@ -40,10 +52,138 @@ interface UserStats {
   averageScore: number;
 }
 
+// Course action button component with real-time state
+function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
+  const { data: attemptState, isLoading } = useQuery<AttemptState>({
+    queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
+    queryFn: async () => {
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/state`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch attempt state');
+      }
+      return response.json();
+    },
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  if (isLoading) {
+    return (
+      <button className="btn btn-sm btn-ghost loading" disabled>
+        <span className="loading loading-spinner loading-xs"></span>
+        Loading...
+      </button>
+    );
+  }
+
+  const state = attemptState || { status: 'not_started', canResume: false };
+  
+  const getButtonProps = () => {
+    switch (state.status) {
+      case 'not_started':
+        return {
+          className: 'btn btn-sm btn-primary',
+          text: 'Start Course',
+          icon: 'fas fa-play'
+        };
+      case 'in_progress':
+        return {
+          className: state.canResume ? 'btn btn-sm btn-info' : 'btn btn-sm btn-primary',
+          text: state.canResume ? 'Resume' : 'Continue',
+          icon: state.canResume ? 'fas fa-play-circle' : 'fas fa-play'
+        };
+      case 'completed':
+        return {
+          className: 'btn btn-sm btn-success',
+          text: 'Review',
+          icon: 'fas fa-eye'
+        };
+      default:
+        return {
+          className: 'btn btn-sm btn-primary',
+          text: 'Start Course',
+          icon: 'fas fa-play'
+        };
+    }
+  };
+
+  const buttonProps = getButtonProps();
+
+  return (
+    <button 
+      className={buttonProps.className}
+      onClick={() => onStartCourse(assignment)}
+      data-testid={`button-start-assignment-${assignment.id}`}
+    >
+      <i className={buttonProps.icon}></i> 
+      {buttonProps.text}
+    </button>
+  );
+}
+
+// Course status component with real-time state
+function CourseStatus({ assignment }: { assignment: Assignment }) {
+  const { data: attemptState } = useQuery<AttemptState>({
+    queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
+    queryFn: async () => {
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/state`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch attempt state');
+      }
+      return response.json();
+    },
+    staleTime: 0,
+  });
+
+  const state = attemptState || { status: 'not_started' };
+  
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'not_started':
+        return <div className="badge badge-ghost">Not Started</div>;
+      case 'in_progress':
+        return <div className="badge badge-info">In Progress</div>;
+      case 'completed':
+        return <div className="badge badge-success">Completed</div>;
+      case 'overdue':
+        return <div className="badge badge-error">Overdue</div>;
+      default:
+        return <div className="badge badge-ghost">{status}</div>;
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {getStatusBadge(state.status)}
+      {state.progressPercent !== undefined && state.status !== 'completed' && (
+        <div>
+          <progress 
+            className={`progress progress-sm w-full ${
+              state.status === 'in_progress' ? 'progress-info' : 'progress-warning'
+            }`}
+            value={state.progressPercent} 
+            max="100"
+            data-testid={`progress-assignment-${assignment.id}`}
+          ></progress>
+          <div className="text-xs text-center mt-1">{state.progressPercent}%</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function UserDashboard() {
   const { user } = useAuth();
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
     queryKey: ['/api/assignments'],
@@ -56,6 +196,28 @@ export function UserDashboard() {
   const { data: certificates = [], isLoading: certificatesLoading } = useQuery<Certificate[]>({
     queryKey: ['/api/user/certificates'],
   });
+
+  // Listen for ATTEMPT_UPDATED messages from CoursePlayer
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e?.data?.type === 'ATTEMPT_UPDATED') {
+        // Refresh course card state queries
+        const courseId = e.data.courseId;
+        queryClient.invalidateQueries({
+          queryKey: ['/api/lms/enrolments', courseId, 'state']
+        });
+        // Also refresh assignments in case status changed
+        queryClient.invalidateQueries({
+          queryKey: ['/api/assignments']
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [queryClient]);
 
   const handleStartCourse = (assignment: Assignment) => {
     setSelectedAssignment(assignment);
@@ -72,21 +234,6 @@ export function UserDashboard() {
     setSelectedAssignment(null);
     // Refresh assignments to show updated status
     // This would be handled by queryClient.invalidateQueries in the real implementation
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'not_started':
-        return <div className="badge badge-ghost">Not Started</div>;
-      case 'in_progress':
-        return <div className="badge badge-info">In Progress</div>;
-      case 'completed':
-        return <div className="badge badge-success">Completed</div>;
-      case 'overdue':
-        return <div className="badge badge-error">Overdue</div>;
-      default:
-        return <div className="badge badge-ghost">{status}</div>;
-    }
   };
 
   const getDueSoonStatus = (dueDate?: string) => {
@@ -185,7 +332,7 @@ export function UserDashboard() {
                     <h3 className="card-title text-lg" data-testid={`text-assignment-title-${assignment.id}`}>
                       {assignment.courseTitle}
                     </h3>
-                    {getStatusBadge(assignment.status)}
+                    <CourseStatus assignment={assignment} />
                   </div>
                   
                   {/* Course Description */}
@@ -206,46 +353,11 @@ export function UserDashboard() {
                     </span>
                   </div>
                   
-                  {assignment.progress !== undefined && (
-                    <div className="mb-3">
-                      <progress 
-                        className={`progress w-full ${
-                          assignment.status === 'completed' ? 'progress-success' :
-                          assignment.status === 'in_progress' ? 'progress-info' :
-                          'progress-warning'
-                        }`}
-                        value={assignment.progress} 
-                        max="100"
-                        data-testid={`progress-assignment-${assignment.id}`}
-                      ></progress>
-                      <div className="text-xs text-center mt-1">{assignment.progress}%</div>
-                    </div>
-                  )}
-                  
                   <div className="card-actions justify-end">
-                    {assignment.status === 'not_started' || assignment.status === 'in_progress' ? (
-                      <button 
-                        className={`btn btn-sm ${
-                          assignment.status === 'not_started' ? 'btn-primary' : 'btn-info'
-                        }`}
-                        onClick={() => handleStartCourse(assignment)}
-                        data-testid={`button-start-assignment-${assignment.id}`}
-                      >
-                        <i className="fas fa-play"></i> 
-                        {assignment.status === 'not_started' ? 'Start Course' : 'Resume'}
-                      </button>
-                    ) : (
-                      <button 
-                        className={`btn btn-sm ${
-                          assignment.status === 'completed' ? 'btn-success' : 'btn-error'
-                        }`}
-                        onClick={() => handleStartCourse(assignment)}
-                        data-testid={`button-start-assignment-${assignment.id}`}
-                      >
-                        <i className={assignment.status === 'completed' ? 'fas fa-eye' : 'fas fa-play'}></i> 
-                        {assignment.status === 'completed' ? 'Review' : 'Continue'}
-                      </button>
-                    )}
+                    <CourseActionButton 
+                      assignment={assignment} 
+                      onStartCourse={handleStartCourse} 
+                    />
                   </div>
                 </div>
               </div>
@@ -346,6 +458,7 @@ export function UserDashboard() {
       {showPlayer && selectedAssignment && (
         <CoursePlayer
           assignmentId={selectedAssignment.id}
+          courseId={selectedAssignment.courseId}
           courseTitle={selectedAssignment.courseTitle}
           onComplete={handleCourseComplete}
           onClose={handleClosePlayer}
