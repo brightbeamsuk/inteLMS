@@ -54,6 +54,10 @@ interface UserStats {
 
 // Course action button component with real-time state
 function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
+  const [showStartOverDialog, setShowStartOverDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const queryClient = useQueryClient();
+  
   const { data: attemptState, isLoading } = useQuery<AttemptState>({
     queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
     queryFn: async () => {
@@ -70,6 +74,62 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
     refetchOnMount: true,
     refetchOnWindowFocus: true,
   });
+
+  const handleStartOver = async () => {
+    setIsResetting(true);
+    
+    try {
+      // Clear localStorage immediately for instant feedback
+      localStorage.removeItem(`scorm_save_${assignment.courseId}`);
+      localStorage.removeItem(`scorm_attemptId_${assignment.courseId}`);
+      
+      // Clear any related data
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.includes(assignment.courseId)) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Update UI immediately
+      queryClient.setQueryData(
+        ['/api/lms/enrolments', assignment.courseId, 'state'],
+        { status: 'not_started', hasOpenAttempt: false, canResume: false }
+      );
+      
+      setShowStartOverDialog(false);
+      
+      // Call backend to reset the active attempt
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/start-over`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to reset course progress');
+      }
+      
+      const result = await response.json();
+      console.log(`✅ Course reset: ${result.message}`);
+      
+      // Refresh the state to ensure it's accurate
+      queryClient.invalidateQueries({
+        queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
+      });
+      
+    } catch (error) {
+      console.error('Error resetting course progress:', error);
+      // Refresh on error to get accurate state
+      queryClient.invalidateQueries({
+        queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -114,14 +174,71 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
   const buttonProps = getButtonProps();
 
   return (
-    <button 
-      className={buttonProps.className}
-      onClick={() => onStartCourse(assignment)}
-      data-testid={`button-start-assignment-${assignment.id}`}
-    >
-      <i className={buttonProps.icon}></i> 
-      {buttonProps.text}
-    </button>
+    <>
+      <div className="flex gap-2">
+        <button 
+          className={buttonProps.className}
+          onClick={() => onStartCourse(assignment)}
+          data-testid={`button-start-assignment-${assignment.id}`}
+        >
+          <i className={buttonProps.icon}></i> 
+          {buttonProps.text}
+        </button>
+
+        {/* Start Over button - only show for in-progress courses */}
+        {state.status === 'in_progress' && (
+          <button 
+            className="btn btn-sm btn-success"
+            onClick={() => setShowStartOverDialog(true)}
+            disabled={isResetting}
+            data-testid={`button-start-over-${assignment.id}`}
+            title="Start course from the beginning"
+          >
+            {isResetting ? (
+              <span className="loading loading-spinner loading-sm"></span>
+            ) : (
+              <i className="fas fa-redo-alt"></i>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Start Over Confirmation Dialog */}
+      {showStartOverDialog && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Start Over?</h3>
+            <p className="mb-6">
+              Are you sure you want to start this course over? This will reset all your progress and you'll begin from the beginning.
+            </p>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost"
+                onClick={() => setShowStartOverDialog(false)}
+                disabled={isResetting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-success"
+                onClick={handleStartOver}
+                disabled={isResetting}
+              >
+                {isResetting ? (
+                  <>
+                    <span className="loading loading-spinner loading-sm"></span>
+                    Resetting...
+                  </>
+                ) : (
+                  'Yes, Start Over'
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowStartOverDialog(false)}></div>
+        </div>
+      )}
+    </>
   );
 }
 
