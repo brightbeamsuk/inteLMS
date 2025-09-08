@@ -404,7 +404,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         attemptStateRef.current['cmi.learner_id'] = userResponse.id;
         attemptStateRef.current['cmi.learner_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         
-        // SCORM 2004 (3rd Ed.) - Start attempt and mark as In Progress on first launch
+        // SCORM 2004 (3rd Ed.) - Start attempt and load saved data BEFORE SCORM initialization
         try {
           console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
@@ -418,12 +418,12 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
             addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
             
-            // Initialize SCORM state with saved data for resuming
+            // CRITICAL: Initialize SCORM state with saved data BEFORE course loads
             if (attemptResult.location || attemptResult.suspendData) {
               console.log(`🔄 Resuming with saved data: location="${attemptResult.location}", suspend_data="${attemptResult.suspendData}"`);
               addDebugLog(`🔄 Resuming: location="${attemptResult.location}", suspend_data present: ${!!attemptResult.suspendData}`);
               
-              // Update SCORM state with saved values
+              // Update SCORM state with saved values BEFORE the course initializes
               attemptStateRef.current = {
                 ...attemptStateRef.current,
                 'cmi.core.lesson_location': attemptResult.location || '',
@@ -433,10 +433,12 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             }
           } else {
             console.log('📄 Using generated attempt ID:', newAttemptId);
+            setAttemptId(newAttemptId);
           }
         } catch (attemptError) {
           console.error('⚠️ Failed to start attempt, using generated ID:', attemptError);
           addDebugLog(`⚠️ Failed to start attempt: ${attemptError}`);
+          setAttemptId(newAttemptId);
         }
         
         // Get course launch URL using improved SCORM processing
