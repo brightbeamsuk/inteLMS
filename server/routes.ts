@@ -3438,7 +3438,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get latest attempt (prefer open attempt)
       const attempt = await storage.getActiveScormAttempt(userId, assignment.id);
       
-      if (!attempt) {
+      console.log(`🔍 State query for course ${courseId}, user ${userId}:`, {
+        attemptFound: !!attempt,
+        attemptId: attempt?.attemptId,
+        status: attempt?.status,
+        closed: attempt?.closed,
+        isActive: attempt?.isActive
+      });
+      
+      // If no attempt or attempt is closed, return not_started
+      if (!attempt || attempt.closed) {
+        console.log(`📝 Returning not_started (no attempt or closed attempt)`);
         return res.json({ 
           status: 'not_started', 
           hasOpenAttempt: false, 
@@ -3447,7 +3457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const canResume = (!attempt.closed && attempt.status === 'in_progress');
-      return res.json({
+      const response = {
         status: attempt.status,
         hasOpenAttempt: !attempt.closed,
         canResume,
@@ -3455,7 +3465,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastActivity: attempt.lastCommitAt || attempt.launchedAt,
         score: attempt.completed ? Number(attempt.scoreRaw ?? 0) : null,
         pass: attempt.completed ? (attempt.successStatus === 'passed') : null
-      });
+      };
+      
+      console.log(`📝 Returning state:`, response);
+      return res.json(response);
     } catch (error) {
       console.error('Error getting enrolment state:', error);
       res.status(500).json({ message: 'Failed to get enrolment state' });
