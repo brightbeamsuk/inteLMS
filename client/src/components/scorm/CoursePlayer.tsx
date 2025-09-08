@@ -170,7 +170,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
 
   const handleSaveAndExit = async () => {
     console.log('💾 Save & resume later clicked');
-    console.log(`📚 Course ID: ${assignment.courseId}`);
+    console.log(`📚 Course ID: ${courseId}`);
     console.log(`🎯 Attempt ID: ${attemptId}`);
     
     try {
@@ -204,7 +204,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
       // Call the save endpoint according to specification
       console.log('📤 Calling /api/lms/attempt/save');
       const response = await apiRequest('POST', '/api/lms/attempt/save', {
-        courseId: assignment.courseId,
+        courseId: courseId,
         attemptId: attemptId,
         location: location,
         suspendData: suspendData,
@@ -218,7 +218,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         // Tell the parent/profile to refresh the card
         window.parent?.postMessage({ 
           type: 'ATTEMPT_UPDATED', 
-          courseId: assignment.courseId 
+          courseId: courseId 
         }, '*');
         
         toast({
@@ -456,12 +456,12 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         attemptStateRef.current['cmi.learner_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         
         // SCORM 2004 (3rd Ed.) - Start attempt and load saved data BEFORE SCORM initialization
-        console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
-        console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${assignment.courseId}`);
+        console.log(`🚀 Starting SCORM attempt for course: ${courseId}`);
+        console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${courseId}`);
         
         try {
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
-            courseId: assignment.courseId
+            courseId: courseId
           });
           console.log(`📥 Received response from attempt start:`, attemptStartRes);
           
