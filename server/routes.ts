@@ -3302,11 +3302,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // POST /lms/attempt/start - Exact patch implementation
   app.post('/api/lms/attempt/start', requireAuth, async (req: any, res) => {
+    console.log('🎯 /api/lms/attempt/start endpoint called');
+    console.log('📦 Request body:', req.body);
+    
     try {
       const { courseId } = req.body;
       const userId = getUserIdFromSession(req);
       
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📚 Course ID: ${courseId}`);
+      
       if (!userId) {
+        console.log('❌ User not authenticated');
         return res.status(401).json({ message: 'User not authenticated' });
       }
 

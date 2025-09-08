@@ -435,9 +435,10 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         attemptStateRef.current['cmi.learner_name'] = `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim();
         
         // SCORM 2004 (3rd Ed.) - Start attempt and load saved data BEFORE SCORM initialization
+        console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
+        console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${assignment.courseId}`);
+        
         try {
-          console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
-          console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${assignment.courseId}`);
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
             courseId: assignment.courseId
           });
