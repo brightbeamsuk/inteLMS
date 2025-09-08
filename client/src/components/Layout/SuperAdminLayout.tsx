@@ -91,61 +91,100 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       </div>
 
       {/* Main Layout */}
-      <div className="drawer lg:drawer-open">
-        <div className="drawer-content flex flex-col">
-          {/* Main Content */}
-          <main className="flex-1 p-6">
-            {children}
-          </main>
-        </div>
-
-        {/* Sidebar */}
-        <div className={`drawer-side ${drawerOpen ? 'block' : 'hidden lg:block'}`}>
-          <div 
-            aria-label="close sidebar" 
-            className="drawer-overlay lg:hidden"
-            onClick={() => setDrawerOpen(false)}
-          ></div>
-          
-          <aside className="min-h-full w-80 bg-base-200 text-base-content">
-            <div className="p-4">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="avatar">
-                  <div className="w-12 h-12 rounded-full">
-                    <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
-                      <span className="text-lg font-bold">
-                        {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div className="font-bold text-lg" data-testid="text-user-name">
-                    {user?.firstName} {user?.lastName}
-                  </div>
-                  <div className="text-sm opacity-60" data-testid="text-user-title">
-                    {user?.jobTitle || 'Platform Owner'}
+      <div className="flex">
+        {/* Desktop Sidebar - Always visible on lg+ */}
+        <aside className="hidden lg:block w-80 min-h-screen bg-base-200 text-base-content">
+          <div className="p-4">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="avatar">
+                <div className="w-12 h-12 rounded-full">
+                  <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
+                    <span className="text-lg font-bold">
+                      {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                    </span>
                   </div>
                 </div>
               </div>
+              <div>
+                <div className="font-bold text-lg" data-testid="text-user-name">
+                  {user?.firstName} {user?.lastName}
+                </div>
+                <div className="text-sm opacity-60" data-testid="text-user-title">
+                  {user?.jobTitle || 'Platform Owner'}
+                </div>
+              </div>
             </div>
-            
-            <ul className="menu p-4 space-y-2">
-              {menuItems.map((item) => (
-                <li key={item.path}>
-                  <Link 
-                    href={item.path}
-                    className={location === item.path ? "active" : ""}
-                    onClick={() => setDrawerOpen(false)}
-                    data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-                  >
-                    <i className={item.icon}></i>
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </aside>
+          </div>
+          
+          <ul className="menu p-4 space-y-2">
+            {menuItems.map((item) => (
+              <li key={item.path}>
+                <Link 
+                  href={item.path}
+                  className={location === item.path ? "active" : ""}
+                  data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <i className={item.icon}></i>
+                  {item.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        {/* Mobile Sidebar Overlay */}
+        {drawerOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setDrawerOpen(false)}>
+            <aside 
+              className="w-80 min-h-screen bg-base-200 text-base-content"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="avatar">
+                    <div className="w-12 h-12 rounded-full">
+                      <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
+                        <span className="text-lg font-bold">
+                          {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg" data-testid="text-user-name">
+                      {user?.firstName} {user?.lastName}
+                    </div>
+                    <div className="text-sm opacity-60" data-testid="text-user-title">
+                      {user?.jobTitle || 'Platform Owner'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <ul className="menu p-4 space-y-2">
+                {menuItems.map((item) => (
+                  <li key={item.path}>
+                    <Link 
+                      href={item.path}
+                      className={location === item.path ? "active" : ""}
+                      onClick={() => setDrawerOpen(false)}
+                      data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <i className={item.icon}></i>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col">
+          <main className="flex-1 p-6">
+            {children}
+          </main>
         </div>
       </div>
     </div>
