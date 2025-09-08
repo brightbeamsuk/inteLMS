@@ -4323,9 +4323,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Update assignment status if needed
-      if (reason === 'finish' && completed) {
-        try {
+      // Update assignment status based on progress
+      try {
+        if (reason === 'finish' && completed) {
+          // Course completed - update to completed status
           await storage.updateAssignment(assignmentId, {
             status: 'completed',
             completedAt: new Date(),
@@ -4345,9 +4346,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               scormData: scormData,
             });
           }
-        } catch (statusError) {
-          console.error('Error updating assignment status:', statusError);
+        } else if (assignment.status === 'not_started' && (attemptData.progressPercent > 0 || reason === 'commit' || reason === 'finish')) {
+          // Course started - update to in_progress status
+          await storage.updateAssignment(assignmentId, {
+            status: 'in_progress',
+            startedAt: new Date(),
+          });
+          console.log(`🚀 Assignment ${assignmentId} updated to in_progress (${attemptData.progressPercent}% progress)`);
         }
+      } catch (statusError) {
+        console.error('Error updating assignment status:', statusError);
       }
 
       // Enhanced response with derived fields
