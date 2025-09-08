@@ -37,29 +37,21 @@ function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assign
 
   const handleStartOver = async () => {
     try {
-      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/start-over`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      // Clear any saved progress data for this course
+      localStorage.removeItem(`scorm_save_${assignment.courseId}`);
+      localStorage.removeItem(`scorm_attemptId_${assignment.courseId}`);
       
-      if (!response.ok) {
-        throw new Error('Failed to start over');
-      }
-      
-      // Refresh the attempt state
+      // Invalidate the attempt state cache to refresh the UI
       queryClient.invalidateQueries({
         queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
       });
       
       setShowStartOverDialog(false);
-      // Start the course with fresh attempt
-      onStartOver(assignment);
+      
+      // The course will now appear as "Not Started" and show "Start" button
+      console.log(`🗑️ Cleared saved progress for course: ${assignment.courseId}`);
     } catch (error) {
-      console.error('Error starting over:', error);
-      // You could add a toast notification here
+      console.error('Error clearing progress:', error);
     }
   };
 
