@@ -16,6 +16,17 @@ interface AttemptState {
   progressPercent?: number;
 }
 
+// Course completion results interface
+interface CourseResults {
+  courseTitle: string;
+  score: number;
+  passed: boolean;
+  completedAt: string;
+  timeSpent?: string;
+  certificateUrl?: string;
+  passmark: number;
+}
+
 interface Assignment {
   id: string;
   courseId: string;
@@ -52,9 +63,153 @@ interface UserStats {
   averageScore: number;
 }
 
+// Course Results Modal Component
+function CourseResultsModal({ 
+  assignment, 
+  attemptState, 
+  isOpen, 
+  onClose 
+}: { 
+  assignment: Assignment;
+  attemptState: AttemptState; 
+  isOpen: boolean; 
+  onClose: () => void; 
+}) {
+  if (!isOpen) return null;
+
+  const score = attemptState.score || 0;
+  const passed = attemptState.pass || false;
+  const passmark = assignment.passmark || 80;
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-2xl">
+        <h3 className="font-bold text-2xl mb-6 flex items-center gap-3">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+            passed ? 'bg-success text-success-content' : 'bg-error text-error-content'
+          }`}>
+            <i className={`fas ${passed ? 'fa-trophy' : 'fa-times'} text-xl`}></i>
+          </div>
+          Course Results
+        </h3>
+        
+        <div className="space-y-6">
+          {/* Course Info */}
+          <div className="bg-base-200 rounded-lg p-4">
+            <h4 className="font-semibold text-lg mb-2" data-testid="results-course-title">
+              {assignment.courseTitle}
+            </h4>
+            <p className="text-base-content/70">
+              {assignment.courseDescription || 'Course completed successfully'}
+            </p>
+          </div>
+
+          {/* Pass/Fail Status */}
+          <div className={`alert ${passed ? 'alert-success' : 'alert-error'}`}>
+            <div className="flex items-center gap-3">
+              <i className={`fas ${passed ? 'fa-check-circle' : 'fa-times-circle'} text-xl`}></i>
+              <div>
+                <div className="font-bold text-lg" data-testid="results-status">
+                  {passed ? 'Congratulations! You passed!' : 'Course not passed'}
+                </div>
+                <div className="text-sm opacity-90">
+                  {passed 
+                    ? `You achieved the required score of ${passmark}% or higher.`
+                    : `You need ${passmark}% to pass. You can retake the course to improve your score.`
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Score Details */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="stat bg-base-200 rounded-lg">
+              <div className="stat-title">Your Score</div>
+              <div className={`stat-value text-3xl ${passed ? 'text-success' : 'text-error'}`} data-testid="results-score">
+                {score}%
+              </div>
+              <div className="stat-desc">Final score achieved</div>
+            </div>
+            
+            <div className="stat bg-base-200 rounded-lg">
+              <div className="stat-title">Pass Mark</div>
+              <div className="stat-value text-3xl text-base-content" data-testid="results-passmark">
+                {passmark}%
+              </div>
+              <div className="stat-desc">Required to pass</div>
+            </div>
+          </div>
+
+          {/* Completion Details */}
+          <div className="bg-base-200 rounded-lg p-4">
+            <h5 className="font-semibold mb-3">Completion Details</h5>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Status:</span>
+                <span className="font-medium capitalize" data-testid="results-completion-status">
+                  {attemptState.status.replace('_', ' ')}
+                </span>
+              </div>
+              {attemptState.lastActivity && (
+                <div className="flex justify-between">
+                  <span>Completed:</span>
+                  <span className="font-medium" data-testid="results-completion-date">
+                    {new Date(attemptState.lastActivity).toLocaleString()}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>Attempt ID:</span>
+                <span className="font-mono text-xs" data-testid="results-attempt-id">
+                  {attemptState.attemptId}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Certificate Section (if available) */}
+          {passed && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <i className="fas fa-certificate text-amber-600 text-xl"></i>
+                <h5 className="font-semibold text-amber-800 dark:text-amber-200">Certificate Available</h5>
+              </div>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                Congratulations! You've earned a certificate for completing this course.
+              </p>
+              <a 
+                href={`/api/certificates/download?courseId=${assignment.courseId}&userId=${assignment.userId}`}
+                className="btn btn-warning btn-sm"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="button-download-certificate"
+              >
+                <i className="fas fa-download"></i> Download Certificate
+              </a>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-action mt-8">
+          <button 
+            className="btn btn-primary"
+            onClick={onClose}
+            data-testid="button-close-results"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      <div className="modal-backdrop" onClick={onClose}></div>
+    </div>
+  );
+}
+
 // Course action button component with real-time state
 function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
   const [showStartOverDialog, setShowStartOverDialog] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const queryClient = useQueryClient();
   
@@ -159,8 +314,8 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
       case 'completed':
         return {
           className: 'btn btn-sm btn-success',
-          text: 'Review',
-          icon: 'fas fa-eye'
+          text: 'View Results',
+          icon: 'fas fa-chart-bar'
         };
       default:
         return {
@@ -178,7 +333,13 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
       <div className="flex gap-2">
         <button 
           className={buttonProps.className}
-          onClick={() => onStartCourse(assignment)}
+          onClick={() => {
+            if (state.status === 'completed') {
+              setShowResults(true);
+            } else {
+              onStartCourse(assignment);
+            }
+          }}
           data-testid={`button-start-assignment-${assignment.id}`}
         >
           <i className={buttonProps.icon}></i> 
@@ -237,6 +398,16 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
           </div>
           <div className="modal-backdrop" onClick={() => setShowStartOverDialog(false)}></div>
         </div>
+      )}
+
+      {/* Course Results Modal */}
+      {showResults && attemptState && (
+        <CourseResultsModal
+          assignment={assignment}
+          attemptState={attemptState}
+          isOpen={showResults}
+          onClose={() => setShowResults(false)}
+        />
       )}
     </>
   );
