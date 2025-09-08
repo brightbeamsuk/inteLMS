@@ -263,13 +263,15 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
       const result = await response.json();
       console.log(`✅ Course reset: ${result.message}`);
       
-      // After successful backend reset, update the cache to reflect the new state
-      queryClient.setQueryData(
-        ['/api/lms/enrolments', assignment.courseId, 'state'],
-        { status: 'not_started', hasOpenAttempt: false, canResume: false }
-      );
+      // Force fresh fetch from backend - no optimistic updates
+      await queryClient.invalidateQueries({
+        queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
+      });
       
-      // Also invalidate to ensure consistency
+      // Small delay to ensure backend transaction is committed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Force another invalidation to ensure we get fresh data
       await queryClient.invalidateQueries({
         queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
       });
