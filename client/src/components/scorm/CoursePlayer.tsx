@@ -169,6 +169,10 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
   };
 
   const handleSaveAndExit = async () => {
+    console.log('💾 Save & resume later clicked');
+    console.log(`📚 Course ID: ${assignment.courseId}`);
+    console.log(`🎯 Attempt ID: ${attemptId}`);
+    
     try {
       const api = (window as any).API_1484_11;
       
@@ -186,20 +190,35 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
       // Get current SCORM data after commit
       const location = api ? api.GetValue('cmi.location') : '';
       const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
+      const progressMeasure = api ? api.GetValue('cmi.progress_measure') : '';
+      
+      console.log('📊 SCORM data to save:', {
+        location: location || 'none',
+        suspendData: suspendData ? 'present' : 'none',
+        progressMeasure: progressMeasure || '0'
+      });
 
-      // Call the new save endpoint  
+      // Calculate progress percentage
+      const progressPct = progressMeasure ? Math.round(parseFloat(progressMeasure) * 100) : 0;
+
+      // Call the save endpoint according to specification
+      console.log('📤 Calling /api/lms/attempt/save');
       const response = await apiRequest('POST', '/api/lms/attempt/save', {
-        courseId: courseId, // Use actual courseId instead of assignmentId
+        courseId: assignment.courseId,
         attemptId: attemptId,
         location: location,
-        suspend_data: suspendData
+        suspendData: suspendData,
+        progressPct: progressPct
       });
 
       if (response?.ok) {
+        const result = await response.json();
+        console.log('✅ Save response:', result);
+        
         // Tell the parent/profile to refresh the card
         window.parent?.postMessage({ 
           type: 'ATTEMPT_UPDATED', 
-          courseId: courseId 
+          courseId: assignment.courseId 
         }, '*');
         
         toast({
@@ -209,6 +228,8 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         setShowExitModal(false);
         onClose();
       } else {
+        const errorText = await response.text();
+        console.error('❌ Save failed:', errorText);
         toast({
           title: "Save failed", 
           description: "Could not save progress. Please try again.",
@@ -216,7 +237,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         });
       }
     } catch (error) {
-      console.error('Failed to save progress:', error);
+      console.error('❌ Failed to save progress:', error);
       toast({
         title: "Save failed",
         description: "Could not save progress. Please try again.",
@@ -450,22 +471,22 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             const attemptResult = await attemptStartRes.json();
             console.log(`📦 Attempt start result:`, attemptResult);
             
-            if (attemptResult.ok && attemptResult.attemptId) {
+            if (attemptResult.attemptId) {
               // Use the server-provided attempt ID
               setAttemptId(attemptResult.attemptId);
               console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
               addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
               
               // CRITICAL: Initialize SCORM state with saved data BEFORE course loads
-              if (attemptResult.location || attemptResult.suspendData) {
-                console.log(`🔄 Resuming with saved data: location="${attemptResult.location}", suspend_data="${attemptResult.suspendData}"`);
-                addDebugLog(`🔄 Resuming: location="${attemptResult.location}", suspend_data present: ${!!attemptResult.suspendData}`);
+              if (attemptResult.lastLocation || attemptResult.suspendData) {
+                console.log(`🔄 Resuming with saved data: location="${attemptResult.lastLocation}", suspend_data="${attemptResult.suspendData}"`);
+                addDebugLog(`🔄 Resuming: location="${attemptResult.lastLocation}", suspend_data present: ${!!attemptResult.suspendData}`);
                 
                 // Update SCORM state with saved values BEFORE the course initializes
                 attemptStateRef.current = {
                   ...attemptStateRef.current,
-                  'cmi.core.lesson_location': attemptResult.location || '',
-                  'cmi.location': attemptResult.location || '',
+                  'cmi.core.lesson_location': attemptResult.lastLocation || '',
+                  'cmi.location': attemptResult.lastLocation || '',
                   'cmi.suspend_data': attemptResult.suspendData || '',
                   // Set entry mode for resume
                   'cmi.entry': attemptResult.suspendData ? 'resume' : 'ab-initio'
@@ -487,8 +508,8 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             setAttemptId(newAttemptId);
           }
         } catch (attemptError) {
-          console.error('⚠️ Failed to start attempt, using generated ID:', attemptError);
-          addDebugLog(`⚠️ Failed to start attempt: ${attemptError.message || attemptError}`);
+          console.error('⚠️ Failed to start attempt, using generated ID:', attemptError?.message || attemptError);
+          addDebugLog(`⚠️ Failed to start attempt: ${attemptError?.message || 'Unknown error'}`);
           setAttemptId(newAttemptId);
         }
         

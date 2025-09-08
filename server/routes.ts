@@ -3300,9 +3300,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /lms/attempt/start - Exact patch implementation
+  // POST /api/lms/attempt/start - Creates or reuses IN_PROGRESS attempt
   app.post('/api/lms/attempt/start', requireAuth, async (req: any, res) => {
-    console.log('🎯 /api/lms/attempt/start endpoint called');
+    console.log('🎯 POST /api/lms/attempt/start endpoint called');
     console.log('📦 Request body:', req.body);
     
     try {
@@ -3317,19 +3317,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'User not authenticated' });
       }
 
+      if (!courseId) {
+        console.log('❌ Missing courseId');
+        return res.status(400).json({ message: 'courseId is required' });
+      }
+
       // Find the assignment for this user and course
       const assignments = await storage.getAssignmentsByUser(userId);
       const assignment = assignments.find(a => a.courseId === courseId);
       
       if (!assignment) {
+        console.log('❌ Assignment not found for courseId:', courseId);
         return res.status(404).json({ message: 'Assignment not found' });
       }
 
+      // Look for existing IN_PROGRESS attempt
       let attempt = await storage.getActiveScormAttempt(userId, assignment.id);
       
       if (!attempt) {
+        // Create new attempt
+        const newAttemptId = `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('🆕 Creating new attempt:', newAttemptId);
+        
         attempt = await storage.createScormAttempt({
-          attemptId: `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          attemptId: newAttemptId,
           assignmentId: assignment.id,
           userId,
           courseId: assignment.courseId,
@@ -3341,22 +3352,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           launchedAt: new Date(),
           passmark: 80
         });
-      } else if (attempt.status !== 'completed') {
-        await storage.updateScormAttempt(attempt.attemptId, { status: 'in_progress' });
+      } else {
+        console.log('🔄 Reusing existing attempt:', attempt.attemptId);
+        // Ensure it's IN_PROGRESS
+        if (attempt.status !== 'in_progress') {
+          await storage.updateScormAttempt(attempt.attemptId, { status: 'in_progress' });
+        }
       }
 
-      // Store attempt ID in session
-      req.session.currentAttemptId = attempt.attemptId;
+      console.log(`✅ Attempt ready: ${attempt.attemptId}, status: in_progress, location: ${attempt.location || 'none'}, suspendData: ${attempt.suspendData ? 'present' : 'none'}`);
       
       return res.json({ 
-        ok: true, 
         attemptId: attempt.attemptId, 
-        status: 'in_progress',
-        location: attempt.location || '',
+        status: 'IN_PROGRESS',
+        lastLocation: attempt.location || '',
         suspendData: attempt.suspendData || ''
       });
     } catch (error) {
-      console.error('Error starting attempt:', error);
+      console.error('❌ Error starting attempt:', error);
       res.status(500).json({ message: 'Failed to start attempt' });
     }
   });
@@ -3557,6 +3570,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error saving attempt:', error);
       res.status(500).json({ message: 'Failed to save attempt' });
+    }
+  });
+
+  // POST /api/lms/attempt/complete - Mark attempt as completed
+  app.post('/api/lms/attempt/complete', requireAuth, async (req: any, res) => {
+    console.log('🎯 POST /api/lms/attempt/complete endpoint called');
+    console.log('📦 Request body:', req.body);
+    
+    try {
+      const userId = getUserIdFromSession(req);
+      const { courseId, attemptId, score, passed } = req.body;
+      
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📚 Course ID: ${courseId}`);
+      console.log(`🎯 Attempt ID: ${attemptId}`);
+      
+      if (!userId) {
+        console.log('❌ User not authenticated');
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      if (!attemptId) {
+        console.log('❌ Missing attemptId');
+        return res.status(400).json({ message: 'attemptId is required' });
+      }
+
+      console.log(`🏁 Completing attempt: ${attemptId}`);
+      console.log(`🎯 Score: ${score || 0}`);
+      console.log(`✅ Passed: ${passed || false}`);
+
+      // Mark attempt as completed
+      const updateData = {
+        status: 'completed',
+        completed: true,
+        closed: true,
+        scoreRaw: score ? parseFloat(score) : 0,
+        passed: Boolean(passed),
+        completedAt: new Date(),
+        terminatedAt: new Date()
+      };
+
+      await storage.updateScormAttempt(attemptId, updateData);
+
+      console.log(`✅ Attempt completed: ${attemptId}, status: completed, score: ${score || 0}, passed: ${passed || false}`);
+
+      res.json({ 
+        success: true, 
+        message: 'Attempt completed successfully',
+        attemptId,
+        status: 'COMPLETED',
+        score: score || 0,
+        passed: Boolean(passed)
+      });
+    } catch (error) {
+      console.error('❌ Error completing attempt:', error);
+      res.status(500).json({ message: 'Failed to complete attempt' });
+    }
+  });
+
+  // GET /api/lms/attempt/latest - Get latest attempt for course
+  app.get('/api/lms/attempt/latest', requireAuth, async (req: any, res) => {
+    console.log('🎯 GET /api/lms/attempt/latest endpoint called');
+    console.log('📦 Query params:', req.query);
+    
+    try {
+      const userId = getUserIdFromSession(req);
+      const { courseId } = req.query;
+      
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📚 Course ID: ${courseId}`);
+      
+      if (!userId) {
+        console.log('❌ User not authenticated');
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      if (!courseId) {
+        console.log('❌ Missing courseId');
+        return res.status(400).json({ message: 'courseId is required' });
+      }
+
+      // Find the assignment for this user and course
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId);
+      
+      if (!assignment) {
+        console.log('❌ Assignment not found for courseId:', courseId);
+        return res.status(404).json({ message: 'Assignment not found' });
+      }
+
+      // Get latest attempt (prefer IN_PROGRESS)
+      const attempt = await storage.getActiveScormAttempt(userId, assignment.id);
+      
+      if (!attempt) {
+        console.log('📄 No attempt found');
+        return res.json({ 
+          success: true,
+          attempt: null,
+          message: 'No attempt found'
+        });
+      }
+
+      console.log(`✅ Latest attempt found: ${attempt.attemptId}, status: ${attempt.status}, location: ${attempt.location || 'none'}, suspendData: ${attempt.suspendData ? 'present' : 'none'}`);
+
+      res.json({ 
+        success: true,
+        attempt: {
+          attemptId: attempt.attemptId,
+          status: attempt.status?.toUpperCase() || 'NOT_STARTED',
+          lastLocation: attempt.location || '',
+          suspendData: attempt.suspendData || '',
+          progressPct: attempt.progressMeasure ? Math.round(attempt.progressMeasure * 100) : 0,
+          score: attempt.scoreRaw || 0,
+          passed: attempt.passed || false,
+          createdAt: attempt.launchedAt,
+          updatedAt: attempt.lastCommitAt || attempt.launchedAt
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error getting latest attempt:', error);
+      res.status(500).json({ message: 'Failed to get latest attempt' });
     }
   });
 

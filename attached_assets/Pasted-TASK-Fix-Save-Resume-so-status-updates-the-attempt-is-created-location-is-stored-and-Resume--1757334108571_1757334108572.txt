@@ -1,0 +1,109 @@
+TASK: Fix “Save & Resume” so status updates, the attempt is created, location is stored, and Resume jumps back to the saved point
+
+Endpoints & behaviour
+
+Ensure these endpoints exist and are mounted:
+
+POST /api/lms/attempt/start → input: courseId. Creates an attempt (or reuses an existing IN_PROGRESS one) for the current user. Output: { attemptId, status: "IN_PROGRESS" }.
+
+POST /api/lms/attempt/save → input: courseId, attemptId, location, suspendData, progressPct. Saves progress to DB (attempt stays IN_PROGRESS, updates lastLocation, suspendData, progressPct, updatedAt).
+
+POST /api/lms/attempt/complete → input: courseId, attemptId, score, passed. Sets status to COMPLETED, stores score and passed boolean.
+
+GET /api/lms/attempt/latest?courseId=... → returns the latest attempt for the current user/course. If there’s an IN_PROGRESS attempt, return it, including lastLocation and suspendData.
+
+Routing & middleware
+
+Confirm the server uses JSON body parsing before the route mounts (e.g., body parser/JSON middleware is registered prior to /api/... routes).
+
+Confirm CORS or CSRF isn’t blocking these POSTs. Allow the app origin.
+
+Ensure auth middleware runs before these routes and provides a userId. If no user is found, return 401 and log that explicitly.
+
+Database model for attempts (conceptual)
+
+Table: LmsAttempt
+
+id (attemptId), userId, courseId
+
+status enum: NOT_STARTED | IN_PROGRESS | COMPLETED | FAILED
+
+lastLocation (string), suspendData (text/JSON)
+
+progressPct (number), score (number), passed (boolean)
+
+createdAt, updatedAt
+
+On start: create if none IN_PROGRESS; otherwise reuse existing IN_PROGRESS. Set status = IN_PROGRESS.
+
+On save: update lastLocation, suspendData, progressPct, bump updatedAt.
+
+On complete: set status = COMPLETED, and save score/passed.
+
+Client behaviour (what the UI must do)
+
+When a learner opens a SCORM course:
+
+Log: “Starting SCORM attempt for course: [courseId]”.
+
+Call POST /api/lms/attempt/start and store attemptId in memory (and also in localStorage as a fallback).
+
+When they click Save & resume later:
+
+Read cmi.location and cmi.suspend_data from the SCORM API.
+
+Call POST /api/lms/attempt/save with courseId, attemptId, location, suspendData, progressPct.
+
+On success, update the UI: show Resume button and set status to In progress in both the learner view and admin side.
+
+When they click Resume:
+
+Call GET /api/lms/attempt/latest?courseId=....
+
+If there’s an IN_PROGRESS attempt with lastLocation/suspendData, restore them into the SCORM runtime before loading the content, then navigate to that saved location. The course must not restart at slide 1.
+
+Logging & error visibility
+
+For each endpoint, add clear logs:
+
+On entry: log method, path, userId, courseId.
+
+On validation failures: log the reason (missing user, missing courseId, missing attemptId).
+
+On DB errors: log the exact error message.
+
+On success: log the attemptId and the key fields saved (status, lastLocation, progressPct).
+
+In the browser Network tab, verify each request gets a 2xx with the expected JSON.
+
+“Spaces left” and % occupancy (admin side)
+
+When an attempt status transitions to IN_PROGRESS (start or save), reflect this in the learner profile and any admin reporting widgets.
+
+Recompute “spaces left” and “% occupancy” when attempts are created/completed; ensure these widgets listen to attempt changes, not just enrolments.
+
+Acceptance criteria
+
+After Save & resume later, the learner dashboard shows Resume and status In progress (no page refresh hacks).
+
+Clicking Resume returns them to the exact saved slide/interaction, not slide 1.
+
+Admin view shows the learner/course as In progress with updated % completion.
+
+Server logs show one clean line per endpoint invocation with userId, courseId, attemptId and outcome.
+
+Network tab shows 200s with meaningful JSON responses for start/save/latest/complete.
+
+If server save fails, temporary fallback
+
+Also cache attemptId, lastLocation, suspendData in localStorage so Resume still works client-side while you fix the server. On next successful save, prioritise server data.
+
+When you finish these changes, run this quick test:
+
+Start a course, go to slide 4.
+
+Click Save & resume later.
+
+Confirm: learner status flips to In progress + Resume button appears; /attempt/save returns 200 with the updated fields.
+
+Click Resume → you land on slide 4. Confirm /attempt/latest returned the saved lastLocation and it was applied before launch.
