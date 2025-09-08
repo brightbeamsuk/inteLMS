@@ -30,7 +30,7 @@ export default function Certificates() {
     enabled: !!user?.organisationId,
   });
 
-  const filteredCertificates = certificates?.filter((cert: Certificate) => {
+  const filteredCertificates = (certificates as Certificate[] || []).filter((cert: Certificate) => {
     if (!searchQuery) return true;
     
     const searchLower = searchQuery.toLowerCase();
@@ -41,16 +41,11 @@ export default function Certificates() {
     return userName.includes(searchLower) || 
            userEmail.includes(searchLower) || 
            courseTitle.includes(searchLower);
-  }) || [];
+  });
 
   const handleDownload = (certificate: Certificate) => {
-    // Create download link and trigger download
-    const link = document.createElement('a');
-    link.href = certificate.certificateUrl;
-    link.download = `certificate-${certificate.user?.firstName}-${certificate.user?.lastName}-${certificate.course?.title}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Use the proper certificate download endpoint with authentication
+    window.open(`/api/certificates/${certificate.id}/download`, '_blank');
   };
 
   if (isLoading) {

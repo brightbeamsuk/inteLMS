@@ -335,14 +335,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // Get certificate and verify ownership
+      // Get certificate and verify access permissions
       const certificate = await storage.getCertificate(certificateId);
       if (!certificate) {
         return res.status(404).json({ message: 'Certificate not found' });
       }
 
-      if (certificate.userId !== userId) {
-        return res.status(403).json({ message: 'Access denied - certificate does not belong to you' });
+      // Get current user to check permissions
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // Allow access if:
+      // 1. User owns the certificate
+      // 2. User is admin/superadmin and certificate is from their organization
+      const hasAccess = certificate.userId === userId || 
+                       (user.role === 'superadmin') ||
+                       (user.role === 'admin' && user.organisationId === certificate.organisationId);
+      
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       // Get certificate URL and redirect to object storage
