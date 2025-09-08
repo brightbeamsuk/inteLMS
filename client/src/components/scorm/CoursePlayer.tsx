@@ -215,12 +215,26 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         const result = await response.json();
         console.log('✅ Save response:', result);
         
-        // Check the JSON response content for success
-        if (result?.ok || result?.success) {
-          // Tell the parent/profile to refresh the card
+        // Check new specification-compliant response format
+        if (result?.status === 'IN_PROGRESS' && result?.attemptId) {
+          // Store in localStorage as fallback (per specification)
+          const saveData = {
+            attemptId: result.attemptId,
+            lastLocation: result.lastLocation || location,
+            suspendData: result.suspendData || suspendData,
+            progressPct: result.progressPct || progressPct,
+            courseId: courseId,
+            timestamp: Date.now()
+          };
+          localStorage.setItem(`scorm_save_${courseId}`, JSON.stringify(saveData));
+          console.log('💾 Saved to localStorage as fallback:', saveData);
+          
+          // Update dashboard without page refresh (per specification)
           window.parent?.postMessage({ 
             type: 'ATTEMPT_UPDATED', 
-            courseId: courseId 
+            courseId: courseId,
+            status: 'IN_PROGRESS',
+            progressPct: result.progressPct || progressPct
           }, '*');
           
           toast({
@@ -230,7 +244,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
           setShowExitModal(false);
           onClose();
         } else {
-          console.error('❌ Save failed - response indicates failure:', result);
+          console.error('❌ Save failed - invalid response format:', result);
           toast({
             title: "Save failed", 
             description: "Could not save progress. Please try again.",
@@ -240,11 +254,25 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
       } else {
         const errorText = await response.text();
         console.error('❌ Save failed:', errorText);
+        
+        // Save locally on server failure (per specification)
+        const localSaveData = {
+          attemptId: attemptId,
+          lastLocation: location,
+          suspendData: suspendData,
+          progressPct: progressPct,
+          courseId: courseId,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(`scorm_save_${courseId}`, JSON.stringify(localSaveData));
+        
         toast({
-          title: "Save failed", 
-          description: "Could not save progress. Please try again.",
-          variant: "destructive"
+          title: "Couldn't save to server",
+          description: "Saved locally, you can still resume.",
+          variant: "default"
         });
+        setShowExitModal(false);
+        onClose();
       }
     } catch (error) {
       console.error('❌ Failed to save progress:', error);
@@ -467,42 +495,92 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         
         // SCORM 2004 (3rd Ed.) - Start attempt and load saved data BEFORE SCORM initialization
         console.log(`🚀 Starting SCORM attempt for course: ${courseId}`);
-        console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${courseId}`);
         
+        let resumeData = null;
+        let useServerData = false;
+        
+        // 1) Try to get latest attempt from server first (per specification)
         try {
+          console.log(`📤 Checking for latest attempt: /api/lms/attempt/latest?courseId=${courseId}`);
+          const latestRes = await apiRequest('GET', `/api/lms/attempt/latest?courseId=${courseId}`);
+          
+          if (latestRes.ok) {
+            const latestResult = await latestRes.json();
+            console.log(`📦 Latest attempt result:`, latestResult);
+            
+            if (latestResult.success && latestResult.attempt) {
+              const attempt = latestResult.attempt;
+              if (attempt.status === 'IN_PROGRESS' && (attempt.lastLocation || attempt.suspendData)) {
+                resumeData = {
+                  attemptId: attempt.attemptId,
+                  lastLocation: attempt.lastLocation,
+                  suspendData: attempt.suspendData,
+                  progressPct: attempt.progressPct,
+                  timestamp: new Date(attempt.updatedAt).getTime()
+                };
+                useServerData = true;
+                console.log(`🌐 Using server resume data:`, resumeData);
+              }
+            }
+          }
+        } catch (latestError) {
+          console.log(`⚠️ Server latest attempt failed, will check localStorage:`, latestError?.message);
+        }
+        
+        // 2) Check localStorage fallback if no server data (per specification)
+        if (!resumeData) {
+          try {
+            const localSave = localStorage.getItem(`scorm_save_${courseId}`);
+            if (localSave) {
+              const localData = JSON.parse(localSave);
+              console.log(`💾 Found localStorage save data:`, localData);
+              
+              // Use local data as fallback
+              resumeData = localData;
+              console.log(`📱 Using localStorage fallback:`, resumeData);
+            }
+          } catch (localError) {
+            console.log(`⚠️ localStorage check failed:`, localError);
+          }
+        }
+        
+        // 3) Start or create attempt
+        try {
+          console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${courseId}`);
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
             courseId: courseId
           });
-          console.log(`📥 Received response from attempt start:`, attemptStartRes);
-          
-          console.log(`📡 Attempt start response status: ${attemptStartRes.status}`);
           
           if (attemptStartRes.ok) {
             const attemptResult = await attemptStartRes.json();
             console.log(`📦 Attempt start result:`, attemptResult);
             
             if (attemptResult.attemptId) {
-              // Use the server-provided attempt ID
+              // Store attemptId in memory and localStorage (per specification)
               setAttemptId(attemptResult.attemptId);
-              console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
-              addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
+              localStorage.setItem(`scorm_attemptId_${courseId}`, attemptResult.attemptId);
               
-              // CRITICAL: Initialize SCORM state with saved data BEFORE course loads
-              if (attemptResult.lastLocation || attemptResult.suspendData) {
-                console.log(`🔄 Resuming with saved data: location="${attemptResult.lastLocation}", suspend_data="${attemptResult.suspendData}"`);
-                addDebugLog(`🔄 Resuming: location="${attemptResult.lastLocation}", suspend_data present: ${!!attemptResult.suspendData}`);
+              console.log(`✅ SCORM attempt ready: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
+              addDebugLog(`✅ Attempt ready: ${attemptResult.attemptId} (${attemptResult.status})`);
+              
+              // 4) Apply resume data if available (prefer server over local)
+              const dataToUse = useServerData ? resumeData : (resumeData || {});
+              
+              if (dataToUse.lastLocation || dataToUse.suspendData) {
+                console.log(`🔄 Resuming with saved data: location="${dataToUse.lastLocation}", suspend_data="${dataToUse.suspendData}"`);
+                addDebugLog(`🔄 Resuming at saved position: ${dataToUse.lastLocation || 'start'}`);
                 
                 // Update SCORM state with saved values BEFORE the course initializes
                 attemptStateRef.current = {
                   ...attemptStateRef.current,
-                  'cmi.core.lesson_location': attemptResult.lastLocation || '',
-                  'cmi.location': attemptResult.lastLocation || '',
-                  'cmi.suspend_data': attemptResult.suspendData || '',
+                  'cmi.core.lesson_location': dataToUse.lastLocation || '',
+                  'cmi.location': dataToUse.lastLocation || '',
+                  'cmi.suspend_data': dataToUse.suspendData || '',
                   // Set entry mode for resume
-                  'cmi.entry': attemptResult.suspendData ? 'resume' : 'ab-initio'
+                  'cmi.entry': dataToUse.suspendData ? 'resume' : 'ab-initio'
                 };
                 
-                console.log(`🎯 SCORM state hydrated with entry mode: ${attemptResult.suspendData ? 'resume' : 'ab-initio'}`);
+                console.log(`🎯 SCORM state hydrated with entry mode: ${dataToUse.suspendData ? 'resume' : 'ab-initio'}`);
               } else {
                 console.log(`🆕 New attempt - no saved data to restore`);
                 attemptStateRef.current['cmi.entry'] = 'ab-initio';
@@ -521,6 +599,18 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
           console.error('⚠️ Failed to start attempt, using generated ID:', attemptError?.message || attemptError);
           addDebugLog(`⚠️ Failed to start attempt: ${attemptError?.message || 'Unknown error'}`);
           setAttemptId(newAttemptId);
+          
+          // Apply local data if server failed
+          if (resumeData?.lastLocation || resumeData?.suspendData) {
+            console.log(`📱 Applying localStorage data due to server failure`);
+            attemptStateRef.current = {
+              ...attemptStateRef.current,
+              'cmi.core.lesson_location': resumeData.lastLocation || '',
+              'cmi.location': resumeData.lastLocation || '',
+              'cmi.suspend_data': resumeData.suspendData || '',
+              'cmi.entry': resumeData.suspendData ? 'resume' : 'ab-initio'
+            };
+          }
         }
         
         // Get course launch URL using improved SCORM processing

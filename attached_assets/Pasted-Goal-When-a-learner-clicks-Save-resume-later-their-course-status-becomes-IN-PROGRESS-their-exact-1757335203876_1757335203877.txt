@@ -1,0 +1,76 @@
+Goal
+When a learner clicks Save & resume later, their course status becomes IN PROGRESS, their exact place is stored, a Resume button appears, and pressing Resume returns them to the saved point (not the start). Admin view must also show IN PROGRESS with current % complete.
+
+What to implement
+
+Start attempt (server)
+
+When the course is opened, create or reuse an IN PROGRESS attempt for the current user and course.
+
+Return: attemptId, status=IN_PROGRESS.
+
+Save progress (server)
+
+When Save & resume later is clicked, store:
+
+lastLocation (from SCORM cmi.location),
+
+suspendData (from SCORM cmi.suspend_data),
+
+progressPct (a number 0–100),
+
+set/keep status=IN_PROGRESS.
+
+Return: confirmation with the same values.
+
+Latest attempt (server)
+
+Provide a simple “get latest” action that returns the most recent attempt for this user and course, including lastLocation, suspendData, progressPct, and status.
+
+Complete (server)
+
+On course finish, set status=COMPLETED, store score and passed.
+
+Client behaviour
+
+On course open: call the start attempt action and keep attemptId in memory and localStorage.
+
+Save & resume later button:
+
+Read cmi.location and cmi.suspend_data.
+
+Send them with attemptId to save progress.
+
+On success: immediately update the learner dashboard tile to show IN PROGRESS and reveal the Resume button (no page refresh).
+
+Resume button:
+
+Call latest attempt.
+
+If status=IN_PROGRESS and a lastLocation/suspendData exist, apply them to the SCORM runtime before launching the content, and then launch directly at that saved point.
+
+Admin updates
+
+Whenever save succeeds, update the admin view for that user/course to IN PROGRESS with the returned progressPct.
+
+Local fallback (must have)
+
+Also store attemptId, lastLocation, and suspendData in localStorage after a save. If the server cannot be reached later, Resume should still jump to the saved point using the local cache. When the server works again, prefer server data.
+
+Acceptance test (must pass)
+
+Start a course → go to slide 4.
+
+Click Save & resume later → learner dashboard shows IN PROGRESS and a Resume button.
+
+Click Resume → course opens at slide 4 (not slide 1).
+
+Admin view shows IN PROGRESS with the correct % complete.
+
+Important reliability rules
+
+Do not silently swallow errors. If saving fails, show a banner: “Couldn’t save to server — saved locally, you can still resume.”
+
+Never overwrite a newer server record with older local data. Prefer the latest timestamp.
+
+Keep the protocol and paths exactly as they are now; just make them perform the actions above reliably.

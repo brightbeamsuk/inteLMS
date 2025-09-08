@@ -3503,73 +3503,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /lms/attempt/save - Save & resume later endpoint
+  // POST /api/lms/attempt/save - Save progress (specification-compliant)
   app.post('/api/lms/attempt/save', requireAuth, async (req: any, res) => {
+    console.log('🎯 POST /api/lms/attempt/save endpoint called');
+    console.log('📦 Request body:', req.body);
+    
     try {
       const userId = getUserIdFromSession(req);
-      const { courseId, attemptId, location, suspend_data } = req.body;
+      const { courseId, attemptId, location, suspendData, progressPct } = req.body;
+      
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📚 Course ID: ${courseId}`);
+      console.log(`🎯 Attempt ID: ${attemptId}`);
       
       if (!userId) {
+        console.log('❌ User not authenticated');
         return res.status(401).json({ message: 'User not authenticated' });
       }
 
-      // Find the assignment for this user and course
-      const assignments = await storage.getAssignmentsByUser(userId);
-      const assignment = assignments.find(a => a.courseId === courseId);
-      
-      if (!assignment) {
-        return res.status(404).json({ message: 'Assignment not found' });
+      if (!attemptId) {
+        console.log('❌ Missing attemptId');
+        return res.status(400).json({ message: 'attemptId is required' });
       }
 
-      // 1) Find or create open attempt
-      let attempt = null;
-      if (attemptId) {
-        attempt = await storage.getScormAttemptByAttemptId(attemptId);
-      }
-      if (!attempt) {
-        attempt = await storage.getActiveScormAttempt(userId, assignment.id);
-      }
-      if (!attempt) {
-        // Create new attempt
-        const newAttemptId = `attempt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        attempt = await storage.createScormAttempt({
-          attemptId: newAttemptId,
-          assignmentId: assignment.id,
-          userId,
-          courseId: assignment.courseId,
-          organisationId: assignment.organisationId,
-          scormVersion: '2004',
-          status: 'in_progress',
-          completed: false,
-          closed: false,
-          launchedAt: new Date(),
-          passmark: 80,
-          location: location || null,
-          suspendData: suspend_data || null
-        });
-      } else {
-        // 2) Force "In Progress" and persist bookmark
-        await storage.updateScormAttempt(attempt.attemptId, {
-          status: 'in_progress',
-          location: location ?? attempt.location ?? null,
-          suspendData: suspend_data ?? attempt.suspendData ?? null,
-          lastCommitAt: new Date()
-        });
-        
-        // Get fresh attempt data
-        attempt = await storage.getScormAttemptByAttemptId(attempt.attemptId);
-      }
+      console.log(`💾 Saving progress: location="${location || 'none'}", suspendData=${suspendData ? 'present' : 'none'}, progressPct=${progressPct || 0}%`);
 
-      // 3) Return canonical state for UI
-      return res.json({
-        ok: true,
-        attemptId: attempt!.attemptId,
-        status: attempt!.status, // "in_progress"
-        canResume: (!attempt!.closed && attempt!.status === 'in_progress')
+      // Store lastLocation, suspendData, progressPct, set/keep status=IN_PROGRESS
+      const updateData = {
+        location: location || null,
+        suspendData: suspendData || null,
+        progressMeasure: progressPct ? parseFloat(progressPct) / 100 : null,
+        status: 'in_progress',
+        lastCommitAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await storage.updateScormAttempt(attemptId, updateData);
+
+      console.log(`✅ Progress saved: ${attemptId}, status=IN_PROGRESS, progressPct=${progressPct || 0}%`);
+
+      // Return confirmation with the same values (per specification)
+      res.json({ 
+        lastLocation: location || '',
+        suspendData: suspendData || '',
+        progressPct: progressPct || 0,
+        status: 'IN_PROGRESS',
+        attemptId: attemptId
       });
     } catch (error) {
-      console.error('Error saving attempt:', error);
-      res.status(500).json({ message: 'Failed to save attempt' });
+      console.error('❌ Error saving attempt progress:', error);
+      res.status(500).json({ message: 'Failed to save attempt progress' });
     }
   });
 
