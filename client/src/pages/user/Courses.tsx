@@ -37,36 +37,35 @@ function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assign
 
   const handleStartOver = async () => {
     try {
-      // Call backend to reset all attempts to inactive
-      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/start-over`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to reset course progress');
-      }
-      
-      const result = await response.json();
-      console.log(`🔄 Course reset: ${result.message}, closed ${result.closedAttempts} attempts`);
-      
-      // Clear any saved progress data from localStorage as well
+      // Clear all saved progress data from localStorage
       localStorage.removeItem(`scorm_save_${assignment.courseId}`);
       localStorage.removeItem(`scorm_attemptId_${assignment.courseId}`);
+      
+      // Clear any related data
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.includes(assignment.courseId)) {
+          localStorage.removeItem(key);
+        }
+      });
       
       // Invalidate the attempt state cache to refresh the UI
       queryClient.invalidateQueries({
         queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
       });
       
+      // Invalidate all related queries
+      queryClient.invalidateQueries({
+        queryKey: ['/api/lms/attempt/latest']
+      });
+      
       setShowStartOverDialog(false);
       
-      // The course will now appear as "Not Started" and show "Start" button
+      console.log(`🗑️ Cleared all saved data for course: ${assignment.courseId}`);
+      
+      // The course will now start fresh without any saved progress
     } catch (error) {
-      console.error('Error resetting course progress:', error);
+      console.error('Error clearing course data:', error);
     }
   };
 
