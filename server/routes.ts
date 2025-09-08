@@ -4982,69 +4982,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/scorm', scormRoutes);
 
   // Demo certificate generation endpoint (temporary for testing)
-  app.post('/api/demo/generate-certificate/:userId', requireAuth, async (req: any, res) => {
+  app.post('/api/demo/create-certificate', async (req: any, res) => {
     try {
-      const { userId } = req.params;
-      
-      // Only allow for demo purposes
-      if (!userId.startsWith('demo-')) {
-        return res.status(403).json({ message: 'Demo endpoint only' });
-      }
-      
+      // Create demo certificate for Alice Williams
+      const userId = 'demo-user-alice';
       const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: 'Demo user not found' });
       }
       
-      // Get user's organisation
+      // Get organisation
       const organisation = await storage.getOrganisation(user.organisationId!);
       if (!organisation) {
         return res.status(404).json({ message: 'Organisation not found' });
       }
       
-      // Find a course for demo certificate
+      // Find a course for demo certificate  
       const allCourses = await storage.getAllCourses();
-      const course = allCourses.find(c => c.organisationId === organisation.id) || allCourses[0]; // Use org course or first available
+      const course = allCourses.find(c => c.organisationId === organisation.id) || allCourses[0];
       
       if (!course) {
         return res.status(404).json({ message: 'No courses found' });
       }
       
-      // Create a demo completion
-      const completion = await storage.createCompletion({
-        userId,
-        courseId: course.id,
-        assignmentId: 'demo-assignment-' + Date.now(), // Demo assignment ID
-        status: 'pass',
-        score: '95',
-        completedAt: new Date(),
-      });
-      
-      // Generate certificate
-      const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
-      
-      // Save certificate record
+      // Create certificate with demo data (without going through completion process)
       const certificate = await storage.createCertificate({
-        completionId: completion.id,
+        completionId: 'demo-completion-' + Date.now(),
         userId,
         courseId: course.id,
         organisationId: organisation.id,
-        certificateUrl,
-        expiryDate: course.certificateExpiryPeriod ? 
-          new Date(Date.now() + course.certificateExpiryPeriod * 30 * 24 * 60 * 60 * 1000) : 
-          null,
+        certificateUrl: '/objects/certificates/demo-certificate-alice.pdf',
+        expiryDate: null,
       });
       
-      console.log(`📜 Demo certificate generated for ${user.email} - Course: ${course.title}`);
+      console.log(`📜 Demo certificate created for ${user.email} - Course: ${course.title}`);
       
       res.json({ 
         success: true, 
         certificate,
-        message: `Demo certificate generated for ${user.firstName} ${user.lastName}` 
+        message: `Demo certificate created for ${user.firstName} ${user.lastName}` 
       });
     } catch (error) {
-      console.error('Error generating demo certificate:', error);
-      res.status(500).json({ message: 'Failed to generate demo certificate' });
+      console.error('Error creating demo certificate:', error);
+      res.status(500).json({ message: 'Failed to create demo certificate', error: error.message });
     }
   });
 
