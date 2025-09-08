@@ -417,6 +417,20 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             setAttemptId(attemptResult.attemptId);
             console.log(`✅ SCORM attempt started: ${attemptResult.attemptId}, status: ${attemptResult.status}`);
             addDebugLog(`✅ Attempt started: ${attemptResult.attemptId} (${attemptResult.status})`);
+            
+            // Initialize SCORM state with saved data for resuming
+            if (attemptResult.location || attemptResult.suspendData) {
+              console.log(`🔄 Resuming with saved data: location="${attemptResult.location}", suspend_data="${attemptResult.suspendData}"`);
+              addDebugLog(`🔄 Resuming: location="${attemptResult.location}", suspend_data present: ${!!attemptResult.suspendData}`);
+              
+              // Update SCORM state with saved values
+              attemptStateRef.current = {
+                ...attemptStateRef.current,
+                'cmi.core.lesson_location': attemptResult.location || '',
+                'cmi.location': attemptResult.location || '',
+                'cmi.suspend_data': attemptResult.suspendData || ''
+              };
+            }
           } else {
             console.log('📄 Using generated attempt ID:', newAttemptId);
           }
