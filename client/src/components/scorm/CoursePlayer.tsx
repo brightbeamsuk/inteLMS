@@ -215,18 +215,28 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         const result = await response.json();
         console.log('✅ Save response:', result);
         
-        // Tell the parent/profile to refresh the card
-        window.parent?.postMessage({ 
-          type: 'ATTEMPT_UPDATED', 
-          courseId: courseId 
-        }, '*');
-        
-        toast({
-          title: "Progress saved",
-          description: "You can resume later.",
-        });
-        setShowExitModal(false);
-        onClose();
+        // Check the JSON response content for success
+        if (result?.ok || result?.success) {
+          // Tell the parent/profile to refresh the card
+          window.parent?.postMessage({ 
+            type: 'ATTEMPT_UPDATED', 
+            courseId: courseId 
+          }, '*');
+          
+          toast({
+            title: "Progress saved",
+            description: "You can resume later.",
+          });
+          setShowExitModal(false);
+          onClose();
+        } else {
+          console.error('❌ Save failed - response indicates failure:', result);
+          toast({
+            title: "Save failed", 
+            description: "Could not save progress. Please try again.",
+            variant: "destructive"
+          });
+        }
       } else {
         const errorText = await response.text();
         console.error('❌ Save failed:', errorText);
