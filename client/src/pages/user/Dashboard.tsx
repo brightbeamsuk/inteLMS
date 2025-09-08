@@ -522,6 +522,7 @@ export function UserDashboard() {
   const { user } = useAuth();
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [showAccessDeniedModal, setShowAccessDeniedModal] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
@@ -534,6 +535,12 @@ export function UserDashboard() {
 
   const { data: certificates = [], isLoading: certificatesLoading } = useQuery<Certificate[]>({
     queryKey: ['/api/user/certificates'],
+  });
+
+  // Fetch organization data for the access denied message
+  const { data: organisation } = useQuery<{ displayName: string }>({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
   });
 
   // Listen for ATTEMPT_UPDATED messages from CoursePlayer
@@ -573,6 +580,16 @@ export function UserDashboard() {
     setSelectedAssignment(null);
     // Refresh assignments to show updated status
     // This would be handled by queryClient.invalidateQueries in the real implementation
+  };
+
+  const handleDashboardCertificateDownload = (e: React.MouseEvent, certificateId: string) => {
+    e.preventDefault();
+    if (!user?.allowCertificateDownload) {
+      setShowAccessDeniedModal(true);
+      return;
+    }
+    // If allowed, proceed with download
+    window.open(`/api/certificates/${certificateId}/download`, '_blank');
   };
 
   const getDueSoonStatus = (dueDate?: string) => {
@@ -777,14 +794,13 @@ export function UserDashboard() {
                   </div>
                   
                   <div className="card-actions justify-end">
-                    <a 
-                      href={`/api/certificates/${certificate.id}/download`}
-                      download
+                    <button 
+                      onClick={(e) => handleDashboardCertificateDownload(e, certificate.id)}
                       className="btn btn-sm btn-primary"
                       data-testid={`button-download-certificate-${certificate.id}`}
                     >
                       <i className="fas fa-download"></i> Download PDF
-                    </a>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -802,6 +818,39 @@ export function UserDashboard() {
           onComplete={handleCourseComplete}
           onClose={handleClosePlayer}
         />
+      )}
+      
+      {/* Certificate Access Denied Modal */}
+      {showAccessDeniedModal && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4 text-center">
+              <i className="fas fa-lock text-warning text-2xl mb-2"></i>
+              <br />
+              Certificate Access Restricted
+            </h3>
+            
+            <div className="text-center space-y-4">
+              <p className="text-base-content/80">
+                I'm sorry, <strong>{organisation?.displayName || 'your organization'}</strong> has not allowed you access to your certificates.
+              </p>
+              <p className="text-base-content/80">
+                Get in touch with them to gain access.
+              </p>
+            </div>
+
+            <div className="modal-action justify-center">
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowAccessDeniedModal(false)}
+                data-testid="button-close-access-denied"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowAccessDeniedModal(false)}></div>
+        </div>
       )}
     </div>
   );
