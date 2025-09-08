@@ -325,6 +325,13 @@ export function UserCourses() {
   };
 
   const handleClosePlayer = () => {
+    // Refresh the course state when closing to show updated status
+    if (selectedAssignment) {
+      queryClient.invalidateQueries({
+        queryKey: ['/api/lms/enrolments', selectedAssignment.courseId, 'state']
+      });
+    }
+    
     setShowPlayer(false);
     setSelectedAssignment(null);
     setStartFresh(false); // Reset flag

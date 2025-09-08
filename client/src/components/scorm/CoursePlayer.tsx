@@ -287,6 +287,13 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
           variant: "default"
         });
         setShowExitModal(false);
+        
+        // Send update message to refresh course status
+        window.parent?.postMessage({ 
+          type: 'ATTEMPT_UPDATED', 
+          courseId: courseId
+        }, '*');
+        
         onClose();
       }
     } catch (error) {
@@ -316,11 +323,25 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         });
       }
       setShowExitModal(false);
+      
+      // Send update message to refresh course status
+      window.parent?.postMessage({ 
+        type: 'ATTEMPT_UPDATED', 
+        courseId: courseId
+      }, '*');
+      
       onClose();
     } catch (error) {
       console.error('Failed to handle exit:', error);
       // Still allow exit even if status update fails
       setShowExitModal(false);
+      
+      // Send update message to refresh course status
+      window.parent?.postMessage({ 
+        type: 'ATTEMPT_UPDATED', 
+        courseId: courseId
+      }, '*');
+      
       onClose();
     }
   };
