@@ -3452,11 +3452,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Find the assignment for this user and course
       const assignments = await storage.getAssignmentsByUser(userId);
+      console.log(`🔍 Looking for assignment with courseId: ${courseId}`);
+      console.log(`📋 Found ${assignments.length} assignments for user:`, assignments.map(a => ({ id: a.id, courseId: a.courseId })));
+      
       const assignment = assignments.find(a => a.courseId === courseId);
       
       if (!assignment) {
+        console.log(`❌ No assignment found for courseId: ${courseId}`);
         return res.status(404).json({ message: 'Assignment not found' });
       }
+      
+      console.log(`✅ Found assignment:`, { id: assignment.id, courseId: assignment.courseId });
 
       // 1) Find or create open attempt
       let attempt = null;
