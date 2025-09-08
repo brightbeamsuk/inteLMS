@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface CoursePlayerProps {
   assignmentId: string;
+  courseId: string;
   courseTitle: string;
   onComplete: () => void;
   onClose: () => void;
@@ -33,7 +34,7 @@ interface ScormAttemptState {
   'cmi.learner_name': string;
 }
 
-export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }: CoursePlayerProps) {
+export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, onClose }: CoursePlayerProps) {
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [scormUrl, setScormUrl] = useState<string>('');
@@ -179,9 +180,9 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
       const location = api ? api.GetValue('cmi.location') : '';
       const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
 
-      // Call the new save endpoint
+      // Call the new save endpoint  
       const response = await apiRequest('POST', '/api/lms/attempt/save', {
-        courseId: assignmentId, // Using assignmentId as courseId context
+        courseId: courseId, // Use actual courseId instead of assignmentId
         attemptId: attemptId,
         location: location,
         suspend_data: suspendData
@@ -191,7 +192,7 @@ export function CoursePlayer({ assignmentId, courseTitle, onComplete, onClose }:
         // Tell the parent/profile to refresh the card
         window.parent?.postMessage({ 
           type: 'ATTEMPT_UPDATED', 
-          courseId: assignmentId 
+          courseId: courseId 
         }, '*');
         
         toast({

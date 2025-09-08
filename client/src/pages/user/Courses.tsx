@@ -345,6 +345,7 @@ export function UserCourses() {
       {showPlayer && selectedAssignment && (
         <CoursePlayer
           assignmentId={selectedAssignment.id}
+          courseId={selectedAssignment.courseId}
           courseTitle={selectedAssignment.courseTitle}
           onComplete={handleCourseComplete}
           onClose={handleClosePlayer}
