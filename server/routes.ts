@@ -4981,6 +4981,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new SCORM runtime routes
   app.use('/api/scorm', scormRoutes);
 
+  // Generate actual certificate PDF for demo certificate
+  app.post('/api/demo/generate-certificate-pdf', async (req: any, res) => {
+    try {
+      const certificateId = '5592e4ab-864a-4185-836d-ace5b7307940';
+      const userId = 'demo-user-alice';
+      const courseId = '816723e3-7924-4957-909a-f991138dd0e0';
+      const completionId = '87d11c47-a2dc-4124-80a0-161cc153d959';
+      
+      // Get required data
+      const user = await storage.getUser(userId);
+      const course = await storage.getCourse(courseId);
+      const completion = await storage.getCompletion(completionId);
+      const organisation = await storage.getOrganisation(user!.organisationId!);
+      
+      if (!user || !course || !completion || !organisation) {
+        return res.status(404).json({ message: 'Required data not found' });
+      }
+      
+      // Generate actual certificate PDF
+      const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
+      
+      // Update certificate record with real URL
+      await storage.updateCertificate(certificateId, { certificateUrl });
+      
+      console.log(`📜 Certificate PDF generated and updated for ${user.email}`);
+      
+      res.json({ 
+        success: true, 
+        certificateUrl,
+        message: `Certificate PDF generated for ${user.firstName} ${user.lastName}` 
+      });
+    } catch (error) {
+      console.error('Error generating certificate PDF:', error);
+      res.status(500).json({ message: 'Failed to generate certificate PDF', error: error.message });
+    }
+  });
 
   const httpServer = createServer(app);
   
