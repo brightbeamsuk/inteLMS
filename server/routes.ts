@@ -3442,6 +3442,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /lms/attempt/:attemptId - Get attempt data for SCORM initialization
+  app.get('/api/lms/attempt/:attemptId', requireAuth, async (req: any, res) => {
+    try {
+      const { attemptId } = req.params;
+      const userId = getUserIdFromSession(req);
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      const attempt = await storage.getScormAttemptByAttemptId(attemptId);
+      
+      if (!attempt) {
+        return res.status(404).json({ message: 'Attempt not found' });
+      }
+
+      // Verify the attempt belongs to the current user
+      if (attempt.userId !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      return res.json({
+        ok: true,
+        attempt: {
+          attemptId: attempt.attemptId,
+          location: attempt.location,
+          suspendData: attempt.suspendData,
+          completionStatus: attempt.completionStatus,
+          successStatus: attempt.successStatus,
+          scoreRaw: attempt.scoreRaw,
+          progressMeasure: attempt.progressMeasure,
+          status: attempt.status,
+          closed: attempt.closed
+        }
+      });
+    } catch (error) {
+      console.error('Error getting attempt data:', error);
+      res.status(500).json({ message: 'Failed to get attempt data' });
+    }
+  });
+
   // POST /lms/attempt/save - Save & resume later endpoint
   app.post('/api/lms/attempt/save', requireAuth, async (req: any, res) => {
     try {

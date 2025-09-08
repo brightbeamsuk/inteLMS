@@ -170,13 +170,20 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
 
   const handleSaveAndExit = async () => {
     try {
-      // Optional: ask the SCO to commit before saving (best effort)
+      const api = (window as any).API_1484_11;
+      
+      // Set exit mode to "suspend" before committing
+      try {
+        api?.SetValue('cmi.exit', 'suspend');
+        console.log('🔄 Set cmi.exit = "suspend" for save & resume');
+      } catch {}
+      
+      // Commit the data including the exit mode
       try { 
-        (window as any).API_1484_11?.Commit(""); 
+        api?.Commit(""); 
       } catch {}
 
-      // Get current SCORM data
-      const api = (window as any).API_1484_11;
+      // Get current SCORM data after commit
       const location = api ? api.GetValue('cmi.location') : '';
       const suspendData = api ? api.GetValue('cmi.suspend_data') : '';
 
@@ -322,6 +329,29 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
     Initialize: (param: string) => {
       console.log('📡 SCO initialised (2004)');
       addDebugLog('🎯 SCORM 2004: Initialize called');
+      
+      // If already initialized, just return
+      if (scormInitialized) {
+        return "true";
+      }
+      
+      // SCORM model should already be hydrated from the attempt data
+      // that was loaded when the course launched
+      
+      // Set required SCORM 2004 fields if not already set
+      if (!attemptStateRef.current['cmi.entry']) {
+        attemptStateRef.current['cmi.entry'] = 'ab-initio';
+      }
+      if (!attemptStateRef.current['cmi.mode']) {
+        attemptStateRef.current['cmi.mode'] = 'normal';
+      }
+      if (!attemptStateRef.current['cmi.credit']) {
+        attemptStateRef.current['cmi.credit'] = 'credit';
+      }
+      
+      console.log(`📖 SCORM Initialize complete - entry mode: ${attemptStateRef.current['cmi.entry']}`);
+      addDebugLog(`✅ SCORM model ready - entry: ${attemptStateRef.current['cmi.entry']}, location: ${attemptStateRef.current['cmi.location']}, suspend_data: ${attemptStateRef.current['cmi.suspend_data'] ? 'present' : 'empty'}`);
+      
       setScormInitialized(true);
       setShowInitWarning(false);
       if (initTimeoutRef.current) {

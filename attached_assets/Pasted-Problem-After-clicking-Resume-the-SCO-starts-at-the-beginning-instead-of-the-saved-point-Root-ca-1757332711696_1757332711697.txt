@@ -1,0 +1,156 @@
+Problem: After clicking Resume, the SCO starts at the beginning instead of the saved point.
+
+Root cause: On Initialize(""), our SCORM 2004 API isn’t returning the previously saved runtime values (especially cmi.suspend_data and cmi.location). iSpring needs these to jump back.
+
+Do exactly this
+1) On launch, use the same open attempt
+
+If there’s an open attempt for (user_id, course_id), launch that attempt id (do not create a new one).
+
+Inject attemptId into the player page so the SCORM API layer knows which row to load.
+
+2) On Initialize(""), hydrate the runtime from DB
+
+Load the attempt’s last saved values and prefill the in-memory model before returning "true":
+
+cmi.suspend_data
+
+cmi.location
+
+cmi.completion_status
+
+cmi.success_status
+
+cmi.score.raw
+
+cmi.progress_measure
+
+Also set:
+
+cmi.entry = "resume" if suspend_data exists, else "ab-initio".
+
+cmi.mode = "normal", cmi.credit = "credit".
+
+iSpring will read these via GetValue(...) right after Initialize(""). If they’re empty, it starts at slide 1.
+
+3) On Save & resume later
+
+Call Commit("").
+
+Persist to DB:
+
+cmi.suspend_data, cmi.location, cmi.completion_status, cmi.success_status, cmi.score.raw, cmi.progress_measure.
+
+Set cmi.exit = "suspend" (so the SCO knows it’s a suspended session).
+
+4) On Finish (completed/passed)
+
+Force a final Commit(""), then Terminate("").
+
+Persist final statuses, score, progress; set cmi.exit = "normal" and close the attempt.
+
+5) Don’t truncate suspend_data
+
+Store it as TEXT (≥ 64k). Truncation = resume won’t work.
+
+Minimal code stubs (SCORM 2004 API layer)
+
+On Initialise:
+
+// Pseudocode inside API_1484_11.Initialize
+Initialize("") {
+  if (this._initialised) return "true";
+  const a = await db.getAttempt(attemptId);
+  this.model = this.model || {};
+
+  // Hydrate from DB
+  this.model['cmi.suspend_data']     = a.suspend_data ?? '';
+  this.model['cmi.location']         = a.location ?? '';
+  this.model['cmi.completion_status']= a.completion_status ?? 'unknown';
+  this.model['cmi.success_status']   = a.success_status ?? 'unknown';
+  this.model['cmi.score.raw']        = a.score_raw ?? '';
+  this.model['cmi.progress_measure'] = a.progress_measure ?? '';
+
+  // Required hints for resume
+  this.model['cmi.entry']  = a.suspend_data ? 'resume' : 'ab-initio';
+  this.model['cmi.mode']   = 'normal';
+  this.model['cmi.credit'] = 'credit';
+
+  this._initialised = true;
+  return "true";
+}
+
+
+Get/Set/Commit must read/write the same in-memory model and DB:
+
+GetValue(element) {
+  if (!this._initialised) return "";
+  return (this.model[element] ?? "").toString();
+}
+
+SetValue(element, value) {
+  if (!this._initialised) return "false";
+  this.model[element] = value?.toString() ?? "";
+  this._dirty = true;
+  this._lastError = "0";
+  return "true";
+}
+
+Commit("") {
+  if (!this._initialised) return "false";
+  if (this._dirty) {
+    await db.updateAttempt(attemptId, {
+      suspend_data:     this.model['cmi.suspend_data'] ?? null,
+      location:         this.model['cmi.location'] ?? null,
+      completion_status:this.model['cmi.completion_status'] ?? null,
+      success_status:   this.model['cmi.success_status'] ?? null,
+      score_raw:        this.model['cmi.score.raw'] ?? null,
+      progress_measure: this.model['cmi.progress_measure'] ?? null,
+      last_commit_at:   new Date()
+    });
+    this._dirty = false;
+  }
+  return "true";
+}
+
+
+Save & resume later button (client):
+
+// Before closing:
+try { API_1484_11.SetValue('cmi.exit','suspend'); } catch {}
+try { API_1484_11.Commit(''); } catch {}
+// Then close the modal/window
+
+
+Finish button (client):
+
+try { API_1484_11.SetValue('cmi.exit','normal'); } catch {}
+try { API_1484_11.Commit(''); } catch {}
+try { API_1484_11.Terminate(''); } catch {}
+
+Acceptance checks (must pass)
+
+Start → navigate to a later slide → click Save & resume later → close.
+
+Click Resume:
+
+Initialize("") occurs;
+
+Immediately after, GetValue('cmi.entry') returns "resume",
+
+GetValue('cmi.location') returns the last bookmark, and the course opens at that point.
+
+Complete the course → relaunch: new session does not resume (attempt is closed).
+
+Same SCORM package resumes correctly in SCORM Cloud (parity check).
+
+Two tiny dev-console tests during your next run
+
+At the start of a resumed session, run in the SCO console:
+
+API_1484_11.GetValue('cmi.entry');          // should be "resume"
+API_1484_11.GetValue('cmi.location');       // should be your saved location
+API_1484_11.GetValue('cmi.suspend_data').length; // should be > 0 if interactions were saved
+
+
+If cmi.entry isn’t "resume" or cmi.location is empty, the API hydration on Initialize still isn’t happening — fix step 2.
