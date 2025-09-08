@@ -2478,6 +2478,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               !a.closed && a.isActive // Only active, non-closed attempts
             );
             
+            // Only log when there are discrepancies for debugging
+            const allUserAttempts = scormAttempts.filter(a => 
+              a.userId === staffMember.id && a.courseId === course.id
+            );
+            
+            if (allUserAttempts.length > 0 && userAttempts.length !== allUserAttempts.length) {
+              console.log(`🎯 Training Matrix - Found closed attempts for ${staffMember.firstName} ${staffMember.lastName}:`, {
+                totalAttempts: allUserAttempts.length,
+                activeAttempts: userAttempts.length,
+                courseTitle: course.title
+              });
+            }
+            
             const latestAttempt = userAttempts.sort((a, b) => 
               new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
             )[0];
