@@ -87,6 +87,60 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
   );
 }
 
+// Course status component with real-time state
+function CourseStatus({ assignment }: { assignment: Assignment }) {
+  const { data: attemptState } = useQuery<AttemptState>({
+    queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
+    queryFn: async () => {
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/state`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch attempt state');
+      }
+      return response.json();
+    },
+    staleTime: 0,
+  });
+
+  const state = attemptState || { status: 'not_started' };
+  
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'not_started':
+        return <div className="badge badge-ghost badge-sm whitespace-nowrap">Not Started</div>;
+      case 'in_progress':
+        return <div className="badge badge-info badge-sm whitespace-nowrap">In Progress</div>;
+      case 'completed':
+        return <div className="badge badge-success badge-sm whitespace-nowrap">Completed</div>;
+      case 'overdue':
+        return <div className="badge badge-error badge-sm whitespace-nowrap">Overdue</div>;
+      default:
+        return <div className="badge badge-ghost badge-sm whitespace-nowrap">{status}</div>;
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {getStatusBadge(state.status)}
+      {state.progressPercent !== undefined && state.status !== 'completed' && (
+        <div>
+          <progress 
+            className={`progress progress-sm w-full ${
+              state.status === 'in_progress' ? 'progress-info' : 'progress-warning'
+            }`}
+            value={state.progressPercent} 
+            max="100"
+            data-testid={`progress-course-${assignment.id}`}
+          ></progress>
+          <div className="text-xs text-center mt-1">{state.progressPercent}%</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Assignment {
   id: string;
   courseId: string;
@@ -166,21 +220,6 @@ export function UserCourses() {
     const matchesStatus = !statusFilter || assignment.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'not_started':
-        return <div className="badge badge-ghost badge-sm whitespace-nowrap">Not Started</div>;
-      case 'in_progress':
-        return <div className="badge badge-info badge-sm whitespace-nowrap">In Progress</div>;
-      case 'completed':
-        return <div className="badge badge-success badge-sm whitespace-nowrap">Completed</div>;
-      case 'overdue':
-        return <div className="badge badge-error badge-sm whitespace-nowrap">Overdue</div>;
-      default:
-        return <div className="badge badge-ghost badge-sm whitespace-nowrap">{status}</div>;
-    }
-  };
 
   return (
     <div>
@@ -272,7 +311,7 @@ export function UserCourses() {
                       <h3 className="card-title text-xl" data-testid={`text-course-title-${assignment.id}`}>
                         {assignment.courseTitle}
                       </h3>
-                      {getStatusBadge(assignment.status)}
+                      <CourseStatus assignment={assignment} />
                     </div>
                     
                     {assignment.courseDescription && (
