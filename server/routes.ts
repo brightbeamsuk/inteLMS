@@ -3462,6 +3462,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/lms/enrolments/:courseId/start-over - Start fresh attempt
+  app.post('/api/lms/enrolments/:courseId/start-over', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const { courseId } = req.params;
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      // Find the assignment for this user and course
+      const assignments = await storage.getAssignmentsByUser(userId);
+      const assignment = assignments.find(a => a.courseId === courseId);
+      
+      if (!assignment) {
+        return res.status(404).json({ message: 'Assignment not found' });
+      }
+
+      // Close any existing open attempts for this assignment
+      const existingAttempts = await storage.getScormAttemptsByAssignment(assignment.id);
+      const openAttempts = existingAttempts.filter(attempt => !attempt.closed);
+      
+      for (const attempt of openAttempts) {
+        await storage.updateScormAttempt(attempt.attemptId, {
+          closed: true,
+          terminatedAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+
+      // Create a fresh new attempt
+      const newAttemptId = `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      await storage.createScormAttempt({
+        attemptId: newAttemptId,
+        assignmentId: assignment.id,
+        userId: userId,
+        status: 'not_started',
+        launchedAt: new Date(),
+        closed: false,
+        completed: false,
+        location: null,
+        suspendData: null,
+        completionStatus: null,
+        successStatus: null,
+        scoreRaw: null,
+        progressMeasure: null,
+        lastCommitAt: null,
+        terminatedAt: null
+      });
+
+      return res.json({ 
+        success: true, 
+        message: 'Fresh attempt created',
+        attemptId: newAttemptId
+      });
+      
+    } catch (error) {
+      console.error('Error starting over:', error);
+      res.status(500).json({ message: 'Failed to start over' });
+    }
+  });
+
   // GET /lms/attempt/:attemptId - Get attempt data for SCORM initialization
   app.get('/api/lms/attempt/:attemptId', requireAuth, async (req: any, res) => {
     try {

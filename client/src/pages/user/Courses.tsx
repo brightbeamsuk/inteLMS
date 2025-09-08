@@ -15,6 +15,9 @@ interface AttemptState {
 
 // Course action button component with real-time state
 function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
+  const [showStartOverDialog, setShowStartOverDialog] = useState(false);
+  const queryClient = useQueryClient();
+  
   const { data: attemptState, isLoading } = useQuery<AttemptState>({
     queryKey: ['/api/lms/enrolments', assignment.courseId, 'state'],
     queryFn: async () => {
@@ -31,6 +34,34 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
     refetchOnMount: true,
     refetchOnWindowFocus: true,
   });
+
+  const handleStartOver = async () => {
+    try {
+      const response = await fetch(`/api/lms/enrolments/${assignment.courseId}/start-over`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to start over');
+      }
+      
+      // Refresh the attempt state
+      queryClient.invalidateQueries({
+        queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
+      });
+      
+      setShowStartOverDialog(false);
+      // Start the course with fresh attempt
+      onStartCourse(assignment);
+    } catch (error) {
+      console.error('Error starting over:', error);
+      // You could add a toast notification here
+    }
+  };
 
   if (isLoading) {
     return (
@@ -76,14 +107,55 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
   const buttonProps = getButtonProps();
 
   return (
-    <button 
-      className={buttonProps.className}
-      onClick={() => onStartCourse(assignment)}
-      data-testid={`button-start-course-${assignment.id}`}
-    >
-      <i className={buttonProps.icon}></i>
-      {buttonProps.text}
-    </button>
+    <div className="flex gap-2">
+      <button 
+        className={buttonProps.className}
+        onClick={() => onStartCourse(assignment)}
+        data-testid={`button-start-course-${assignment.id}`}
+      >
+        <i className={buttonProps.icon}></i>
+        {buttonProps.text}
+      </button>
+      
+      {/* Start Over button - only show for in-progress courses */}
+      {state.status === 'in_progress' && (
+        <button 
+          className="btn btn-success"
+          onClick={() => setShowStartOverDialog(true)}
+          data-testid={`button-start-over-${assignment.id}`}
+          title="Start course from the beginning"
+        >
+          <i className="fas fa-redo-alt"></i>
+        </button>
+      )}
+
+      {/* Start Over Confirmation Dialog */}
+      {showStartOverDialog && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Start Over?</h3>
+            <p className="py-4">
+              Are you sure you want to start this course from the beginning? 
+              This will create a fresh attempt and you'll lose your current progress.
+            </p>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost"
+                onClick={() => setShowStartOverDialog(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-success"
+                onClick={handleStartOver}
+              >
+                Yes, Start Over
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
