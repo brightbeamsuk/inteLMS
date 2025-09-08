@@ -92,14 +92,6 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
 
       {/* Main Layout */}
       <div className="drawer lg:drawer-open">
-        <input 
-          id="drawer-toggle" 
-          type="checkbox" 
-          className="drawer-toggle" 
-          checked={drawerOpen}
-          onChange={(e) => setDrawerOpen(e.target.checked)}
-        />
-        
         <div className="drawer-content flex flex-col">
           {/* Main Content */}
           <main className="flex-1 p-6">
@@ -108,13 +100,12 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
         </div>
 
         {/* Sidebar */}
-        <div className="drawer-side">
-          <label 
-            htmlFor="drawer-toggle" 
+        <div className={`drawer-side ${drawerOpen ? 'block' : 'hidden lg:block'}`}>
+          <div 
             aria-label="close sidebar" 
-            className="drawer-overlay"
+            className="drawer-overlay lg:hidden"
             onClick={() => setDrawerOpen(false)}
-          ></label>
+          ></div>
           
           <aside className="min-h-full w-80 bg-base-200 text-base-content">
             <div className="p-4">
