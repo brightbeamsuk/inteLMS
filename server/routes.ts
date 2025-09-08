@@ -2471,11 +2471,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!latestCompletion) {
             // Not completed - check SCORM attempt status and assignment due date
-            // Only consider active (non-closed) attempts for training matrix status
+            // Only consider active attempts for training matrix status
             const userAttempts = scormAttempts.filter(a => 
               a.userId === staffMember.id && 
               a.courseId === course.id &&
-              !a.closed && a.isActive // Only active, non-closed attempts
+              a.isActive // Only active attempts
             );
             
             // Only log when there are discrepancies for debugging
@@ -2484,7 +2484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
             
             if (allUserAttempts.length > 0 && userAttempts.length !== allUserAttempts.length) {
-              console.log(`🎯 Training Matrix - Found closed attempts for ${staffMember.firstName} ${staffMember.lastName}:`, {
+              console.log(`🎯 Training Matrix - Found inactive attempts for ${staffMember.firstName} ${staffMember.lastName}:`, {
                 totalAttempts: allUserAttempts.length,
                 activeAttempts: userAttempts.length,
                 courseTitle: course.title
@@ -3458,13 +3458,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attemptFound: !!attempt,
         attemptId: attempt?.attemptId,
         status: attempt?.status,
-        closed: attempt?.closed,
         isActive: attempt?.isActive
       });
       
-      // If no attempt or attempt is closed, return not_started
-      if (!attempt || attempt.closed) {
-        console.log(`📝 Returning not_started (no attempt or closed attempt)`);
+      // If no attempt or attempt is inactive, return not_started
+      if (!attempt || !attempt.isActive) {
+        console.log(`📝 Returning not_started (no attempt or inactive attempt)`);
         return res.json({ 
           status: 'not_started', 
           hasOpenAttempt: false, 
@@ -3516,8 +3515,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Use a more efficient single update - properly close the attempt
         await storage.updateScormAttempt(activeAttempt.attemptId, {
           isActive: false,
-          closed: true,
-          status: 'not_started', // Reset status so state query returns not_started
           finishedAt: new Date(),
           updatedAt: new Date()
         });

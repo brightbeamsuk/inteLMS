@@ -276,11 +276,6 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
         queryKey: ['/api/lms/enrolments', assignment.courseId, 'state']
       });
       
-      // Also invalidate training matrix so admin view updates in real-time
-      await queryClient.invalidateQueries({
-        queryKey: ['/api/training-matrix']
-      });
-      
     } catch (error) {
       console.error('Error resetting course progress:', error);
       // Refresh on error to get accurate state
