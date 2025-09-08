@@ -8,6 +8,7 @@ interface CoursePlayerProps {
   courseTitle: string;
   onComplete: () => void;
   onClose: () => void;
+  startFresh?: boolean;
 }
 
 interface ScormAttemptState {
@@ -34,7 +35,7 @@ interface ScormAttemptState {
   'cmi.learner_name': string;
 }
 
-export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, onClose }: CoursePlayerProps) {
+export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, onClose, startFresh = false }: CoursePlayerProps) {
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [scormUrl, setScormUrl] = useState<string>('');
@@ -513,48 +514,53 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         let resumeData = null;
         let useServerData = false;
         
-        // 1) Try to get latest attempt from server first (per specification)
-        try {
-          console.log(`📤 Checking for latest attempt: /api/lms/attempt/latest?courseId=${courseId}`);
-          const latestRes = await apiRequest('GET', `/api/lms/attempt/latest?courseId=${courseId}`);
-          
-          if (latestRes.ok) {
-            const latestResult = await latestRes.json();
-            console.log(`📦 Latest attempt result:`, latestResult);
+        // 1) Skip saved data check if starting fresh
+        if (startFresh) {
+          console.log(`🆕 Starting fresh - skipping saved data check`);
+        } else {
+          // Try to get latest attempt from server first (per specification)
+          try {
+            console.log(`📤 Checking for latest attempt: /api/lms/attempt/latest?courseId=${courseId}`);
+            const latestRes = await apiRequest('GET', `/api/lms/attempt/latest?courseId=${courseId}`);
             
-            if (latestResult.success && latestResult.attempt) {
-              const attempt = latestResult.attempt;
-              if (attempt.status === 'IN_PROGRESS' && (attempt.lastLocation || attempt.suspendData)) {
-                resumeData = {
-                  attemptId: attempt.attemptId,
-                  lastLocation: attempt.lastLocation,
-                  suspendData: attempt.suspendData,
-                  progressPct: attempt.progressPct,
-                  timestamp: new Date(attempt.updatedAt).getTime()
-                };
-                useServerData = true;
-                console.log(`🌐 Using server resume data:`, resumeData);
+            if (latestRes.ok) {
+              const latestResult = await latestRes.json();
+              console.log(`📦 Latest attempt result:`, latestResult);
+              
+              if (latestResult.success && latestResult.attempt) {
+                const attempt = latestResult.attempt;
+                if (attempt.status === 'IN_PROGRESS' && (attempt.lastLocation || attempt.suspendData)) {
+                  resumeData = {
+                    attemptId: attempt.attemptId,
+                    lastLocation: attempt.lastLocation,
+                    suspendData: attempt.suspendData,
+                    progressPct: attempt.progressPct,
+                    timestamp: new Date(attempt.updatedAt).getTime()
+                  };
+                  useServerData = true;
+                  console.log(`🌐 Using server resume data:`, resumeData);
+                }
               }
             }
+          } catch (latestError) {
+            console.log(`⚠️ Server latest attempt failed, will check localStorage:`, latestError?.message);
           }
-        } catch (latestError) {
-          console.log(`⚠️ Server latest attempt failed, will check localStorage:`, latestError?.message);
-        }
-        
-        // 2) Check localStorage fallback if no server data (per specification)
-        if (!resumeData) {
-          try {
-            const localSave = localStorage.getItem(`scorm_save_${courseId}`);
-            if (localSave) {
-              const localData = JSON.parse(localSave);
-              console.log(`💾 Found localStorage save data:`, localData);
-              
-              // Use local data as fallback
-              resumeData = localData;
-              console.log(`📱 Using localStorage fallback:`, resumeData);
+          
+          // 2) Check localStorage fallback if no server data (per specification)
+          if (!resumeData) {
+            try {
+              const localSave = localStorage.getItem(`scorm_save_${courseId}`);
+              if (localSave) {
+                const localData = JSON.parse(localSave);
+                console.log(`💾 Found localStorage save data:`, localData);
+                
+                // Use local data as fallback
+                resumeData = localData;
+                console.log(`📱 Using localStorage fallback:`, resumeData);
+              }
+            } catch (localError) {
+              console.log(`⚠️ localStorage check failed:`, localError);
             }
-          } catch (localError) {
-            console.log(`⚠️ localStorage check failed:`, localError);
           }
         }
         

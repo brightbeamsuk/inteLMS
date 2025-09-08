@@ -14,7 +14,7 @@ interface AttemptState {
 }
 
 // Course action button component with real-time state
-function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void }) {
+function CourseActionButton({ assignment, onStartCourse, onStartOver }: { assignment: Assignment, onStartCourse: (assignment: Assignment) => void, onStartOver: (assignment: Assignment) => void }) {
   const [showStartOverDialog, setShowStartOverDialog] = useState(false);
   const queryClient = useQueryClient();
   
@@ -56,7 +56,7 @@ function CourseActionButton({ assignment, onStartCourse }: { assignment: Assignm
       
       setShowStartOverDialog(false);
       // Start the course with fresh attempt
-      onStartCourse(assignment);
+      onStartOver(assignment);
     } catch (error) {
       console.error('Error starting over:', error);
       // You could add a toast notification here
@@ -239,6 +239,7 @@ interface Assignment {
 export function UserCourses() {
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [startFresh, setStartFresh] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const queryClient = useQueryClient();
@@ -271,12 +272,20 @@ export function UserCourses() {
 
   const handleStartCourse = (assignment: Assignment) => {
     setSelectedAssignment(assignment);
+    setStartFresh(false); // Normal start/resume
+    setShowPlayer(true);
+  };
+
+  const handleStartOver = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    setStartFresh(true); // Fresh start
     setShowPlayer(true);
   };
 
   const handleClosePlayer = () => {
     setShowPlayer(false);
     setSelectedAssignment(null);
+    setStartFresh(false); // Reset flag
   };
 
   const handleCourseComplete = () => {
@@ -437,6 +446,7 @@ export function UserCourses() {
                     <CourseActionButton 
                       assignment={assignment} 
                       onStartCourse={handleStartCourse} 
+                      onStartOver={handleStartOver}
                     />
                     
                     {assignment.status === 'completed' && assignment.attemptNumber && (
@@ -460,6 +470,7 @@ export function UserCourses() {
           courseTitle={selectedAssignment.courseTitle}
           onComplete={handleCourseComplete}
           onClose={handleClosePlayer}
+          startFresh={startFresh}
         />
       )}
     </div>
