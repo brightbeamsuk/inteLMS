@@ -3484,9 +3484,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activeAttempt = await storage.getActiveScormAttempt(userId, assignment.id);
       
       if (activeAttempt) {
-        // Use a more efficient single update
+        // Use a more efficient single update - properly close the attempt
         await storage.updateScormAttempt(activeAttempt.attemptId, {
           isActive: false,
+          closed: true,
+          status: 'not_started', // Reset status so state query returns not_started
           finishedAt: new Date(),
           updatedAt: new Date()
         });
