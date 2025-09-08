@@ -1106,6 +1106,15 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
           description: score ? `Score: ${score}%` : "Course completed successfully",
         });
         
+        // Send update message to refresh course status
+        window.parent?.postMessage({ 
+          type: 'ATTEMPT_UPDATED', 
+          courseId: courseId,
+          status: 'COMPLETED',
+          completed: true,
+          score: result.score || score
+        }, '*');
+        
         // Close the course player
         onComplete();
       } else {
