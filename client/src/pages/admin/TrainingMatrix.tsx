@@ -779,62 +779,195 @@ export function AdminTrainingMatrix() {
         </div>
       </div>
 
-      {/* Cell Detail Modal */}
+      {/* Enhanced Course Results Modal */}
       {showDetailModal && selectedCell && (
         <div className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Training Details</h3>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Staff Member:</label>
-                <p>{matrixData.staff.find(s => s.id === selectedCell.staffId)?.firstName} {matrixData.staff.find(s => s.id === selectedCell.staffId)?.lastName}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Course:</label>
-                <p>{matrixData.courses.find(c => c.id === selectedCell.courseId)?.title}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Status:</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <TrainingMatrixStatusIcon status={selectedCell.cell.status} size="sm" />
-                  <span className="capitalize">{selectedCell.cell.label}</span>
-                </div>
-              </div>
-              {selectedCell.cell.completionDate && (
-                <div>
-                  <label className="text-sm font-medium">Completion Date:</label>
-                  <p>{new Date(selectedCell.cell.completionDate).toLocaleDateString()}</p>
-                </div>
-              )}
-              {selectedCell.cell.expiryDate && (
-                <div>
-                  <label className="text-sm font-medium">Expiry Date:</label>
-                  <p>{new Date(selectedCell.cell.expiryDate).toLocaleDateString()}</p>
-                </div>
-              )}
-              {selectedCell.cell.score !== undefined && (
-                <div>
-                  <label className="text-sm font-medium">Score:</label>
-                  <p>{selectedCell.cell.score}%</p>
-                </div>
-              )}
-              <div>
-                <label className="text-sm font-medium">Attempts:</label>
-                <p>{selectedCell.cell.attemptCount}</p>
-              </div>
-            </div>
+          <div className="modal-box max-w-2xl">
+            {(() => {
+              const staff = matrixData.staff.find(s => s.id === selectedCell.staffId);
+              const course = matrixData.courses.find(c => c.id === selectedCell.courseId);
+              const cell = selectedCell.cell;
+              const score = cell.score || 0;
+              const passed = cell.status === 'green';
+              const passmark = 80; // Default passmark, could be retrieved from course data
+              
+              return (
+                <>
+                  <h3 className="font-bold text-2xl mb-6 flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      passed ? 'bg-success text-success-content' : 'bg-error text-error-content'
+                    }`}>
+                      <i className={`fas ${passed ? 'fa-trophy' : 'fa-times'} text-xl`}></i>
+                    </div>
+                    Course Results - {staff?.firstName} {staff?.lastName}
+                  </h3>
+                  
+                  <div className="space-y-6">
+                    {/* Course Info */}
+                    <div className="bg-base-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-lg mb-2" data-testid="results-course-title">
+                        {course?.title}
+                      </h4>
+                      <div className="text-base-content/70 text-sm">
+                        <div className="mb-1"><strong>Staff Member:</strong> {staff?.firstName} {staff?.lastName}</div>
+                        {staff?.jobTitle && <div className="mb-1"><strong>Job Title:</strong> {staff.jobTitle}</div>}
+                        {staff?.department && <div className="mb-1"><strong>Department:</strong> {staff.department}</div>}
+                        <div><strong>Email:</strong> {staff?.email}</div>
+                      </div>
+                    </div>
 
-            <div className="modal-action">
-              <button 
-                className="btn" 
-                onClick={() => setShowDetailModal(false)}
-                data-testid="button-close-detail"
-              >
-                Close
-              </button>
-            </div>
+                    {/* Pass/Fail Status - Only show for completed courses */}
+                    {cell.status === 'green' || cell.status === 'red' && (
+                      <div className={`alert ${passed ? 'alert-success' : 'alert-error'}`}>
+                        <div className="flex items-center gap-3">
+                          <i className={`fas ${passed ? 'fa-check-circle' : 'fa-times-circle'} text-xl`}></i>
+                          <div>
+                            <div className="font-bold text-lg" data-testid="results-status">
+                              {passed ? 'Course Completed Successfully!' : 'Course Requirements Not Met'}
+                            </div>
+                            <div className="text-sm opacity-90">
+                              {passed 
+                                ? `Achieved the required score of ${passmark}% or higher.`
+                                : `Score of ${passmark}% required to pass.`
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Information */}
+                    {(cell.status === 'amber' || cell.status === 'blue' || cell.status === 'grey') && (
+                      <div className={`alert ${
+                        cell.status === 'amber' ? 'alert-warning' : 
+                        cell.status === 'blue' ? 'alert-info' : 'alert-warning'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <TrainingMatrixStatusIcon status={cell.status} size="sm" />
+                          <div>
+                            <div className="font-bold text-lg">
+                              {cell.status === 'amber' ? 'Training Expiring Soon' :
+                               cell.status === 'blue' ? 'Training In Progress' :
+                               'Training Not Started'}
+                            </div>
+                            <div className="text-sm opacity-90">{cell.label}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Score Details - Only show if there's a score */}
+                    {cell.score !== undefined && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="stat bg-base-200 rounded-lg">
+                          <div className="stat-title">Score Achieved</div>
+                          <div className={`stat-value text-3xl ${passed ? 'text-success' : 'text-error'}`} data-testid="results-score">
+                            {score}%
+                          </div>
+                          <div className="stat-desc">Final score</div>
+                        </div>
+                        
+                        <div className="stat bg-base-200 rounded-lg">
+                          <div className="stat-title">Pass Mark</div>
+                          <div className="stat-value text-3xl text-base-content" data-testid="results-passmark">
+                            {passmark}%
+                          </div>
+                          <div className="stat-desc">Required to pass</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Completion Details */}
+                    <div className="bg-base-200 rounded-lg p-4">
+                      <h5 className="font-semibold mb-3">Training Details</h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Status:</span>
+                          <div className="flex items-center gap-2">
+                            <TrainingMatrixStatusIcon status={cell.status} size="sm" />
+                            <span className="font-medium capitalize" data-testid="results-completion-status">
+                              {cell.label}
+                            </span>
+                          </div>
+                        </div>
+                        {cell.completionDate && (
+                          <div className="flex justify-between">
+                            <span>Completed:</span>
+                            <span className="font-medium" data-testid="results-completion-date">
+                              {new Date(cell.completionDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+                        {cell.expiryDate && (
+                          <div className="flex justify-between">
+                            <span>Expires:</span>
+                            <span className="font-medium" data-testid="results-expiry-date">
+                              {new Date(cell.expiryDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Total Attempts:</span>
+                          <span className="font-medium" data-testid="results-attempt-count">
+                            {cell.attemptCount}
+                          </span>
+                        </div>
+                        {cell.assignmentId && (
+                          <div className="flex justify-between">
+                            <span>Assignment ID:</span>
+                            <span className="font-mono text-xs" data-testid="results-assignment-id">
+                              {cell.assignmentId}
+                            </span>
+                          </div>
+                        )}
+                        {cell.completionId && (
+                          <div className="flex justify-between">
+                            <span>Completion ID:</span>
+                            <span className="font-mono text-xs" data-testid="results-completion-id">
+                              {cell.completionId}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Certificate Section - Only show for completed courses */}
+                    {passed && (
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <i className="fas fa-certificate text-amber-600 text-xl"></i>
+                          <h5 className="font-semibold text-amber-800 dark:text-amber-200">Certificate Available</h5>
+                        </div>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                          This staff member has earned a certificate for completing this course.
+                        </p>
+                        <a 
+                          href={`/api/certificates/download?courseId=${course?.id}&userId=${staff?.id}`}
+                          className="btn btn-warning btn-sm"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="button-download-certificate"
+                        >
+                          <i className="fas fa-download"></i> Download Certificate
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="modal-action mt-8">
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => setShowDetailModal(false)}
+                      data-testid="button-close-results"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
+          <div className="modal-backdrop" onClick={() => setShowDetailModal(false)}></div>
         </div>
       )}
 
