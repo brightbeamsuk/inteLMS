@@ -176,7 +176,7 @@ export const scormAttempts = pgTable("scorm_attempts", {
   courseId: varchar("course_id").notNull(),
   organisationId: varchar("organisation_id").notNull(),
   itemId: varchar("item_id"), // SCO identifier for multi-SCO support
-  standard: scormStandardEnum("standard").notNull(), // "1.2" or "2004"
+  scormVersion: varchar("scorm_version", { length: 10 }).notNull(), // "1.2" or "2004"
   status: scormAttemptStatusEnum("status").default('not_started'),
   
   // Raw SCORM 1.2 values

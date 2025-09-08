@@ -3327,7 +3327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId,
           courseId: assignment.courseId,
           organisationId: assignment.organisationId,
-          standard: '2004',
+          scormVersion: '2004',
           status: 'in_progress',
           completed: false,
           closed: false,
@@ -3475,7 +3475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId,
           courseId: assignment.courseId,
           organisationId: assignment.organisationId,
-          standard: '2004',
+          scormVersion: '2004',
           status: 'in_progress',
           completed: false,
           closed: false,
@@ -3695,7 +3695,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         courseId: assignment.courseId,
         organisationId: assignment.organisationId,
-        standard: standard, // SCORM version field
+        scormVersion: standard, // SCORM version field
         passmark,
         rawScormData: scormData
       };
@@ -4364,7 +4364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Persist final state (idempotent updates)
       const finalProgress = Number.isFinite(progress) ? progress : (isComplete ? 100 : attempt.progressPercent || 0);
       const updates = {
-        standard: (snap.version === '2004' ? '2004' : '1.2') as '1.2' | '2004',
+        scormVersion: (snap.version === '2004' ? '2004' : '1.2') as '1.2' | '2004',
         completionStatus: status,
         successStatus: success,
         scoreRaw: score !== null ? score.toString() : null,
@@ -4591,7 +4591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         courseId,
         organisationId: user.organisationId,
         itemId: assignment.itemId || undefined,
-        standard: standard as '1.2' | '2004',
+        scormVersion: standard as '1.2' | '2004',
         learnerId: userId,
         learnerName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Learner'
       };
