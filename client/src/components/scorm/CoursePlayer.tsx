@@ -437,9 +437,11 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
         // SCORM 2004 (3rd Ed.) - Start attempt and load saved data BEFORE SCORM initialization
         try {
           console.log(`🚀 Starting SCORM attempt for course: ${assignment.courseId}`);
+          console.log(`📤 Making request to /api/lms/attempt/start with courseId: ${assignment.courseId}`);
           const attemptStartRes = await apiRequest('POST', '/api/lms/attempt/start', {
             courseId: assignment.courseId
           });
+          console.log(`📥 Received response from attempt start:`, attemptStartRes);
           
           console.log(`📡 Attempt start response status: ${attemptStartRes.status}`);
           
