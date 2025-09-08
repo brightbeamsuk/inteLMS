@@ -2471,8 +2471,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!latestCompletion) {
             // Not completed - check SCORM attempt status and assignment due date
+            // Only consider active (non-closed) attempts for training matrix status
             const userAttempts = scormAttempts.filter(a => 
-              a.userId === staffMember.id && a.courseId === course.id
+              a.userId === staffMember.id && 
+              a.courseId === course.id &&
+              !a.closed && a.isActive // Only active, non-closed attempts
             );
             
             const latestAttempt = userAttempts.sort((a, b) => 
