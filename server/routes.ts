@@ -348,11 +348,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Allow access if:
-      // 1. User owns the certificate
-      // 2. User is admin/superadmin and certificate is from their organization
-      const hasAccess = certificate.userId === userId || 
-                       (user.role === 'superadmin') ||
-                       (user.role === 'admin' && user.organisationId === certificate.organisationId);
+      // 1. User is superadmin
+      // 2. User is admin and certificate is from their organization  
+      // 3. User owns the certificate AND has certificate download permission enabled
+      const hasAccess = (user.role === 'superadmin') ||
+                       (user.role === 'admin' && user.organisationId === certificate.organisationId) ||
+                       (certificate.userId === userId && user.allowCertificateDownload === true);
       
       if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
