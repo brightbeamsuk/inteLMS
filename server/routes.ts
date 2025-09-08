@@ -3480,24 +3480,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Assignment not found' });
       }
 
-      // Close ALL existing attempts for this assignment (marks them as inactive)
-      const existingAttempts = await storage.getScormAttemptsByAssignment(assignment.id);
+      // Get the active attempt and mark it as completed/closed
+      const activeAttempt = await storage.getActiveScormAttempt(userId, assignment.id);
       
-      for (const attempt of existingAttempts) {
-        await storage.updateScormAttempt(attempt.attemptId, {
+      if (activeAttempt) {
+        await storage.updateScormAttempt(activeAttempt.attemptId, {
           isActive: false,
           finishedAt: new Date(),
           updatedAt: new Date()
         });
+        
+        console.log(`🔄 Reset course progress: closed attempt ${activeAttempt.attemptId} for user ${userId}, course ${courseId}`);
+        
+        return res.json({ 
+          success: true, 
+          message: 'Course progress reset successfully'
+        });
+      } else {
+        return res.json({ 
+          success: true, 
+          message: 'No active attempt to reset'
+        });
       }
-
-      console.log(`🔄 Reset course progress for user ${userId}, course ${courseId} - closed ${existingAttempts.length} attempts`);
-
-      return res.json({ 
-        success: true, 
-        message: 'Course progress reset successfully',
-        closedAttempts: existingAttempts.length
-      });
       
     } catch (error) {
       console.error('Error resetting course progress:', error);
