@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import inteLMSLogo from '@assets/inteLMS_1756700260326.png';
+import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 export function SignIn() {
   const [email, setEmail] = useState('');

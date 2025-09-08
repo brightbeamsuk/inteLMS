@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
-import inteLMSLogo from '@assets/inteLMS_1756700260326.png';
+import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface UserLayoutProps {
   children: React.ReactNode;
