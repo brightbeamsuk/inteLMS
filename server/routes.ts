@@ -1942,7 +1942,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Organisation not found' });
       }
 
-      res.json(organisation);
+      // Also get organization settings (includes email settings)
+      const settings = await storage.getOrganisationSettings(id);
+      
+      // Merge settings into the organization response
+      const response = {
+        ...organisation,
+        ...settings
+      };
+
+      res.json(response);
     } catch (error) {
       console.error('Error fetching organisation:', error);
       res.status(500).json({ message: 'Failed to fetch organisation' });
@@ -2611,33 +2620,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Email settings routes
   app.put('/api/organisations/:id/email-settings', requireAuth, async (req: any, res) => {
-    console.log('=== ORGANIZATION EMAIL SETTINGS SAVE ENDPOINT CALLED ===');
-    console.log('Request params:', req.params);
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    
     try {
       const user = await getCurrentUser(req);
-      console.log('Current user:', user?.email, 'Role:', user?.role, 'Org ID:', user?.organisationId);
       
       if (!user) {
-        console.log('Access denied - no user');
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const { id: organisationId } = req.params;
-      console.log('Target organization ID:', organisationId);
 
       // Admins can only update their own organization's settings
       if (user.role === 'admin' && user.organisationId !== organisationId) {
-        console.log('Access denied - admin trying to update different org');
         return res.status(403).json({ message: 'Access denied' });
       }
 
       // Check if custom email templates feature is available
       const hasEmailTemplatesAccess = await hasFeatureAccess(organisationId, 'custom_email_templates');
-      console.log('Has email templates access:', hasEmailTemplatesAccess);
       if (!hasEmailTemplatesAccess) {
-        console.log('Access denied - feature not available');
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
 
@@ -2651,11 +2650,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName
       } = req.body;
 
-      console.log('Parsed fields:', { smtpHost, smtpPort, smtpUsername, smtpSecure, fromEmail, fromName });
-
       // Validate required fields
       if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
-        console.log('Validation failed - missing required fields');
         return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
       }
 
@@ -2669,13 +2665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName: fromName || 'LMS System',
       };
 
-      console.log('Email settings to save:', emailSettings);
-      console.log('Calling storage.updateOrganisationSettings...');
-      
       const updatedSettings = await storage.updateOrganisationSettings(organisationId, emailSettings);
-      console.log('Updated settings result:', updatedSettings);
-      
-      console.log('Organization email settings saved successfully!');
       res.json({ success: true, message: 'Email settings saved successfully' });
     } catch (error) {
       console.error('Error updating email settings:', error);
@@ -2729,15 +2719,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // System email settings routes (SuperAdmin only)
   app.put('/api/system/email-settings', requireAuth, async (req: any, res) => {
-    console.log('=== SYSTEM EMAIL SETTINGS SAVE ENDPOINT CALLED ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    
     try {
       const user = await getCurrentUser(req);
-      console.log('Current user:', user?.email, 'Role:', user?.role);
       
       if (!user || user.role !== 'superadmin') {
-        console.log('Access denied - user is not superadmin');
         return res.status(403).json({ message: 'Access denied - superadmin only' });
       }
 
@@ -2751,39 +2736,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName
       } = req.body;
 
-      console.log('Parsed fields:', { smtpHost, smtpPort, smtpUsername, smtpSecure, fromEmail, fromName });
-
       // Validate required fields
       if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
-        console.log('Validation failed - missing required fields');
         return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
       }
 
-      console.log('Starting to save platform settings...');
-
       // Save system email settings to platform settings
-      const result1 = await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
-      console.log('Saved smtp_host:', result1);
-      
-      const result2 = await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
-      console.log('Saved smtp_port:', result2);
-      
-      const result3 = await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
-      console.log('Saved smtp_username:', result3);
-      
-      const result4 = await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
-      console.log('Saved smtp_password (length):', smtpPassword.length);
-      
-      const result5 = await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
-      console.log('Saved smtp_secure:', result5);
-      
-      const result6 = await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
-      console.log('Saved from_email:', result6);
-      
-      const result7 = await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
-      console.log('Saved from_name:', result7);
+      await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
+      await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
+      await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
+      await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
+      await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
+      await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
+      await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
 
-      console.log('All settings saved successfully!');
       res.json({ success: true, message: 'System email settings saved successfully' });
     } catch (error) {
       console.error('Error updating system email settings:', error);
