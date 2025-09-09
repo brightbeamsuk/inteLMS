@@ -2708,6 +2708,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // System email settings routes (SuperAdmin only)
+  app.put('/api/system/email-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const {
+        smtpHost,
+        smtpPort,
+        smtpUsername,
+        smtpPassword,
+        smtpSecure,
+        fromEmail,
+        fromName
+      } = req.body;
+
+      // Validate required fields
+      if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+        return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+      }
+
+      // Save system email settings to platform settings
+      await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
+      await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
+      await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
+      await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
+      await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
+      await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
+      await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
+
+      res.json({ success: true, message: 'System email settings saved successfully' });
+    } catch (error) {
+      console.error('Error updating system email settings:', error);
+      res.status(500).json({ message: 'Failed to update system email settings' });
+    }
+  });
+
+  // Get system email settings (SuperAdmin only)
+  app.get('/api/system/email-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const smtpHost = await storage.getPlatformSetting('system_smtp_host');
+      const smtpPort = await storage.getPlatformSetting('system_smtp_port');
+      const smtpUsername = await storage.getPlatformSetting('system_smtp_username');
+      const smtpPassword = await storage.getPlatformSetting('system_smtp_password');
+      const smtpSecure = await storage.getPlatformSetting('system_smtp_secure');
+      const fromEmail = await storage.getPlatformSetting('system_from_email');
+      const fromName = await storage.getPlatformSetting('system_from_name');
+
+      const settings = {
+        smtpHost: smtpHost?.value || '',
+        smtpPort: smtpPort?.value ? parseInt(smtpPort.value) : 587,
+        smtpUsername: smtpUsername?.value || '',
+        smtpPassword: smtpPassword?.value || '',
+        smtpSecure: smtpSecure?.value !== 'false',
+        fromEmail: fromEmail?.value || '',
+        fromName: fromName?.value || 'System',
+      };
+
+      res.json(settings);
+    } catch (error) {
+      console.error('Error fetching system email settings:', error);
+      res.status(500).json({ message: 'Failed to fetch system email settings' });
+    }
+  });
+
+  // Test system email settings (SuperAdmin only)
+  app.post('/api/system/test-email', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { testEmail } = req.body;
+
+      if (!testEmail) {
+        return res.status(400).json({ message: 'Test email address is required' });
+      }
+
+      // Create a temporary organization ID for testing system settings
+      const success = await emailService.sendTestEmail(testEmail, 'system-test');
+      
+      if (success) {
+        res.json({ success: true, message: 'Test email sent successfully' });
+      } else {
+        res.status(500).json({ success: false, message: 'Failed to send test email. Please check your SMTP settings.' });
+      }
+    } catch (error) {
+      console.error('Error sending system test email:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to send test email. Please check your SMTP settings.' 
+      });
+    }
+  });
+
   // Users routes
   app.get('/api/users', requireAuth, async (req: any, res) => {
     try {

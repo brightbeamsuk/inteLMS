@@ -12,11 +12,61 @@ export interface EmailService {
 }
 
 export class SmtpEmailService implements EmailService {
+  private async getSystemEmailSettings(): Promise<any> {
+    try {
+      const smtpHost = await storage.getPlatformSetting('system_smtp_host');
+      const smtpPort = await storage.getPlatformSetting('system_smtp_port');
+      const smtpUsername = await storage.getPlatformSetting('system_smtp_username');
+      const smtpPassword = await storage.getPlatformSetting('system_smtp_password');
+      const smtpSecure = await storage.getPlatformSetting('system_smtp_secure');
+      const fromEmail = await storage.getPlatformSetting('system_from_email');
+      const fromName = await storage.getPlatformSetting('system_from_name');
+
+      return {
+        smtpHost: smtpHost?.value || null,
+        smtpPort: smtpPort?.value ? parseInt(smtpPort.value) : 587,
+        smtpUsername: smtpUsername?.value || null,
+        smtpPassword: smtpPassword?.value || null,
+        smtpSecure: smtpSecure?.value !== 'false',
+        fromEmail: fromEmail?.value || null,
+        fromName: fromName?.value || 'System',
+      };
+    } catch (error) {
+      console.error('Error getting system email settings:', error);
+      return {};
+    }
+  }
   private async createTransporter(organisationId: string): Promise<Transporter | null> {
     try {
-      const settings = await storage.getOrganisationSettings(organisationId);
+      let settings: any = null;
+      let isSystemFallback = false;
+      
+      // If this is a system test, use system settings directly
+      if (organisationId === 'system-test') {
+        console.log('Using system settings for system test');
+        settings = await this.getSystemEmailSettings();
+        isSystemFallback = true;
+      } else {
+        // First try organization-specific settings
+        settings = await storage.getOrganisationSettings(organisationId);
+        
+        // If organization doesn't have email settings, try system-wide settings
+        if (!settings?.smtpHost || !settings?.smtpUsername || !settings?.smtpPassword) {
+          console.log('Organization SMTP not configured, checking system settings for:', organisationId);
+          
+          // Get system email settings from platform settings
+          const systemSettings = await this.getSystemEmailSettings();
+          if (systemSettings.smtpHost && systemSettings.smtpUsername && systemSettings.smtpPassword) {
+            settings = systemSettings;
+            isSystemFallback = true;
+            console.log('Using system-wide SMTP settings as fallback');
+          }
+        }
+      }
+      
+      // Final check if we have valid settings
       if (!settings?.smtpHost || !settings?.smtpUsername || !settings?.smtpPassword) {
-        console.log('SMTP settings not configured for organisation:', organisationId);
+        console.log('No valid SMTP settings found at organization or system level');
         return null;
       }
 
