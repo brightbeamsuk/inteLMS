@@ -2214,6 +2214,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Check if logo is being updated and validate remove branding feature access
+      if (updateData.logoUrl !== undefined && user.role === 'admin') {
+        // Get organization to check plan features
+        const organisation = await storage.getOrganisation(id);
+        if (!organisation) {
+          return res.status(404).json({ message: 'Organisation not found' });
+        }
+
+        // Check if remove branding feature is enabled for the organisation's plan
+        const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
+        const removeBrandingFeature = planFeatures.find(mapping => mapping.featureId === 'remove_branding');
+        
+        if (!removeBrandingFeature || !removeBrandingFeature.enabled) {
+          return res.status(403).json({ message: 'Custom branding feature not available for your plan' });
+        }
+      }
+
       // Normalize logo URL and set as public object if provided
       if (updateData.logoUrl) {
         const { ObjectStorageService } = await import('./objectStorage');
