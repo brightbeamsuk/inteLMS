@@ -2975,6 +2975,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
+        // Manual direct test before health check
+        console.log('🔧 MANUAL BREVO TEST - Testing key directly...');
+        try {
+          const directTestResponse = await fetch('https://api.brevo.com/v3/account', {
+            method: 'GET',
+            headers: {
+              'api-key': brevoClient['apiKey'], // Access private key for testing
+              'accept': 'application/json'
+            }
+          });
+          console.log(`🔧 DIRECT TEST: ${directTestResponse.status} ${directTestResponse.statusText}`);
+          const directBody = await directTestResponse.text();
+          console.log(`🔧 DIRECT RESPONSE: ${directBody.substring(0, 200)}...`);
+        } catch (directError) {
+          console.log('🔧 DIRECT TEST ERROR:', directError.message);
+        }
+
         // Health check first
         console.log('🔧 About to call checkAccount()...');
         const healthCheck = await brevoClient.checkAccount();
