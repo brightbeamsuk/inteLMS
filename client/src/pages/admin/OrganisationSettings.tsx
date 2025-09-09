@@ -97,6 +97,10 @@ export function AdminOrganisationSettings() {
   const removeBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'remove_branding');
   const hasBrandingAccess = removeBrandingFeature?.enabled || false;
 
+  // Check if custom email templates feature is enabled
+  const emailTemplatesFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_email_templates');
+  const hasEmailTemplatesAccess = emailTemplatesFeature?.enabled || false;
+
   const handleLogoUpload = async () => {
     try {
       const response = await apiRequest('POST', '/api/objects/upload', {});
@@ -175,9 +179,26 @@ export function AdminOrganisationSettings() {
     saveOrganizationMutation.mutate(organizationData);
   };
 
-  const tabs = user?.role === 'superadmin' 
-    ? ["Branding", "Contacts", "Visual Designer", "Notifications", "Privacy"]
-    : ["Branding", "Contacts", "Notifications", "Privacy"];
+  // Build tabs array based on role and features
+  const buildTabs = () => {
+    const baseTabs = ["Branding", "Contacts"];
+    
+    if (user?.role === 'superadmin') {
+      baseTabs.push("Visual Designer");
+    }
+    
+    baseTabs.push("Notifications");
+    
+    if (hasEmailTemplatesAccess) {
+      baseTabs.push("Email Templates");
+    }
+    
+    baseTabs.push("Privacy");
+    
+    return baseTabs;
+  };
+
+  const tabs = buildTabs();
 
   return (
     <div>
@@ -617,8 +638,106 @@ export function AdminOrganisationSettings() {
             </div>
           )}
 
+          {/* Email Templates Tab */}
+          {hasEmailTemplatesAccess && activeTab === tabs.indexOf("Email Templates") && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Email Templates</h3>
+                <button 
+                  className="btn btn-primary"
+                  data-testid="button-add-template"
+                  style={{
+                    '--primary-color': organization?.primaryColor || '#3b82f6',
+                    backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                    borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                  } as React.CSSProperties}
+                >
+                  <i className="fas fa-plus"></i>
+                  New Template
+                </button>
+              </div>
+              
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <div>
+                  <div className="font-bold">Customize Email Templates</div>
+                  <div className="text-sm">
+                    Create custom email templates for various system notifications. You can use placeholders like [FirstName], [CourseName], [OrganisationName] to personalize emails.
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="card bg-base-100 border border-base-300">
+                  <div className="card-body p-4">
+                    <h4 className="card-title text-base">Welcome Email</h4>
+                    <p className="text-sm text-base-content/70">Sent when new users are created</p>
+                    <div className="card-actions justify-end">
+                      <button className="btn btn-outline btn-sm" data-testid="button-edit-welcome">
+                        <i className="fas fa-edit"></i>
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card bg-base-100 border border-base-300">
+                  <div className="card-body p-4">
+                    <h4 className="card-title text-base">Course Assignment</h4>
+                    <p className="text-sm text-base-content/70">Sent when courses are assigned to users</p>
+                    <div className="card-actions justify-end">
+                      <button className="btn btn-outline btn-sm" data-testid="button-edit-assignment">
+                        <i className="fas fa-edit"></i>
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card bg-base-100 border border-base-300">
+                  <div className="card-body p-4">
+                    <h4 className="card-title text-base">Course Reminder</h4>
+                    <p className="text-sm text-base-content/70">Reminder emails for upcoming due dates</p>
+                    <div className="card-actions justify-end">
+                      <button className="btn btn-outline btn-sm" data-testid="button-edit-reminder">
+                        <i className="fas fa-edit"></i>
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card bg-base-100 border border-base-300">
+                  <div className="card-body p-4">
+                    <h4 className="card-title text-base">Course Completion</h4>
+                    <p className="text-sm text-base-content/70">Sent when users complete courses</p>
+                    <div className="card-actions justify-end">
+                      <button className="btn btn-outline btn-sm" data-testid="button-edit-completion">
+                        <i className="fas fa-edit"></i>
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card bg-base-100 border border-base-300">
+                  <div className="card-body p-4">
+                    <h4 className="card-title text-base">Password Reset</h4>
+                    <p className="text-sm text-base-content/70">Sent when users request password resets</p>
+                    <div className="card-actions justify-end">
+                      <button className="btn btn-outline btn-sm" data-testid="button-edit-password-reset">
+                        <i className="fas fa-edit"></i>
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Privacy Tab */}
-          {activeTab === (user?.role === 'superadmin' ? 4 : 3) && (
+          {activeTab === tabs.indexOf("Privacy") && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Privacy Settings</h3>
               
