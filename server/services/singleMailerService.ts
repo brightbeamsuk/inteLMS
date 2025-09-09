@@ -678,8 +678,9 @@ export class SingleMailerService {
         resolvedIp: 'api.brevo.com',
         tlsUsed: true,
         success: true,
-        messageId: result.response?.body?.messageId || 'brevo-api-sent',
+        messageId: (result as any)?.messageId || 'brevo-api-sent',
         smtpResponse: 'Brevo API success',
+        error: null,
         metadata: options.metadata,
         latencyMs: endTime - startTime
       });
@@ -692,9 +693,8 @@ export class SingleMailerService {
         smtpPort: 443,
         resolvedIp: 'api.brevo.com',
         tlsEnabled: true,
-        messageId: result.response?.body?.messageId || 'brevo-api-sent',
+        messageId: (result as any)?.messageId || 'brevo-api-sent',
         smtpResponse: 'Email sent via Brevo API',
-        latencyMs: endTime - startTime,
         source: 'organisation'
       };
 
@@ -729,7 +729,6 @@ export class SingleMailerService {
         resolvedIp: 'api.brevo.com',
         tlsEnabled: true,
         error: `Brevo API Error: ${errorMessage}`,
-        latencyMs: endTime - startTime,
         source: 'organisation'
       };
     }
