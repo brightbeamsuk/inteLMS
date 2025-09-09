@@ -575,51 +575,6 @@ The {{organisationDisplayName}} Team`
     }
   });
 
-  // SMTP Health Check mutation
-  const healthCheckMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/smtp/health-check', { 
-        organisationId: user?.organisationId 
-      });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      const status = data.success ? 'Healthy' : 'Failed';
-      const details = [
-        `DNS: ${data.dnsResolution ? '✓' : '✗'}`,
-        `TCP: ${data.tcpConnection ? '✓' : '✗'}`,
-        `TLS: ${data.startTlsSupport ? '✓' : '✗'}`
-      ].join(' | ');
-      
-      toast({
-        title: `SMTP Health Check: ${status}`,
-        description: data.success 
-          ? `${data.smtpHost}:${data.smtpPort} - ${details} (${data.latencyMs}ms)`
-          : `${data.error} - ${details}`,
-        variant: data.success ? "default" : "destructive",
-      });
-      
-      // Log detailed health check to console
-      console.log('SMTP Health Check:', {
-        timestamp: data.timestamp,
-        smtpHost: data.smtpHost,
-        smtpPort: data.smtpPort,
-        resolvedIp: data.resolvedIp,
-        dnsResolution: data.dnsResolution,
-        tcpConnection: data.tcpConnection,
-        startTlsSupport: data.startTlsSupport,
-        latencyMs: data.latencyMs,
-        error: data.error
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Health Check Error",
-        description: error.message || "Failed to perform health check",
-        variant: "destructive",
-      });
-    }
-  });
 
   const saveEmailSettings = () => {
     if (!user?.organisationId) return;
@@ -1146,36 +1101,13 @@ The {{organisationDisplayName}} Team`
                   <div className="flex gap-2">
                     <button 
                       className="btn btn-outline btn-xs"
-                      onClick={() => healthCheckMutation.mutate()}
-                      disabled={healthCheckMutation.isPending}
-                      data-testid="button-health-check"
-                      title="Test DNS resolution, TCP connection, and STARTTLS support"
-                    >
-                      <i className={`fas ${healthCheckMutation.isPending ? 'fa-spinner fa-spin' : 'fa-heartbeat'}`}></i>
-                      {healthCheckMutation.isPending ? 'Checking...' : 'Health Check'}
-                    </button>
-                    <button 
-                      className="btn btn-outline btn-xs"
-                      onClick={() => {
-                        setTestEmailAddress(user?.email || '');
-                        setShowTestEmailModal(true);
-                      }}
-                      disabled={!emailSettings.brevoApiKey || !emailSettings.fromEmail}
-                      data-testid="button-admin-test"
-                      title="Send test email with comprehensive logging and metadata"
-                    >
-                      <i className="fas fa-flask"></i>
-                      Admin Test
-                    </button>
-                    <button 
-                      className="btn btn-outline btn-xs"
                       data-testid="button-test-email"
                       onClick={openTestEmailModal}
-                      disabled={testEmailMutation.isPending}
-                      title="Send simple test email (legacy)"
+                      disabled={testEmailMutation.isPending || !emailSettings.brevoApiKey || !emailSettings.fromEmail}
+                      title="Send test email using Brevo API"
                     >
                       <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
-                      {testEmailMutation.isPending ? 'Sending...' : 'Quick Test'}
+                      {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
                     </button>
                   </div>
                 </div>
@@ -1183,110 +1115,14 @@ The {{organisationDisplayName}} Team`
                 <div className="alert alert-info">
                   <i className="fas fa-key"></i>
                   <div>
-                    <div className="font-bold">API-Based Email Delivery</div>
+                    <div className="font-bold">Brevo API Email Delivery</div>
                     <div className="text-sm">
-                      Using Brevo API for reliable email delivery. Configure your API key below to enable system emails (assignments, reminders, completions). SMTP settings are temporarily disabled for API key testing.
+                      Configure your Brevo API key below to enable system emails (assignments, reminders, completions). Fast, reliable delivery without SMTP configuration.
                     </div>
                   </div>
                 </div>
 
-                {/* Email Provider Selector - Fixed to Brevo API for now */}
-                <div className="space-y-4">
-                  <h5 className="text-sm font-medium text-gray-700">Email Provider</h5>
-                  
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text">Email Provider (API Mode) *</span>
-                    </label>
-                    <select 
-                      className="select select-bordered select-disabled" 
-                      value={emailSettings.provider}
-                      disabled={true}
-                      data-testid="select-email-provider"
-                    >
-                      <option value="brevo-api">Brevo API (Recommended)</option>
-                    </select>
-                    <div className="label">
-                      <span className="label-text-alt text-info">SMTP settings temporarily disabled for API key testing</span>
-                    </div>
-                  </div>
 
-                  {/* Provider Instructions */}
-                  {emailSettings.provider && (
-                    <div className="alert alert-info">
-                      <i className="fas fa-info-circle"></i>
-                      <div className="text-sm">
-                        {emailProviders[emailSettings.provider as keyof typeof emailProviders]?.instructions}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* SMTP fields temporarily disabled for API testing */}
-                {false && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text font-semibold">SMTP Host</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        className={`input input-bordered ${emailSettings.provider !== 'custom' ? 'input-disabled' : ''}`}
-                        placeholder="smtp.gmail.com"
-                        value={emailSettings.smtpHost}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
-                        readOnly={emailSettings.provider !== 'custom'}
-                        data-testid="input-smtp-host"
-                      />
-                    </div>
-
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">SMTP Port</span>
-                    </label>
-                    <select 
-                      className={`select select-bordered ${emailSettings.provider !== 'custom' ? 'select-disabled' : ''}`}
-                      value={emailSettings.smtpPort}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: e.target.value }))}
-                      disabled={emailSettings.provider !== 'custom'}
-                      data-testid="select-smtp-port"
-                    >
-                      <option value="25">25 (Standard)</option>
-                      <option value="587">587 (Submission)</option>
-                      <option value="465">465 (SSL)</option>
-                      <option value="2525">2525 (Alternative)</option>
-                    </select>
-                  </div>
-
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">SMTP Username</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered" 
-                      placeholder="your-email@domain.com"
-                      value={emailSettings.smtpUsername}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
-                      data-testid="input-smtp-username"
-                    />
-                  </div>
-
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">SMTP Password</span>
-                    </label>
-                    <input 
-                      type="password" 
-                      className="input input-bordered" 
-                      placeholder="••••••••"
-                      value={emailSettings.smtpPassword}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
-                      data-testid="input-smtp-password"
-                    />
-                  </div>
-                </div>
-                )}
 
                 {/* Brevo API Key - Always show in API mode */}
                 <div className="form-control">
@@ -1336,25 +1172,6 @@ The {{organisationDisplayName}} Team`
                   </div>
                 </div>
 
-                <div className="form-control">
-                  <label className="label cursor-pointer justify-start gap-3">
-                    <input 
-                      type="checkbox" 
-                      className="toggle" 
-                      checked={emailSettings.useSecure}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, useSecure: e.target.checked }))}
-                      data-testid="toggle-use-secure"
-                      style={{
-                        '--tglbg': emailSettings.useSecure ? (organization?.useCustomColors ? organization?.primaryColor || '#4ade80' : '#4ade80') : '#d1d5db',
-                        backgroundColor: emailSettings.useSecure ? (organization?.useCustomColors ? organization?.primaryColor || '#4ade80' : '#4ade80') : '#d1d5db',
-                      } as React.CSSProperties}
-                    />
-                    <span className="label-text">
-                      <strong>Use Secure Connection (TLS/SSL)</strong>
-                      <div className="text-sm text-base-content/60">Enable encryption for email transmission</div>
-                    </span>
-                  </label>
-                </div>
 
                 <div className="flex gap-2">
                   <button 
