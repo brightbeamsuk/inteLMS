@@ -91,6 +91,7 @@ export function AdminOrganisationSettings() {
   const [templateContent, setTemplateContent] = useState('');
   
   const [emailSettings, setEmailSettings] = useState({
+    provider: 'custom',
     smtpHost: '',
     smtpPort: '587',
     smtpUsername: '',
@@ -227,6 +228,77 @@ The {{organisationDisplayName}} Team`
     return templates[templateType] || { subject: '', content: '' };
   };
 
+  // Email provider configurations
+  const emailProviders = {
+    gmail: {
+      name: 'Gmail',
+      smtpHost: 'smtp.gmail.com',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Use your Gmail address and App Password (not your regular password)'
+    },
+    outlook: {
+      name: 'Outlook/Hotmail',
+      smtpHost: 'smtp-mail.outlook.com',
+      smtpPort: '587', 
+      useSecure: true,
+      instructions: 'Use your Outlook address and App Password'
+    },
+    brevo: {
+      name: 'Brevo (Sendinblue)',
+      smtpHost: 'smtp-relay.brevo.com',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Use your Brevo login email and SMTP Key (not login password)'
+    },
+    sendgrid: {
+      name: 'SendGrid',
+      smtpHost: 'smtp.sendgrid.net',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Use "apikey" as username and your SendGrid API key as password'
+    },
+    mailgun: {
+      name: 'Mailgun',
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Use your Mailgun SMTP credentials from your domain settings'
+    },
+    amazon_ses: {
+      name: 'Amazon SES',
+      smtpHost: 'email-smtp.us-east-1.amazonaws.com',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Use your AWS SES SMTP username and password'
+    },
+    custom: {
+      name: 'Custom SMTP Server',
+      smtpHost: '',
+      smtpPort: '587',
+      useSecure: true,
+      instructions: 'Enter your custom SMTP server details'
+    }
+  };
+
+  const handleProviderChange = (provider: string) => {
+    const config = emailProviders[provider as keyof typeof emailProviders];
+    if (config) {
+      setEmailSettings(prev => ({
+        ...prev,
+        provider,
+        smtpHost: config.smtpHost,
+        smtpPort: config.smtpPort,
+        useSecure: config.useSecure,
+        // Keep existing credentials but clear if switching provider
+        smtpUsername: provider === prev.provider ? prev.smtpUsername : '',
+        smtpPassword: provider === prev.provider ? prev.smtpPassword : '',
+        fromEmail: provider === prev.provider ? prev.fromEmail : '',
+        fromName: provider === prev.provider ? prev.fromName : '',
+      }));
+    }
+  };
+
   // Load organization data when it becomes available
   useEffect(() => {
     if (organization) {
@@ -354,7 +426,19 @@ The {{organisationDisplayName}} Team`
   // Load email settings when org settings become available
   useEffect(() => {
     if (orgSettings) {
+      // Determine provider based on existing settings
+      let detectedProvider = 'custom';
+      if (orgSettings.smtpHost) {
+        for (const [key, config] of Object.entries(emailProviders)) {
+          if (config.smtpHost === orgSettings.smtpHost) {
+            detectedProvider = key;
+            break;
+          }
+        }
+      }
+
       setEmailSettings({
+        provider: detectedProvider,
         smtpHost: orgSettings.smtpHost || '',
         smtpPort: orgSettings.smtpPort?.toString() || '587',
         smtpUsername: orgSettings.smtpUsername || '',
@@ -935,6 +1019,37 @@ The {{organisationDisplayName}} Team`
                   </div>
                 </div>
 
+                {/* Email Provider Selector */}
+                <div className="space-y-4">
+                  <h5 className="text-sm font-medium text-gray-700">Email Provider</h5>
+                  
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Choose your email provider *</span>
+                    </label>
+                    <select 
+                      className="select select-bordered" 
+                      value={emailSettings.provider}
+                      onChange={(e) => handleProviderChange(e.target.value)}
+                      data-testid="select-email-provider"
+                    >
+                      {Object.entries(emailProviders).map(([key, provider]) => (
+                        <option key={key} value={key}>{provider.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Provider Instructions */}
+                  {emailSettings.provider && (
+                    <div className="alert alert-info">
+                      <i className="fas fa-info-circle"></i>
+                      <div className="text-sm">
+                        {emailProviders[emailSettings.provider as keyof typeof emailProviders]?.instructions}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="form-control">
                     <label className="label">
@@ -942,10 +1057,11 @@ The {{organisationDisplayName}} Team`
                     </label>
                     <input 
                       type="text" 
-                      className="input input-bordered" 
+                      className={`input input-bordered ${emailSettings.provider !== 'custom' ? 'input-disabled' : ''}`}
                       placeholder="smtp.gmail.com"
                       value={emailSettings.smtpHost}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                      readOnly={emailSettings.provider !== 'custom'}
                       data-testid="input-smtp-host"
                     />
                   </div>
@@ -955,9 +1071,10 @@ The {{organisationDisplayName}} Team`
                       <span className="label-text font-semibold">SMTP Port</span>
                     </label>
                     <select 
-                      className="select select-bordered"
+                      className={`select select-bordered ${emailSettings.provider !== 'custom' ? 'select-disabled' : ''}`}
                       value={emailSettings.smtpPort}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: e.target.value }))}
+                      disabled={emailSettings.provider !== 'custom'}
                       data-testid="select-smtp-port"
                     >
                       <option value="25">25 (Standard)</option>
