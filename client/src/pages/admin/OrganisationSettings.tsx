@@ -413,7 +413,7 @@ The {{organisationDisplayName}} Team`
 
   // Fetch organisation settings including email settings
   const { data: orgSettings } = useQuery({
-    queryKey: [`/api/organisations/${user?.organisationId}/settings`],
+    queryKey: ['/api/organisations', user?.organisationId],
     queryFn: async () => {
       const response = await fetch(`/api/organisations/${user?.organisationId}`, {
         credentials: 'include'
@@ -476,7 +476,7 @@ The {{organisationDisplayName}} Team`
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/organisations/${user?.organisationId}/settings`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
       toast({
         title: "Success",
         description: "Email settings saved successfully",
