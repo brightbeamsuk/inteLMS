@@ -213,9 +213,9 @@ export function SuperAdminSettings() {
         smtpUsername: systemEmailData.smtpUsername || '',
         smtpPassword: '', // Never populate password for security
         smtpSecure: systemEmailData.smtpSecure !== false,
-        // API fields
-        apiKey: '', // Never populate for security
-        apiSecret: '', // Never populate for security
+        // API fields - show masked indicators when credentials exist
+        apiKey: systemEmailData.apiKey || '',
+        apiSecret: systemEmailData.apiSecret || '',
         apiBaseUrl: (systemEmailData as any).apiBaseUrl || '',
         apiDomain: (systemEmailData as any).apiDomain || '',
         apiRegion: (systemEmailData as any).apiRegion || '',
