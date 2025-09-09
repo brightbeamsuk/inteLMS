@@ -3385,7 +3385,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedBy: user.id,
       };
 
-      const savedSettings = await storage.upsertSystemEmailSettings(settingsData);
+      // Check if settings exist and create or update accordingly
+      const existingSettings = await storage.getSystemEmailSettings();
+      let savedSettings;
+      
+      if (existingSettings) {
+        savedSettings = await storage.updateSystemEmailSettings(settingsData);
+      } else {
+        savedSettings = await storage.createSystemEmailSettings(settingsData);
+      }
+      
       res.json(savedSettings);
     } catch (error) {
       console.error('Error updating system email settings:', error);
