@@ -491,7 +491,7 @@ export class EnhancedUnifiedMailerService implements UnifiedMailerService {
         <p>Best regards,<br>LMS System</p>
       `,
       organisationId,
-      templateType: 'test_email' as any,
+      templateType: 'smtp_test' as any,
       metadata,
     });
 
