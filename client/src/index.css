@@ -206,30 +206,40 @@
 [data-custom-colors="true"] .toggle:checked,
 [data-custom-colors="true"] .toggle-primary:checked,
 [data-custom-colors="true"] input[type="checkbox"]:checked.toggle,
-[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary {
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary,
+[data-custom-colors="true"] .form-control .toggle:checked,
+[data-custom-colors="true"] .toggle.toggle-primary:checked {
   background-color: var(--primary-color, #634396) !important;
   border-color: var(--primary-color, #634396) !important;
+  --tglbg: var(--primary-color, #634396) !important;
 }
 
 [data-custom-colors="true"] .toggle,
 [data-custom-colors="true"] .toggle-primary,
 [data-custom-colors="true"] input[type="checkbox"].toggle,
-[data-custom-colors="true"] input[type="checkbox"].toggle-primary {
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary,
+[data-custom-colors="true"] .form-control .toggle,
+[data-custom-colors="true"] .toggle.toggle-primary {
   background-color: white !important;
   border-color: #d1d5db !important;
+  --tglbg: white !important;
 }
 
 [data-custom-colors="true"] .toggle:checked::after,
 [data-custom-colors="true"] .toggle-primary:checked::after,
 [data-custom-colors="true"] input[type="checkbox"]:checked.toggle::after,
-[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary::after {
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary::after,
+[data-custom-colors="true"] .form-control .toggle:checked::after,
+[data-custom-colors="true"] .toggle.toggle-primary:checked::after {
   background-color: white !important;
 }
 
 [data-custom-colors="true"] .toggle::after,
 [data-custom-colors="true"] .toggle-primary::after,
 [data-custom-colors="true"] input[type="checkbox"].toggle::after,
-[data-custom-colors="true"] input[type="checkbox"].toggle-primary::after {
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary::after,
+[data-custom-colors="true"] .form-control .toggle::after,
+[data-custom-colors="true"] .toggle.toggle-primary::after {
   background-color: #9ca3af !important;
 }
 
