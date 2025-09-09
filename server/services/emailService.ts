@@ -305,4 +305,6 @@ export class SmtpEmailService implements EmailService {
   }
 }
 
-export const emailService = new SmtpEmailService();
+// SMTP-Only Enforcement: All email operations now use Single Mailer Service
+import { singleMailerService } from "./singleMailerService";
+export const emailService = singleMailerService;

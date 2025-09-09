@@ -9,8 +9,6 @@ import MemoryStore from "memorystore";
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
-import { emailService } from "./services/emailService";
-import { unifiedMailerService } from "./services/unifiedMailerService";
 import { singleMailerService } from "./services/singleMailerService";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
@@ -2702,8 +2700,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Test email address is required' });
       }
 
-      // Send test email
-      const success = await emailService.sendTestEmail(testEmail, organisationId);
+      // Send test email via Single Mailer Service (SMTP-only)
+      const result = await singleMailerService.sendTestEmail(testEmail, organisationId, {
+        userAgent: req.get('User-Agent'),
+        ipAddress: req.ip,
+        userId: user.id
+      });
+      const success = result.success;
       
       if (success) {
         res.json({ success: true, message: 'Test email sent successfully' });
@@ -3034,15 +3037,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (connectionOnly) {
-        // Test connection only
-        const connectionResult = await unifiedMailerService.testSmtpConnection();
+        // Test connection only via Single Mailer Service
+        const connectionResult = await singleMailerService.healthCheck(undefined);
         res.json({
           success: connectionResult.success,
           details: connectionResult
         });
       } else {
-        // Send test email
-        const result = await unifiedMailerService.sendTestEmail(testEmail, undefined, {
+        // Send test email via Single Mailer Service (SMTP-only)
+        const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
           userAgent: req.get('User-Agent'),
           ipAddress: req.ip
         });
@@ -3074,8 +3077,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Test email address is required' });
       }
 
-      // Use unified mailer service for better logging and error handling
-      const result = await unifiedMailerService.sendTestEmail(testEmail, undefined, {
+      // Use Single Mailer Service for SMTP-only delivery with comprehensive logging
+      const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
         userAgent: req.get('User-Agent'),
         ipAddress: req.ip
       });

@@ -1165,11 +1165,11 @@ The {{organisationDisplayName}} Team`
                 </div>
                 
                 <div className="alert alert-warning">
-                  <i className="fas fa-exclamation-triangle"></i>
+                  <i className="fas fa-shield-alt"></i>
                   <div>
-                    <div className="font-bold">Email Configuration Required</div>
+                    <div className="font-bold">SMTP-Only Email Delivery</div>
                     <div className="text-sm">
-                      Configure your SMTP settings or email service API to enable system emails (assignments, reminders, completions).
+                      This system enforces strict SMTP/API delivery. No sendmail, direct MX, or fallback methods allowed. Configure your SMTP settings to enable system emails (assignments, reminders, completions).
                     </div>
                   </div>
                 </div>

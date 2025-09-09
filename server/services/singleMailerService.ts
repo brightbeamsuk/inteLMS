@@ -83,9 +83,9 @@ export class SingleMailerService {
       const smtpConfig = await this.getEffectiveSmtpSettings(options.organisationId);
       
       if (!smtpConfig.settings) {
-        const error = `SMTP not configured. No valid SMTP settings found for ${options.organisationId ? 'organisation' : 'system'} level.`;
+        const error = `SMTP not configured. Email delivery requires valid SMTP credentials. No sendmail/direct MX fallbacks allowed. Configure SMTP settings for ${options.organisationId ? 'organisation' : 'system'} level.`;
         
-        // Log failed attempt
+        // Log failed attempt - STRICT SMTP-ONLY ENFORCEMENT
         await this.logEmailAttempt({
           organisationId: options.organisationId,
           templateType: options.templateType || 'unknown',
@@ -98,18 +98,12 @@ export class SingleMailerService {
           success: false,
           messageId: null,
           smtpResponse: null,
-          error: error,
+          error: `SMTP_NOT_CONFIGURED: ${error}`,
           metadata: options.metadata
         });
         
-        return {
-          success: false,
-          timestamp,
-          error,
-          organisationId: options.organisationId,
-          tlsEnabled: false,
-          source: smtpConfig.source
-        };
+        // NO FALLBACKS - Fail immediately if SMTP not configured
+        throw new Error(error);
       }
 
       // Resolve DNS to get actual IP
@@ -118,12 +112,18 @@ export class SingleMailerService {
       // Create SMTP transporter with forced TLS
       const transporter = await this.createSecureTransporter(smtpConfig.settings);
       
-      // Send email
+      // Send email with SMTP-only enforcement headers
       const result = await transporter.sendMail({
         from: `"${smtpConfig.settings.fromName || 'LMS Platform'}" <${smtpConfig.settings.fromEmail}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
+        headers: {
+          'X-Mailer': 'LMS-SMTP-Only-Service',
+          'X-SMTP-Provider': smtpConfig.provider || 'Custom',
+          'X-TLS-Enforced': 'true',
+          'X-No-Fallback': 'strict-smtp-only'
+        }
       });
       
       const endTime = Date.now();
@@ -203,16 +203,27 @@ export class SingleMailerService {
   ): Promise<SmtpTestResult> {
     const testSubject = `SMTP Test Email - ${new Date().toLocaleString()}`;
     const testHtml = `
-      <h2>SMTP Configuration Test</h2>
+      <h2>SMTP Configuration Test - Strict SMTP-Only Delivery</h2>
       <p>This is a test email sent from the LMS platform to verify SMTP configuration.</p>
+      <div style="background-color: #f0f8ff; padding: 10px; border-left: 4px solid #0066cc; margin: 10px 0;">
+        <strong>✅ SMTP-Only Enforcement Active</strong><br>
+        No sendmail, direct MX, or PHP mail fallbacks allowed.
+      </div>
       <hr>
       <p><strong>Test Details:</strong></p>
       <ul>
         <li>Timestamp: ${new Date().toISOString()}</li>
         <li>Organisation ID: ${organisationId || 'System Level'}</li>
         <li>Test Type: Admin SMTP Test</li>
+        <li>TLS Enforcement: Enabled</li>
+        <li>Fallback Prevention: Active</li>
       </ul>
       <p>If you received this email, your SMTP configuration is working correctly.</p>
+      <hr>
+      <div style="font-size: 12px; color: #666;">
+        <strong>Header Check:</strong> Look for "Received: from" header showing your SMTP provider (not direct server IP).<br>
+        <strong>DNS Setup:</strong> Ensure SPF, DKIM, and DMARC records are configured for your domain.
+      </div>
     `;
     
     return await this.sendEmail({
