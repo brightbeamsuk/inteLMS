@@ -688,18 +688,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Plan Management API (SuperAdmin only)
+  // Plan Management API (SuperAdmin only for write operations, Admin can read)
   // Get all plans
   app.get('/api/plans', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
-      if (!user || user.role !== 'superadmin') {
+      if (!user || !['superadmin', 'admin'].includes(user.role)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const plans = await storage.getAllPlans();
-      res.json(plans);
+      const planList = await storage.getAllPlans();
+      
+      // Fetch features for each plan
+      const plansWithFeatures = await Promise.all(
+        planList.map(async (plan) => {
+          const planWithFeatures = await storage.getPlanWithFeatures(plan.id);
+          return planWithFeatures || { ...plan, features: [] };
+        })
+      );
+      
+      res.json(plansWithFeatures);
     } catch (error) {
       console.error('Error fetching plans:', error);
       res.status(500).json({ message: 'Failed to fetch plans' });
@@ -818,7 +827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await getCurrentUser(req);
       
-      if (!user || user.role !== 'superadmin') {
+      if (!user || !['superadmin', 'admin'].includes(user.role)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 

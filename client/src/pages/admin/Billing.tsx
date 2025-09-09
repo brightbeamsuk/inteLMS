@@ -275,7 +275,7 @@ export function AdminBilling() {
                         {plan.name}
                       </h4>
                       <div className="text-2xl font-bold text-primary mb-2" data-testid={`text-plan-price-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                        £{plan.pricePerUser}<span className="text-base font-normal">/user/month</span>
+                        £{plan.pricePerUser.toFixed(2)}<span className="text-base font-normal">/user/month</span>
                       </div>
                       {plan.description && (
                         <p className="text-sm text-base-content/60 mb-4" data-testid={`text-plan-description-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
