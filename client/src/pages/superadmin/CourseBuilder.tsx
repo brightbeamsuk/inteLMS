@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,7 @@ interface ScormPackageInfo {
   description?: string;
   version: string;
   launchFilePath: string;
+  launchUrl?: string;
   rootPath: string;
   validation: ScormValidation;
 }
@@ -36,17 +37,53 @@ export function SuperAdminCourseBuilder() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
+  // Fetch course folders
+  const { data: courseFolders = [], isLoading: foldersLoading } = useQuery({
+    queryKey: ['/api/course-folders'],
+    queryFn: async () => {
+      const response = await fetch('/api/course-folders', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch course folders');
+      return response.json();
+    },
+  });
+
+  // Fetch existing categories from courses
+  const { data: existingCategories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ['/api/courses/categories'],
+    queryFn: async () => {
+      const response = await fetch('/api/courses', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch courses');
+      const courses = await response.json();
+      const categories = courses
+        .map((course: any) => course.category)
+        .filter((category: string) => category && category.trim())
+        .filter((category: string, index: number, arr: string[]) => arr.indexOf(category) === index)
+        .sort();
+      return categories;
+    },
+  });
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     estimatedDuration: 60,
     passmark: 80,
     category: "",
-    tags: "",
+    folderId: "",
     coverImageUrl: "",
     scormPackageUrl: "",
     certificateExpiryPeriod: 12,
     neverExpires: false,
+  });
+
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newFolderData, setNewFolderData] = useState({
+    name: "",
+    description: "",
+    color: "#3b82f6",
+    icon: "fas fa-folder"
   });
 
   const createCourseMutation = useMutation({
@@ -58,6 +95,7 @@ export function SuperAdminCourseBuilder() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/courses/categories'] });
       toast({
         title: "Success",
         description: "Course published to library successfully",
@@ -74,6 +112,30 @@ export function SuperAdminCourseBuilder() {
     },
   });
 
+  const createFolderMutation = useMutation({
+    mutationFn: async (folderData: any) => {
+      const response = await apiRequest('POST', '/api/course-folders', folderData);
+      return await response.json();
+    },
+    onSuccess: (newFolder: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
+      setFormData(prev => ({ ...prev, folderId: newFolder.id }));
+      setShowNewFolderModal(false);
+      setNewFolderData({ name: "", description: "", color: "#3b82f6", icon: "fas fa-folder" });
+      toast({
+        title: "Success",
+        description: "New folder created successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to create folder",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       title: "",
@@ -81,7 +143,7 @@ export function SuperAdminCourseBuilder() {
       estimatedDuration: 60,
       passmark: 80,
       category: "",
-      tags: "",
+      folderId: "",
       coverImageUrl: "",
       scormPackageUrl: "",
       certificateExpiryPeriod: 12,
@@ -89,6 +151,10 @@ export function SuperAdminCourseBuilder() {
     });
     setScormPackageInfo(null);
     setIsProcessingScorm(false);
+    setShowNewCategoryModal(false);
+    setShowNewFolderModal(false);
+    setNewCategoryName("");
+    setNewFolderData({ name: "", description: "", color: "#3b82f6", icon: "fas fa-folder" });
   };
 
   const handleScormUpload = async () => {
@@ -234,6 +300,41 @@ export function SuperAdminCourseBuilder() {
     };
 
     createCourseMutation.mutate(courseData);
+  };
+
+  const handleAddNewCategory = () => {
+    if (!newCategoryName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a category name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setFormData(prev => ({ ...prev, category: newCategoryName.trim() }));
+    setShowNewCategoryModal(false);
+    setNewCategoryName("");
+    toast({
+      title: "Success",
+      description: "Category added successfully",
+    });
+  };
+
+  const handleAddNewFolder = () => {
+    if (!newFolderData.name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a folder name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    createFolderMutation.mutate({
+      ...newFolderData,
+      name: newFolderData.name.trim(),
+    });
   };
 
   const tabs = ["Upload & Details", "Preview", "Publish"];
@@ -426,7 +527,7 @@ export function SuperAdminCourseBuilder() {
                 ></textarea>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="form-control">
                   <label className="label">
                     <span className="label-text">Pass Mark (%) *</span>
@@ -446,30 +547,58 @@ export function SuperAdminCourseBuilder() {
                   <label className="label">
                     <span className="label-text">Category</span>
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Compliance, Safety, IT" 
-                    className="input input-bordered" 
+                  <select 
+                    className="select select-bordered" 
                     value={formData.category}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                    data-testid="input-course-category"
-                  />
+                    onChange={(e) => {
+                      if (e.target.value === 'ADD_NEW') {
+                        setShowNewCategoryModal(true);
+                      } else {
+                        setFormData(prev => ({ ...prev, category: e.target.value }));
+                      }
+                    }}
+                    data-testid="select-course-category"
+                  >
+                    <option value="">Select a category</option>
+                    {categoriesLoading ? (
+                      <option disabled>Loading categories...</option>
+                    ) : (
+                      existingCategories.map((category: string) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))
+                    )}
+                    <option value="ADD_NEW" className="font-semibold">+ Add New Category</option>
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Folder</span>
+                  </label>
+                  <select 
+                    className="select select-bordered" 
+                    value={formData.folderId}
+                    onChange={(e) => {
+                      if (e.target.value === 'ADD_NEW') {
+                        setShowNewFolderModal(true);
+                      } else {
+                        setFormData(prev => ({ ...prev, folderId: e.target.value }));
+                      }
+                    }}
+                    data-testid="select-course-folder"
+                  >
+                    <option value="">Select a folder</option>
+                    {foldersLoading ? (
+                      <option disabled>Loading folders...</option>
+                    ) : (
+                      courseFolders.map((folder: any) => (
+                        <option key={folder.id} value={folder.id}>{folder.name}</option>
+                      ))
+                    )}
+                    <option value="ADD_NEW" className="font-semibold">+ Add New Folder</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Tags</span>
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="Compliance, Safety, IT (comma-separated)" 
-                  className="input input-bordered" 
-                  value={formData.tags}
-                  onChange={(e) => setFormData(prev => ({ ...prev, tags: e.target.value }))}
-                  data-testid="input-course-tags"
-                />
-              </div>
 
               <div className="form-control">
                 <label className="label">
@@ -597,6 +726,12 @@ export function SuperAdminCourseBuilder() {
                     <div><strong>Duration:</strong> <span data-testid="text-summary-duration">{formData.estimatedDuration} minutes</span></div>
                     <div><strong>Pass Mark:</strong> <span data-testid="text-summary-passmark">{formData.passmark}%</span></div>
                     <div><strong>Category:</strong> <span data-testid="text-summary-category">{formData.category || 'Uncategorised'}</span></div>
+                    <div><strong>Folder:</strong> <span data-testid="text-summary-folder">
+                      {formData.folderId ? 
+                        courseFolders.find((f: any) => f.id === formData.folderId)?.name || 'Unknown Folder' : 
+                        'No folder selected'
+                      }
+                    </span></div>
                     <div><strong>SCORM Package:</strong> <span className={formData.scormPackageUrl ? 'text-success' : 'text-error'} data-testid="text-summary-scorm">
                       {formData.scormPackageUrl ? 'Uploaded ✓' : 'Not uploaded ✗'}
                     </span></div>
@@ -679,6 +814,153 @@ export function SuperAdminCourseBuilder() {
             </div>
           </div>
           <div className="modal-backdrop" onClick={() => setShowScormPreview(false)}></div>
+        </dialog>
+      )}
+
+      {/* New Category Modal */}
+      {showNewCategoryModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Add New Category</h3>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Category Name *</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder="e.g. Compliance, Safety, IT" 
+                className="input input-bordered" 
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                data-testid="input-new-category-name"
+                autoFocus
+              />
+            </div>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost"
+                onClick={() => {
+                  setShowNewCategoryModal(false);
+                  setNewCategoryName("");
+                }}
+                data-testid="button-cancel-category"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={handleAddNewCategory}
+                disabled={!newCategoryName.trim()}
+                data-testid="button-add-category"
+              >
+                Add Category
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => {
+            setShowNewCategoryModal(false);
+            setNewCategoryName("");
+          }}></div>
+        </dialog>
+      )}
+
+      {/* New Folder Modal */}
+      {showNewFolderModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Add New Folder</h3>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Folder Name *</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Healthcare, Construction" 
+                  className="input input-bordered" 
+                  value={newFolderData.name}
+                  onChange={(e) => setNewFolderData(prev => ({ ...prev, name: e.target.value }))}
+                  data-testid="input-new-folder-name"
+                  autoFocus
+                />
+              </div>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Description</span>
+                </label>
+                <textarea 
+                  className="textarea textarea-bordered" 
+                  placeholder="Brief description of this folder's purpose"
+                  value={newFolderData.description}
+                  onChange={(e) => setNewFolderData(prev => ({ ...prev, description: e.target.value }))}
+                  data-testid="input-new-folder-description"
+                ></textarea>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Color</span>
+                  </label>
+                  <input 
+                    type="color" 
+                    className="input input-bordered h-12" 
+                    value={newFolderData.color}
+                    onChange={(e) => setNewFolderData(prev => ({ ...prev, color: e.target.value }))}
+                    data-testid="input-new-folder-color"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Icon</span>
+                  </label>
+                  <select 
+                    className="select select-bordered" 
+                    value={newFolderData.icon}
+                    onChange={(e) => setNewFolderData(prev => ({ ...prev, icon: e.target.value }))}
+                    data-testid="select-new-folder-icon"
+                  >
+                    <option value="fas fa-folder">📁 Default Folder</option>
+                    <option value="fas fa-baby">👶 Childcare</option>
+                    <option value="fas fa-user-friends">👥 Elderly Care</option>
+                    <option value="fas fa-hard-hat">🏗️ Construction</option>
+                    <option value="fas fa-heartbeat">❤️ Healthcare</option>
+                    <option value="fas fa-shield-alt">🛡️ Safety</option>
+                    <option value="fas fa-graduation-cap">🎓 Education</option>
+                    <option value="fas fa-laptop">💻 IT & Technology</option>
+                    <option value="fas fa-gavel">⚖️ Compliance</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost"
+                onClick={() => {
+                  setShowNewFolderModal(false);
+                  setNewFolderData({ name: "", description: "", color: "#3b82f6", icon: "fas fa-folder" });
+                }}
+                data-testid="button-cancel-folder"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={handleAddNewFolder}
+                disabled={!newFolderData.name.trim() || createFolderMutation.isPending}
+                data-testid="button-add-folder"
+              >
+                {createFolderMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Add Folder'
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => {
+            setShowNewFolderModal(false);
+            setNewFolderData({ name: "", description: "", color: "#3b82f6", icon: "fas fa-folder" });
+          }}></div>
         </dialog>
       )}
     </div>
