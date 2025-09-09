@@ -54,14 +54,14 @@
 }
 
 .btn-outline-custom-primary {
-  border-color: #634396;
-  color: #634396;
+  border-color: var(--primary-color, #634396);
+  color: var(--primary-color, #634396);
   background-color: transparent;
 }
 
 .btn-outline-custom-primary:hover {
-  background-color: #634396;
-  border-color: #634396;
+  background-color: var(--primary-color, #634396);
+  border-color: var(--primary-color, #634396);
   color: white;
 }
 
@@ -95,15 +95,15 @@
 .btn-outline-primary,
 [data-custom-colors="true"] .btn-outline {
   background-color: transparent;
-  border-color: #634396;
-  color: #634396;
+  border-color: var(--primary-color, #634396);
+  color: var(--primary-color, #634396);
 }
 
 .btn-outline:hover,
 .btn-outline-primary:hover,
 [data-custom-colors="true"] .btn-outline:hover {
-  background-color: #634396;
-  border-color: #634396;
+  background-color: var(--primary-color, #634396);
+  border-color: var(--primary-color, #634396);
   color: white;
 }
 
