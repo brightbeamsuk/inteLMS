@@ -91,7 +91,7 @@ export function AdminOrganisationSettings() {
   const [templateContent, setTemplateContent] = useState('');
   
   const [emailSettings, setEmailSettings] = useState({
-    provider: 'custom',
+    provider: 'brevo-api',
     smtpHost: '',
     smtpPort: '587',
     smtpUsername: '',
@@ -100,7 +100,7 @@ export function AdminOrganisationSettings() {
     fromName: '',
     useSecure: true,
     brevoApiKey: '',
-    useBrevoApi: false,
+    useBrevoApi: true,
   });
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
@@ -453,7 +453,7 @@ The {{organisationDisplayName}} Team`
       }
 
       setEmailSettings({
-        provider: detectedProvider,
+        provider: (orgSettings as any).useBrevoApi ? 'brevo-api' : detectedProvider,
         smtpHost: orgSettings.smtpHost || '',
         smtpPort: orgSettings.smtpPort?.toString() || '587',
         smtpUsername: orgSettings.smtpUsername || '',
@@ -462,7 +462,7 @@ The {{organisationDisplayName}} Team`
         fromName: orgSettings.fromName || '',
         useSecure: orgSettings.smtpSecure !== false,
         brevoApiKey: (orgSettings as any).brevoApiKey || '',
-        useBrevoApi: (orgSettings as any).useBrevoApi || false,
+        useBrevoApi: (orgSettings as any).useBrevoApi || true,
       });
       setNotificationData({
         assignmentEmailsEnabled: orgSettings.assignmentEmailsEnabled !== false,
@@ -629,10 +629,10 @@ The {{organisationDisplayName}} Team`
   const openTestEmailModal = () => {
     if (!user?.organisationId) return;
     
-    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword || !emailSettings.fromEmail) {
+    if (!emailSettings.brevoApiKey || !emailSettings.fromEmail) {
       toast({
         title: "Error",
-        description: "Please configure all required SMTP settings before testing",
+        description: "Please configure Brevo API key and from email before testing",
         variant: "destructive",
       });
       return;
@@ -1160,7 +1160,7 @@ The {{organisationDisplayName}} Team`
                         setTestEmailAddress(user?.email || '');
                         setShowTestEmailModal(true);
                       }}
-                      disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername}
+                      disabled={!emailSettings.brevoApiKey || !emailSettings.fromEmail}
                       data-testid="button-admin-test"
                       title="Send test email with comprehensive logging and metadata"
                     >
@@ -1180,34 +1180,35 @@ The {{organisationDisplayName}} Team`
                   </div>
                 </div>
                 
-                <div className="alert alert-warning">
-                  <i className="fas fa-shield-alt"></i>
+                <div className="alert alert-info">
+                  <i className="fas fa-key"></i>
                   <div>
-                    <div className="font-bold">SMTP-Only Email Delivery</div>
+                    <div className="font-bold">API-Based Email Delivery</div>
                     <div className="text-sm">
-                      This system enforces strict SMTP/API delivery. No sendmail, direct MX, or fallback methods allowed. Configure your SMTP settings to enable system emails (assignments, reminders, completions).
+                      Using Brevo API for reliable email delivery. Configure your API key below to enable system emails (assignments, reminders, completions). SMTP settings are temporarily disabled for API key testing.
                     </div>
                   </div>
                 </div>
 
-                {/* Email Provider Selector */}
+                {/* Email Provider Selector - Fixed to Brevo API for now */}
                 <div className="space-y-4">
                   <h5 className="text-sm font-medium text-gray-700">Email Provider</h5>
                   
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text">Choose your email provider *</span>
+                      <span className="label-text">Email Provider (API Mode) *</span>
                     </label>
                     <select 
-                      className="select select-bordered" 
+                      className="select select-bordered select-disabled" 
                       value={emailSettings.provider}
-                      onChange={(e) => handleProviderChange(e.target.value)}
+                      disabled={true}
                       data-testid="select-email-provider"
                     >
-                      {Object.entries(emailProviders).map(([key, provider]) => (
-                        <option key={key} value={key}>{provider.name}</option>
-                      ))}
+                      <option value="brevo-api">Brevo API (Recommended)</option>
                     </select>
+                    <div className="label">
+                      <span className="label-text-alt text-info">SMTP settings temporarily disabled for API key testing</span>
+                    </div>
                   </div>
 
                   {/* Provider Instructions */}
@@ -1221,8 +1222,8 @@ The {{organisationDisplayName}} Team`
                   )}
                 </div>
 
-                {/* Show SMTP fields only when not using API */}
-                {!emailSettings.useBrevoApi && (
+                {/* SMTP fields temporarily disabled for API testing */}
+                {false && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="form-control">
                       <label className="label">
@@ -1287,25 +1288,23 @@ The {{organisationDisplayName}} Team`
                 </div>
                 )}
 
-                {/* Brevo API Key - Only show when Brevo API is selected */}
-                {emailSettings.provider === 'brevo-api' && (
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">Brevo API Key *</span>
-                    </label>
-                    <input 
-                      type="password" 
-                      className="input input-bordered" 
-                      placeholder="xkeysib-xxxxxxxxxxxxxxxx"
-                      value={emailSettings.brevoApiKey}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, brevoApiKey: e.target.value }))}
-                      data-testid="input-brevo-api-key"
-                    />
-                    <div className="label">
-                      <span className="label-text-alt">Get your API key from Brevo dashboard → API Keys</span>
-                    </div>
+                {/* Brevo API Key - Always show in API mode */}
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-semibold">Brevo API Key *</span>
+                  </label>
+                  <input 
+                    type="password" 
+                    className="input input-bordered" 
+                    placeholder="xkeysib-xxxxxxxxxxxxxxxx"
+                    value={emailSettings.brevoApiKey}
+                    onChange={(e) => setEmailSettings(prev => ({ ...prev, brevoApiKey: e.target.value }))}
+                    data-testid="input-brevo-api-key"
+                  />
+                  <div className="label">
+                    <span className="label-text-alt">Get your API key from Brevo dashboard → API Keys</span>
                   </div>
-                )}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="form-control">
