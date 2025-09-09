@@ -2611,23 +2611,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Email settings routes
   app.put('/api/organisations/:id/email-settings', requireAuth, async (req: any, res) => {
+    console.log('=== ORGANIZATION EMAIL SETTINGS SAVE ENDPOINT CALLED ===');
+    console.log('Request params:', req.params);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     try {
       const user = await getCurrentUser(req);
+      console.log('Current user:', user?.email, 'Role:', user?.role, 'Org ID:', user?.organisationId);
       
       if (!user) {
+        console.log('Access denied - no user');
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const { id: organisationId } = req.params;
+      console.log('Target organization ID:', organisationId);
 
       // Admins can only update their own organization's settings
       if (user.role === 'admin' && user.organisationId !== organisationId) {
+        console.log('Access denied - admin trying to update different org');
         return res.status(403).json({ message: 'Access denied' });
       }
 
       // Check if custom email templates feature is available
       const hasEmailTemplatesAccess = await hasFeatureAccess(organisationId, 'custom_email_templates');
+      console.log('Has email templates access:', hasEmailTemplatesAccess);
       if (!hasEmailTemplatesAccess) {
+        console.log('Access denied - feature not available');
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
 
@@ -2641,8 +2651,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName
       } = req.body;
 
+      console.log('Parsed fields:', { smtpHost, smtpPort, smtpUsername, smtpSecure, fromEmail, fromName });
+
       // Validate required fields
       if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+        console.log('Validation failed - missing required fields');
         return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
       }
 
@@ -2656,7 +2669,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName: fromName || 'LMS System',
       };
 
+      console.log('Email settings to save:', emailSettings);
+      console.log('Calling storage.updateOrganisationSettings...');
+      
       const updatedSettings = await storage.updateOrganisationSettings(organisationId, emailSettings);
+      console.log('Updated settings result:', updatedSettings);
+      
+      console.log('Organization email settings saved successfully!');
       res.json({ success: true, message: 'Email settings saved successfully' });
     } catch (error) {
       console.error('Error updating email settings:', error);
