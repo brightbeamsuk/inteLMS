@@ -47,6 +47,9 @@ export function AdminOrganisationSettings() {
     logoUrl: "",
     displayName: "",
     subdomain: "",
+    primaryColor: "#3b82f6",
+    accentColor: "#3b82f6",
+    useCustomColors: false,
   });
 
   const [contactData, setContactData] = useState({
@@ -74,6 +77,9 @@ export function AdminOrganisationSettings() {
         logoUrl: organization.logoUrl || "",
         displayName: organization.displayName || "",
         subdomain: organization.subdomain || "",
+        primaryColor: organization.primaryColor || "#3b82f6",
+        accentColor: organization.accentColor || "#3b82f6", 
+        useCustomColors: organization.useCustomColors || false,
       });
       setContactData({
         email: organization.contactEmail || "",
@@ -308,6 +314,106 @@ export function AdminOrganisationSettings() {
                   )}
                 </div>
               </div>
+
+              {/* Custom Colors Section - Only show when remove branding feature is enabled */}
+              {hasBrandingAccess && (
+                <div className="space-y-4">
+                  <div className="divider">Custom Colors</div>
+                  
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input 
+                        type="checkbox" 
+                        className={`toggle ${brandingData.useCustomColors ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
+                        checked={brandingData.useCustomColors}
+                        onChange={(e) => setBrandingData(prev => ({ ...prev, useCustomColors: e.target.checked }))}
+                        data-testid="toggle-custom-colors"
+                      />
+                      <span className="label-text font-semibold">Enable Custom Brand Colors</span>
+                    </label>
+                    <div className="text-sm text-base-content/60 ml-12">
+                      Customize your platform's colors to match your brand identity
+                    </div>
+                  </div>
+
+                  {brandingData.useCustomColors && (
+                    <div className="bg-base-200 p-4 rounded-lg space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-medium">Primary Color</span>
+                            <span className="label-text-alt">Used for buttons, links, and primary UI elements</span>
+                          </label>
+                          <div className="flex gap-2 items-center">
+                            <input 
+                              type="color" 
+                              className="w-12 h-10 border border-base-300 rounded cursor-pointer"
+                              value={brandingData.primaryColor}
+                              onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                              data-testid="input-primary-color"
+                            />
+                            <input 
+                              type="text" 
+                              className="input input-bordered flex-1" 
+                              value={brandingData.primaryColor}
+                              onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                              placeholder="#3b82f6"
+                              data-testid="input-primary-color-text"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-medium">Accent Color</span>
+                            <span className="label-text-alt">Used for highlights, badges, and secondary elements</span>
+                          </label>
+                          <div className="flex gap-2 items-center">
+                            <input 
+                              type="color" 
+                              className="w-12 h-10 border border-base-300 rounded cursor-pointer"
+                              value={brandingData.accentColor}
+                              onChange={(e) => setBrandingData(prev => ({ ...prev, accentColor: e.target.value }))}
+                              data-testid="input-accent-color"
+                            />
+                            <input 
+                              type="text" 
+                              className="input input-bordered flex-1" 
+                              value={brandingData.accentColor}
+                              onChange={(e) => setBrandingData(prev => ({ ...prev, accentColor: e.target.value }))}
+                              placeholder="#3b82f6"
+                              data-testid="input-accent-color-text"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="alert alert-info">
+                        <i className="fas fa-info-circle"></i>
+                        <div>
+                          <div className="font-medium">Color Preview</div>
+                          <div className="text-sm">Changes will be applied after saving and may require a page refresh to take full effect</div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 items-center justify-center p-4 bg-base-100 rounded border">
+                        <button 
+                          className="btn btn-sm" 
+                          style={{ backgroundColor: brandingData.primaryColor, borderColor: brandingData.primaryColor, color: 'white' }}
+                        >
+                          Primary Button
+                        </button>
+                        <span 
+                          className="badge badge-lg" 
+                          style={{ backgroundColor: brandingData.accentColor, borderColor: brandingData.accentColor, color: 'white' }}
+                        >
+                          Accent Badge
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
           )}
