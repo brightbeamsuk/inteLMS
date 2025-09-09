@@ -202,34 +202,34 @@
   color: var(--color-primary);
 }
 
-/* Toggle styling with custom brand colors - override DaisyUI defaults */
-.toggle:checked,
-.toggle-primary:checked,
-input[type="checkbox"]:checked.toggle,
-input[type="checkbox"]:checked.toggle-primary {
+/* Toggle styling with custom brand colors - only when custom colors are enabled */
+[data-custom-colors="true"] .toggle:checked,
+[data-custom-colors="true"] .toggle-primary:checked,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary {
   background-color: var(--primary-color, #634396) !important;
   border-color: var(--primary-color, #634396) !important;
 }
 
-.toggle,
-.toggle-primary,
-input[type="checkbox"].toggle,
-input[type="checkbox"].toggle-primary {
+[data-custom-colors="true"] .toggle,
+[data-custom-colors="true"] .toggle-primary,
+[data-custom-colors="true"] input[type="checkbox"].toggle,
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary {
   background-color: white !important;
   border-color: #d1d5db !important;
 }
 
-.toggle:checked::after,
-.toggle-primary:checked::after,
-input[type="checkbox"]:checked.toggle::after,
-input[type="checkbox"]:checked.toggle-primary::after {
+[data-custom-colors="true"] .toggle:checked::after,
+[data-custom-colors="true"] .toggle-primary:checked::after,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle::after,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary::after {
   background-color: white !important;
 }
 
-.toggle::after,
-.toggle-primary::after,
-input[type="checkbox"].toggle::after,
-input[type="checkbox"].toggle-primary::after {
+[data-custom-colors="true"] .toggle::after,
+[data-custom-colors="true"] .toggle-primary::after,
+[data-custom-colors="true"] input[type="checkbox"].toggle::after,
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary::after {
   background-color: #9ca3af !important;
 }
 
