@@ -2710,10 +2710,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // System email settings routes (SuperAdmin only)
   app.put('/api/system/email-settings', requireAuth, async (req: any, res) => {
+    console.log('=== SYSTEM EMAIL SETTINGS SAVE ENDPOINT CALLED ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     try {
       const user = await getCurrentUser(req);
+      console.log('Current user:', user?.email, 'Role:', user?.role);
       
       if (!user || user.role !== 'superadmin') {
+        console.log('Access denied - user is not superadmin');
         return res.status(403).json({ message: 'Access denied - superadmin only' });
       }
 
@@ -2727,20 +2732,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fromName
       } = req.body;
 
+      console.log('Parsed fields:', { smtpHost, smtpPort, smtpUsername, smtpSecure, fromEmail, fromName });
+
       // Validate required fields
       if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+        console.log('Validation failed - missing required fields');
         return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
       }
 
-      // Save system email settings to platform settings
-      await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
-      await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
-      await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
-      await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
-      await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
-      await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
-      await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
+      console.log('Starting to save platform settings...');
 
+      // Save system email settings to platform settings
+      const result1 = await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
+      console.log('Saved smtp_host:', result1);
+      
+      const result2 = await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
+      console.log('Saved smtp_port:', result2);
+      
+      const result3 = await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
+      console.log('Saved smtp_username:', result3);
+      
+      const result4 = await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
+      console.log('Saved smtp_password (length):', smtpPassword.length);
+      
+      const result5 = await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
+      console.log('Saved smtp_secure:', result5);
+      
+      const result6 = await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
+      console.log('Saved from_email:', result6);
+      
+      const result7 = await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
+      console.log('Saved from_name:', result7);
+
+      console.log('All settings saved successfully!');
       res.json({ success: true, message: 'System email settings saved successfully' });
     } catch (error) {
       console.error('Error updating system email settings:', error);
