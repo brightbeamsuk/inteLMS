@@ -105,6 +105,8 @@ export function AdminOrganisationSettings() {
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [testResult, setTestResult] = useState<any>(null);
+  const [showTestResultModal, setShowTestResultModal] = useState(false);
 
   const handleEditTemplate = (templateType: string) => {
     const defaultTemplate = getDefaultTemplate(templateType);
@@ -507,25 +509,36 @@ The {{organisationDisplayName}} Team`
     },
   });
 
-  // Test email mutation
+  // Test email mutation - Enhanced with structured response handling
   const testEmailMutation = useMutation({
     mutationFn: async (testEmail: string) => {
-      return await apiRequest('POST', `/api/organisations/${user?.organisationId}/test-email`, {
+      const response = await apiRequest('POST', `/api/organisations/${user?.organisationId}/test-email`, {
         testEmail,
       });
+      return response.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Test email sent successfully! Check your inbox.",
-      });
+    onSuccess: (data) => {
+      // Store the structured result and show the detailed modal
+      setTestResult(data);
+      setShowTestResultModal(true);
+      setShowTestEmailModal(false);
     },
     onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send test email. Please check your SMTP settings.",
-        variant: "destructive",
+      // Fallback for network errors
+      setTestResult({
+        success: false,
+        provider: 'unknown',
+        httpStatus: 0,
+        message: error.message || 'Network error occurred',
+        details: {
+          endpoint: 'N/A',
+          from: 'N/A',
+          to: testEmailAddress,
+          error: error.message
+        }
       });
+      setShowTestResultModal(true);
+      setShowTestEmailModal(false);
     },
   });
 
@@ -616,6 +629,11 @@ The {{organisationDisplayName}} Team`
   const closeTestEmailModal = () => {
     setShowTestEmailModal(false);
     setTestEmailAddress('');
+  };
+
+  const closeTestResultModal = () => {
+    setShowTestResultModal(false);
+    setTestResult(null);
   };
 
   // Build tabs array based on role and features
@@ -1464,9 +1482,135 @@ The {{organisationDisplayName}} Team`
                       } as React.CSSProperties}
                     >
                       <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
-                      {adminTestEmailMutation.isPending ? 'Sending...' : 'Send Admin Test'}
+                      {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Test Result Modal - Structured API Response */}
+          {showTestResultModal && testResult && (
+            <div className="modal modal-open">
+              <div className="modal-box w-11/12 max-w-2xl">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-lg">
+                    {testResult.success ? '✅ Email Test Successful' : '❌ Email Test Failed'}
+                  </h3>
+                  <button 
+                    className="btn btn-sm btn-circle btn-ghost"
+                    onClick={closeTestResultModal}
+                    data-testid="button-close-test-result"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Summary */}
+                  <div className={`alert ${testResult.success ? 'alert-success' : 'alert-error'}`}>
+                    <div>
+                      <div className="font-bold">
+                        {testResult.success ? 'Test email sent successfully!' : 'Test email failed'}
+                      </div>
+                      <div className="text-sm">{testResult.message}</div>
+                    </div>
+                  </div>
+
+                  {/* Technical Details */}
+                  <div className="bg-base-200 p-4 rounded-lg">
+                    <h4 className="font-semibold mb-3">Technical Details</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="font-medium">Provider:</span>
+                        <span className="ml-2 badge badge-outline">{testResult.provider}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">HTTP Status:</span>
+                        <span className={`ml-2 badge ${testResult.httpStatus === 201 ? 'badge-success' : 'badge-error'}`}>
+                          {testResult.httpStatus}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="font-medium">Endpoint:</span>
+                        <span className="ml-2 font-mono text-xs">{testResult.details?.endpoint}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">From:</span>
+                        <span className="ml-2">{testResult.details?.from}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">To:</span>
+                        <span className="ml-2">{testResult.details?.to}</span>
+                      </div>
+                      {testResult.details?.messageId && (
+                        <div>
+                          <span className="font-medium">Message ID:</span>
+                          <span className="ml-2 font-mono text-xs">{testResult.details.messageId}</span>
+                        </div>
+                      )}
+                      {testResult.details?.latencyMs && (
+                        <div>
+                          <span className="font-medium">Response Time:</span>
+                          <span className="ml-2">{testResult.details.latencyMs}ms</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Error Details */}
+                  {!testResult.success && testResult.details?.brevoError && (
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-red-800 mb-2">Brevo API Error</h4>
+                      <p className="text-sm text-red-700 font-mono">{testResult.details.brevoError}</p>
+                    </div>
+                  )}
+
+                  {/* Help Text */}
+                  {testResult.details?.helpText && (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-blue-800 mb-2">💡 What to do next</h4>
+                      <p className="text-sm text-blue-700">{testResult.details.helpText}</p>
+                    </div>
+                  )}
+
+                  {/* Validation Errors */}
+                  {testResult.details?.validationErrors && testResult.details.validationErrors.length > 0 && (
+                    <div className="bg-yellow-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Configuration Issues</h4>
+                      <ul className="text-sm text-yellow-700">
+                        {testResult.details.validationErrors.map((error: string, index: number) => (
+                          <li key={index} className="mb-1">• {error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Success Guidance */}
+                  {testResult.success && (
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-green-800 mb-2">🎉 Success!</h4>
+                      <p className="text-sm text-green-700">
+                        Your Brevo API configuration is working correctly. System emails (assignments, reminders, completions) will now be delivered via Brevo.
+                      </p>
+                      {testResult.details?.helpText && (
+                        <p className="text-xs text-green-600 mt-2">
+                          Note: {testResult.details.helpText}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end mt-6">
+                  <button 
+                    className="btn btn-primary"
+                    onClick={closeTestResultModal}
+                    data-testid="button-close-test-result-final"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
             </div>
