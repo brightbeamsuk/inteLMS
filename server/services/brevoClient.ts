@@ -57,26 +57,60 @@ interface BrevoResponse {
   data?: any;
   endpoint: string;
   latencyMs?: number;
+  // Enhanced diagnostics
+  provider?: string;
+  endpointHost?: string;
+  apiKeySource?: "org" | "platform" | "none";
+  apiKeyPreview?: string;
+  apiKeyLength?: number;
 }
 
 export class BrevoClient {
   private apiKey: string;
   private organizationId?: string;
+  private keySource: "org" | "platform" | "none";
 
-  constructor(apiKey: string, organizationId?: string) {
+  constructor(apiKey: string, organizationId?: string, keySource: "org" | "platform" | "none" = "none") {
     if (!apiKey || typeof apiKey !== 'string') {
       throw new Error('Brevo API key is required');
     }
     this.apiKey = apiKey.trim();
     this.organizationId = organizationId;
+    this.keySource = keySource;
+  }
+
+  /**
+   * Creates masked preview of API key for diagnostics
+   */
+  private getMaskedKey(): string {
+    if (this.apiKey.length < 8) return "••••••••";
+    const first4 = this.apiKey.substring(0, 4);
+    const last4 = this.apiKey.substring(this.apiKey.length - 4);
+    return `${first4}…${last4}`;
+  }
+
+  /**
+   * Gets parsed host from BREVO_BASE_URL for diagnostics
+   */
+  private getEndpointHost(): string {
+    try {
+      return new URL(BREVO_BASE_URL).hostname;
+    } catch {
+      return 'unknown';
+    }
   }
 
   /**
    * Validates that we're using the correct Brevo API endpoint
    */
   private validateEndpoint(): void {
-    if (!BREVO_BASE_URL.includes('api.brevo.com')) {
-      throw new Error('Wrong Brevo API host. Must use https://api.brevo.com/v3');
+    try {
+      const url = new URL(BREVO_BASE_URL);
+      if (!url.hostname.includes('api.brevo.com')) {
+        throw new Error('Wrong Brevo API host. Must use https://api.brevo.com/v3');
+      }
+    } catch (error) {
+      throw new Error('Invalid Brevo API base URL');
     }
   }
 
@@ -127,7 +161,13 @@ export class BrevoClient {
         message: responseJson.message || responseText,
         messageId: responseJson.messageId,
         data: responseJson,
-        endpoint
+        endpoint,
+        // Enhanced diagnostics
+        provider: "brevo_api",
+        endpointHost: this.getEndpointHost(),
+        apiKeySource: this.keySource,
+        apiKeyPreview: this.getMaskedKey(),
+        apiKeyLength: this.apiKey.length
       };
     } catch (error: any) {
       if (error.name === 'AbortError' || error.message.includes('timeout')) {
@@ -135,7 +175,12 @@ export class BrevoClient {
           success: false,
           httpStatus: 0,
           message: 'Network timeout reaching Brevo',
-          endpoint
+          endpoint,
+          provider: "brevo_api",
+          endpointHost: this.getEndpointHost(),
+          apiKeySource: this.keySource,
+          apiKeyPreview: this.getMaskedKey(),
+          apiKeyLength: this.apiKey.length
         };
       }
 
@@ -144,7 +189,12 @@ export class BrevoClient {
           success: false,
           httpStatus: 0,
           message: 'Network issue reaching Brevo',
-          endpoint
+          endpoint,
+          provider: "brevo_api",
+          endpointHost: this.getEndpointHost(),
+          apiKeySource: this.keySource,
+          apiKeyPreview: this.getMaskedKey(),
+          apiKeyLength: this.apiKey.length
         };
       }
 
@@ -152,7 +202,12 @@ export class BrevoClient {
         success: false,
         httpStatus: 0,
         message: `Network error: ${error.message}`,
-        endpoint
+        endpoint,
+        provider: "brevo_api",
+        endpointHost: this.getEndpointHost(),
+        apiKeySource: this.keySource,
+        apiKeyPreview: this.getMaskedKey(),
+        apiKeyLength: this.apiKey.length
       };
     }
   }
@@ -331,9 +386,22 @@ export class BrevoClient {
   }
 
   /**
-   * Static method to create a client with validation
+   * Static method to create a client with validation and key source
    */
-  static create(apiKey: string, organizationId?: string): BrevoClient {
-    return new BrevoClient(apiKey, organizationId);
+  static create(apiKey: string, organizationId?: string, keySource: "org" | "platform" | "none" = "none"): BrevoClient {
+    return new BrevoClient(apiKey, organizationId, keySource);
+  }
+
+  /**
+   * Static method to create client with automatic key resolution
+   */
+  static createWithKeyResolution(orgSettings: any, platformSettings: any, organizationId?: string): BrevoClient {
+    const resolution = resolveBrevoKey(orgSettings, platformSettings);
+    
+    if (!resolution.isValid) {
+      throw new Error(`API key appears empty/invalid (length: ${resolution.key.length})`);
+    }
+    
+    return new BrevoClient(resolution.key, organizationId, resolution.source);
   }
 }
