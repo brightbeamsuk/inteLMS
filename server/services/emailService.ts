@@ -83,18 +83,18 @@ export class SmtpEmailService implements EmailService {
         },
       };
 
-      if (settings.smtpSecure === false) {
-        // Insecure/plain connection - no encryption
-        transportConfig.secure = false;
-        transportConfig.ignoreTLS = true;
-      } else if (isBrevo) {
-        // Brevo-specific configuration
+      if (isBrevo) {
+        // Brevo-specific configuration - ALWAYS use TLS
         transportConfig.secure = false; // Brevo uses STARTTLS, not SSL
         transportConfig.requireTLS = true;
         transportConfig.tls = {
           rejectUnauthorized: false,
           servername: settings.smtpHost,
         };
+      } else if (settings.smtpSecure === false) {
+        // Insecure/plain connection - no encryption (only for non-Brevo providers)
+        transportConfig.secure = false;
+        transportConfig.ignoreTLS = true;
       } else {
         // Standard secure connection for other providers
         transportConfig.secure = port === 465; // SSL for port 465, STARTTLS for others
