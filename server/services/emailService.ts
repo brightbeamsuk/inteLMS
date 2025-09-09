@@ -21,8 +21,9 @@ export class SmtpEmailService implements EmailService {
       }
 
       const port = settings.smtpPort || 587;
+      const isBrevo = settings.smtpHost?.includes('brevo.com') || settings.smtpHost?.includes('sendinblue.com');
       
-      // Create transport configuration based on secure setting
+      // Create transport configuration optimized for different providers
       const transportConfig: any = {
         host: settings.smtpHost,
         port: port,
@@ -36,8 +37,16 @@ export class SmtpEmailService implements EmailService {
         // Insecure/plain connection - no encryption
         transportConfig.secure = false;
         transportConfig.ignoreTLS = true;
+      } else if (isBrevo) {
+        // Brevo-specific configuration
+        transportConfig.secure = false; // Brevo uses STARTTLS, not SSL
+        transportConfig.requireTLS = true;
+        transportConfig.tls = {
+          rejectUnauthorized: false,
+          servername: settings.smtpHost,
+        };
       } else {
-        // Secure connection with proper TLS/SSL
+        // Standard secure connection for other providers
         transportConfig.secure = port === 465; // SSL for port 465, STARTTLS for others
         transportConfig.tls = {
           rejectUnauthorized: false,
@@ -56,6 +65,7 @@ export class SmtpEmailService implements EmailService {
         secure: transportConfig.secure,
         ignoreTLS: transportConfig.ignoreTLS,
         requireTLS: transportConfig.requireTLS,
+        isBrevo,
       });
 
       const transporter = nodemailer.createTransport(transportConfig);
