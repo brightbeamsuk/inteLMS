@@ -1774,7 +1774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
     } catch (error) {
-      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignmentId}:`, error);
+      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignment.id}:`, error);
       res.status(500).json({ message: 'Failed to launch course', code: 'SERVER_ERROR' });
     }
   });
