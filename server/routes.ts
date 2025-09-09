@@ -13,7 +13,7 @@ import { emailService } from "./services/emailService";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { z } from "zod";
@@ -2425,6 +2425,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error deleting organisation:', error);
       res.status(500).json({ message: 'Failed to delete organisation' });
+    }
+  });
+
+  // Email Templates routes
+  // Get email templates for an organisation
+  app.get('/api/organisations/:id/email-templates', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: orgId } = req.params;
+      
+      // Admins can only access their own organization's templates, SuperAdmins can access any
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(orgId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      const templates = await storage.getEmailTemplatesByOrganisation(orgId);
+      res.json(templates);
+    } catch (error) {
+      console.error('Error fetching email templates:', error);
+      res.status(500).json({ message: 'Failed to fetch email templates' });
+    }
+  });
+
+  // Get a specific email template
+  app.get('/api/email-templates/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const template = await storage.getEmailTemplate(id);
+      
+      if (!template) {
+        return res.status(404).json({ message: 'Email template not found' });
+      }
+
+      // Admins can only access their own organization's templates
+      if (user.role === 'admin' && user.organisationId !== template.organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(template.organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      res.json(template);
+    } catch (error) {
+      console.error('Error fetching email template:', error);
+      res.status(500).json({ message: 'Failed to fetch email template' });
+    }
+  });
+
+  // Create a new email template
+  app.post('/api/organisations/:id/email-templates', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: orgId } = req.params;
+      
+      // Admins can only create templates for their own organization
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(orgId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      // Validate the request body
+      const templateData = insertEmailTemplateSchema.parse({
+        ...req.body,
+        organisationId: orgId,
+        createdBy: user.id,
+      });
+
+      const template = await storage.createEmailTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid template data', errors: error.errors });
+      }
+      console.error('Error creating email template:', error);
+      res.status(500).json({ message: 'Failed to create email template' });
+    }
+  });
+
+  // Update an email template
+  app.put('/api/email-templates/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const existingTemplate = await storage.getEmailTemplate(id);
+      
+      if (!existingTemplate) {
+        return res.status(404).json({ message: 'Email template not found' });
+      }
+
+      // Admins can only update their own organization's templates
+      if (user.role === 'admin' && user.organisationId !== existingTemplate.organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      // Validate the request body
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date(),
+      };
+
+      const updatedTemplate = await storage.updateEmailTemplate(id, updateData);
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error('Error updating email template:', error);
+      res.status(500).json({ message: 'Failed to update email template' });
+    }
+  });
+
+  // Delete an email template
+  app.delete('/api/email-templates/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const existingTemplate = await storage.getEmailTemplate(id);
+      
+      if (!existingTemplate) {
+        return res.status(404).json({ message: 'Email template not found' });
+      }
+
+      // Admins can only delete their own organization's templates
+      if (user.role === 'admin' && user.organisationId !== existingTemplate.organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      await storage.deleteEmailTemplate(id);
+      res.status(204).end();
+    } catch (error) {
+      console.error('Error deleting email template:', error);
+      res.status(500).json({ message: 'Failed to delete email template' });
     }
   });
 
