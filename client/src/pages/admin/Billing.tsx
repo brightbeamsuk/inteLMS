@@ -98,7 +98,7 @@ export function AdminBilling() {
   // Mutation to change plan
   const changePlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const response = await fetch(`/api/organisations/${organisation?.id}`, {
+      const response = await fetch(`/api/organisations/${currentUser?.organisationId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +108,8 @@ export function AdminBilling() {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to update plan: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to update plan: ${response.statusText}`);
       }
       
       return response.json();
