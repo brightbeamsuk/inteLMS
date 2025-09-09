@@ -2,6 +2,8 @@ import {
   users,
   organisations,
   courses,
+  courseFolders,
+  organisationCourseFolders,
   assignments,
   completions,
   certificates,
@@ -20,6 +22,10 @@ import {
   type InsertOrganisation,
   type Course,
   type InsertCourse,
+  type CourseFolder,
+  type InsertCourseFolder,
+  type OrganisationCourseFolder,
+  type InsertOrganisationCourseFolder,
   type Assignment,
   type InsertAssignment,
   type Completion,
@@ -78,6 +84,20 @@ export interface IStorage {
   deleteCourse(id: string): Promise<void>;
   getAllCourses(): Promise<Course[]>;
   getCoursesByStatus(status: string): Promise<Course[]>;
+
+  // Course folder operations
+  getCourseFolder(id: string): Promise<CourseFolder | undefined>;
+  createCourseFolder(folder: InsertCourseFolder): Promise<CourseFolder>;
+  updateCourseFolder(id: string, folder: Partial<InsertCourseFolder>): Promise<CourseFolder>;
+  deleteCourseFolder(id: string): Promise<void>;
+  getAllCourseFolders(): Promise<CourseFolder[]>;
+  getCoursesByFolder(folderId: string): Promise<Course[]>;
+
+  // Organisation course folder access operations
+  grantOrganisationFolderAccess(access: InsertOrganisationCourseFolder): Promise<OrganisationCourseFolder>;
+  revokeOrganisationFolderAccess(organisationId: string, folderId: string): Promise<void>;
+  getOrganisationFolderAccess(organisationId: string): Promise<CourseFolder[]>;
+  getOrganisationsWithFolderAccess(folderId: string): Promise<Organisation[]>;
 
   // Assignment operations
   getAssignment(id: string): Promise<Assignment | undefined>;
@@ -342,6 +362,81 @@ export class DatabaseStorage implements IStorage {
 
   async getCoursesByStatus(status: string): Promise<Course[]> {
     return await db.select().from(courses).where(eq(courses.status, status as any)).orderBy(desc(courses.createdAt));
+  }
+
+  // Course folder operations
+  async getCourseFolder(id: string): Promise<CourseFolder | undefined> {
+    const [folder] = await db.select().from(courseFolders).where(eq(courseFolders.id, id));
+    return folder;
+  }
+
+  async createCourseFolder(folderData: InsertCourseFolder): Promise<CourseFolder> {
+    const [folder] = await db
+      .insert(courseFolders)
+      .values(folderData)
+      .returning();
+    return folder;
+  }
+
+  async updateCourseFolder(id: string, folderData: Partial<InsertCourseFolder>): Promise<CourseFolder> {
+    const [folder] = await db
+      .update(courseFolders)
+      .set({ ...folderData, updatedAt: new Date() })
+      .where(eq(courseFolders.id, id))
+      .returning();
+    return folder;
+  }
+
+  async deleteCourseFolder(id: string): Promise<void> {
+    await db.delete(courseFolders).where(eq(courseFolders.id, id));
+  }
+
+  async getAllCourseFolders(): Promise<CourseFolder[]> {
+    return await db.select().from(courseFolders).orderBy(asc(courseFolders.sortOrder), asc(courseFolders.name));
+  }
+
+  async getCoursesByFolder(folderId: string): Promise<Course[]> {
+    return await db.select().from(courses).where(eq(courses.folderId, folderId)).orderBy(desc(courses.createdAt));
+  }
+
+  // Organisation course folder access operations
+  async grantOrganisationFolderAccess(accessData: InsertOrganisationCourseFolder): Promise<OrganisationCourseFolder> {
+    const [access] = await db
+      .insert(organisationCourseFolders)
+      .values(accessData)
+      .returning();
+    return access;
+  }
+
+  async revokeOrganisationFolderAccess(organisationId: string, folderId: string): Promise<void> {
+    await db
+      .delete(organisationCourseFolders)
+      .where(
+        and(
+          eq(organisationCourseFolders.organisationId, organisationId),
+          eq(organisationCourseFolders.folderId, folderId)
+        )
+      );
+  }
+
+  async getOrganisationFolderAccess(organisationId: string): Promise<CourseFolder[]> {
+    const result = await db
+      .select({ folder: courseFolders })
+      .from(organisationCourseFolders)
+      .innerJoin(courseFolders, eq(organisationCourseFolders.folderId, courseFolders.id))
+      .where(eq(organisationCourseFolders.organisationId, organisationId))
+      .orderBy(asc(courseFolders.sortOrder), asc(courseFolders.name));
+    return result.map(row => row.folder);
+  }
+
+  async getOrganisationsWithFolderAccess(folderId: string): Promise<Organisation[]> {
+    const result = await db
+      .select({ organisation: organisations })
+      .from(organisationCourseFolders)
+      .innerJoin(organisations, eq(organisationCourseFolders.organisationId, organisations.id))
+      .where(eq(organisationCourseFolders.folderId, folderId))
+      .orderBy(asc(organisations.name));
+    return result.map(row => row.organisation);
   }
 
   // Assignment operations
