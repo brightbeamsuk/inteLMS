@@ -1,0 +1,128 @@
+ix the “storage.getOrganisationById is not a function” error + make Test Email work
+
+Problem to fix
+
+The Test Email handler crashes before calling Brevo because it calls a non-existent function: storage.getOrganisationById.
+
+As a result, the UI shows: Provider: unknown, HTTP Status: 0, From: N/A.
+
+What to implement
+
+Create a safe org lookup wrapper (handles spelling & structure differences)
+
+Add a utility function and use it everywhere instead of calling storage directly:
+
+getOrgById(id) should try these in order and return the org record:
+
+storage.getOrganisationById
+
+storage.getOrganizationById
+
+storage.organisations?.getById
+
+storage.organizations?.getById
+
+If none exist, throw: No getOrgById implementation found in storage.
+
+Replace all existing calls to storage.getOrganisationById(...) with getOrgById(...).
+
+Add an “effective email settings” resolver
+
+Implement getEffectiveEmailSettings(orgId) that returns:
+
+{
+  provider: 'brevo_api' | 'smtp',
+  fromName,
+  fromEmail,
+  brevo: { apiKey },          // when provider = brevo_api
+  smtp: { host, port, user, pass, secure } // when provider = smtp
+}
+
+
+Logic: use org-level settings if present; otherwise superadmin defaults.
+
+Validate: provider must be set; fromEmail present; for brevo_api apiKey present; for smtp host/port/user/pass present. Return a structured validation error instead of throwing 500.
+
+Fix the Test Email controller
+
+Determine orgId from the authenticated user/session; if not present, accept an orgId param; if still missing, return 400: Organisation context missing.
+
+Call getOrgById(orgId) → if not found, 404: Organisation not found.
+
+Call getEffectiveEmailSettings(orgId) → if invalid, return 422 with a list of missing fields (e.g., “FROM email missing”, “Brevo API key missing”).
+
+Set providerUsed for telemetry/UI before attempting any send so the panel never shows “unknown”.
+
+Brevo API health-check then send (when provider = brevo_api)
+
+Health check: GET https://api.brevo.com/v3/account with header api-key: <key>.
+
+200 → proceed.
+
+401/403 → return 401 with message “Brevo rejected the API key.”
+
+429 → return 429 “Rate limited by Brevo.”
+
+5xx/network → return 503 “Brevo API/network error.”
+
+Send: POST https://api.brevo.com/v3/smtp/email with:
+
+{
+  "sender": { "name": fromName, "email": fromEmail },
+  "to": [{ "email": testRecipient }],
+  "subject": "inteLMS API Test",
+  "textContent": "Test from inteLMS (brevo_api)"
+}
+
+
+On success, return 201 with messageId from response.
+
+SMTP send (when provider = smtp)
+
+Require TLS (STARTTLS on 587 or TLS on 465).
+
+On success, return 250/OK mapped to 200, include remote host/port and messageId.
+
+Never fallback silently
+
+If provider = brevo_api, do not switch to SMTP on failure (and vice-versa). Return the mapped error.
+
+Improve the Test Email result payload (so the modal shows real info)
+
+Always return JSON:
+
+{
+  success: true|false,
+  provider: providerUsed,
+  httpStatus: <number>,
+  message: "<friendly text>",
+  details: {
+    endpoint: providerUsed === 'brevo_api' ? '/v3/smtp/email' : 'smtp',
+    from: fromEmail,
+    to: testRecipient,
+    messageId: "<id or null>"
+  }
+}
+
+
+The UI should bind to these fields so “Provider” isn’t “unknown”, “From” isn’t “N/A”, and “HTTP Status” isn’t 0 unless it’s truly a network error.
+
+Add unit checks
+
+Test that getOrgById picks the correct underlying function depending on what exists in storage.
+
+Test that missing settings return 422 with precise messages (not a generic 500).
+
+Test both providers return structured success (Brevo 201; SMTP 200) and structured failures (401/403/400/429/5xx).
+
+Acceptance criteria
+
+The Test Email modal never shows “Provider: unknown” when an org exists.
+
+Calling Test Email without a valid org returns 400 with clear text, not a crash.
+
+getOrgById works regardless of “organisation/organization” spelling or storage layout.
+
+Brevo API: bad key yields 401/403 with a friendly message; valid key yields 201 and shows a messageId.
+
+SMTP path unchanged except for better validation/errors.

@@ -18,6 +18,105 @@ import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { z } from "zod";
 
+// Safe organization lookup wrapper - handles spelling & structure differences
+async function getOrgById(storage: any, id: string) {
+  // Try different method names in order
+  const methods = [
+    'getOrganisation',      // Current spelling
+    'getOrganisationById',  // Expected spelling
+    'getOrganizationById',  // American spelling
+    'getOrganization'       // American spelling
+  ];
+  
+  for (const method of methods) {
+    if (typeof storage[method] === 'function') {
+      try {
+        return await storage[method](id);
+      } catch (error) {
+        console.warn(`Method ${method} failed:`, error);
+        continue;
+      }
+    }
+  }
+  
+  // Try nested access patterns
+  if (storage.organisations?.getById) {
+    return await storage.organisations.getById(id);
+  }
+  if (storage.organizations?.getById) {
+    return await storage.organizations.getById(id);
+  }
+  
+  throw new Error('No getOrgById implementation found in storage');
+}
+
+// Effective email settings resolver
+async function getEffectiveEmailSettings(storage: any, orgId: string) {
+  try {
+    const org = await getOrgById(storage, orgId);
+    if (!org) {
+      return {
+        valid: false,
+        errors: ['Organisation not found']
+      };
+    }
+
+    const orgSettings = await storage.getOrganisationSettings(orgId);
+    
+    // Determine provider - prefer Brevo API if configured
+    const useBrevoApi = (org.useBrevoApi || orgSettings?.useBrevoApi) && 
+                       (org.brevoApiKey || orgSettings?.brevoApiKey);
+    
+    const provider = useBrevoApi ? 'brevo_api' : 'smtp';
+    
+    const settings = {
+      provider,
+      fromName: org.fromName || orgSettings?.fromName || '',
+      fromEmail: org.fromEmail || orgSettings?.fromEmail || '',
+      brevo: {
+        apiKey: org.brevoApiKey || orgSettings?.brevoApiKey || ''
+      },
+      smtp: {
+        host: org.smtpHost || orgSettings?.smtpHost || '',
+        port: org.smtpPort || orgSettings?.smtpPort || 587,
+        user: org.smtpUsername || orgSettings?.smtpUsername || '',
+        pass: org.smtpPassword || orgSettings?.smtpPassword || '',
+        secure: org.smtpSecure !== false && orgSettings?.smtpSecure !== false
+      }
+    };
+
+    // Validate settings
+    const validationErrors = [];
+    
+    if (!settings.fromEmail) {
+      validationErrors.push('FROM email missing');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settings.fromEmail)) {
+      validationErrors.push('FROM email invalid format');
+    }
+    
+    if (provider === 'brevo_api') {
+      if (!settings.brevo.apiKey) {
+        validationErrors.push('Brevo API key missing');
+      }
+    } else if (provider === 'smtp') {
+      if (!settings.smtp.host) validationErrors.push('SMTP host missing');
+      if (!settings.smtp.user) validationErrors.push('SMTP username missing');
+      if (!settings.smtp.pass) validationErrors.push('SMTP password missing');
+    }
+    
+    return {
+      valid: validationErrors.length === 0,
+      errors: validationErrors,
+      settings
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [error.message || 'Failed to retrieve email settings']
+    };
+  }
+}
+
 // Extend Express session to include user property
 declare module 'express-session' {
   interface SessionData {
