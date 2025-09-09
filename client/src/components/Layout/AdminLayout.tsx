@@ -247,30 +247,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             
             <aside className="min-h-full w-80 bg-base-200 text-base-content">
               <div className="p-4">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="avatar">
-                    {hasBrandingAccess && organization?.logoUrl ? (
-                      <div className="w-12 rounded-full">
-                        <img 
-                          src={organization.logoUrl} 
-                          alt={`${organization.displayName} logo`}
-                          className="w-12 h-12 rounded-full object-contain bg-base-100"
-                          data-testid="img-organization-logo"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-12 rounded-full bg-primary text-primary-content flex items-center justify-center">
-                        <i className="fas fa-building text-xl"></i>
-                      </div>
-                    )}
+                <div className="mb-6">
+                  <div className="font-bold text-lg" data-testid="text-user-name">
+                    {user?.firstName} {user?.lastName}
                   </div>
-                  <div>
-                    <div className="font-bold text-lg" data-testid="text-user-name">
-                      {user?.firstName} {user?.lastName}
-                    </div>
-                    <div className="text-sm opacity-60" data-testid="text-user-organisation">
-                      {organization?.displayName || 'Loading...'}
-                    </div>
+                  <div className="text-sm opacity-60" data-testid="text-user-organisation">
+                    {organization?.displayName || 'Loading...'}
                   </div>
                 </div>
               </div>
