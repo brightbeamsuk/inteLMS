@@ -2194,7 +2194,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user.role !== 'superadmin' && (user.role !== 'admin' || user.organisationId !== id)) {
         return res.status(403).json({ message: 'Access denied' });
       }
+      
       let updateData = { ...req.body };
+
+      // Check if subdomain is being updated and validate custom domain feature access
+      if (updateData.subdomain !== undefined && user.role === 'admin') {
+        // Get organization to check plan features
+        const organisation = await storage.getOrganisation(id);
+        if (!organisation) {
+          return res.status(404).json({ message: 'Organisation not found' });
+        }
+
+        // Check if custom domain feature is enabled for the organisation's plan
+        const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
+        const customDomainFeature = planFeatures.find(mapping => mapping.featureId === 'custom_domain');
+        
+        if (!customDomainFeature || !customDomainFeature.enabled) {
+          return res.status(403).json({ message: 'Custom domain feature not available for your plan' });
+        }
+      }
 
       // Normalize logo URL and set as public object if provided
       if (updateData.logoUrl) {
