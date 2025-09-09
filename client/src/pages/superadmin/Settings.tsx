@@ -6,6 +6,58 @@ import { useLocation } from "wouter";
 import { ImageUpload } from "@/components/ImageUpload";
 import { VisualCertificateEditor, type CertificateTemplate as VisualCertificateTemplate } from "@/components/VisualCertificateEditor";
 
+// Email provider configurations
+const emailProviders = {
+  sendgrid_api: {
+    name: 'SendGrid (API)',
+    type: 'api',
+    instructions: 'Get your API key from SendGrid account settings.',
+    website: 'https://sendgrid.com/docs/for-developers/sending-email/api-getting-started/',
+  },
+  brevo_api: {
+    name: 'Brevo (API)',
+    type: 'api',
+    instructions: 'Create an API key in your Brevo account settings.',
+    website: 'https://developers.brevo.com/docs/getting-started',
+  },
+  mailgun_api: {
+    name: 'Mailgun (API)',
+    type: 'api',
+    instructions: 'Get your API key and domain from the Mailgun dashboard.',
+    website: 'https://documentation.mailgun.com/en/latest/quickstart.html',
+  },
+  postmark_api: {
+    name: 'Postmark (API)',
+    type: 'api',
+    instructions: 'Create a server API token in your Postmark account.',
+    website: 'https://postmarkapp.com/developer/api/overview',
+  },
+  mailjet_api: {
+    name: 'Mailjet (API)',
+    type: 'api',
+    instructions: 'Get your API key and secret from the Mailjet account settings.',
+    website: 'https://dev.mailjet.com/email/guides/getting-started/',
+  },
+  sparkpost_api: {
+    name: 'SparkPost (API)',
+    type: 'api',
+    instructions: 'Create an API key in the SparkPost account settings.',
+    website: 'https://developers.sparkpost.com/api/',
+  },
+  smtp_generic: {
+    name: 'Generic SMTP',
+    type: 'smtp',
+    instructions: 'Use any SMTP server with username and password authentication.',
+    website: null,
+    presets: {
+      'Gmail': { host: 'smtp.gmail.com', port: 587, secure: false },
+      'Outlook': { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+      'Yahoo': { host: 'smtp.mail.yahoo.com', port: 587, secure: false },
+      'iCloud': { host: 'smtp.mail.me.com', port: 587, secure: false },
+    }
+  }
+};
+
 interface CertificateTemplate {
   id: string;
   name: string;
@@ -893,11 +945,36 @@ export function SuperAdminSettings() {
           {activeTab === 2 && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">System Email Configuration</h3>
-                <div className="alert alert-info">
-                  <i className="fas fa-info-circle"></i>
+                <h3 className="text-lg font-semibold">Platform Email Settings</h3>
+                <div className="flex gap-2">
+                  <button 
+                    className={`btn btn-outline btn-sm ${testEmailMutation.isPending ? 'loading' : ''}`}
+                    data-testid="button-test-email"
+                    onClick={openTestEmailModal}
+                    disabled={testEmailMutation.isPending || !emailSettings.fromEmail}
+                    title="Send test email using platform settings"
+                  >
+                    <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                    {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
+                  </button>
+                  <button 
+                    className={`btn btn-primary btn-sm ${saveEmailSettingsMutation.isPending ? 'loading' : ''}`}
+                    onClick={handleSaveEmailSettings}
+                    disabled={saveEmailSettingsMutation.isPending}
+                    data-testid="button-save-email-settings"
+                  >
+                    <i className="fas fa-save"></i>
+                    {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <div>
+                  <div className="font-bold">Platform Email Defaults</div>
                   <div className="text-sm">
-                    These settings serve as fallback when organizations don't have their own email configuration.
+                    These settings serve as defaults when organizations don't configure their own email settings. Organizations can override these with their own provider configuration.
                   </div>
                 </div>
               </div>
@@ -908,99 +985,59 @@ export function SuperAdminSettings() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* Email Provider Selection */}
+                  {/* Provider Selection */}
                   <div className="form-control">
                     <label className="label">
                       <span className="label-text font-semibold">Email Provider</span>
                     </label>
                     <select 
                       className="select select-bordered"
+                      value={emailSettings.provider}
                       onChange={(e) => handleProviderChange(e.target.value)}
                       data-testid="select-email-provider"
                     >
-                      <option value="">Select a provider to auto-configure</option>
-                      <option value="gmail">Gmail</option>
-                      <option value="outlook">Outlook/Hotmail</option>
-                      <option value="brevo">Brevo (Sendinblue)</option>
-                      <option value="sendgrid">SendGrid</option>
-                      <option value="mailgun">Mailgun</option>
-                      <option value="amazonses">Amazon SES</option>
+                      {Object.entries(emailProviders).map(([key, config]) => (
+                        <option key={key} value={key}>
+                          {config.name} {config.type === 'api' ? '(API)' : '(SMTP)'}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
-                  {/* SMTP Settings */}
+                  {/* Provider Information */}
+                  <div className="alert alert-info">
+                    <i className={`fas ${emailProviders[emailSettings.provider].type === 'api' ? 'fa-key' : 'fa-server'}`}></i>
+                    <div>
+                      <div className="font-bold">{emailProviders[emailSettings.provider].name}</div>
+                      <div className="text-sm">
+                        {emailProviders[emailSettings.provider].instructions}
+                        {emailProviders[emailSettings.provider].website && (
+                          <span>
+                            {' '}
+                            <a 
+                              href={emailProviders[emailSettings.provider].website} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="link text-info"
+                            >
+                              Visit website →
+                            </a>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Common Fields */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="form-control">
                       <label className="label">
-                        <span className="label-text">SMTP Host *</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        className="input input-bordered" 
-                        placeholder="smtp.gmail.com"
-                        value={emailSettings.smtpHost}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
-                        data-testid="input-smtp-host"
-                      />
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">SMTP Port *</span>
-                      </label>
-                      <input 
-                        type="number" 
-                        className="input input-bordered" 
-                        placeholder="587"
-                        value={emailSettings.smtpPort}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: parseInt(e.target.value) || 587 }))}
-                        data-testid="input-smtp-port"
-                      />
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">SMTP Username *</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        className="input input-bordered" 
-                        placeholder="your-email@gmail.com"
-                        value={emailSettings.smtpUsername}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
-                        data-testid="input-smtp-username"
-                      />
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">SMTP Password *</span>
-                      </label>
-                      <input 
-                        type="password" 
-                        className="input input-bordered" 
-                        placeholder={emailSettings.hasPassword ? "Password is set (leave blank to keep)" : "your-app-password"}
-                        value={emailSettings.smtpPassword}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
-                        data-testid="input-smtp-password"
-                      />
-                      {emailSettings.hasPassword && (
-                        <div className="label">
-                          <span className="label-text-alt text-success">
-                            <i className="fas fa-check-circle"></i> Password is configured
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">From Email *</span>
+                        <span className="label-text font-semibold">From Email *</span>
                       </label>
                       <input 
                         type="email" 
                         className="input input-bordered" 
-                        placeholder="system@yourplatform.com"
+                        placeholder="platform@yourdomain.com"
                         value={emailSettings.fromEmail}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
                         data-testid="input-from-email"
@@ -1009,7 +1046,7 @@ export function SuperAdminSettings() {
 
                     <div className="form-control">
                       <label className="label">
-                        <span className="label-text">From Name *</span>
+                        <span className="label-text font-semibold">From Name *</span>
                       </label>
                       <input 
                         type="text" 
@@ -1022,7 +1059,20 @@ export function SuperAdminSettings() {
                     </div>
                   </div>
 
-                  {/* Description Field */}
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Reply To Email</span>
+                    </label>
+                    <input 
+                      type="email" 
+                      className="input input-bordered" 
+                      placeholder="Optional reply-to address"
+                      value={emailSettings.replyTo}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, replyTo: e.target.value }))}
+                      data-testid="input-reply-to"
+                    />
+                  </div>
+
                   <div className="form-control">
                     <label className="label">
                       <span className="label-text">Description</span>
@@ -1030,69 +1080,200 @@ export function SuperAdminSettings() {
                     <input 
                       type="text" 
                       className="input input-bordered" 
-                      placeholder="e.g., Production Brevo SMTP, Testing Gmail"
+                      placeholder="Platform email configuration"
                       value={emailSettings.description}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, description: e.target.value }))}
                       data-testid="input-description"
                     />
-                    <div className="label">
-                      <span className="label-text-alt">Optional description to identify this SMTP configuration</span>
-                    </div>
                   </div>
 
-                  {/* Security Settings */}
-                  <div className="form-control">
-                    <label className="label cursor-pointer justify-start gap-3">
-                      <input 
-                        type="checkbox" 
-                        className="toggle"
-                        checked={emailSettings.smtpSecure}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpSecure: e.target.checked }))}
-                        data-testid="toggle-smtp-secure"
-                      />
-                      <span className="label-text">
-                        <strong>Use SSL/TLS Encryption</strong>
-                        <div className="text-sm text-base-content/60">
-                          Enable for secure connections (usually for port 465)
+                  {/* SMTP Provider Fields */}
+                  {emailSettings.provider === 'smtp_generic' && (
+                    <div className="space-y-4">
+                      <div className="divider">SMTP Configuration</div>
+                      
+                      {/* SMTP Preset Selection */}
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text">SMTP Preset</span>
+                        </label>
+                        <select 
+                          className="select select-bordered"
+                          onChange={(e) => handleSMTPPresetChange(e.target.value)}
+                          data-testid="select-smtp-preset"
+                        >
+                          <option value="">Select a preset or configure manually</option>
+                          {Object.keys(emailProviders.smtp_generic.presets).map(preset => (
+                            <option key={preset} value={preset}>{preset}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">SMTP Host *</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            className="input input-bordered" 
+                            placeholder="smtp.example.com"
+                            value={emailSettings.smtpHost}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                            data-testid="input-smtp-host"
+                          />
                         </div>
-                      </span>
-                    </label>
-                  </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap gap-3 justify-between">
-                    <div className="flex gap-2">
-                      <button 
-                        className="btn btn-outline btn-sm"
-                        onClick={() => testConnectionMutation.mutate()}
-                        disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || testConnectionMutation.isPending}
-                        data-testid="button-test-connection"
-                      >
-                        <i className={`fas ${testConnectionMutation.isPending ? 'fa-spinner fa-spin' : 'fa-plug'}`}></i>
-                        {testConnectionMutation.isPending ? 'Testing...' : 'Test Connection'}
-                      </button>
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">SMTP Port *</span>
+                          </label>
+                          <input 
+                            type="number" 
+                            className="input input-bordered" 
+                            placeholder="587"
+                            value={emailSettings.smtpPort}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: e.target.value }))}
+                            data-testid="input-smtp-port"
+                          />
+                        </div>
+                      </div>
 
-                      <button 
-                        className="btn btn-outline btn-sm"
-                        onClick={openTestEmailModal}
-                        disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || (!emailSettings.smtpPassword && !emailSettings.hasPassword)}
-                        data-testid="button-test-email"
-                      >
-                        <i className="fas fa-paper-plane"></i>
-                        Send Test Email
-                      </button>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">SMTP Username *</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            className="input input-bordered" 
+                            placeholder="username@example.com"
+                            value={emailSettings.smtpUsername}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
+                            data-testid="input-smtp-username"
+                          />
+                        </div>
+
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">SMTP Password *</span>
+                          </label>
+                          <input 
+                            type="password" 
+                            className="input input-bordered" 
+                            placeholder={emailSettings.smtpPassword && emailSettings.smtpPassword.startsWith('••') ? "Password configured" : "Enter password"}
+                            value={emailSettings.smtpPassword}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
+                            data-testid="input-smtp-password"
+                          />
+                          {emailSettings.smtpPassword && emailSettings.smtpPassword.startsWith('••') && (
+                            <div className="label">
+                              <span className="label-text-alt text-success">✓ Password is configured. Leave blank to keep existing password.</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="form-control">
+                        <label className="label cursor-pointer justify-start gap-3">
+                          <input 
+                            type="checkbox" 
+                            className="checkbox" 
+                            checked={emailSettings.smtpSecure}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpSecure: e.target.checked }))}
+                            data-testid="checkbox-smtp-secure"
+                          />
+                          <span className="label-text">Use TLS/STARTTLS encryption (recommended)</span>
+                        </label>
+                      </div>
                     </div>
+                  )}
 
-                    <button 
-                      className="btn btn-primary"
-                      onClick={handleSaveEmailSettings}
-                      disabled={saveEmailSettingsMutation.isPending}
-                      data-testid="button-save-email-settings"
-                    >
-                      <i className={`fas ${saveEmailSettingsMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
-                      {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save SMTP Settings'}
-                    </button>
-                  </div>
+                  {/* API Provider Fields */}
+                  {emailSettings.provider !== 'smtp_generic' && (
+                    <div className="space-y-4">
+                      <div className="divider">API Configuration</div>
+                      
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text font-semibold">API Key *</span>
+                        </label>
+                        <input 
+                          type="password" 
+                          className="input input-bordered" 
+                          placeholder={emailSettings.apiKey && emailSettings.apiKey.startsWith('••') ? "API key configured" : "Enter your API key"}
+                          value={emailSettings.apiKey}
+                          onChange={(e) => setEmailSettings(prev => ({ ...prev, apiKey: e.target.value }))}
+                          data-testid="input-api-key"
+                        />
+                        {emailSettings.apiKey && emailSettings.apiKey.startsWith('••') && (
+                          <div className="label">
+                            <span className="label-text-alt text-success">✓ API key is configured. Leave blank to keep existing key.</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {emailSettings.provider === 'mailjet_api' && (
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">API Secret *</span>
+                          </label>
+                          <input 
+                            type="password" 
+                            className="input input-bordered" 
+                            placeholder={emailSettings.apiSecret && emailSettings.apiSecret.startsWith('••') ? "API secret configured" : "Enter your API secret"}
+                            value={emailSettings.apiSecret}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, apiSecret: e.target.value }))}
+                            data-testid="input-api-secret"
+                          />
+                          {emailSettings.apiSecret && emailSettings.apiSecret.startsWith('••') && (
+                            <div className="label">
+                              <span className="label-text-alt text-success">✓ API secret is configured. Leave blank to keep existing secret.</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {emailSettings.provider === 'mailgun_api' && (
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">API Domain *</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            className="input input-bordered" 
+                            placeholder="mg.yourdomain.com"
+                            value={emailSettings.apiDomain}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, apiDomain: e.target.value }))}
+                            data-testid="input-api-domain"
+                          />
+                          <div className="label">
+                            <span className="label-text-alt">Use your verified Mailgun domain</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {emailSettings.provider === 'ses_api' && (
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text font-semibold">AWS Region *</span>
+                          </label>
+                          <select 
+                            className="select select-bordered"
+                            value={emailSettings.apiRegion}
+                            onChange={(e) => setEmailSettings(prev => ({ ...prev, apiRegion: e.target.value }))}
+                            data-testid="select-aws-region"
+                          >
+                            <option value="">Select AWS region</option>
+                            <option value="us-east-1">US East (N. Virginia)</option>
+                            <option value="us-west-2">US West (Oregon)</option>
+                            <option value="eu-west-1">Europe (Ireland)</option>
+                            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Help Section */}
                   <div className="alert alert-warning">
