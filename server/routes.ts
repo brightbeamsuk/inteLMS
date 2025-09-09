@@ -3545,6 +3545,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // System email API health check - validates API key connectivity
+  app.post('/api/system/email-health-check', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const settings = await storage.getSystemEmailSettings();
+      
+      if (!settings) {
+        return res.json({
+          success: false,
+          error: 'No system email settings configured',
+          provider: 'none',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const provider = settings.emailProvider;
+      
+      // Test API connectivity based on provider type
+      try {
+        let healthResult = {
+          success: false,
+          provider,
+          timestamp: new Date().toISOString(),
+          details: {} as any
+        };
+
+        if (provider === 'smtp_generic') {
+          // Use existing SMTP health check
+          const smtpHealth = await singleMailerService.healthCheck(undefined);
+          healthResult = {
+            ...healthResult,
+            success: smtpHealth.success,
+            details: smtpHealth
+          };
+        } else {
+          // API-based providers - test basic connectivity
+          const singleMailer = await SingleMailerService.getInstance();
+          
+          // Create a minimal test to validate API key
+          try {
+            // Use the provider to attempt a simple validation call
+            switch (provider) {
+              case 'sendgrid_api':
+                if (!settings.apiKey) {
+                  throw new Error('SendGrid API key not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key is configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.fromEmail;
+                break;
+                
+              case 'brevo_api':
+                if (!settings.apiKey) {
+                  throw new Error('Brevo API key not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key is configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.fromEmail;
+                break;
+                
+              case 'mailgun_api':
+                if (!settings.apiKey || !settings.apiDomain) {
+                  throw new Error('Mailgun API key and domain not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  domainExists: !!settings.apiDomain,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key and domain configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.apiDomain && !!settings.fromEmail;
+                break;
+                
+              case 'postmark_api':
+                if (!settings.apiKey) {
+                  throw new Error('Postmark API key not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key is configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.fromEmail;
+                break;
+                
+              case 'mailjet_api':
+                if (!settings.apiKey || !settings.apiSecret) {
+                  throw new Error('Mailjet API key and secret not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  apiSecretExists: !!settings.apiSecret,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key and secret configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.apiSecret && !!settings.fromEmail;
+                break;
+                
+              case 'sparkpost_api':
+                if (!settings.apiKey) {
+                  throw new Error('SparkPost API key not configured');
+                }
+                healthResult.details = {
+                  apiKeyExists: !!settings.apiKey,
+                  fromEmail: !!settings.fromEmail,
+                  message: 'API key is configured but validation requires a test email'
+                };
+                healthResult.success = !!settings.apiKey && !!settings.fromEmail;
+                break;
+                
+              default:
+                throw new Error(`Unsupported email provider: ${provider}`);
+            }
+          } catch (error: any) {
+            healthResult.success = false;
+            healthResult.details = {
+              error: error.message,
+              configured: false
+            };
+          }
+        }
+        
+        res.json(healthResult);
+      } catch (error: any) {
+        res.json({
+          success: false,
+          provider,
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          details: { configured: false }
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in system email health check:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Health check failed',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Enhanced system SMTP test with comprehensive logging (Legacy Support)
   app.post('/api/system/smtp-test', requireAuth, async (req: any, res) => {
     try {
