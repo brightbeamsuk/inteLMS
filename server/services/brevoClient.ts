@@ -29,10 +29,12 @@ export function resolveBrevoKey(orgSettings: any, platformSettings: any): KeyRes
   console.log('  orgSettings:', orgSettings ? Object.keys(orgSettings) : 'null');
   console.log('  platformSettings:', platformSettings ? Object.keys(platformSettings) : 'null');
   
-  // Check org key first (trim and validate length)
+  // Check org key first (trim and validate length) 
   const orgKeyRaw = orgSettings?.brevoApiKey || orgSettings?.brevo?.apiKey || "";
   const orgKey = orgKeyRaw.trim();
-  console.log(`  orgKey: length=${orgKey.length}, preview="${orgKey.substring(0, 8)}..."`);
+  console.log(`  orgKey RAW: "${orgKeyRaw.substring(0, 12)}..." (length=${orgKeyRaw.length})`);
+  console.log(`  orgKey CLEAN: "${orgKey.substring(0, 12)}..." (length=${orgKey.length})`);
+  console.log(`  orgKey has issues: spaces=${orgKey.includes(' ')}, newlines=${orgKey.includes('\n')}, returns=${orgKey.includes('\r')}`);
   
   if (orgKey.length >= 20) {
     console.log('  ✅ Using ORG key');
@@ -92,8 +94,10 @@ export class BrevoClient {
     this.organizationId = organizationId;
     this.keySource = keySource;
     
-    // Debug log final key details
+    // Enhanced debug for key issues
     console.log(`🔧 BrevoClient created: source=${keySource}, keyLength=${this.apiKey.length}, preview="${this.getMaskedKey()}"`);
+    console.log(`🔧 Key check: starts="${this.apiKey.substring(0, 12)}", ends="${this.apiKey.substring(this.apiKey.length - 8)}"`);
+    console.log(`🔧 Key format: contains spaces=${this.apiKey.includes(' ')}, contains newlines=${this.apiKey.includes('\n')}, contains quotes=${this.apiKey.includes('"')}`);
   }
 
   /**
