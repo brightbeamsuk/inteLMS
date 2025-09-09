@@ -2719,7 +2719,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Email settings routes
+  // Email settings routes - Provider-agnostic
   app.put('/api/organisations/:id/email-settings', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -2742,68 +2742,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const {
+        emailProvider,
+        fromEmail,
+        fromName,
+        replyTo,
+        // SMTP fields
         smtpHost,
         smtpPort,
         smtpUsername,
         smtpPassword,
         smtpSecure,
-        fromEmail,
-        fromName,
-        brevoApiKey,
-        useBrevoApi
+        // API fields
+        apiKey,
+        apiSecret,
+        apiBaseUrl,
+        apiDomain,
+        apiRegion
       } = req.body;
 
       // Get existing settings to prevent masked value override
-      const existingOrg = await storage.getOrganisation(organisationId);
-      const existingSettings = existingOrg?.emailSettings || {};
+      const existingSettings = await storage.getOrganisationSettings(organisationId);
 
-      // Clean and validate API key - prevent masked value storage
-      const cleanBrevoKey = (key: string | undefined): string | null => {
-        if (!key) return null;
-        const cleaned = key.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
+      // Clean and validate sensitive fields - prevent masked value storage
+      const cleanSensitiveField = (field: string | undefined, existingValue: string | undefined): string | null => {
+        if (!field) return null;
+        const cleaned = field.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
         // If it's a masked value (contains only • or similar characters), keep existing
         if (cleaned && /^[•*]+$/.test(cleaned)) {
-          return existingSettings.brevoApiKey || null;
+          return existingValue || null;
         }
         return cleaned || null;
       };
 
-      // Clean SMTP password similarly
-      const cleanSmtpPassword = (password: string | undefined): string | null => {
-        if (!password) return null;
-        const cleaned = password.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
-        // If it's a masked value, keep existing
-        if (cleaned && /^[•*]+$/.test(cleaned)) {
-          return existingSettings.smtpPassword || null;
-        }
-        return cleaned || null;
-      };
+      const processedApiKey = cleanSensitiveField(apiKey, existingSettings?.apiKey);
+      const processedApiSecret = cleanSensitiveField(apiSecret, existingSettings?.apiSecret);
+      const processedSmtpPassword = cleanSensitiveField(smtpPassword, existingSettings?.smtpPassword);
 
-      const processedBrevoKey = cleanBrevoKey(brevoApiKey);
-      const processedSmtpPassword = cleanSmtpPassword(smtpPassword);
+      // Provider-aware validation
+      const missingFields = [];
+      
+      if (!fromEmail) missingFields.push('From Email');
+      if (!fromName) missingFields.push('From Name');
 
-      // Validate required fields based on delivery method
-      if (useBrevoApi) {
-        if (!processedBrevoKey || !fromEmail) {
-          return res.status(400).json({ message: 'Brevo API key and from email are required for API delivery' });
-        }
+      if (emailProvider === 'smtp_generic') {
+        if (!smtpHost) missingFields.push('SMTP Host');
+        if (!smtpUsername) missingFields.push('SMTP Username');
+        if (!processedSmtpPassword) missingFields.push('SMTP Password');
       } else {
-        if (!smtpHost || !smtpUsername || !processedSmtpPassword || !fromEmail) {
-          return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+        // API providers
+        if (!processedApiKey) missingFields.push('API Key');
+        
+        if (emailProvider === 'mailjet_api' && !processedApiSecret) {
+          missingFields.push('API Secret');
+        }
+        if (emailProvider === 'mailgun_api' && !apiDomain) {
+          missingFields.push('API Domain');
         }
       }
 
-      const emailSettings = {
-        smtpHost: smtpHost || null,
-        smtpPort: smtpPort || 587,
-        smtpUsername: smtpUsername || null,
-        smtpPassword: processedSmtpPassword,
-        smtpSecure: smtpSecure !== false, // Default to true
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          message: `Missing required fields: ${missingFields.join(', ')}` 
+        });
+      }
+
+      // Build email settings object
+      const emailSettings: any = {
+        emailProvider: emailProvider || 'sendgrid_api',
         fromEmail,
-        fromName: fromName || 'LMS System',
-        brevoApiKey: processedBrevoKey,
-        useBrevoApi: useBrevoApi || false,
+        fromName,
+        replyTo: replyTo || null,
       };
+
+      // Add provider-specific fields
+      if (emailProvider === 'smtp_generic') {
+        emailSettings.smtpHost = smtpHost;
+        emailSettings.smtpPort = parseInt(smtpPort) || 587;
+        emailSettings.smtpUsername = smtpUsername;
+        emailSettings.smtpPassword = processedSmtpPassword;
+        emailSettings.smtpSecure = smtpSecure !== false;
+      } else {
+        // API providers
+        emailSettings.apiKey = processedApiKey;
+        
+        if (emailProvider === 'mailjet_api') {
+          emailSettings.apiSecret = processedApiSecret;
+        }
+        if (emailProvider === 'mailgun_api') {
+          emailSettings.apiDomain = apiDomain;
+        }
+        if (apiBaseUrl) {
+          emailSettings.apiBaseUrl = apiBaseUrl;
+        }
+        if (apiRegion) {
+          emailSettings.apiRegion = apiRegion;
+        }
+      }
 
       const updatedSettings = await storage.updateOrganisationSettings(organisationId, emailSettings);
       res.json({ success: true, message: 'Email settings saved successfully' });
