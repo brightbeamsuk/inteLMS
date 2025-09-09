@@ -119,93 +119,98 @@ export function AdminOrganisationSettings() {
   const getDefaultTemplate = (templateType: string) => {
     const templates: Record<string, { subject: string; content: string }> = {
       'welcome_email': {
-        subject: 'Welcome to [OrganisationName] Learning Platform',
-        content: `Dear [FirstName] [LastName],
+        subject: 'Welcome to {{organisationDisplayName}} Learning Platform',
+        content: `Dear {{firstName}} {{lastName}},
 
-Welcome to [OrganisationName]! We're excited to have you join our learning platform.
+Welcome to {{organisationDisplayName}}! We're excited to have you join our learning platform.
 
 Your account has been successfully created with the following details:
-• Email: [Email]
-• Organization: [OrganisationName]
+• Email: {{email}}
+• Organization: {{organisationDisplayName}}
+• Job Title: {{jobTitle}}
 
 You can now log in to access your assigned training courses and track your progress.
 
 If you have any questions or need assistance, please don't hesitate to contact your administrator.
 
 Best regards,
-The [OrganisationName] Team`
+The {{organisationDisplayName}} Team`
       },
       'course_assignment': {
-        subject: 'New Course Assigned: [CourseName]',
-        content: `Hello [FirstName],
+        subject: 'New Course Assigned: {{courseTitle}}',
+        content: `Hello {{firstName}},
 
-You have been assigned a new training course: [CourseName]
+You have been assigned a new training course: {{courseTitle}}
 
 Course Details:
-• Course: [CourseName]
-• Due Date: [DueDate]
-• Organization: [OrganisationName]
+• Course: {{courseTitle}}
+• Due Date: {{dueDate}}
+• Estimated Duration: {{estimatedDuration}} minutes
+• Organization: {{organisationDisplayName}}
 
 Please log in to your learning platform to begin this course. Make sure to complete it before the due date.
 
 If you have any questions about this course, please contact your administrator.
 
 Best regards,
-The [OrganisationName] Team`
+The {{organisationDisplayName}} Team`
       },
       'course_reminder': {
-        subject: 'Reminder: [CourseName] Due Soon',
-        content: `Hello [FirstName],
+        subject: 'Reminder: {{courseTitle}} Due Soon',
+        content: `Hello {{firstName}},
 
-This is a friendly reminder that your course "[CourseName]" is due soon.
+This is a friendly reminder that your course "{{courseTitle}}" is due soon.
 
 Course Details:
-• Course: [CourseName]
-• Due Date: [DueDate]
-• Organization: [OrganisationName]
+• Course: {{courseTitle}}
+• Due Date: {{dueDate}}
+• Organization: {{organisationDisplayName}}
 
 Please log in to your learning platform to complete this course before the deadline.
 
 If you have already completed this course, please disregard this message.
 
 Best regards,
-The [OrganisationName] Team`
+The {{organisationDisplayName}} Team`
       },
       'course_completion': {
-        subject: 'Course Completed: [CourseName]',
-        content: `Dear [FirstName],
+        subject: 'Course Completed: {{courseTitle}}',
+        content: `Dear {{firstName}},
 
-Congratulations! You have successfully completed the course "[CourseName]".
+Congratulations! You have successfully completed the course "{{courseTitle}}".
 
 Completion Details:
-• Course: [CourseName]
-• Completion Date: [CompletionDate]
-• Score: [Score]
-• Organization: [OrganisationName]
+• Course: {{courseTitle}}
+• Completion Date: {{completedAt}}
+• Score: {{score}}%
+• Status: {{status}}
+• Time Spent: {{timeSpent}} minutes
+• Organization: {{organisationDisplayName}}
 
-Your certificate is now available for download from your learning platform.
+Your certificate is now available for download from your learning platform and will expire on {{certificateExpiryDate}} (if applicable).
 
 Thank you for your dedication to professional development.
 
 Best regards,
-The [OrganisationName] Team`
+The {{organisationDisplayName}} Team`
       },
       'password_reset': {
-        subject: 'Password Reset Request - [OrganisationName]',
-        content: `Hello [FirstName],
+        subject: 'Password Reset Request - {{organisationDisplayName}}',
+        content: `Hello {{firstName}},
 
-We received a request to reset your password for your [OrganisationName] learning platform account.
+We received a request to reset your password for your {{organisationDisplayName}} learning platform account.
 
 Account Details:
-• Email: [Email]
-• Organization: [OrganisationName]
+• Email: {{email}}
+• Job Title: {{jobTitle}}
+• Organization: {{organisationDisplayName}}
 
 If you requested this password reset, please follow the instructions provided by your administrator to set a new password.
 
 If you did not request this password reset, please contact your administrator immediately.
 
 Best regards,
-The [OrganisationName] Team`
+The {{organisationDisplayName}} Team`
       }
     };
     
@@ -933,8 +938,13 @@ The [OrganisationName] Team`
                     <i className="fas fa-info-circle"></i>
                     <div>
                       <div className="font-bold">Available Placeholders</div>
-                      <div className="text-sm">
-                        [FirstName], [LastName], [Email], [OrganisationName], [CourseName], [DueDate], [CompletionDate], [Score]
+                      <div className="text-sm space-y-1">
+                        <div><strong>User:</strong> {`{{firstName}}`}, {`{{lastName}}`}, {`{{email}}`}, {`{{jobTitle}}`}, {`{{department}}`}</div>
+                        <div><strong>Organization:</strong> {`{{organisationDisplayName}}`}</div>
+                        <div><strong>Course:</strong> {`{{courseTitle}}`}, {`{{estimatedDuration}}`}, {`{{passmark}}`}</div>
+                        <div><strong>Assignment:</strong> {`{{dueDate}}`}, {`{{assignedAt}}`}</div>
+                        <div><strong>Completion:</strong> {`{{score}}`}, {`{{status}}`}, {`{{completedAt}}`}, {`{{timeSpent}}`}</div>
+                        <div><strong>Certificate:</strong> {`{{certificateExpiryDate}}`}, {`{{issuedAt}}`}</div>
                       </div>
                     </div>
                   </div>
