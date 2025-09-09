@@ -2976,7 +2976,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Health check first
+        console.log('🔧 About to call checkAccount()...');
         const healthCheck = await brevoClient.checkAccount();
+        console.log('🔧 checkAccount() completed:', healthCheck.success ? 'SUCCESS' : `FAILED ${healthCheck.httpStatus}`);
         
         if (!healthCheck.success) {
           return res.json({
