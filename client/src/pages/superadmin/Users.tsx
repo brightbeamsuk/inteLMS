@@ -21,12 +21,31 @@ interface User {
 interface Organisation {
   id: string;
   displayName: string;
+  planId?: string;
+}
+
+interface Plan {
+  id: string;
+  name: string;
+  description?: string;
+  pricePerUser: number;
+  status: 'active' | 'inactive' | 'archived';
+}
+
+interface PlanFeature {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  category?: string;
+  isDefault: boolean;
 }
 
 export function SuperAdminUsers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [filters, setFilters] = useState({
@@ -52,6 +71,18 @@ export function SuperAdminUsers() {
     status: "active",
   });
 
+  // Subscription form states
+  const [subscriptionFormData, setSubscriptionFormData] = useState({
+    planType: "existing", // "existing" or "custom"
+    planId: "",
+    customPlan: {
+      name: "",
+      description: "",
+      pricePerUser: "",
+      featureIds: [] as string[],
+    },
+  });
+
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ['/api/users', filters],
     queryFn: async () => {
@@ -68,6 +99,28 @@ export function SuperAdminUsers() {
         throw new Error(`Failed to fetch users: ${response.statusText}`);
       }
       
+      return response.json();
+    },
+  });
+
+  const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
+    queryKey: ['/api/plans'],
+    queryFn: async () => {
+      const response = await fetch('/api/plans', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plans: ${response.statusText}`);
+      }
+      return response.json();
+    },
+  });
+
+  const { data: planFeatures = [], isLoading: featuresLoading } = useQuery<PlanFeature[]>({
+    queryKey: ['/api/plan-features'],
+    queryFn: async () => {
+      const response = await fetch('/api/plan-features', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plan features: ${response.statusText}`);
+      }
       return response.json();
     },
   });
@@ -113,6 +166,32 @@ export function SuperAdminUsers() {
       toast({
         title: "Error",
         description: "Failed to update user status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateSubscriptionMutation = useMutation({
+    mutationFn: async ({ organisationId, subscriptionData }: { organisationId: string, subscriptionData: any }) => {
+      return await apiRequest(`/api/organisations/${organisationId}/subscription`, {
+        method: 'PUT',
+        body: subscriptionData,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Subscription updated successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      setShowSubscriptionModal(false);
+      setSelectedUser(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update subscription",
         variant: "destructive",
       });
     },
@@ -179,6 +258,10 @@ export function SuperAdminUsers() {
 
   const [generatedPassword] = useState(generatePassword());
 
+  // Get organization for selected user
+  const selectedUserOrganisation = selectedUser ? organisations.find(o => o.id === selectedUser.organisationId) : null;
+  const currentPlan = selectedUserOrganisation?.planId ? plans.find(p => p.id === selectedUserOrganisation.planId) : null;
+
   const handleViewUser = (user: User) => {
     setSelectedUser(user);
     setShowViewModal(true);
@@ -193,6 +276,44 @@ export function SuperAdminUsers() {
     setSelectedUser(user);
     setShowDeleteModal(true);
     setDeleteConfirmText("");
+  };
+
+  const handleManageSubscription = (user: User) => {
+    setSelectedUser(user);
+    const userOrg = organisations.find(o => o.id === user.organisationId);
+    const userPlan = userOrg?.planId ? plans.find(p => p.id === userOrg.planId) : null;
+    setSubscriptionFormData({
+      planType: "existing",
+      planId: userPlan?.id || "",
+      customPlan: {
+        name: "",
+        description: "",
+        pricePerUser: "",
+        featureIds: [],
+      },
+    });
+    setShowSubscriptionModal(true);
+  };
+
+  const handleSubscriptionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser?.organisationId) return;
+
+    const subscriptionData = {
+      planType: subscriptionFormData.planType,
+      planId: subscriptionFormData.planType === "existing" ? subscriptionFormData.planId : undefined,
+      customPlan: subscriptionFormData.planType === "custom" ? {
+        name: subscriptionFormData.customPlan.name,
+        description: subscriptionFormData.customPlan.description,
+        pricePerUser: parseFloat(subscriptionFormData.customPlan.pricePerUser),
+        featureIds: subscriptionFormData.customPlan.featureIds,
+      } : undefined,
+    };
+
+    updateSubscriptionMutation.mutate({
+      organisationId: selectedUser.organisationId,
+      subscriptionData,
+    });
   };
 
   const confirmDeleteUser = () => {
@@ -399,6 +520,16 @@ export function SuperAdminUsers() {
                           >
                             <i className="fas fa-eye"></i>
                           </button>
+                          {user.role === 'admin' && (
+                            <button 
+                              className="btn btn-sm btn-info"
+                              onClick={() => handleManageSubscription(user)}
+                              data-testid={`button-manage-subscription-${user.id}`}
+                              title="Manage Subscription"
+                            >
+                              <i className="fas fa-credit-card"></i>
+                            </button>
+                          )}
                           <button 
                             className={`btn btn-sm ${user.status === 'active' ? 'btn-warning' : 'btn-success'}`}
                             onClick={() => handleToggleUserStatus(user)}
@@ -769,6 +900,263 @@ export function SuperAdminUsers() {
               setShowDeleteModal(false);
               setSelectedUser(null);
               setDeleteConfirmText("");
+            }}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Subscription Management Modal */}
+      {showSubscriptionModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-manage-subscription-title">
+              Manage Subscription - {selectedUser.firstName} {selectedUser.lastName}
+            </h3>
+            
+            {/* Current Subscription Info */}
+            <div className="card bg-base-200 mb-6">
+              <div className="card-body">
+                <h4 className="font-semibold mb-2">Current Subscription</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-medium text-sm">Organization:</label>
+                    <div data-testid="text-current-org">
+                      {selectedUserOrganisation?.displayName || 'N/A'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-medium text-sm">Current Plan:</label>
+                    <div data-testid="text-current-plan">
+                      {currentPlan ? (
+                        <div>
+                          <div className="font-medium">{currentPlan.name}</div>
+                          <div className="text-sm opacity-60">${currentPlan.pricePerUser}/user</div>
+                        </div>
+                      ) : (
+                        <div className="text-warning">No plan assigned</div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-medium text-sm">Status:</label>
+                    <div>
+                      <div className={`badge ${currentPlan ? 'badge-success' : 'badge-warning'}`}>
+                        {currentPlan ? 'Active' : 'No Plan'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubscriptionSubmit} className="space-y-6">
+              {/* Plan Type Selection */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-semibold">Plan Type</span>
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="planType" 
+                      value="existing" 
+                      checked={subscriptionFormData.planType === "existing"}
+                      onChange={(e) => setSubscriptionFormData(prev => ({ ...prev, planType: e.target.value }))}
+                      className="radio"
+                      data-testid="radio-existing-plan"
+                    />
+                    <span className="ml-2">Use Existing Plan</span>
+                  </label>
+                  <label className="cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="planType" 
+                      value="custom" 
+                      checked={subscriptionFormData.planType === "custom"}
+                      onChange={(e) => setSubscriptionFormData(prev => ({ ...prev, planType: e.target.value }))}
+                      className="radio"
+                      data-testid="radio-custom-plan"
+                    />
+                    <span className="ml-2">Create Custom Plan</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Existing Plan Selection */}
+              {subscriptionFormData.planType === "existing" && (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Select Plan *</span>
+                  </label>
+                  <select 
+                    className="select select-bordered"
+                    value={subscriptionFormData.planId}
+                    onChange={(e) => setSubscriptionFormData(prev => ({ ...prev, planId: e.target.value }))}
+                    required
+                    data-testid="select-existing-plan"
+                  >
+                    <option value="">Choose a plan...</option>
+                    {plans.filter(p => p.status === 'active').map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name} - ${plan.pricePerUser}/user
+                      </option>
+                    ))}
+                  </select>
+                  {subscriptionFormData.planId && (
+                    <div className="mt-2 p-3 bg-base-200 rounded">
+                      {(() => {
+                        const selectedPlan = plans.find(p => p.id === subscriptionFormData.planId);
+                        return selectedPlan ? (
+                          <div>
+                            <div className="font-medium">{selectedPlan.name}</div>
+                            <div className="text-sm opacity-60">{selectedPlan.description}</div>
+                            <div className="text-sm font-medium mt-1">${selectedPlan.pricePerUser} per user</div>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Custom Plan Configuration */}
+              {subscriptionFormData.planType === "custom" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Plan Name *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="Custom Plan Name" 
+                        className="input input-bordered" 
+                        value={subscriptionFormData.customPlan.name}
+                        onChange={(e) => setSubscriptionFormData(prev => ({
+                          ...prev,
+                          customPlan: { ...prev.customPlan, name: e.target.value }
+                        }))}
+                        required 
+                        data-testid="input-custom-plan-name"
+                      />
+                    </div>
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Price per User *</span>
+                      </label>
+                      <div className="input-group">
+                        <span>$</span>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00" 
+                          className="input input-bordered flex-1" 
+                          value={subscriptionFormData.customPlan.pricePerUser}
+                          onChange={(e) => setSubscriptionFormData(prev => ({
+                            ...prev,
+                            customPlan: { ...prev.customPlan, pricePerUser: e.target.value }
+                          }))}
+                          required 
+                          data-testid="input-custom-plan-price"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Description</span>
+                    </label>
+                    <textarea 
+                      className="textarea textarea-bordered" 
+                      placeholder="Plan description..."
+                      value={subscriptionFormData.customPlan.description}
+                      onChange={(e) => setSubscriptionFormData(prev => ({
+                        ...prev,
+                        customPlan: { ...prev.customPlan, description: e.target.value }
+                      }))}
+                      data-testid="textarea-custom-plan-description"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Features</span>
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto border rounded p-3">
+                      {planFeatures.map((feature) => (
+                        <label key={feature.id} className="cursor-pointer flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={subscriptionFormData.customPlan.featureIds.includes(feature.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSubscriptionFormData(prev => ({
+                                  ...prev,
+                                  customPlan: {
+                                    ...prev.customPlan,
+                                    featureIds: [...prev.customPlan.featureIds, feature.id]
+                                  }
+                                }));
+                              } else {
+                                setSubscriptionFormData(prev => ({
+                                  ...prev,
+                                  customPlan: {
+                                    ...prev.customPlan,
+                                    featureIds: prev.customPlan.featureIds.filter(id => id !== feature.id)
+                                  }
+                                }));
+                              }
+                            }}
+                            className="checkbox checkbox-sm"
+                            data-testid={`checkbox-feature-${feature.key}`}
+                          />
+                          <div>
+                            <div className="font-medium text-sm">{feature.name}</div>
+                            {feature.description && (
+                              <div className="text-xs opacity-60">{feature.description}</div>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="modal-action">
+                <button 
+                  type="button" 
+                  className="btn" 
+                  onClick={() => {
+                    setShowSubscriptionModal(false);
+                    setSelectedUser(null);
+                  }}
+                  data-testid="button-cancel-subscription"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={updateSubscriptionMutation.isPending}
+                  data-testid="button-save-subscription"
+                >
+                  {updateSubscriptionMutation.isPending ? (
+                    <span className="loading loading-spinner loading-sm"></span>
+                  ) : (
+                    'Update Subscription'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => {
+              setShowSubscriptionModal(false);
+              setSelectedUser(null);
             }}>close</button>
           </form>
         </dialog>
