@@ -5070,7 +5070,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData = {
         location: location || null,
         suspendData: suspendData || null,
-        progressMeasure: progressPct ? parseFloat(progressPct) / 100 : null,
+        progressMeasure: progressPct ? (parseFloat(progressPct) / 100).toString() : null,
         status: 'in_progress' as const,
         lastCommitAt: new Date()
       };
@@ -5122,13 +5122,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Mark attempt as completed
       const updateData = {
-        status: 'completed',
+        status: 'completed' as const,
         completed: true,
-        closed: true,
-        scoreRaw: score ? parseFloat(score) : 0,
+        isActive: false,
+        scoreRaw: score ? parseFloat(score).toString() : '0',
         passed: Boolean(passed),
-        completedAt: new Date(),
-        terminatedAt: new Date()
+        finishedAt: new Date()
       };
 
       await storage.updateScormAttempt(attemptId, updateData);
@@ -5201,7 +5200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: attempt.status?.toUpperCase() || 'NOT_STARTED',
           lastLocation: attempt.location || '',
           suspendData: attempt.suspendData || '',
-          progressPct: attempt.progressMeasure ? Math.round(attempt.progressMeasure * 100) : 0,
+          progressPct: attempt.progressMeasure ? Math.round(parseFloat(attempt.progressMeasure) * 100) : 0,
           score: attempt.scoreRaw || 0,
           passed: attempt.passed || false,
           createdAt: attempt.createdAt,
@@ -5818,7 +5817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const existingAttempt = await storage.getScormAttemptByAttemptId(finalAttemptId);
         if (existingAttempt) {
-          wasAlreadyPassed = existingAttempt.passed;
+          wasAlreadyPassed = existingAttempt.passed || false;
           await storage.updateScormAttempt(finalAttemptId, attemptData);
         } else {
           await storage.createScormAttempt(attemptData);
@@ -6082,11 +6081,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scoreRaw: score !== null ? score.toString() : null,
         progressPercent: finalProgress,
         completed: isComplete,
-        status: isComplete ? 'completed' : 'in_progress',
-        closed: true,
+        status: isComplete ? 'completed' as const : 'in_progress' as const,
+        isActive: false,
         finishedAt: now,
-        lastCommitAt: now,
-        updatedAt: now
+        lastCommitAt: now
       };
 
       console.log(`💾 Updating attempt ${attemptId} with final state:`, updates);
@@ -6302,8 +6300,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         courseId,
         organisationId: user.organisationId,
-        itemId: assignment.itemId || undefined,
+        itemId: undefined,
         scormVersion: standard as '1.2' | '2004',
+        standard: standard as '1.2' | '2004',
         learnerId: userId,
         learnerName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Learner'
       };
