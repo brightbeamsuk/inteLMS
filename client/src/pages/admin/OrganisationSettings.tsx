@@ -431,12 +431,12 @@ export function AdminOrganisationSettings() {
                         >
                           Primary Button
                         </button>
-                        <span 
-                          className="badge badge-lg" 
+                        <button 
+                          className="btn btn-sm" 
                           style={{ backgroundColor: brandingData.primaryColor, borderColor: brandingData.primaryColor, color: 'white' }}
                         >
                           Accent Badge
-                        </span>
+                        </button>
                       </div>
                     </div>
                   )}
