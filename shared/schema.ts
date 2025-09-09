@@ -320,6 +320,20 @@ export const planFeatureMappings = pgTable("plan_feature_mappings", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Audit log table - tracks user activities and system events
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  userId: varchar("user_id"), // null for system events
+  action: varchar("action").notNull(), // e.g., "login", "course_completed", "user_created"
+  resource: varchar("resource"), // e.g., "user", "course", "assignment"
+  resourceId: varchar("resource_id"), // ID of the affected resource
+  details: jsonb("details"), // Additional event data
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   organisation: one(organisations, {
@@ -492,6 +506,17 @@ export const planFeatureMappingsRelations = relations(planFeatureMappings, ({ on
   }),
 }));
 
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [auditLogs.organisationId],
+    references: [organisations.id],
+  }),
+  user: one(users, {
+    fields: [auditLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -573,6 +598,11 @@ export const insertPlanFeatureMappingSchema = createInsertSchema(planFeatureMapp
   createdAt: true,
 });
 
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Course folder insert schemas
 export const insertCourseFolderSchema = createInsertSchema(courseFolders).omit({
   id: true,
@@ -629,6 +659,9 @@ export type PlanFeature = typeof planFeatures.$inferSelect;
 
 export type InsertPlanFeatureMapping = z.infer<typeof insertPlanFeatureMappingSchema>;
 export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
+
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
 
 // Course folder types
 export type InsertCourseFolder = z.infer<typeof insertCourseFolderSchema>;
