@@ -433,7 +433,7 @@ export function AdminOrganisationSettings() {
                         </button>
                         <span 
                           className="badge badge-lg" 
-                          style={{ backgroundColor: brandingData.accentColor, borderColor: brandingData.accentColor, color: 'white' }}
+                          style={{ backgroundColor: brandingData.primaryColor, borderColor: brandingData.primaryColor, color: 'white' }}
                         >
                           Accent Badge
                         </span>
