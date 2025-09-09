@@ -21,9 +21,12 @@ export function UserLayout({ children }: UserLayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Fetch organization data for the current user
-  const { data: organization } = useQuery<Organization>({
+  const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ['/api/organisations', user?.organisationId],
     enabled: !!user?.organisationId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 2,
   });
 
   // Fetch plan features to check access
@@ -78,11 +81,24 @@ export function UserLayout({ children }: UserLayoutProps) {
             <i className="fas fa-bars text-xl"></i>
           </button>
           <Link href="/user" className="btn btn-ghost" data-testid="link-home">
-            <img 
-              src={hasBrandingAccess && organization?.logoUrl ? organization.logoUrl : inteLMSLogo} 
-              alt={hasBrandingAccess && organization?.displayName ? organization.displayName : "inteLMS"} 
-              className="h-16 w-auto object-contain"
-            />
+            {!orgLoading && organization && hasBrandingAccess && organization?.logoUrl ? (
+              <img 
+                src={organization.logoUrl} 
+                alt={organization.displayName || "Logo"} 
+                className="h-16 w-auto object-contain"
+                onError={(e) => {
+                  // Fallback to default logo if custom logo fails to load
+                  e.currentTarget.src = inteLMSLogo;
+                  e.currentTarget.alt = "inteLMS";
+                }}
+              />
+            ) : (
+              <img 
+                src={inteLMSLogo} 
+                alt="inteLMS" 
+                className="h-16 w-auto object-contain"
+              />
+            )}
           </Link>
         </div>
         
