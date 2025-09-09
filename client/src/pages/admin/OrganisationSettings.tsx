@@ -336,6 +336,116 @@ The {{organisationDisplayName}} Team`
     saveOrganizationMutation.mutate(organizationData);
   };
 
+  // Fetch organisation settings including email settings
+  const { data: orgSettings } = useQuery({
+    queryKey: [`/api/organisations/${user?.organisationId}/settings`],
+    queryFn: async () => {
+      const response = await fetch(`/api/organisations/${user?.organisationId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch organisation settings');
+      }
+      return response.json();
+    },
+    enabled: !!user?.organisationId,
+  });
+
+  // Load email settings when org settings become available
+  useEffect(() => {
+    if (orgSettings) {
+      setEmailSettings({
+        smtpHost: orgSettings.smtpHost || '',
+        smtpPort: orgSettings.smtpPort?.toString() || '587',
+        smtpUsername: orgSettings.smtpUsername || '',
+        smtpPassword: orgSettings.smtpPassword || '',
+        fromEmail: orgSettings.fromEmail || '',
+        fromName: orgSettings.fromName || '',
+        useSecure: orgSettings.smtpSecure !== false,
+      });
+      setNotificationData({
+        assignmentEmailsEnabled: orgSettings.assignmentEmailsEnabled !== false,
+        reminderEmailsEnabled: orgSettings.reminderEmailsEnabled !== false,
+        completionEmailsEnabled: orgSettings.completionEmailsEnabled !== false,
+        reminderDays: orgSettings.reminderDays || 7,
+      });
+      setPrivacyData({
+        defaultCertificateDownload: orgSettings.defaultCertificateDownload || false,
+      });
+    }
+  }, [orgSettings]);
+
+  // Save email settings mutation
+  const saveEmailSettingsMutation = useMutation({
+    mutationFn: async (emailData: typeof emailSettings) => {
+      return await apiRequest('PUT', `/api/organisations/${user?.organisationId}/email-settings`, {
+        smtpHost: emailData.smtpHost,
+        smtpPort: parseInt(emailData.smtpPort),
+        smtpUsername: emailData.smtpUsername,
+        smtpPassword: emailData.smtpPassword,
+        smtpSecure: emailData.useSecure,
+        fromEmail: emailData.fromEmail,
+        fromName: emailData.fromName,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/organisations/${user?.organisationId}/settings`] });
+      toast({
+        title: "Success",
+        description: "Email settings saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save email settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Test email mutation
+  const testEmailMutation = useMutation({
+    mutationFn: async (testEmail: string) => {
+      return await apiRequest('POST', `/api/organisations/${user?.organisationId}/test-email`, {
+        testEmail,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Test email sent successfully! Check your inbox.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send test email. Please check your SMTP settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveEmailSettings = () => {
+    if (!user?.organisationId) return;
+    saveEmailSettingsMutation.mutate(emailSettings);
+  };
+
+  const sendTestEmail = () => {
+    if (!user?.organisationId || !user?.email) return;
+    
+    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword || !emailSettings.fromEmail) {
+      toast({
+        title: "Error",
+        description: "Please configure all required SMTP settings before testing",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    testEmailMutation.mutate(user.email);
+  };
+
   // Build tabs array based on role and features
   const buildTabs = () => {
     const baseTabs = ["Branding", "Contacts"];
@@ -807,9 +917,11 @@ The {{organisationDisplayName}} Team`
                   <button 
                     className="btn btn-outline btn-sm"
                     data-testid="button-test-email"
+                    onClick={sendTestEmail}
+                    disabled={testEmailMutation.isPending}
                   >
-                    <i className="fas fa-paper-plane"></i>
-                    Test Email
+                    <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                    {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
                   </button>
                 </div>
                 
@@ -936,13 +1048,15 @@ The {{organisationDisplayName}} Team`
                   <button 
                     className="btn btn-primary"
                     data-testid="button-save-email-settings"
+                    onClick={saveEmailSettings}
+                    disabled={saveEmailSettingsMutation.isPending}
                     style={{
                       backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
                       borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
                     } as React.CSSProperties}
                   >
-                    <i className="fas fa-save"></i>
-                    Save Email Settings
+                    <i className={`fas ${saveEmailSettingsMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
+                    {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Email Settings'}
                   </button>
                 </div>
               </div>

@@ -2609,6 +2609,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email settings routes
+  app.put('/api/organisations/:id/email-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: organisationId } = req.params;
+
+      // Admins can only update their own organization's settings
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      const {
+        smtpHost,
+        smtpPort,
+        smtpUsername,
+        smtpPassword,
+        smtpSecure,
+        fromEmail,
+        fromName
+      } = req.body;
+
+      // Validate required fields
+      if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+        return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+      }
+
+      const emailSettings = {
+        smtpHost,
+        smtpPort: smtpPort || 587,
+        smtpUsername,
+        smtpPassword,
+        smtpSecure: smtpSecure !== false, // Default to true
+        fromEmail,
+        fromName: fromName || 'LMS System',
+      };
+
+      const updatedSettings = await storage.updateOrganisationSettings(organisationId, emailSettings);
+      res.json({ success: true, message: 'Email settings saved successfully' });
+    } catch (error) {
+      console.error('Error updating email settings:', error);
+      res.status(500).json({ message: 'Failed to update email settings' });
+    }
+  });
+
+  // Test email settings
+  app.post('/api/organisations/:id/test-email', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id: organisationId } = req.params;
+      const { testEmail } = req.body;
+
+      // Admins can only test their own organization's settings
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      if (!testEmail) {
+        return res.status(400).json({ message: 'Test email address is required' });
+      }
+
+      // Send test email
+      const success = await emailService.sendTestEmail(testEmail, organisationId);
+      
+      if (success) {
+        res.json({ success: true, message: 'Test email sent successfully' });
+      } else {
+        res.status(500).json({ success: false, message: 'Failed to send test email. Please check your SMTP settings.' });
+      }
+    } catch (error) {
+      console.error('Error sending test email:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to send test email. Please check your SMTP settings.' 
+      });
+    }
+  });
+
   // Users routes
   app.get('/api/users', requireAuth, async (req: any, res) => {
     try {

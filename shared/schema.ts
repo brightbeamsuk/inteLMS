@@ -282,6 +282,14 @@ export const organisationSettings = pgTable("organisation_settings", {
   completionEmailsEnabled: boolean("completion_emails_enabled").default(true),
   reminderDays: integer("reminder_days").default(7), // days before due date
   defaultCertificateDownload: boolean("default_certificate_download").default(false),
+  // SMTP email configuration
+  smtpHost: varchar("smtp_host"),
+  smtpPort: integer("smtp_port").default(587),
+  smtpUsername: varchar("smtp_username"),
+  smtpPassword: varchar("smtp_password"),
+  smtpSecure: boolean("smtp_secure").default(true),
+  fromEmail: varchar("from_email"),
+  fromName: varchar("from_name"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
