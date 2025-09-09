@@ -10,6 +10,7 @@ import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { singleMailerService } from "./services/singleMailerService";
+import { mailerService } from "./services/MailerService";
 import { BrevoClient, resolveBrevoKey } from "./services/brevoClient";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
@@ -3507,6 +3508,283 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: (error as any)?.message || 'Failed to send test email. Please check your SMTP settings.' 
+      });
+    }
+  });
+
+  // ========================================================================================
+  // COMPREHENSIVE EMAIL TEST ENDPOINT - Provider-Agnostic Email Testing
+  // Supports: SMTP Generic, SendGrid, Brevo, Mailgun, Postmark, Mailjet, SparkPost
+  // ========================================================================================
+  app.post('/api/admin/email/test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      // Allow both superadmin and admin access
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied - admin privileges required' });
+      }
+
+      const { testEmail } = req.body;
+
+      // Validate test email is provided and valid
+      if (!testEmail) {
+        return res.status(400).json({ message: 'Test email address is required' });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(testEmail)) {
+        return res.status(400).json({ message: 'Invalid test email address format' });
+      }
+
+      // Determine organization context
+      // SuperAdmin tests platform-level settings unless specific orgId provided
+      // Admin tests their own organization settings
+      let orgId: string | undefined;
+      
+      if (user.role === 'admin') {
+        // Admin can only test their own organization
+        if (!user.organisationId) {
+          return res.status(400).json({ message: 'Admin user not associated with an organization' });
+        }
+        orgId = user.organisationId;
+      } else if (user.role === 'superadmin') {
+        // SuperAdmin can test platform-level (orgId = undefined) or specific org
+        orgId = req.body.orgId; // Optional - if provided, test that org's settings
+      }
+
+      console.log(`📧 Email Test Request: ${testEmail} (by ${user.email}, context: ${orgId ? `org-${orgId}` : 'platform'})`);
+
+      // STEP 1: Resolve effective settings and display configuration info
+      const resolved = await mailerService.resolveEffectiveSettings(orgId);
+      
+      if (!resolved.settings) {
+        return res.json({
+          success: false,
+          step: 'configuration',
+          provider: 'none',
+          error: {
+            code: 'NOT_CONFIGURED',
+            message: 'Email not configured. Configure email settings at organization or platform level.',
+            details: 'No valid email configuration found for the requested context.'
+          },
+          diagnostics: {
+            context: orgId ? `Organization ${orgId}` : 'Platform level',
+            effectiveSettings: null,
+            fieldSources: {},
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      const settings = resolved.settings;
+      console.log(`📧 Using ${settings.provider} provider with settings from ${resolved.source}`);
+
+      // STEP 2: Perform health check first
+      console.log(`🔍 Running health check for ${settings.provider}...`);
+      
+      const healthResult = await (mailerService as any).adapters.get(settings.provider)?.healthCheck(settings);
+      
+      if (!healthResult?.success) {
+        return res.json({
+          success: false,
+          step: 'health_check',
+          provider: settings.provider,
+          error: {
+            code: healthResult?.error?.code || 'HEALTH_CHECK_FAILED',
+            message: healthResult?.error?.short || 'Health check failed',
+            details: healthResult?.error?.raw || 'Provider connectivity test failed'
+          },
+          diagnostics: {
+            context: orgId ? `Organization ${orgId}` : 'Platform level',
+            provider: settings.provider,
+            endpoint: healthResult?.endpoint,
+            httpStatus: healthResult?.httpStatus,
+            effectiveSettings: {
+              provider: settings.provider,
+              fromEmail: settings.fromEmail,
+              fromName: settings.fromName,
+              ...(settings.smtpHost && { 
+                smtpHost: settings.smtpHost,
+                smtpPort: settings.smtpPort 
+              }),
+              ...(settings.apiKey && { 
+                apiKeyPreview: `${settings.apiKey.substring(0, 4)}...${settings.apiKey.substring(settings.apiKey.length - 4)}`,
+                apiKeyLength: settings.apiKey.length
+              }),
+              ...(settings.apiDomain && { apiDomain: settings.apiDomain }),
+              ...(settings.apiRegion && { apiRegion: settings.apiRegion })
+            },
+            fieldSources: resolved.sourceMap,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      console.log(`✅ Health check passed for ${settings.provider}`);
+
+      // STEP 3: Send actual test email
+      console.log(`📧 Sending test email via ${settings.provider}...`);
+      
+      const emailResult = await mailerService.send({
+        orgId,
+        to: testEmail,
+        subject: `✅ Email Test - ${settings.provider.toUpperCase()} via inteLMS`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px;">✅ Email Test Successful</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">Provider: ${settings.provider.toUpperCase()}</p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border: 1px solid #e9ecef; border-top: none;">
+              <h2 style="color: #495057; margin-top: 0;">Test Details</h2>
+              
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <tr style="background: white;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">Provider</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${settings.provider.replace('_', ' ').toUpperCase()}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">From Email</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${settings.fromEmail}</td>
+                </tr>
+                <tr style="background: white;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">From Name</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${settings.fromName}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">Context</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${orgId ? `Organization ${orgId}` : 'Platform Level'}</td>
+                </tr>
+                <tr style="background: white;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">Settings Source</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${resolved.source === 'org' ? 'Organization Override' : 'Platform Default'}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                  <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">Timestamp</td>
+                  <td style="padding: 8px; border: 1px solid #dee2e6;">${new Date().toLocaleString()}</td>
+                </tr>
+              </table>
+
+              <p style="margin: 20px 0 0 0; color: #6c757d; font-size: 14px;">
+                If you received this email, your inteLMS email configuration is working correctly. 
+                This test was initiated by ${user.email}.
+              </p>
+            </div>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 0 0 8px 8px; border: 1px solid #bbdefb; border-top: none; text-align: center;">
+              <p style="margin: 0; color: #1976d2; font-size: 14px;">
+                🚀 Powered by inteLMS Email Service
+              </p>
+            </div>
+          </div>
+        `,
+        text: `✅ Email Test Successful
+
+Provider: ${settings.provider.toUpperCase()}
+From: ${settings.fromName} <${settings.fromEmail}>
+Context: ${orgId ? `Organization ${orgId}` : 'Platform Level'}
+Settings Source: ${resolved.source === 'org' ? 'Organization Override' : 'Platform Default'}
+Timestamp: ${new Date().toLocaleString()}
+
+If you received this email, your inteLMS email configuration is working correctly.
+This test was initiated by ${user.email}.
+
+🚀 Powered by inteLMS Email Service`,
+        templateType: 'system_test'
+      });
+
+      if (emailResult.success) {
+        console.log(`✅ Test email sent successfully via ${settings.provider}: ${emailResult.details.messageId}`);
+        
+        return res.json({
+          success: true,
+          step: 'sent',
+          provider: settings.provider,
+          message: `Test email sent successfully via ${settings.provider.replace('_', ' ').toUpperCase()}`,
+          diagnostics: {
+            context: orgId ? `Organization ${orgId}` : 'Platform level',
+            provider: settings.provider,
+            endpoint: emailResult.endpoint,
+            httpStatus: emailResult.httpStatus,
+            smtpStatus: emailResult.smtpStatus,
+            messageId: emailResult.details.messageId,
+            effectiveSettings: {
+              provider: settings.provider,
+              fromEmail: settings.fromEmail,
+              fromName: settings.fromName,
+              ...(settings.smtpHost && { 
+                smtpHost: settings.smtpHost,
+                smtpPort: settings.smtpPort,
+                tls: emailResult.details.tls
+              }),
+              ...(settings.apiKey && { 
+                apiKeyPreview: emailResult.details.keyPreview,
+                apiKeyLength: emailResult.details.keyLength
+              }),
+              ...(settings.apiDomain && { apiDomain: settings.apiDomain }),
+              ...(settings.apiRegion && { apiRegion: settings.apiRegion })
+            },
+            fieldSources: emailResult.details.effectiveFieldSources,
+            timestamp: emailResult.details.timestamp
+          }
+        });
+      } else {
+        console.log(`❌ Test email failed via ${settings.provider}: ${emailResult.error?.short}`);
+        
+        return res.json({
+          success: false,
+          step: 'send',
+          provider: settings.provider,
+          error: {
+            code: emailResult.error?.code || 'SEND_FAILED',
+            message: emailResult.error?.short || 'Email send failed',
+            details: emailResult.error?.raw || 'Unknown error occurred during email send'
+          },
+          diagnostics: {
+            context: orgId ? `Organization ${orgId}` : 'Platform level',
+            provider: settings.provider,
+            endpoint: emailResult.endpoint,
+            httpStatus: emailResult.httpStatus,
+            smtpStatus: emailResult.smtpStatus,
+            effectiveSettings: {
+              provider: settings.provider,
+              fromEmail: settings.fromEmail,
+              fromName: settings.fromName,
+              ...(settings.smtpHost && { 
+                smtpHost: settings.smtpHost,
+                smtpPort: settings.smtpPort
+              }),
+              ...(settings.apiKey && { 
+                apiKeyPreview: emailResult.details.keyPreview,
+                apiKeyLength: emailResult.details.keyLength
+              }),
+              ...(settings.apiDomain && { apiDomain: settings.apiDomain }),
+              ...(settings.apiRegion && { apiRegion: settings.apiRegion })
+            },
+            fieldSources: emailResult.details.effectiveFieldSources,
+            timestamp: emailResult.details.timestamp
+          }
+        });
+      }
+
+    } catch (error: any) {
+      console.error('❌ Email test endpoint error:', error);
+      
+      return res.status(500).json({
+        success: false,
+        step: 'error',
+        provider: 'unknown',
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Internal server error during email test',
+          details: error.message || 'Unknown error occurred'
+        },
+        diagnostics: {
+          context: 'unknown',
+          timestamp: new Date().toISOString()
+        }
       });
     }
   });
