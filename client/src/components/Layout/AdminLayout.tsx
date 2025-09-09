@@ -14,6 +14,17 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [upgradeModal, setUpgradeModal] = useState<{
+    isOpen: boolean;
+    featureName: string;
+    featureDescription: string;
+    featureIcon: string;
+  }>({
+    isOpen: false,
+    featureName: '',
+    featureDescription: '',
+    featureIcon: ''
+  });
 
   // Fetch organization data for the current admin user
   const { data: organization } = useQuery({
@@ -44,18 +55,72 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   });
 
 
-  // Check if audit log feature is enabled
-  const auditLogFeature = planFeatures.find((feature: any) => feature.featureId === 'audit_log');
-  const hasAuditLogAccess = auditLogFeature?.enabled || false;
+  // Helper function to check feature access
+  const hasFeatureAccess = (featureId: string) => {
+    const feature = planFeatures.find((f: any) => f.featureId === featureId);
+    return feature?.enabled || false;
+  };
+
+  // Feature definitions for premium features
+  const featureDefinitions = {
+    training_matrix: {
+      name: "Training Matrix",
+      description: "Advanced training matrix functionality for managing user training requirements and tracking compliance across your organization.",
+      icon: "fas fa-table"
+    },
+    audit_log: {
+      name: "Audit Log",
+      description: "Track all user activities with detailed timestamps and comprehensive platform monitoring for security and compliance.",
+      icon: "fas fa-history"
+    },
+    custom_reports: {
+      name: "Custom Reports",
+      description: "Generate detailed reports and analytics with custom filters, data visualization, and export capabilities.",
+      icon: "fas fa-chart-bar"
+    },
+    live_chat_support: {
+      name: "Live Chat Support",
+      description: "Get instant help with a dedicated live chat support widget for immediate assistance and technical support.",
+      icon: "fas fa-comments"
+    }
+  };
+
+  // Handle feature access with upgrade modal
+  const handleFeatureClick = (featureId: string, defaultPath: string) => {
+    if (hasFeatureAccess(featureId)) {
+      window.location.href = defaultPath;
+      return;
+    }
+    
+    const feature = featureDefinitions[featureId as keyof typeof featureDefinitions];
+    if (feature) {
+      setUpgradeModal({
+        isOpen: true,
+        featureName: feature.name,
+        featureDescription: feature.description,
+        featureIcon: feature.icon
+      });
+    }
+  };
 
   const menuItems = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/admin/users", icon: "fas fa-users", label: "Users" },
     { path: "/admin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
-    { path: "/admin/training-matrix", icon: "fas fa-table", label: "Training Matrix" },
+    { 
+      path: "/admin/training-matrix", 
+      icon: "fas fa-table", 
+      label: "Training Matrix",
+      requiresFeature: "training_matrix"
+    },
     { path: "/admin/certificates", icon: "fas fa-certificate", label: "Certificates" },
     { path: "/admin/billing", icon: "fas fa-credit-card", label: "Billing" },
-    ...(hasAuditLogAccess ? [{ path: "/admin/audit-log", icon: "fas fa-history", label: "Audit Log" }] : []),
+    { 
+      path: "/admin/audit-log", 
+      icon: "fas fa-history", 
+      label: "Audit Log",
+      requiresFeature: "audit_log"
+    },
     { path: "/admin/settings", icon: "fas fa-cog", label: "Organisation Settings" },
   ];
 
@@ -185,31 +250,61 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               </div>
               
               <ul className="menu p-4 space-y-2">
-                {menuItems.map((item) => (
-                  <li key={item.path}>
-                    <Link 
-                      href={item.path}
-                      className={location === item.path ? "active" : ""}
-                      onClick={() => setDrawerOpen(false)}
-                      data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-                    >
-                      <i className={item.icon}></i>
-                      {item.label}
-                      {/* Show overdue count indicator for Training Matrix */}
-                      {item.path === '/admin/training-matrix' && overdueData?.overdueCount > 0 && (
-                        <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
-                          <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
-                            {overdueData.overdueCount}
+                {menuItems.map((item) => {
+                  const hasAccess = !item.requiresFeature || hasFeatureAccess(item.requiresFeature);
+                  
+                  return (
+                    <li key={item.path}>
+                      {item.requiresFeature && !hasAccess ? (
+                        <button
+                          className={`w-full text-left ${location === item.path ? "active" : ""} relative`}
+                          onClick={() => {
+                            setDrawerOpen(false);
+                            handleFeatureClick(item.requiresFeature, item.path);
+                          }}
+                          data-testid={`button-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <i className={item.icon}></i>
+                          {item.label}
+                          <div className="ml-auto">
+                            <i className="fas fa-lock text-warning text-sm"></i>
                           </div>
-                        </div>
+                        </button>
+                      ) : (
+                        <Link 
+                          href={item.path}
+                          className={location === item.path ? "active" : ""}
+                          onClick={() => setDrawerOpen(false)}
+                          data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <i className={item.icon}></i>
+                          {item.label}
+                          {/* Show overdue count indicator for Training Matrix */}
+                          {item.path === '/admin/training-matrix' && overdueData?.overdueCount > 0 && (
+                            <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                                {overdueData.overdueCount}
+                              </div>
+                            </div>
+                          )}
+                        </Link>
                       )}
-                    </Link>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </aside>
           </div>
         </div>
+
+        {/* Feature Upgrade Modal */}
+        <FeatureUpgradeModal
+          isOpen={upgradeModal.isOpen}
+          onClose={() => setUpgradeModal(prev => ({ ...prev, isOpen: false }))}
+          featureName={upgradeModal.featureName}
+          featureDescription={upgradeModal.featureDescription}
+          featureIcon={upgradeModal.featureIcon}
+        />
       </div>
     </ThemeProvider>
   );
