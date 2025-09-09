@@ -89,6 +89,16 @@ export function AdminOrganisationSettings() {
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [templateSubject, setTemplateSubject] = useState('');
   const [templateContent, setTemplateContent] = useState('');
+  
+  const [emailSettings, setEmailSettings] = useState({
+    smtpHost: '',
+    smtpPort: '587',
+    smtpUsername: '',
+    smtpPassword: '',
+    fromEmail: '',
+    fromName: '',
+    useSecure: true,
+  });
 
   const handleEditTemplate = (templateType: string) => {
     const defaultTemplate = getDefaultTemplate(templateType);
@@ -337,7 +347,7 @@ The {{organisationDisplayName}} Team`
     baseTabs.push("Notifications");
     
     if (hasEmailTemplatesAccess) {
-      baseTabs.push("Email Templates");
+      baseTabs.push("Email Settings");
     }
     
     baseTabs.push("Privacy");
@@ -785,12 +795,165 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
-          {/* Email Templates Tab */}
-          {hasEmailTemplatesAccess && activeTab === tabs.indexOf("Email Templates") && (
+          {/* Email Settings Tab */}
+          {hasEmailTemplatesAccess && activeTab === tabs.indexOf("Email Settings") && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold">Email Templates</h3>
+              <h3 className="text-lg font-semibold">Email Settings</h3>
               
-              <div className="alert alert-info">
+              {/* Email API Configuration Section */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-md font-semibold">Email API Configuration</h4>
+                  <button 
+                    className="btn btn-outline btn-sm"
+                    data-testid="button-test-email"
+                  >
+                    <i className="fas fa-paper-plane"></i>
+                    Test Email
+                  </button>
+                </div>
+                
+                <div className="alert alert-warning">
+                  <i className="fas fa-exclamation-triangle"></i>
+                  <div>
+                    <div className="font-bold">Email Configuration Required</div>
+                    <div className="text-sm">
+                      Configure your SMTP settings or email service API to enable system emails (assignments, reminders, completions).
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">SMTP Host</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      placeholder="smtp.gmail.com"
+                      value={emailSettings.smtpHost}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                      data-testid="input-smtp-host"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">SMTP Port</span>
+                    </label>
+                    <select 
+                      className="select select-bordered"
+                      value={emailSettings.smtpPort}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: e.target.value }))}
+                      data-testid="select-smtp-port"
+                    >
+                      <option value="25">25 (Standard)</option>
+                      <option value="587">587 (Submission)</option>
+                      <option value="465">465 (SSL)</option>
+                      <option value="2525">2525 (Alternative)</option>
+                    </select>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">SMTP Username</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      placeholder="your-email@domain.com"
+                      value={emailSettings.smtpUsername}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
+                      data-testid="input-smtp-username"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">SMTP Password</span>
+                    </label>
+                    <input 
+                      type="password" 
+                      className="input input-bordered" 
+                      placeholder="••••••••"
+                      value={emailSettings.smtpPassword}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
+                      data-testid="input-smtp-password"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">From Email</span>
+                    </label>
+                    <input 
+                      type="email" 
+                      className="input input-bordered" 
+                      placeholder="noreply@yourdomain.com"
+                      value={emailSettings.fromEmail}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
+                      data-testid="input-from-email"
+                    />
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">From Name</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      placeholder="Your Organization LMS"
+                      value={emailSettings.fromName}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, fromName: e.target.value }))}
+                      data-testid="input-from-name"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-control">
+                  <label className="label cursor-pointer justify-start gap-3">
+                    <input 
+                      type="checkbox" 
+                      className="toggle" 
+                      checked={emailSettings.useSecure}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, useSecure: e.target.checked }))}
+                      data-testid="toggle-use-secure"
+                      style={{
+                        '--tglbg': emailSettings.useSecure ? (organization?.useCustomColors ? organization?.primaryColor || '#4ade80' : '#4ade80') : '#d1d5db',
+                        backgroundColor: emailSettings.useSecure ? (organization?.useCustomColors ? organization?.primaryColor || '#4ade80' : '#4ade80') : '#d1d5db',
+                      } as React.CSSProperties}
+                    />
+                    <span className="label-text">
+                      <strong>Use Secure Connection (TLS/SSL)</strong>
+                      <div className="text-sm text-base-content/60">Enable encryption for email transmission</div>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    className="btn btn-primary"
+                    data-testid="button-save-email-settings"
+                    style={{
+                      backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                      borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                    } as React.CSSProperties}
+                  >
+                    <i className="fas fa-save"></i>
+                    Save Email Settings
+                  </button>
+                </div>
+              </div>
+
+              <div className="divider"></div>
+
+              {/* Email Templates Section */}
+              <div className="space-y-4">
+                <h4 className="text-md font-semibold">Email Templates</h4>
+                
+                <div className="alert alert-info">
                 <i className="fas fa-info-circle"></i>
                 <div>
                   <div className="font-bold">Customize Email Templates</div>
@@ -885,6 +1048,7 @@ The {{organisationDisplayName}} Team`
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           )}
