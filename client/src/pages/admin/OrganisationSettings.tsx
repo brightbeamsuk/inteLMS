@@ -28,6 +28,21 @@ export function AdminOrganisationSettings() {
     enabled: !!user?.organisationId,
   });
 
+  // Fetch plan features to check access
+  const { data: planFeatures = [] } = useQuery({
+    queryKey: ['/api/plan-features/mappings', organization?.planId],
+    enabled: !!organization?.planId,
+    queryFn: async () => {
+      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch plan features');
+      }
+      return response.json();
+    },
+  });
+
   const [brandingData, setBrandingData] = useState({
     logoUrl: "",
     displayName: "",
@@ -68,6 +83,9 @@ export function AdminOrganisationSettings() {
     }
   }, [organization]);
 
+  // Check if custom domain feature is enabled
+  const customDomainFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_domain');
+  const hasCustomDomainAccess = customDomainFeature?.enabled || false;
 
   const handleLogoUpload = async () => {
     try {
@@ -233,17 +251,36 @@ export function AdminOrganisationSettings() {
                 <div className="form-control">
                   <label className="label">
                     <span className="label-text">Subdomain</span>
+                    {!hasCustomDomainAccess && (
+                      <span className="label-text-alt text-warning">
+                        <i className="fas fa-lock mr-1"></i>
+                        Premium Feature
+                      </span>
+                    )}
                   </label>
                   <input 
                     type="text" 
-                    className="input input-bordered" 
+                    className={`input input-bordered ${!hasCustomDomainAccess ? 'input-disabled' : ''}`}
                     value={brandingData.subdomain}
                     onChange={(e) => setBrandingData(prev => ({ ...prev, subdomain: e.target.value }))}
+                    disabled={!hasCustomDomainAccess}
                     data-testid="input-subdomain"
                   />
                   <label className="label">
-                    <span className="label-text-alt">https://{brandingData.subdomain}.lms-platform.com</span>
+                    <span className="label-text-alt">
+                      {hasCustomDomainAccess ? (
+                        `https://${brandingData.subdomain || 'your-subdomain'}.lms-platform.com`
+                      ) : (
+                        "Upgrade your plan to customize your subdomain"
+                      )}
+                    </span>
                   </label>
+                  {!hasCustomDomainAccess && (
+                    <div className="alert alert-info mt-2">
+                      <i className="fas fa-info-circle"></i>
+                      <span>Custom subdomains are available with premium plans. Contact support to upgrade your plan.</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
