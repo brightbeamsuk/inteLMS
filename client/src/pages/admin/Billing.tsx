@@ -394,7 +394,16 @@ export function AdminBilling() {
                       
                       {/* All features with checkmarks only for included ones */}
                       <div className="text-sm space-y-2 mb-4" data-testid={`features-list-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                        {allPlanFeatures.map((feature) => {
+                        {allPlanFeatures
+                          .sort((a, b) => {
+                            const aIncluded = planFeatureIds.includes(a.id);
+                            const bIncluded = planFeatureIds.includes(b.id);
+                            // Sort included features to the top
+                            if (aIncluded && !bIncluded) return -1;
+                            if (!aIncluded && bIncluded) return 1;
+                            return 0;
+                          })
+                          .map((feature) => {
                           const isIncluded = planFeatureIds.includes(feature.id);
                           return (
                             <div 
