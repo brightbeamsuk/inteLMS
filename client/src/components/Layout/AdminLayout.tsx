@@ -58,7 +58,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   });
 
   // Fetch plan features to check access
-  const { data: planFeatures = [] } = useQuery({
+  const { data: planFeatures = [], isLoading: planFeaturesLoading } = useQuery({
     queryKey: ['/api/plan-features/mappings', organization?.planId],
     enabled: !!organization?.planId,
     queryFn: async () => {
@@ -75,6 +75,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   // Helper function to check feature access
   const hasFeatureAccess = (featureId: string) => {
+    // If plan features are still loading, assume access is available to prevent lock icon flash
+    if (planFeaturesLoading) return true;
+    
     const feature = planFeatures.find((f: any) => f.featureId === featureId);
     return feature?.enabled || false;
   };
