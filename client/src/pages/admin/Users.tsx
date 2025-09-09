@@ -661,7 +661,7 @@ export function AdminUsers() {
                 <label className="label cursor-pointer justify-start gap-3">
                   <input 
                     type="checkbox" 
-                    className="checkbox checkbox-primary" 
+                    className={`checkbox ${formData.allowCertificateDownload ? 'checkbox-success [--chkbg:#22c55e] checked:bg-green-500' : '[--chkbg:#9ca3af] bg-gray-400 border-gray-400'}`}
                     checked={formData.allowCertificateDownload}
                     onChange={(e) => setFormData(prev => ({ ...prev, allowCertificateDownload: e.target.checked }))}
                     data-testid="checkbox-allow-cert-download"
@@ -911,7 +911,7 @@ export function AdminUsers() {
                       <label className="label cursor-pointer justify-start gap-3">
                         <input 
                           type="checkbox" 
-                          className="toggle toggle-primary" 
+                          className={`toggle ${selectedUser.allowCertificateDownload ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
                           checked={selectedUser.allowCertificateDownload}
                           onChange={(e) => {
                             const newValue = e.target.checked;
@@ -1379,7 +1379,7 @@ export function AdminUsers() {
                 <label className="label cursor-pointer justify-start gap-3">
                   <input 
                     type="checkbox" 
-                    className="toggle toggle-primary" 
+                    className={`toggle ${editFormData.allowCertificateDownload ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
                     checked={editFormData.allowCertificateDownload}
                     onChange={(e) => setEditFormData({...editFormData, allowCertificateDownload: e.target.checked})}
                     data-testid="toggle-edit-cert-download"
