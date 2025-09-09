@@ -3,6 +3,8 @@
  * Ensures all Brevo API requests use the correct endpoint and proper error handling
  */
 
+import { storage } from '../storage';
+
 const BREVO_BASE_URL = "https://api.brevo.com/v3";
 
 interface BrevoSendEmailParams {
@@ -25,12 +27,14 @@ interface BrevoResponse {
 
 export class BrevoClient {
   private apiKey: string;
+  private organizationId?: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, organizationId?: string) {
     if (!apiKey || typeof apiKey !== 'string') {
       throw new Error('Brevo API key is required');
     }
     this.apiKey = apiKey.trim();
+    this.organizationId = organizationId;
   }
 
   /**
@@ -235,9 +239,65 @@ export class BrevoClient {
   }
 
   /**
+   * Log delivery attempt to database
+   */
+  private async logDelivery(
+    endpoint: string,
+    httpStatus: number,
+    messageId: string | null,
+    errorText: string | null,
+    recipientEmail?: string
+  ): Promise<void> {
+    if (!this.organizationId) return;
+
+    try {
+      await storage.createEmailLog({
+        organisationId: this.organizationId,
+        recipient: recipientEmail || 'unknown',
+        subject: 'Test Email',
+        provider: 'brevo_api',
+        status: httpStatus >= 200 && httpStatus < 300 ? 'sent' : 'failed',
+        sentAt: new Date(),
+        metadata: {
+          provider: 'brevo_api',
+          endpoint,
+          httpStatus,
+          messageId,
+          errorText
+        }
+      });
+    } catch (error) {
+      console.warn('Failed to log email delivery:', error);
+    }
+  }
+
+  /**
+   * Send email with delivery logging
+   */
+  async sendEmailWithLogging(params: BrevoSendEmailParams): Promise<BrevoResponse> {
+    const startTime = Date.now();
+    const response = await this.sendEmail(params);
+    const latencyMs = Date.now() - startTime;
+
+    // Log the delivery attempt
+    await this.logDelivery(
+      response.endpoint,
+      response.httpStatus,
+      response.messageId || null,
+      response.success ? null : response.message,
+      params.toEmail
+    );
+
+    return {
+      ...response,
+      latencyMs
+    };
+  }
+
+  /**
    * Static method to create a client with validation
    */
-  static create(apiKey: string): BrevoClient {
-    return new BrevoClient(apiKey);
+  static create(apiKey: string, organizationId?: string): BrevoClient {
+    return new BrevoClient(apiKey, organizationId);
   }
 }

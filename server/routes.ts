@@ -10,6 +10,7 @@ import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { singleMailerService } from "./services/singleMailerService";
+import { BrevoClient } from "./services/brevoClient";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
@@ -2911,179 +2912,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // BREVO API HEALTH CHECK AND SEND
+      // BREVO API HEALTH CHECK AND SEND USING CENTRALIZED CLIENT
       if (settings.provider === 'brevo_api') {
-        console.log('Performing Brevo health check...');
-        const healthCheckResponse = await fetch('https://api.brevo.com/v3/account', {
-          method: 'GET',
-          headers: {
-            'api-key': settings.brevo.apiKey.trim(),
-            'accept': 'application/json'
-          },
-          signal: AbortSignal.timeout(10000) // 10s timeout
-        });
-
-        if (healthCheckResponse.status === 401 || healthCheckResponse.status === 403) {
+        console.log('Using BrevoClient for health check and send...');
+        
+        const brevoClient = BrevoClient.create(settings.brevo.apiKey, organisationId);
+        
+        // Health check first
+        const healthCheck = await brevoClient.checkAccount();
+        
+        if (!healthCheck.success) {
           return res.json({
             success: false,
             provider: 'brevo_api',
-            httpStatus: healthCheckResponse.status,
-            message: 'Brevo rejected the API key (HTTP 401/403). Recreate the key in Brevo and paste it here.',
+            httpStatus: healthCheck.httpStatus,
+            message: healthCheck.message,
             details: {
-              endpoint: '/v3/account',
+              endpoint: healthCheck.endpoint,
               from: settings.fromEmail,
               to: testEmail,
-              helpText: 'Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.'
-            }
-          });
-        }
-
-        if (healthCheckResponse.status === 429) {
-          return res.json({
-            success: false,
-            provider: 'brevo_api',
-            httpStatus: 429,
-            message: 'Brevo rate limited the request (429). Try again later.',
-            details: {
-              endpoint: '/v3/account',
-              from: settings.fromEmail,
-              to: testEmail
-            }
-          });
-        }
-
-        if (healthCheckResponse.status >= 500) {
-          return res.json({
-            success: false,
-            provider: 'brevo_api',
-            httpStatus: healthCheckResponse.status,
-            message: `Brevo API/network error (HTTP ${healthCheckResponse.status}). Please retry later.`,
-            details: {
-              endpoint: '/v3/account',
-              from: settings.fromEmail,
-              to: testEmail
-            }
-          });
-        }
-
-        if (healthCheckResponse.status !== 200) {
-          return res.json({
-            success: false,
-            provider: 'brevo_api',
-            httpStatus: healthCheckResponse.status,
-            message: `Unexpected health check response (HTTP ${healthCheckResponse.status}). Please retry later.`,
-            details: {
-              endpoint: '/v3/account',
-              from: settings.fromEmail,
-              to: testEmail
+              helpText: healthCheck.httpStatus === 401 || healthCheck.httpStatus === 403 ? 
+                'Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.' : undefined
             }
           });
         }
 
         console.log('Brevo health check passed, proceeding with send...');
 
-        // SEND EMAIL VIA BREVO API
-        const emailPayload = {
-          sender: { 
-            name: settings.fromName || 'inteLMS System', 
-            email: settings.fromEmail.trim() 
-          },
-          to: [{ email: testEmail.trim() }],
+        // SEND EMAIL VIA BREVO CLIENT WITH LOGGING
+        const sendResult = await brevoClient.sendEmailWithLogging({
+          fromName: settings.fromName || 'inteLMS System',
+          fromEmail: settings.fromEmail,
+          toEmail: testEmail,
           subject: 'inteLMS API Test',
           textContent: 'This is a test from inteLMS (brevo_api).'
-        };
-
-        const sendResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
-          method: 'POST',
-          headers: {
-            'api-key': settings.brevo.apiKey.trim(),
-            'accept': 'application/json',
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify(emailPayload),
-          signal: AbortSignal.timeout(20000) // 20s timeout
         });
 
-      const responseText = await sendResponse.text();
-      let responseJson;
-      try {
-        responseJson = JSON.parse(responseText);
-      } catch {
-        responseJson = { message: responseText };
-      }
-
-      const endTime = Date.now();
-      const latencyMs = endTime - startTime;
-
-      // Log delivery attempt
-      console.log(`Brevo API test - Status: ${sendResponse.status}, Latency: ${latencyMs}ms`);
-
-      // MAP BREVO RESPONSES TO FRIENDLY MESSAGES
-      if (sendResponse.status === 201) {
-        // Success case
-        const messageId = responseJson.messageId || 
-                         sendResponse.headers.get('x-message-id') || 
-                         sendResponse.headers.get('x-transaction-message-id') || 
-                         'unknown';
-
+        // Return structured response format
         return res.json({
-          success: true,
+          success: sendResult.success,
           provider: 'brevo_api',
-          httpStatus: 201,
-          message: 'Test email sent successfully via Brevo API',
+          httpStatus: sendResult.httpStatus,
+          message: sendResult.message,
           details: {
-            endpoint: '/v3/smtp/email',
+            endpoint: sendResult.endpoint,
             from: settings.fromEmail,
             to: testEmail,
-            messageId,
-            latencyMs,
-            helpText: 'Check Spam/Quarantine if you don\'t see the email. Also confirm the recipient server isn\'t blocking transactional mail.'
-          }
-        });
-      }
-
-      // Error cases
-      let errorMessage = 'Unknown error occurred';
-      let helpText = '';
-
-      if (sendResponse.status === 400) {
-        // Parse specific 400 errors
-        if (responseJson.message) {
-          errorMessage = responseJson.message;
-          if (responseJson.message.toLowerCase().includes('sender') || 
-              responseJson.message.toLowerCase().includes('domain')) {
-            helpText = 'Verify your sender/domain in Brevo → Senders & Domains.';
-            errorMessage = 'Brevo says the From address/domain isn\'t authorised. Verify the sender/domain inside Brevo.';
-          } else if (responseJson.message.toLowerCase().includes('recipient') || 
-                     responseJson.message.toLowerCase().includes('email')) {
-            errorMessage = 'Recipient email appears invalid.';
-          } else if (responseJson.message.toLowerCase().includes('content')) {
-            errorMessage = 'Brevo requires text or HTML content.';
-          }
-        } else {
-          errorMessage = 'Bad request - please check your configuration';
-        }
-      } else if (sendResponse.status === 401 || sendResponse.status === 403) {
-        errorMessage = 'Brevo rejected the API key (HTTP 401/403). Recreate the key in Brevo and paste it here.';
-        helpText = 'Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.';
-      } else if (sendResponse.status === 429) {
-        errorMessage = 'Brevo rate limited the request (429). Try again later.';
-      } else if (sendResponse.status >= 500) {
-        errorMessage = `Brevo API outage (HTTP ${sendResponse.status}). Suggest retry later.`;
-      }
-
-        return res.json({
-          success: false,
-          provider: 'brevo_api',
-          httpStatus: sendResponse.status,
-          message: errorMessage,
-          details: {
-            endpoint: '/v3/smtp/email',
-            from: settings.fromEmail,
-            to: testEmail,
-            brevoError: responseJson.message || responseText,
-            helpText,
-            latencyMs
+            messageId: sendResult.messageId || null,
+            latencyMs: (sendResult as any).latencyMs,
+            helpText: sendResult.success ? 
+              'Check Spam/Quarantine if you don\'t see the email. Also confirm the recipient server isn\'t blocking transactional mail.' :
+              (sendResult.httpStatus === 400 && sendResult.message.toLowerCase().includes('sender')) ? 
+                'Verify your sender/domain in Brevo → Senders & Domains.' : undefined,
+            brevoError: sendResult.success ? undefined : sendResult.data?.message
           }
         });
 
