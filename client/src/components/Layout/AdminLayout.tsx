@@ -151,17 +151,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         {/* Header */}
         <div className="navbar bg-base-300 shadow-lg">
           <div className="navbar-start">
-            <div className="dropdown">
-              <label 
-                htmlFor="admin-drawer-toggle"
-                tabIndex={0} 
-                role="button" 
-                className="btn btn-ghost btn-circle lg:hidden cursor-pointer"
-                data-testid="button-menu-toggle"
-              >
-                <i className="fas fa-bars text-xl"></i>
-              </label>
-            </div>
+            <button 
+              className="btn btn-ghost btn-circle lg:hidden"
+              onClick={() => setDrawerOpen(!drawerOpen)}
+              data-testid="button-menu-toggle"
+            >
+              <i className="fas fa-bars text-xl"></i>
+            </button>
             <Link href="/admin" className="btn btn-ghost" data-testid="link-home">
               <img 
                 src={hasBrandingAccess && organization?.logoUrl ? organization.logoUrl : inteLMSLogo} 
