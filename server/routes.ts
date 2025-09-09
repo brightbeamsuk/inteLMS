@@ -192,6 +192,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/logout', handleLogout);
   app.post('/api/logout', handleLogout);
 
+  // Registration endpoints
+  app.post('/api/register/individual', async (req: any, res) => {
+    try {
+      const { firstName, lastName, email, password, confirmPassword } = req.body;
+      
+      if (!firstName || !lastName || !email || !password || !confirmPassword) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+
+      if (password !== confirmPassword) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters long" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
+
+      // Create individual user account (not tied to organisation)
+      const userData = {
+        email,
+        firstName,
+        lastName,
+        role: 'user' as const,
+        status: 'active' as const,
+        organisationId: null, // Individual user - not tied to organisation
+        allowCertificateDownload: true, // Default access to certificates
+      };
+
+      const newUser = await storage.createUser(userData);
+      
+      // Log the user in automatically
+      req.session.user = newUser;
+
+      return res.status(201).json({ 
+        message: "Individual account created successfully",
+        user: newUser,
+        redirectUrl: '/user'
+      });
+    } catch (error) {
+      console.error("Individual registration error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  app.post('/api/register/organisation', async (req: any, res) => {
+    try {
+      const { 
+        organisationName, 
+        organisationDisplayName,
+        organisationSubdomain,
+        contactEmail,
+        contactPhone,
+        address,
+        adminFirstName,
+        adminLastName,
+        adminEmail,
+        adminPassword,
+        confirmPassword
+      } = req.body;
+      
+      if (!organisationName || !organisationDisplayName || !organisationSubdomain || 
+          !adminFirstName || !adminLastName || !adminEmail || !adminPassword || !confirmPassword) {
+        return res.status(400).json({ message: "All required fields must be filled" });
+      }
+
+      if (adminPassword !== confirmPassword) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
+
+      if (adminPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters long" });
+      }
+
+      // Validate subdomain format (alphanumeric, hyphens, lowercase)
+      const subdomainRegex = /^[a-z0-9-]+$/;
+      if (!subdomainRegex.test(organisationSubdomain)) {
+        return res.status(400).json({ message: "Subdomain can only contain lowercase letters, numbers, and hyphens" });
+      }
+
+      // Check if admin email already exists
+      const existingUser = await storage.getUserByEmail(adminEmail);
+      if (existingUser) {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
+
+      // Check if organisation subdomain already exists
+      try {
+        const existingOrg = await storage.getOrganisationBySubdomain(organisationSubdomain);
+        if (existingOrg) {
+          return res.status(409).json({ message: "Subdomain is already taken" });
+        }
+      } catch (error) {
+        // Organisation doesn't exist, which is what we want
+      }
+
+      // Create organisation first
+      const organisationData = {
+        name: organisationName,
+        displayName: organisationDisplayName,
+        subdomain: organisationSubdomain,
+        contactEmail,
+        contactPhone,
+        address,
+        status: 'active' as const,
+      };
+
+      const newOrganisation = await storage.createOrganisation(organisationData);
+      
+      // Create admin user for the organisation
+      const adminUserData = {
+        email: adminEmail,
+        firstName: adminFirstName,
+        lastName: adminLastName,
+        role: 'admin' as const,
+        status: 'active' as const,
+        organisationId: newOrganisation.id,
+        allowCertificateDownload: true,
+      };
+
+      const newAdmin = await storage.createUser(adminUserData);
+      
+      // Log the admin in automatically
+      req.session.user = newAdmin;
+
+      return res.status(201).json({ 
+        message: "Organisation and admin account created successfully",
+        user: newAdmin,
+        organisation: newOrganisation,
+        redirectUrl: '/admin'
+      });
+    } catch (error) {
+      console.error("Organisation registration error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
   app.get('/api/auth/user', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
