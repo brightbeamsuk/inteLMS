@@ -623,7 +623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
-        userId: userId,
+        userId: userId || undefined,
         requestedPermission: ObjectPermission.READ,
       });
       if (!canAccess) {
@@ -924,7 +924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newPlan = await storage.createPlan({
         name,
         description: description || null,
-        pricePerUser: parseFloat(pricePerUser),
+        pricePerUser: String(parseFloat(pricePerUser)),
         status: 'active',
         createdBy: user.id
       });
@@ -956,7 +956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedPlan = await storage.updatePlan(id, {
         name,
         description,
-        pricePerUser: pricePerUser ? parseFloat(pricePerUser) : undefined,
+        pricePerUser: pricePerUser ? String(parseFloat(pricePerUser)) : undefined,
         status
       });
 
@@ -1816,7 +1816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         reason: `Diagnosis failed: ${error.message}`,
         scormRoot: '',
         manifestFound: false,
-        error: error.message
+        error: (error as any)?.message
       });
     }
   });
@@ -2717,7 +2717,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error sending test email:', error);
       res.status(500).json({ 
         success: false, 
-        message: error.message || 'Failed to send test email. Please check your SMTP settings.' 
+        message: (error as any)?.message || 'Failed to send test email. Please check your SMTP settings.' 
       });
     }
   });
@@ -2954,7 +2954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         timestamp: new Date().toISOString(),
-        error: error.message || 'Health check failed',
+        error: (error as any)?.message || 'Health check failed',
         dnsResolution: false,
         tcpConnection: false,
         startTlsSupport: false
@@ -3007,7 +3007,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         timestamp: new Date().toISOString(),
-        error: error.message || 'SMTP test failed',
+        error: (error as any)?.message || 'SMTP test failed',
         tlsEnabled: false,
         source: 'none'
       });
@@ -3057,7 +3057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false,
         message: 'Failed to test SMTP settings',
-        error: error.message 
+        error: (error as any)?.message 
       });
     }
   });
@@ -3086,13 +3086,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.success) {
         res.json({ success: true, message: 'Test email sent successfully' });
       } else {
-        res.status(500).json({ success: false, message: result.details?.error || 'Failed to send test email. Please check your SMTP settings.' });
+        res.status(500).json({ success: false, message: (result as any).details?.error || 'Failed to send test email. Please check your SMTP settings.' });
       }
     } catch (error) {
       console.error('Error sending system test email:', error);
       res.status(500).json({ 
         success: false, 
-        message: error.message || 'Failed to send test email. Please check your SMTP settings.' 
+        message: (error as any)?.message || 'Failed to send test email. Please check your SMTP settings.' 
       });
     }
   });
@@ -3968,7 +3968,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           row.filter((_, colIndex) => coursesToKeep[colIndex])
         );
         
-        finalSummary = filteredSummary;
+        finalSummary = { ...filteredSummary, failed: 0 };
       }
 
       res.json({
@@ -4825,8 +4825,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scormVersion: '2004',
           status: 'in_progress',
           completed: false,
-          closed: false,
-          launchedAt: new Date(),
           passmark: 80
         });
       } else {
@@ -4932,13 +4930,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const canResume = (!attempt.closed && attempt.status === 'in_progress');
+      const canResume = (attempt.isActive && attempt.status === 'in_progress');
       const response = {
         status: attempt.status,
-        hasOpenAttempt: !attempt.closed,
+        hasOpenAttempt: attempt.isActive,
         canResume,
         attemptId: attempt.attemptId,
-        lastActivity: attempt.lastCommitAt || attempt.launchedAt,
+        lastActivity: attempt.lastCommitAt || attempt.createdAt,
         score: attempt.completed ? Number(attempt.scoreRaw ?? 0) : null,
         pass: attempt.completed ? (attempt.successStatus === 'passed') : null
       };
@@ -4980,8 +4978,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const attempt of userActiveAttempts) {
           await storage.updateScormAttempt(attempt.attemptId, {
             isActive: false,
-            finishedAt: new Date(),
-            updatedAt: new Date()
+            finishedAt: new Date()
           });
           console.log(`✅ Closed attempt ${attempt.attemptId} for user ${userId}, course ${courseId}`);
         }
@@ -5035,7 +5032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scoreRaw: attempt.scoreRaw,
           progressMeasure: attempt.progressMeasure,
           status: attempt.status,
-          closed: attempt.closed
+          closed: !attempt.isActive
         }
       });
     } catch (error) {
@@ -5074,9 +5071,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         location: location || null,
         suspendData: suspendData || null,
         progressMeasure: progressPct ? parseFloat(progressPct) / 100 : null,
-        status: 'in_progress',
-        lastCommitAt: new Date(),
-        updatedAt: new Date()
+        status: 'in_progress' as const,
+        lastCommitAt: new Date()
       };
 
       await storage.updateScormAttempt(attemptId, updateData);
@@ -5208,8 +5204,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           progressPct: attempt.progressMeasure ? Math.round(attempt.progressMeasure * 100) : 0,
           score: attempt.scoreRaw || 0,
           passed: attempt.passed || false,
-          createdAt: attempt.launchedAt,
-          updatedAt: attempt.lastCommitAt || attempt.launchedAt
+          createdAt: attempt.createdAt,
+          updatedAt: attempt.lastCommitAt || attempt.createdAt
         }
       });
     } catch (error) {
