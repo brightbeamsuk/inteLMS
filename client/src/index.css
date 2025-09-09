@@ -202,26 +202,26 @@
   color: var(--color-primary);
 }
 
-/* Toggle styling with custom brand colors */
-.toggle:checked,
-.toggle-primary:checked {
+/* Toggle styling with custom brand colors - only when custom branding is enabled */
+[data-custom-colors="true"] .toggle:checked,
+[data-custom-colors="true"] .toggle-primary:checked {
   background-color: var(--primary-color, #634396);
   border-color: var(--primary-color, #634396);
 }
 
-.toggle,
-.toggle-primary {
+[data-custom-colors="true"] .toggle,
+[data-custom-colors="true"] .toggle-primary {
   background-color: white;
   border-color: #d1d5db;
 }
 
-.toggle:checked::after,
-.toggle-primary:checked::after {
+[data-custom-colors="true"] .toggle:checked::after,
+[data-custom-colors="true"] .toggle-primary:checked::after {
   background-color: white;
 }
 
-.toggle::after,
-.toggle-primary::after {
+[data-custom-colors="true"] .toggle::after,
+[data-custom-colors="true"] .toggle-primary::after {
   background-color: #9ca3af;
 }
 
