@@ -2258,6 +2258,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update organisation subscription
+  app.put('/api/organisations/:id/subscription', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { id } = req.params;
+      const { planType, planId, customPlan } = req.body;
+      
+      // Validate input
+      if (!planType || (planType !== 'existing' && planType !== 'custom')) {
+        return res.status(400).json({ message: 'Invalid plan type' });
+      }
+
+      let finalPlanId = planId;
+
+      // If custom plan, create it first
+      if (planType === 'custom') {
+        if (!customPlan || !customPlan.name || !customPlan.pricePerUser || typeof customPlan.pricePerUser !== 'number') {
+          return res.status(400).json({ message: 'Custom plan requires name and pricePerUser' });
+        }
+
+        // Create the custom plan
+        const planData = {
+          name: customPlan.name,
+          description: customPlan.description || '',
+          pricePerUser: customPlan.pricePerUser,
+          status: 'active' as const,
+          createdBy: user.id,
+        };
+
+        const newPlan = await storage.createPlan(planData);
+        finalPlanId = newPlan.id;
+
+        // If features are specified, create plan feature mappings
+        if (customPlan.featureIds && Array.isArray(customPlan.featureIds)) {
+          for (const featureId of customPlan.featureIds) {
+            try {
+              await storage.createPlanFeatureMapping({
+                planId: newPlan.id,
+                featureId: featureId,
+                enabled: true,
+              });
+            } catch (error) {
+              console.error(`Error mapping feature ${featureId} to plan ${newPlan.id}:`, error);
+            }
+          }
+        }
+      } else if (planType === 'existing') {
+        if (!planId) {
+          return res.status(400).json({ message: 'Plan ID required for existing plan type' });
+        }
+        
+        // Verify the plan exists
+        const existingPlan = await storage.getPlan(planId);
+        if (!existingPlan) {
+          return res.status(404).json({ message: 'Plan not found' });
+        }
+      }
+
+      // Update the organisation with the new plan
+      const updatedOrganisation = await storage.updateOrganisation(id, { planId: finalPlanId });
+      
+      res.json({
+        message: 'Subscription updated successfully',
+        organisation: updatedOrganisation,
+        planId: finalPlanId,
+      });
+    } catch (error) {
+      console.error('Error updating organisation subscription:', error);
+      res.status(500).json({ message: 'Failed to update subscription' });
+    }
+  });
+
   // Archive organisation
   app.put('/api/organisations/:id/archive', requireAuth, async (req: any, res) => {
     try {
