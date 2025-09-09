@@ -2865,6 +2865,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { settings } = emailConfig;
+      if (!settings) {
+        return res.status(500).json({
+          success: false,
+          provider: 'unknown',
+          httpStatus: 500,
+          message: 'Internal error: email settings not available',
+          details: {
+            endpoint: 'N/A',
+            from: 'N/A',
+            to: testEmail || 'N/A'
+          }
+        });
+      }
       providerUsed = settings.provider;
 
       // Validate test email recipient
