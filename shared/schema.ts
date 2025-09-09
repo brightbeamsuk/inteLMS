@@ -69,7 +69,8 @@ export const emailTemplateTypeEnum = pgEnum('email_template_type', [
   'user_failed_course',
   'staff_training_expiring',
   'staff_training_expired',
-  'weekly_training_summary'
+  'weekly_training_summary',
+  'smtp_test'
 ]);
 
 // Users table (required for Replit Auth)
@@ -290,6 +291,9 @@ export const organisationSettings = pgTable("organisation_settings", {
   smtpSecure: boolean("smtp_secure").default(true),
   fromEmail: varchar("from_email"),
   fromName: varchar("from_name"),
+  // Brevo API configuration
+  brevoApiKey: varchar("brevo_api_key"),
+  useBrevoApi: boolean("use_brevo_api").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
