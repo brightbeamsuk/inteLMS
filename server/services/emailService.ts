@@ -20,13 +20,18 @@ export class SmtpEmailService implements EmailService {
         return null;
       }
 
+      const port = settings.smtpPort || 587;
       const transporter = nodemailer.createTransport({
         host: settings.smtpHost,
-        port: settings.smtpPort || 587,
-        secure: settings.smtpSecure || false,
+        port: port,
+        secure: port === 465, // true for 465 (SSL), false for other ports (587/25)
+        requireTLS: port === 587, // STARTTLS for port 587
         auth: {
           user: settings.smtpUsername,
           pass: settings.smtpPassword,
+        },
+        tls: {
+          rejectUnauthorized: false, // Accept self-signed certificates for testing
         },
       });
 
