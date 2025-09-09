@@ -414,29 +414,102 @@ export function SuperAdminSettings() {
   // Email helper functions
 
   const handleSaveEmailSettings = () => {
-    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.fromEmail || !emailSettings.fromName) {
+    // Common required fields for all providers
+    if (!emailSettings.fromEmail || !emailSettings.fromName) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields (Host, Username, From Email, From Name)",
+        description: "Please fill in From Email and From Name fields",
         variant: "destructive",
       });
       return;
     }
 
-    // Only require password if one isn't already set
-    if (!emailSettings.smtpPassword && !emailSettings.hasPassword) {
-      toast({
-        title: "Error",
-        description: "SMTP password is required",
-        variant: "destructive",
-      });
-      return;
+    // Provider-specific validation
+    if (emailSettings.provider === 'smtp_generic') {
+      // SMTP validation
+      if (!emailSettings.smtpHost || !emailSettings.smtpUsername) {
+        toast({
+          title: "Error",
+          description: "Please fill in SMTP Host and Username for SMTP configuration",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Only require password if one isn't already set
+      if (!emailSettings.smtpPassword && !emailSettings.smtpPassword?.startsWith('••')) {
+        toast({
+          title: "Error",
+          description: "SMTP password is required",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      // API provider validation
+      if (!emailSettings.apiKey) {
+        toast({
+          title: "Error",
+          description: "Please provide an API key for the selected email provider",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Mailjet requires both API key and secret
+      if (emailSettings.provider === 'mailjet_api' && !emailSettings.apiSecret) {
+        toast({
+          title: "Error",
+          description: "Mailjet requires both API key and API secret",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Mailgun requires domain
+      if (emailSettings.provider === 'mailgun_api' && !emailSettings.apiDomain) {
+        toast({
+          title: "Error",
+          description: "Mailgun requires an API domain (e.g., mg.yourdomain.com)",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // SES requires region
+      if (emailSettings.provider === 'ses_api' && !emailSettings.apiRegion) {
+        toast({
+          title: "Error",
+          description: "Amazon SES requires an AWS region selection",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
-    // Filter out empty password if one is already set
+    // Prepare settings for saving
     const settingsToSave = { ...emailSettings };
-    if (!settingsToSave.smtpPassword && settingsToSave.hasPassword) {
+    
+    // Clean up empty fields that shouldn't be sent
+    if (emailSettings.provider !== 'smtp_generic') {
+      // Remove SMTP fields for API providers
+      delete settingsToSave.smtpHost;
+      delete settingsToSave.smtpPort;
+      delete settingsToSave.smtpUsername;
       delete settingsToSave.smtpPassword;
+      delete settingsToSave.smtpSecure;
+    } else {
+      // Remove API fields for SMTP
+      delete settingsToSave.apiKey;
+      delete settingsToSave.apiSecret;
+      delete settingsToSave.apiBaseUrl;
+      delete settingsToSave.apiDomain;
+      delete settingsToSave.apiRegion;
+      
+      // Handle masked password for SMTP
+      if (!settingsToSave.smtpPassword && settingsToSave.smtpPassword?.startsWith('••')) {
+        delete settingsToSave.smtpPassword;
+      }
     }
 
     saveEmailSettingsMutation.mutate(settingsToSave);
