@@ -350,7 +350,7 @@ export function AdminOrganisationSettings() {
 
                   {brandingData.useCustomColors && (
                     <div className="bg-base-200 p-4 rounded-lg space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4">
                         <div className="form-control">
                           <label className="label">
                             <span className="label-text font-medium">Primary Color</span>
@@ -361,14 +361,32 @@ export function AdminOrganisationSettings() {
                               type="color" 
                               className="w-12 h-10 border border-base-300 rounded cursor-pointer"
                               value={brandingData.primaryColor}
-                              onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                              onChange={(e) => {
+                                const newPrimary = e.target.value;
+                                // Calculate accent color as primary color with 50% transparency
+                                const accentColor = newPrimary + '80'; // Adding 80 for 50% alpha in hex
+                                setBrandingData(prev => ({ 
+                                  ...prev, 
+                                  primaryColor: newPrimary,
+                                  accentColor: accentColor
+                                }));
+                              }}
                               data-testid="input-primary-color"
                             />
                             <input 
                               type="text" 
                               className="input input-bordered flex-1" 
                               value={brandingData.primaryColor}
-                              onChange={(e) => setBrandingData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                              onChange={(e) => {
+                                const newPrimary = e.target.value;
+                                // Calculate accent color as primary color with 50% transparency
+                                const accentColor = newPrimary.length === 7 ? newPrimary + '80' : newPrimary;
+                                setBrandingData(prev => ({ 
+                                  ...prev, 
+                                  primaryColor: newPrimary,
+                                  accentColor: accentColor
+                                }));
+                              }}
                               placeholder="#3b82f6"
                               data-testid="input-primary-color-text"
                             />
@@ -378,22 +396,20 @@ export function AdminOrganisationSettings() {
                         <div className="form-control">
                           <label className="label">
                             <span className="label-text font-medium">Accent Color</span>
-                            <span className="label-text-alt">Used for highlights, badges, and secondary elements</span>
+                            <span className="label-text-alt">Automatically set to primary color with 50% transparency</span>
                           </label>
                           <div className="flex gap-2 items-center">
-                            <input 
-                              type="color" 
-                              className="w-12 h-10 border border-base-300 rounded cursor-pointer"
-                              value={brandingData.accentColor}
-                              onChange={(e) => setBrandingData(prev => ({ ...prev, accentColor: e.target.value }))}
-                              data-testid="input-accent-color"
+                            <div 
+                              className="w-12 h-10 border border-base-300 rounded"
+                              style={{ backgroundColor: brandingData.accentColor }}
+                              data-testid="preview-accent-color"
                             />
                             <input 
                               type="text" 
-                              className="input input-bordered flex-1" 
+                              className="input input-bordered flex-1 input-disabled" 
                               value={brandingData.accentColor}
-                              onChange={(e) => setBrandingData(prev => ({ ...prev, accentColor: e.target.value }))}
-                              placeholder="#3b82f6"
+                              disabled
+                              placeholder="Auto-generated from primary"
                               data-testid="input-accent-color-text"
                             />
                           </div>
