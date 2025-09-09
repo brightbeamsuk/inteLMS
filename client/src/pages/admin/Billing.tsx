@@ -141,7 +141,7 @@ export function AdminBilling() {
                 </p>
                 <div className="text-3xl font-bold text-primary" data-testid="text-plan-price">
                   {currentPlan ? (
-                    <>£{currentPlan.pricePerUser.toFixed(2)}<span className="text-base font-normal">/user/month</span></>
+                    <>£{Number(currentPlan.pricePerUser || 0).toFixed(2)}<span className="text-base font-normal">/user/month</span></>
                   ) : (
                     <span className="text-lg">Contact support for pricing</span>
                   )}
@@ -384,7 +384,7 @@ export function AdminBilling() {
                         {plan.name}
                       </h4>
                       <div className="text-2xl font-bold text-primary mb-2" data-testid={`text-plan-price-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                        £{plan.pricePerUser.toFixed(2)}<span className="text-base font-normal">/user/month</span>
+                        £{Number(plan.pricePerUser || 0).toFixed(2)}<span className="text-base font-normal">/user/month</span>
                       </div>
                       {plan.description && (
                         <p className="text-sm text-base-content/60 mb-4" data-testid={`text-plan-description-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
