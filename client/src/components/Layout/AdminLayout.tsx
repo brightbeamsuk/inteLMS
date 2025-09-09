@@ -79,6 +79,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     return feature?.enabled || false;
   };
 
+  // Check if branding feature is enabled
+  const hasBrandingAccess = hasFeatureAccess('remove_branding');
+
   // Feature definitions for premium features
   const featureDefinitions = {
     training_matrix: {
@@ -161,8 +164,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </div>
             <Link href="/admin" className="btn btn-ghost" data-testid="link-home">
               <img 
-                src={inteLMSLogo} 
-                alt="inteLMS" 
+                src={hasBrandingAccess && organization?.logoUrl ? organization.logoUrl : inteLMSLogo} 
+                alt={hasBrandingAccess && organization?.displayName ? organization.displayName : "inteLMS"} 
                 className="h-16 w-auto object-contain"
               />
             </Link>
@@ -241,7 +244,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <div className="p-4">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="avatar">
-                    {organization?.logoUrl ? (
+                    {hasBrandingAccess && organization?.logoUrl ? (
                       <div className="w-12 rounded-full">
                         <img 
                           src={organization.logoUrl} 
