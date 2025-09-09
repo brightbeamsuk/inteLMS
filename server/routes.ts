@@ -2753,7 +2753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } = req.body;
 
       // Get existing settings to prevent masked value override
-      const existingOrg = await storage.getOrganisationById(organisationId);
+      const existingOrg = await storage.getOrganisation(organisationId);
       const existingSettings = existingOrg?.emailSettings || {};
 
       // Clean and validate API key - prevent masked value storage
@@ -2861,7 +2861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let emailConfig;
       try {
         emailConfig = await getEffectiveEmailSettings(storage, organisationId);
-      } catch (orgError) {
+      } catch (orgError: any) {
         console.error('Organisation lookup failed:', orgError);
         return res.status(404).json({
           success: false,
@@ -2872,7 +2872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             endpoint: 'N/A',
             from: 'N/A',
             to: testEmail || 'N/A',
-            error: orgError.message
+            error: orgError?.message || 'Unknown error'
           }
         });
       }
