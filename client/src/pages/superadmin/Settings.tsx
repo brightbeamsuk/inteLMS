@@ -54,15 +54,18 @@ export function SuperAdminSettings() {
     footerLinks: 'Privacy Policy | Terms of Service | Contact Support',
   });
 
-  // System email settings state
+  // Enhanced system SMTP settings state
   const [emailSettings, setEmailSettings] = useState({
     smtpHost: '',
     smtpPort: 587,
     smtpUsername: '',
     smtpPassword: '',
-    smtpSecure: false,
+    smtpSecure: true, // Default to secure
     fromEmail: '',
     fromName: '',
+    description: '',
+    provider: 'custom',
+    hasPassword: false,
   });
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
@@ -78,17 +81,39 @@ export function SuperAdminSettings() {
     amazonses: { host: 'email-smtp.us-east-1.amazonaws.com', port: 587, secure: false },
   };
 
-  // Load system email settings
-  const { data: systemEmailData, isLoading: emailLoading } = useQuery({
-    queryKey: ['/api/system/email-settings'],
+  // Load enhanced system SMTP settings
+  const { data: systemSmtpData, isLoading: emailLoading } = useQuery({
+    queryKey: ['/api/system/smtp-settings'],
     retry: false,
   });
 
   useEffect(() => {
-    if (systemEmailData) {
-      setEmailSettings(systemEmailData);
+    if (systemSmtpData) {
+      // Detect provider based on host
+      let detectedProvider = 'custom';
+      if (systemSmtpData.smtpHost) {
+        for (const [key, config] of Object.entries(emailProviders)) {
+          if (config.host === systemSmtpData.smtpHost) {
+            detectedProvider = key;
+            break;
+          }
+        }
+      }
+
+      setEmailSettings({
+        smtpHost: systemSmtpData.smtpHost || '',
+        smtpPort: systemSmtpData.smtpPort || 587,
+        smtpUsername: systemSmtpData.smtpUsername || '',
+        smtpPassword: '', // Don't populate password for security
+        smtpSecure: systemSmtpData.smtpSecure !== false,
+        fromEmail: systemSmtpData.fromEmail || '',
+        fromName: systemSmtpData.fromName || '',
+        description: systemSmtpData.description || '',
+        provider: detectedProvider,
+        hasPassword: systemSmtpData.hasPassword || false,
+      });
     }
-  }, [systemEmailData]);
+  }, [systemSmtpData]);
 
   // Fetch existing templates
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
@@ -133,23 +158,25 @@ export function SuperAdminSettings() {
     saveTemplateMutation.mutate(templateData);
   };
 
-  // System email settings mutations
+  // Enhanced system SMTP settings mutations
   const saveEmailSettingsMutation = useMutation({
     mutationFn: async (settings: typeof emailSettings) => {
-      const response = await apiRequest('PUT', '/api/system/email-settings', settings);
+      // Use POST for new settings, PUT for updates
+      const method = systemSmtpData ? 'PUT' : 'POST';
+      const response = await apiRequest(method, '/api/system/smtp-settings', settings);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/system/email-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/system/smtp-settings'] });
       toast({
         title: "Success",
-        description: "System email settings saved successfully",
+        description: "System SMTP settings saved successfully",
       });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to save email settings",
+        description: error.message || "Failed to save SMTP settings",
         variant: "destructive",
       });
     }
@@ -157,13 +184,16 @@ export function SuperAdminSettings() {
 
   const testEmailMutation = useMutation({
     mutationFn: async (testEmail: string) => {
-      const response = await apiRequest('POST', '/api/system/test-email', { testEmail });
+      const response = await apiRequest('POST', '/api/system/smtp-test', { testEmail });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
-        title: "Success",
-        description: "Test email sent successfully",
+        title: data.success ? "Success" : "Test Failed",
+        description: data.success 
+          ? "Test email sent successfully! Check your inbox." 
+          : data.details?.error || "Failed to send test email",
+        variant: data.success ? "default" : "destructive",
       });
       setShowTestEmailModal(false);
       setTestEmailAddress('');
@@ -177,29 +207,71 @@ export function SuperAdminSettings() {
     }
   });
 
+  const testConnectionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/system/smtp-test', { connectionOnly: true });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: data.success ? "Connection Success" : "Connection Failed",
+        description: data.success 
+          ? `Connected to ${data.details?.host}:${data.details?.port} (${data.details?.provider})` 
+          : data.details?.error || "Failed to connect to SMTP server",
+        variant: data.success ? "default" : "destructive",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Connection Error",
+        description: error.message || "Failed to test SMTP connection",
+        variant: "destructive",
+      });
+    }
+  });
+
   // Email helper functions
   const handleProviderChange = (provider: string) => {
     if (provider && emailProviders[provider as keyof typeof emailProviders]) {
       const preset = emailProviders[provider as keyof typeof emailProviders];
       setEmailSettings(prev => ({
         ...prev,
+        provider,
         smtpHost: preset.host,
         smtpPort: preset.port,
         smtpSecure: preset.secure,
+        description: `${provider.charAt(0).toUpperCase() + provider.slice(1)} SMTP Configuration`,
       }));
     }
   };
 
   const handleSaveEmailSettings = () => {
-    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword || !emailSettings.fromEmail) {
+    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.fromEmail || !emailSettings.fromName) {
       toast({
         title: "Error",
-        description: "Please fill in all required email settings",
+        description: "Please fill in all required fields (Host, Username, From Email, From Name)",
         variant: "destructive",
       });
       return;
     }
-    saveEmailSettingsMutation.mutate(emailSettings);
+
+    // Only require password if one isn't already set
+    if (!emailSettings.smtpPassword && !emailSettings.hasPassword) {
+      toast({
+        title: "Error",
+        description: "SMTP password is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Filter out empty password if one is already set
+    const settingsToSave = { ...emailSettings };
+    if (!settingsToSave.smtpPassword && settingsToSave.hasPassword) {
+      delete settingsToSave.smtpPassword;
+    }
+
+    saveEmailSettingsMutation.mutate(settingsToSave);
   };
 
   const openTestEmailModal = () => {
@@ -791,11 +863,18 @@ export function SuperAdminSettings() {
                       <input 
                         type="password" 
                         className="input input-bordered" 
-                        placeholder="your-app-password"
+                        placeholder={emailSettings.hasPassword ? "Password is set (leave blank to keep)" : "your-app-password"}
                         value={emailSettings.smtpPassword}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
                         data-testid="input-smtp-password"
                       />
+                      {emailSettings.hasPassword && (
+                        <div className="label">
+                          <span className="label-text-alt text-success">
+                            <i className="fas fa-check-circle"></i> Password is configured
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-control">
@@ -814,7 +893,7 @@ export function SuperAdminSettings() {
 
                     <div className="form-control">
                       <label className="label">
-                        <span className="label-text">From Name</span>
+                        <span className="label-text">From Name *</span>
                       </label>
                       <input 
                         type="text" 
@@ -824,6 +903,24 @@ export function SuperAdminSettings() {
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, fromName: e.target.value }))}
                         data-testid="input-from-name"
                       />
+                    </div>
+                  </div>
+
+                  {/* Description Field */}
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Description</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered" 
+                      placeholder="e.g., Production Brevo SMTP, Testing Gmail"
+                      value={emailSettings.description}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, description: e.target.value }))}
+                      data-testid="input-description"
+                    />
+                    <div className="label">
+                      <span className="label-text-alt">Optional description to identify this SMTP configuration</span>
                     </div>
                   </div>
 
@@ -847,16 +944,28 @@ export function SuperAdminSettings() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-3 justify-between">
-                    <button 
-                      className="btn btn-outline"
-                      onClick={openTestEmailModal}
-                      disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword}
-                      data-testid="button-test-email"
-                    >
-                      <i className="fas fa-paper-plane"></i>
-                      Test Email
-                    </button>
+                  <div className="flex flex-wrap gap-3 justify-between">
+                    <div className="flex gap-2">
+                      <button 
+                        className="btn btn-outline btn-sm"
+                        onClick={() => testConnectionMutation.mutate()}
+                        disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || testConnectionMutation.isPending}
+                        data-testid="button-test-connection"
+                      >
+                        <i className={`fas ${testConnectionMutation.isPending ? 'fa-spinner fa-spin' : 'fa-plug'}`}></i>
+                        {testConnectionMutation.isPending ? 'Testing...' : 'Test Connection'}
+                      </button>
+
+                      <button 
+                        className="btn btn-outline btn-sm"
+                        onClick={openTestEmailModal}
+                        disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || (!emailSettings.smtpPassword && !emailSettings.hasPassword)}
+                        data-testid="button-test-email"
+                      >
+                        <i className="fas fa-paper-plane"></i>
+                        Send Test Email
+                      </button>
+                    </div>
 
                     <button 
                       className="btn btn-primary"
@@ -865,7 +974,7 @@ export function SuperAdminSettings() {
                       data-testid="button-save-email-settings"
                     >
                       <i className={`fas ${saveEmailSettingsMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
-                      {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Email Settings'}
+                      {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save SMTP Settings'}
                     </button>
                   </div>
 

@@ -10,6 +10,7 @@ import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { emailService } from "./services/emailService";
+import { unifiedMailerService } from "./services/unifiedMailerService";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
@@ -2717,7 +2718,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // System email settings routes (SuperAdmin only)
+  // System SMTP settings routes (SuperAdmin only) - Enhanced Version
+  app.get('/api/system/smtp-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied. SuperAdmin role required.' });
+      }
+
+      const settings = await storage.getSystemSmtpSettings();
+      if (!settings) {
+        return res.json(null);
+      }
+
+      // Don't expose password in response for security
+      const { smtpPassword, ...safeSettings } = settings;
+      res.json({
+        ...safeSettings,
+        hasPassword: !!settings.smtpPassword
+      });
+    } catch (error) {
+      console.error('Error fetching system SMTP settings:', error);
+      res.status(500).json({ message: 'Failed to fetch system SMTP settings' });
+    }
+  });
+
+  app.post('/api/system/smtp-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied. SuperAdmin role required.' });
+      }
+
+      const { 
+        smtpHost, 
+        smtpPort, 
+        smtpUsername, 
+        smtpPassword, 
+        smtpSecure, 
+        fromEmail, 
+        fromName,
+        description 
+      } = req.body;
+
+      // Validation
+      if (!smtpHost || !smtpPort || !smtpUsername || !smtpPassword || !fromEmail || !fromName) {
+        return res.status(400).json({ 
+          message: 'Required fields: smtpHost, smtpPort, smtpUsername, smtpPassword, fromEmail, fromName' 
+        });
+      }
+
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(fromEmail)) {
+        return res.status(400).json({ message: 'Invalid from email address' });
+      }
+
+      // Port validation
+      if (smtpPort < 1 || smtpPort > 65535) {
+        return res.status(400).json({ message: 'SMTP port must be between 1 and 65535' });
+      }
+
+      const settingsData = {
+        smtpHost: smtpHost.trim(),
+        smtpPort: parseInt(smtpPort),
+        smtpUsername: smtpUsername.trim(),
+        smtpPassword: smtpPassword,
+        smtpSecure: Boolean(smtpSecure),
+        fromEmail: fromEmail.trim().toLowerCase(),
+        fromName: fromName.trim(),
+        description: description?.trim() || 'System SMTP Configuration',
+        updatedBy: user.id
+      };
+
+      const settings = await storage.createSystemSmtpSettings(settingsData);
+      
+      // Return settings without password
+      const { smtpPassword: _, ...safeSettings } = settings;
+      res.status(201).json({
+        ...safeSettings,
+        hasPassword: true
+      });
+    } catch (error) {
+      console.error('Error creating system SMTP settings:', error);
+      res.status(500).json({ message: 'Failed to create system SMTP settings' });
+    }
+  });
+
+  app.put('/api/system/smtp-settings', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied. SuperAdmin role required.' });
+      }
+
+      const updateData: any = { updatedBy: user.id };
+      
+      // Only update provided fields
+      const fields = ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpSecure', 'fromEmail', 'fromName', 'description'];
+      fields.forEach(field => {
+        if (req.body[field] !== undefined) {
+          if (field === 'smtpPort') {
+            updateData[field] = parseInt(req.body[field]);
+          } else if (field === 'smtpSecure') {
+            updateData[field] = Boolean(req.body[field]);
+          } else if (field === 'fromEmail') {
+            const email = req.body[field].trim().toLowerCase();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+              return res.status(400).json({ message: 'Invalid from email address' });
+            }
+            updateData[field] = email;
+          } else {
+            updateData[field] = req.body[field].trim();
+          }
+        }
+      });
+
+      const settings = await storage.updateSystemSmtpSettings(updateData);
+      
+      // Return settings without password
+      const { smtpPassword: _, ...safeSettings } = settings;
+      res.json({
+        ...safeSettings,
+        hasPassword: !!settings.smtpPassword
+      });
+    } catch (error) {
+      console.error('Error updating system SMTP settings:', error);
+      res.status(500).json({ message: 'Failed to update system SMTP settings' });
+    }
+  });
+
+  // Legacy email settings routes for backward compatibility
   app.put('/api/system/email-settings', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -2741,14 +2873,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
       }
 
-      // Save system email settings to platform settings
-      await storage.setPlatformSetting('system_smtp_host', smtpHost, 'System SMTP host server');
-      await storage.setPlatformSetting('system_smtp_port', (smtpPort || 587).toString(), 'System SMTP port');
-      await storage.setPlatformSetting('system_smtp_username', smtpUsername, 'System SMTP username');
-      await storage.setPlatformSetting('system_smtp_password', smtpPassword, 'System SMTP password');
-      await storage.setPlatformSetting('system_smtp_secure', smtpSecure !== false ? 'true' : 'false', 'System SMTP secure connection');
-      await storage.setPlatformSetting('system_from_email', fromEmail, 'System default from email');
-      await storage.setPlatformSetting('system_from_name', fromName || 'System', 'System default from name');
+      // Use new system SMTP settings
+      const settingsData = {
+        smtpHost: smtpHost.trim(),
+        smtpPort: parseInt(smtpPort) || 587,
+        smtpUsername: smtpUsername.trim(),
+        smtpPassword: smtpPassword,
+        smtpSecure: Boolean(smtpSecure),
+        fromEmail: fromEmail.trim().toLowerCase(),
+        fromName: fromName?.trim() || 'System',
+        description: 'Legacy System SMTP Configuration',
+        updatedBy: user.id
+      };
+
+      await storage.createSystemSmtpSettings(settingsData);
 
       res.json({ success: true, message: 'System email settings saved successfully' });
     } catch (error) {
@@ -2791,7 +2929,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Test system email settings (SuperAdmin only)
+  // Enhanced system SMTP test with comprehensive logging
+  app.post('/api/system/smtp-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied. SuperAdmin role required.' });
+      }
+
+      const { testEmail, connectionOnly = false } = req.body;
+
+      if (!connectionOnly && !testEmail) {
+        return res.status(400).json({ message: 'Test email address is required for email test' });
+      }
+
+      if (!connectionOnly) {
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(testEmail)) {
+          return res.status(400).json({ message: 'Invalid test email address' });
+        }
+      }
+
+      if (connectionOnly) {
+        // Test connection only
+        const connectionResult = await unifiedMailerService.testSmtpConnection();
+        res.json({
+          success: connectionResult.success,
+          details: connectionResult
+        });
+      } else {
+        // Send test email
+        const result = await unifiedMailerService.sendTestEmail(testEmail, undefined, {
+          userAgent: req.get('User-Agent'),
+          ipAddress: req.ip
+        });
+        
+        res.json(result);
+      }
+    } catch (error) {
+      console.error('Error testing system SMTP:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to test SMTP settings',
+        error: error.message 
+      });
+    }
+  });
+
+  // Legacy test system email settings (SuperAdmin only)
   app.post('/api/system/test-email', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -2806,13 +2992,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Test email address is required' });
       }
 
-      // Create a temporary organization ID for testing system settings
-      const success = await emailService.sendTestEmail(testEmail, 'system-test');
+      // Use unified mailer service for better logging and error handling
+      const result = await unifiedMailerService.sendTestEmail(testEmail, undefined, {
+        userAgent: req.get('User-Agent'),
+        ipAddress: req.ip
+      });
       
-      if (success) {
+      if (result.success) {
         res.json({ success: true, message: 'Test email sent successfully' });
       } else {
-        res.status(500).json({ success: false, message: 'Failed to send test email. Please check your SMTP settings.' });
+        res.status(500).json({ success: false, message: result.details?.error || 'Failed to send test email. Please check your SMTP settings.' });
       }
     } catch (error) {
       console.error('Error sending system test email:', error);
