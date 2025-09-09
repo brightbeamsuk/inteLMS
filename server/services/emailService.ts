@@ -21,19 +21,44 @@ export class SmtpEmailService implements EmailService {
       }
 
       const port = settings.smtpPort || 587;
-      const transporter = nodemailer.createTransport({
+      
+      // Create transport configuration based on secure setting
+      const transportConfig: any = {
         host: settings.smtpHost,
         port: port,
-        secure: port === 465, // true for 465 (SSL), false for other ports (587/25)
-        requireTLS: port === 587, // STARTTLS for port 587
         auth: {
           user: settings.smtpUsername,
           pass: settings.smtpPassword,
         },
-        tls: {
-          rejectUnauthorized: false, // Accept self-signed certificates for testing
-        },
+      };
+
+      if (settings.smtpSecure === false) {
+        // Insecure/plain connection - no encryption
+        transportConfig.secure = false;
+        transportConfig.ignoreTLS = true;
+      } else {
+        // Secure connection with proper TLS/SSL
+        transportConfig.secure = port === 465; // SSL for port 465, STARTTLS for others
+        transportConfig.tls = {
+          rejectUnauthorized: false,
+          ciphers: 'ALL',
+        };
+        
+        // For port 587, explicitly enable STARTTLS
+        if (port === 587) {
+          transportConfig.requireTLS = true;
+        }
+      }
+
+      console.log('Creating SMTP transport with config:', {
+        host: transportConfig.host,
+        port: transportConfig.port,
+        secure: transportConfig.secure,
+        ignoreTLS: transportConfig.ignoreTLS,
+        requireTLS: transportConfig.requireTLS,
       });
+
+      const transporter = nodemailer.createTransport(transportConfig);
 
       return transporter;
     } catch (error) {
