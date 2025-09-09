@@ -7,6 +7,39 @@ import { storage } from '../storage';
 
 const BREVO_BASE_URL = "https://api.brevo.com/v3";
 
+/**
+ * Environment variable cleaning utility
+ */
+const cleanEnvVar = (value: string | undefined): string => {
+  return (value || "").replace(/^["']|["']$/g, "").trim();
+};
+
+/**
+ * Key resolution with org/platform fallback (prevents empty org key from overriding valid platform key)
+ */
+interface KeyResolution {
+  key: string;
+  source: "org" | "platform" | "none";
+  isValid: boolean;
+}
+
+export function resolveBrevoKey(orgSettings: any, platformSettings: any): KeyResolution {
+  // Check org key first (trim and validate length)
+  const orgKey = (orgSettings?.brevoApiKey || orgSettings?.brevo?.apiKey || "").trim();
+  if (orgKey.length >= 20) {
+    return { key: orgKey, source: "org", isValid: true };
+  }
+
+  // Fall back to platform key (trim and validate length)
+  const platKey = (platformSettings?.brevoApiKey || "").trim();
+  if (platKey.length >= 20) {
+    return { key: platKey, source: "platform", isValid: true };
+  }
+
+  // No valid key found
+  return { key: "", source: "none", isValid: false };
+}
+
 interface BrevoSendEmailParams {
   fromName: string;
   fromEmail: string;

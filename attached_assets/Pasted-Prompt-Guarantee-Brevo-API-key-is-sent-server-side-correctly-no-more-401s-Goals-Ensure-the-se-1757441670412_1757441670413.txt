@@ -1,0 +1,111 @@
+Prompt: Guarantee Brevo API key is sent server-side & correctly (no more 401s)
+
+Goals
+
+Ensure the server (not the browser) calls Brevo.
+
+Make the app prove which key it used (masked) and from where (org vs platform).
+
+Prevent blank org keys from overriding a valid platform key.
+
+Confirm we’re sending the api-key header to https://api.brevo.com/v3.
+
+Do this
+
+Server-only Brevo client
+
+Move all Brevo calls to the backend. The frontend must hit /admin/email/test on our server; the server then calls Brevo.
+
+If any code calls fetch("https://api.brevo.com/v3/...") from the browser, delete it and route via the backend.
+
+Key resolution with fallback (no blank override)
+
+Implement:
+
+function resolveBrevoKey(orgSettings, platformSettings) {
+  const orgKey = (orgSettings?.brevoApiKey || "").trim();
+  if (orgKey.length >= 20) return { key: orgKey, source: "org" };
+  const platKey = (platformSettings?.brevoApiKey || "").trim();
+  if (platKey.length >= 20) return { key: platKey, source: "platform" };
+  return { key: "", source: "none" };
+}
+
+
+IMPORTANT: Do not let an empty org key override a valid platform key.
+
+Header + base URL enforcement
+
+Constant: BREVO_BASE_URL = "https://api.brevo.com/v3".
+
+Before request: if host doesn’t include api.brevo.com, return error: “Wrong Brevo API host.”
+
+For all Brevo requests set headers exactly:
+
+{ "api-key": BREVO_KEY, "accept": "application/json", "content-type": "application/json" }
+
+
+Do not use Authorization or x-api-key.
+
+Sanitised diagnostics returned to UI
+
+For the Test Email (first /account, then /smtp/email), always return:
+
+{
+  provider: "brevo_api",
+  endpointHost: parsedHost,
+  httpStatus,
+  apiKeySource: "org"|"platform"|"none",
+  apiKeyPreview: first4 + "…" + last4,
+  apiKeyLength: key.length
+}
+
+
+Never log the full key. If apiKeyLength < 20, respond 422: “API key appears empty/invalid.”
+
+Strip storage masking
+
+When saving settings, do not store masked values like ••••••. If the UI sends a masked placeholder, ignore it and keep the existing secret.
+
+On save, trim() and remove \r/\n. If the value equals the stored one, don’t double-mask.
+
+Guard against quotes in env
+
+If using .env, strip surrounding quotes at load:
+
+const clean = (v) => (v || "").replace(/^["']|["']$/g, "").trim();
+
+
+Use clean(process.env.BREVO_API_KEY).
+
+Block client-side leakage
+
+Add a backend check: if a request to Brevo originates from the browser (CORS preflight or missing server auth context), reject with 400 “Client-side Brevo calls are blocked.”
+
+Acceptance checks
+
+With a good platform key and empty org key → /account returns 200, shows apiKeySource = platform.
+
+With a good org key → /account returns 200, shows apiKeySource = org.
+
+If org key is empty → platform key must be used (no 401).
+
+If header name is wrong or host wrong → explicit message, not generic 401.
+
+No frontend code calls api.brevo.com directly.
+
+Quick manual test (after applying)
+
+In your server logs for the Test Email, confirm:
+
+endpointHost: api.brevo.com
+
+apiKeySource: platform (or org), apiKeyLength: ~40+
+
+If it still 401s, run this on the same server process (Node REPL or small route) to prove the key in memory is valid:
+
+curl -i https://api.brevo.com/v3/account \
+  -H "api-key: <THE KEY YOUR SERVER JUST USED>" \
+  -H "accept: application/json"
+
+
+200 here but 401 in app → your code isn’t actually inserting the header (or a proxy is stripping it). Check that your HTTP client isn’t using a default auth interceptor that overwrites headers, and that you’re not behind a proxy that drops non-standard headers.
