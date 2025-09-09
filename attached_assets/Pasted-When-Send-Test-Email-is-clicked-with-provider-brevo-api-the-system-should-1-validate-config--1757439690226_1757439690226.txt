@@ -1,0 +1,162 @@
+When “Send Test Email” is clicked with provider = brevo_api, the system should (1) validate config, (2) run a Brevo /v3/account health check, (3) attempt the send to /v3/smtp/email, and (4) surface a clear, user-readable result with exact HTTP status and Brevo error text. No generic 500s.
+
+Implement the following
+
+Use the right provider path
+
+Ensure the Test Email action actually uses the brevo_api branch (not SMTP).
+
+In the handler, log providerUsed so we can see which branch executed.
+
+Upfront config validation (fail fast, no send)
+
+Check all of these and return specific errors:
+
+BREVO_API_KEY present (non-empty).
+
+FROM_EMAIL present and looks like an email.
+
+At least one of textContent or htmlContent will be sent (Brevo 400s if both are missing).
+
+Recipient email provided and valid.
+
+Show a single line error per missing field (don’t throw a 500).
+
+Health check before send
+
+Make a GET to https://api.brevo.com/v3/account with headers:
+
+api-key: <BREVO_API_KEY>
+
+accept: application/json
+
+Behaviour:
+
+200 OK → proceed to send.
+
+401/403 → stop and show:
+“Brevo rejected the API key (HTTP 401/403). Recreate the key in Brevo and paste it here.”
+
+429 → stop and show:
+“Brevo rate limited the request (429). Try again later.”
+
+5xx / network → stop and show:
+“Brevo API/network error (HTTP <code>). Please retry later.”
+
+Send with minimal, valid payload
+
+POST https://api.brevo.com/v3/smtp/email
+
+Headers:
+
+api-key: <BREVO_API_KEY>
+
+accept: application/json
+
+content-type: application/json
+
+Body (keep it simple for the test):
+
+{
+  "sender": { "name": "<FROM_NAME>", "email": "<FROM_EMAIL>" },
+  "to": [{ "email": "<recipient>" }],
+  "subject": "inteLMS API Test",
+  "textContent": "This is a test from inteLMS (brevo_api)."
+}
+
+
+Do not include empty htmlContent if you don’t have one. (Empty fields can trigger 400s.)
+
+Map Brevo responses to friendly messages (no generic 500)
+
+201 Created → success. Show:
+
+Provider: brevo_api
+
+Status: 201
+
+Message ID (if present in JSON) or x-message-id/x-transaction-message-id header
+
+400 Bad Request → parse JSON and show the exact error (message, code, errors[]):
+
+Common causes to detect and phrase:
+
+Unapproved sender:
+“Brevo says the From address/domain isn’t authorised. Verify the sender/domain inside Brevo.”
+
+Invalid recipient:
+“Recipient email appears invalid.”
+
+Missing content:
+“Brevo requires text or HTML content.”
+
+401/403 → invalid API key or permission (already caught in health check, but keep here too).
+
+429 → rate limit.
+
+5xx → Brevo outage; suggest retry later.
+
+Network/DNS/timeout → “Network error reaching Brevo. Check outbound HTTPS and retry.”
+
+Show a structured result panel in the UI
+
+Always return JSON to the front-end like:
+
+{
+  "success": true|false,
+  "provider": "brevo_api",
+  "httpStatus": <code>,
+  "message": "<human friendly>",
+  "details": {
+    "endpoint": "/v3/smtp/email",
+    "from": "<FROM_EMAIL>",
+    "to": "<recipient>",
+    "messageId": "<id if any>"
+  }
+}
+
+
+Render that in the modal instead of a red generic toast.
+
+Delivery log entry (sanitised)
+
+Log: timestamp, orgId, provider, to/from, subject, httpStatus, messageId, and Brevo error text (if any).
+
+Never store the API key; don’t echo headers that include secrets.
+
+Add a “Why did it fail?” helper on errors
+
+If httpStatus=400 and Brevo text includes “sender”: show a link text:
+“Verify your sender/domain in Brevo → Senders & Domains.”
+
+If httpStatus=401/403:
+“Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.”
+
+If 201 but user doesn’t see the email:
+“Check Spam/Quarantine. Also confirm the recipient server isn’t blocking transactional mail.”
+
+Guard against silent SMTP fallback
+
+If provider is brevo_api, do not attempt SMTP on failure. Return the mapped error immediately.
+
+Common gotchas to explicitly check
+
+Header name must be exactly api-key (hyphenated, lower-case is fine).
+
+Ensure no trailing spaces/newlines around the API key.
+
+Don’t add both textContent and an empty htmlContent: "".
+
+FROM address must be from a verified Brevo sender/domain (free webmail as sender will be rejected).
+
+Timeouts: connect 10s, total 20s; surface timeout distinctly (“Request timed out after 20s”).
+
+Acceptance tests
+
+Intentionally use a bad API key → health check blocks with 401/403 message (no 500).
+
+Use an unverified FROM domain → send returns 400 with Brevo’s exact message surfaced.
+
+Remove text/html → 400 “content required” surfaced.
+
+Valid config → 201; modal shows provider, 201, and messageId.
