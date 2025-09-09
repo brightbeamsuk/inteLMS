@@ -376,7 +376,7 @@ export class BrevoClient {
         toEmail: recipientEmail || 'unknown',
         subject: 'Test Email',
         status: httpStatus >= 200 && httpStatus < 300 ? 'sent' : 'failed',
-        sentAt: new Date(),
+        timestamp: new Date(),
         smtpHost: 'api.brevo.com',
         smtpPort: 443,
         fromEmail: 'system@inteLMS.com',

@@ -1,0 +1,343 @@
+Prompt: Rebuild provider-agnostic Email System (API + SMTP) with Tests & Diagnostics
+0) Remove legacy
+
+Delete all Brevo-specific code/vars/routes/UI.
+
+Add a build check that fails if brevo.com or sendinblue.com is referenced outside the new adapters.
+
+1) Data model (platform defaults + org overrides)
+
+Create email settings at two levels. Org fields override only if non-empty.
+
+Common fields
+
+provider (enum, see list below)
+
+fromName (string)
+
+fromEmail (string, must be verified/sender-allowed at provider)
+
+replyTo (optional)
+
+SMTP fields (for any SMTP-based provider)
+
+smtp.host (string)
+
+smtp.port (number; 587 STARTTLS or 465 TLS)
+
+smtp.username (string)
+
+smtp.password (secret)
+
+smtp.secure (bool; true=TLS/465, false=STARTTLS/587)
+
+API fields (provider-specific)
+
+api.key (secret)
+
+api.baseUrl (string; default per provider but editable)
+
+Optional provider fields (domain, region, etc.—per adapter below)
+
+Inheritance rule: when resolving effective config, ignore empty org fields; fall back to platform value.
+
+2) Supported providers (initial set)
+
+Implement adapters for these top providers:
+
+Generic SMTP (covers: Microsoft 365/Exchange Online, Gmail/Google Workspace, Amazon SES SMTP, SMTP2GO, cPanel, Zoho, Postmark SMTP)
+
+SendGrid (API)
+
+Brevo (API)
+
+Mailgun (API)
+
+Postmark (API)
+
+Mailjet (API)
+
+SparkPost (API)
+
+(Optional) Amazon SES (API) — scaffold now; you can use SMTP in the meantime
+
+In the UI, show presets that auto-fill hosts/ports for common SMTPs:
+
+Microsoft 365: smtp.office365.com:587 (STARTTLS)
+
+Google Workspace: smtp.gmail.com:587 (STARTTLS) (needs App Password/OAuth)
+
+Amazon SES (region host): e.g., email-smtp.eu-west-1.amazonaws.com:587
+
+SMTP2GO: mail.smtp2go.com:2525/587
+
+cPanel: usually mail.<yourdomain>:465 (TLS)
+Allow custom host too.
+
+3) Single Mailer Service (only place allowed to send)
+
+Create MailerService with:
+
+resolveEffectiveSettings(orgId)
+
+Merge org→platform; return effective + sourceMap (which field came from org vs platform).
+
+Do not allow an empty org secret to overwrite a valid platform secret.
+
+send({ orgId, to, subject, text, html })
+
+Validate required fields for chosen provider.
+
+Route to the correct adapter.
+
+No silent fallbacks.
+
+4) Adapters (requirements, health checks, send)
+
+Implement each adapter with a healthCheck() and send().
+
+A) SMTP Adapter (generic)
+
+Health: DNS resolve → TCP connect → STARTTLS/TLS handshake → AUTH (without sending a message).
+
+Send: Standard SMTP send; return SMTP code & messageId (if available).
+
+Map errors: DNS fail, connect fail, TLS fail, AUTH fail, Sender rejected, Recipient rejected.
+
+B) SendGrid API
+
+Base URL: https://api.sendgrid.com/v3
+
+Headers: Authorization: Bearer <api.key>, Content-Type: application/json
+
+Health: GET /v3/user/account (expect 200) or GET /v3/scopes
+
+Send: POST /v3/mail/send (expect 202)
+
+Notes: Show first/last 4 chars of key in diagnostics.
+
+C) Brevo API
+
+Base URL: https://api.brevo.com/v3
+
+Headers: api-key: <api.key>, Content-Type: application/json
+
+Health: GET /v3/account (expect 200)
+
+Send: POST /v3/smtp/email (expect 201)
+
+D) Mailgun API
+
+Base URL: https://api.mailgun.net/v3
+
+Auth: Basic api:<api.key>
+
+Required: domain (e.g., mg.yourdomain.com)
+
+Health: GET /v3/domains/<domain> (200) or GET /v3/domains and confirm domain present
+
+Send: POST /v3/<domain>/messages (expect 200)
+
+E) Postmark API
+
+Base URL: https://api.postmarkapp.com
+
+Headers: X-Postmark-Server-Token: <api.key>, Content-Type: application/json
+
+Health: GET /server (200) or GET /delivery/Stats
+
+Send: POST /email (expect 200)
+
+F) Mailjet API
+
+Base URL: https://api.mailjet.com/v3.1
+
+Auth: Basic with api.key and api.secret (add api.secret field)
+
+Health: GET /v3/REST/user (200)
+
+Send: POST /send (expect 200)
+
+G) SparkPost API
+
+Base URL: https://api.sparkpost.com/api/v1
+
+Headers: Authorization: <api.key>, Content-Type: application/json
+
+Health: GET /account (200)
+
+Send: POST /transmissions (expect 200/201)
+
+H) (Optional) Amazon SES API
+
+Requires SigV4 (accessKeyId, secretAccessKey, region)
+
+Health: GetAccount (200)
+
+Send: SendEmail (200)
+
+If not ready, hide API option and recommend SES via SMTP.
+
+5) Test Email route (backend)
+
+POST /admin/email/test
+Flow:
+
+Resolve effective settings (with sourceMap).
+
+Validate required fields for the selected provider; if missing, return 422 with a list.
+
+Run healthCheck() for that adapter.
+
+If health OK, run send() with:
+
+Subject: inteLMS Test Email
+
+Body: plain text “This is a test from inteLMS.”
+
+Return a diagnostics report (see next section).
+
+6) Diagnostics report (always returned)
+
+Return JSON the UI renders as a report:
+
+{
+  "success": true,
+  "provider": "sendgrid_api",
+  "endpoint": "/v3/mail/send",
+  "httpStatus": 202,
+  "smtpStatus": null,
+  "details": {
+    "host": "api.sendgrid.com",
+    "port": null,
+    "tls": null,
+    "from": "noreply@yourdomain.com",
+    "to": "admin@example.com",
+    "messageId": "provider-msg-id-or-null",
+    "keyPreview": "SG.xxxx…yyyy",
+    "keyLength": 69,
+    "effectiveFieldSources": {
+      "provider": "org",
+      "fromEmail": "platform",
+      "api.key": "org"
+    },
+    "timestamp": "ISO-STRING"
+  },
+  "error": {
+    "code": null,
+    "short": null,
+    "raw": null
+  }
+}
+
+
+On failure, set success=false, fill httpStatus/smtpStatus, and include:
+
+error.short → a human message (see mappings below)
+
+error.raw → first 200 chars of provider error/SMTP response
+
+Never return full secrets; only keyPreview (first/last 4 chars) and keyLength.
+
+7) Error mapping (friendly messages)
+
+SMTP
+
+DNS/resolve fail → “Couldn’t resolve SMTP host”
+
+Connect fail → “Couldn’t connect to SMTP host/port”
+
+TLS fail → “TLS/STARTTLS handshake failed”
+
+AUTH fail → “SMTP authentication failed (check username/password)”
+
+550/553/554 → show provider text; suggest verifying sender/recipient
+
+SendGrid
+
+401/403 → “API key invalid or lacks permission”
+
+400 → parse first error from response
+
+429 → “Rate limited”
+
+Brevo
+
+401/403 → “API key rejected”
+
+400 → “Sender/domain not authorised or invalid payload”
+
+429 → “Rate limited”
+
+Mailgun
+
+401 → “API key invalid”
+
+400 → “Domain or payload invalid (check ‘domain’ setting)”
+
+Postmark
+
+401 → “Server token invalid”
+
+422 → “Sender signature not confirmed or payload invalid”
+
+Mailjet
+
+401 → “API key/secret invalid”
+
+400 → “From/To/payload invalid”
+
+SparkPost
+
+401 → “API key invalid”
+
+403 → “Key lacks required permission (transmissions:read/write)”
+
+400 → “Payload invalid (check ‘from’ domain)”
+
+Return 422 for fixable config errors (missing fields), not 500.
+
+8) Settings UI
+
+Provider selector with these options:
+
+SMTP (Generic), SendGrid, Brevo, Mailgun, Postmark, Mailjet, SparkPost, (SES API – optional)
+
+When provider changes, show only the relevant inputs.
+
+Show presets for SMTP to auto-fill host/port/secure notes.
+
+Show a small DNS help card per provider (SPF/DKIM/verification heads-up).
+
+Add Send Test Email button that calls the backend route and renders the diagnostics.
+
+9) Delivery Logs
+
+Create MailDeliveryLog:
+
+orgId, provider, to, from, subject
+
+httpStatus/smtpStatus, messageId
+
+errorShort, errorRaw (200 chars), timestamp
+Add a page Email → Delivery Logs (filterable by provider/status).
+
+10) Security & reliability
+
+All sends and health checks are server-side only.
+
+Secrets are trimmed on save; ignore masked placeholders (•••••) so we don’t overwrite real secrets.
+
+Timeouts: connect 10s; total 25s; 1 retry for 5xx.
+
+No code path outside MailerService may send email (add a lint/build check).
+
+11) Acceptance tests
+
+Configure each provider with known-good creds → Test returns success with expected status (SMTP 250ish mapped to 200; SendGrid 202; Brevo 201; Mailgun 200; Postmark 200; Mailjet 200; SparkPost 200/201).
+
+Break credentials intentionally → UI shows why it failed (mapped message) + diagnostics (host, keyPreview/length, field sources).
+
+Org with blanks inherits platform defaults; leaving org key empty must not override a valid platform key.
+
+No legacy Brevo calls remain.

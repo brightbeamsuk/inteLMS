@@ -5,7 +5,7 @@ import type {
   Course, 
   Assignment, 
   OrganisationSettings,
-  SystemSmtpSettings,
+  SystemEmailSettings,
   InsertEmailLog
 } from "@shared/schema";
 import nodemailer from "nodemailer";
@@ -70,18 +70,18 @@ export class EnhancedUnifiedMailerService implements UnifiedMailerService {
           return {
             settings: orgSettings,
             source: 'organisation',
-            provider: this.detectProvider(orgSettings.smtpHost!)
+            provider: this.detectProvider(orgSettings?.smtpHost || '')
           };
         }
       }
 
       // Fall back to system settings
-      const systemSettings = await storage.getSystemSmtpSettings();
+      const systemSettings = await storage.getSystemEmailSettings();
       if (systemSettings && this.isValidSmtpSettings(systemSettings)) {
         return {
           settings: systemSettings,
           source: 'system',
-          provider: this.detectProvider(systemSettings.smtpHost)
+          provider: this.detectProvider(systemSettings.smtpHost || '')
         };
       }
 
@@ -195,7 +195,7 @@ export class EnhancedUnifiedMailerService implements UnifiedMailerService {
       provider,
     });
 
-    return nodemailer.createTransporter(transportConfig);
+    return nodemailer.createTransport(transportConfig);
   }
 
   /**
@@ -229,7 +229,7 @@ export class EnhancedUnifiedMailerService implements UnifiedMailerService {
         templateType: options.templateType as any,
         smtpHost: options.smtpHost,
         smtpPort: options.smtpPort,
-        smtpProvider: options.provider,
+        provider: 'smtp_generic' as any,
         messageId: options.messageId || null,
         status: options.status,
         errorMessage: options.errorMessage || null,

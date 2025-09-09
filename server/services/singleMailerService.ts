@@ -5,7 +5,7 @@ import type {
   Course, 
   Assignment, 
   OrganisationSettings,
-  SystemSmtpSettings,
+  SystemEmailSettings,
   InsertEmailLog
 } from "@shared/schema";
 import nodemailer from "nodemailer";
@@ -356,12 +356,12 @@ export class SingleMailerService {
       }
       
       // Fallback to system settings
-      const systemSettings = await storage.getSystemSmtpSettings();
+      const systemSettings = await storage.getSystemEmailSettings();
       if (systemSettings && this.isValidSmtpSettings(systemSettings)) {
         return {
           settings: systemSettings,
           source: 'system',
-          provider: this.detectProvider(systemSettings.smtpHost)
+          provider: this.detectProvider(systemSettings.smtpHost || '')
         };
       }
       
@@ -527,7 +527,7 @@ export class SingleMailerService {
         templateType: logData.templateType as any,
         smtpHost: logData.smtpHost || 'unknown',
         smtpPort: logData.smtpPort || 587,
-        smtpProvider: logData.smtpHost ? this.detectProvider(logData.smtpHost) : 'unknown',
+        provider: 'smtp_generic' as any,
         messageId: logData.messageId,
         status: logData.success ? 'sent' : 'failed',
         errorMessage: logData.error,

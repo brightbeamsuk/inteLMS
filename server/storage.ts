@@ -17,7 +17,7 @@ import {
   planFeatureMappings,
   auditLogs,
   emailTemplates,
-  systemSmtpSettings,
+  systemEmailSettings,
   emailLogs,
   type User,
   type UpsertUser,
@@ -56,8 +56,8 @@ import {
   type InsertAuditLog,
   type EmailTemplate,
   type InsertEmailTemplate,
-  type SystemSmtpSettings,
-  type InsertSystemSmtpSettings,
+  type SystemEmailSettings,
+  type InsertSystemEmailSettings,
   type EmailLog,
   type InsertEmailLog,
 } from "@shared/schema";
@@ -232,9 +232,9 @@ export interface IStorage {
   deleteEmailTemplate(id: string): Promise<void>;
 
   // System SMTP settings operations (SuperAdmin level)
-  getSystemSmtpSettings(): Promise<SystemSmtpSettings | undefined>;
-  createSystemSmtpSettings(settings: InsertSystemSmtpSettings): Promise<SystemSmtpSettings>;
-  updateSystemSmtpSettings(settings: Partial<InsertSystemSmtpSettings>): Promise<SystemSmtpSettings>;
+  getSystemEmailSettings(): Promise<SystemEmailSettings | undefined>;
+  createSystemEmailSettings(settings: InsertSystemEmailSettings): Promise<SystemEmailSettings>;
+  updateSystemEmailSettings(settings: Partial<InsertSystemEmailSettings>): Promise<SystemEmailSettings>;
   
   // Email logs operations
   createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
@@ -1158,38 +1158,38 @@ export class DatabaseStorage implements IStorage {
   }
 
   // System SMTP settings operations
-  async getSystemSmtpSettings(): Promise<SystemSmtpSettings | undefined> {
+  async getSystemEmailSettings(): Promise<SystemEmailSettings | undefined> {
     const [settings] = await db
       .select()
-      .from(systemSmtpSettings)
-      .where(eq(systemSmtpSettings.isActive, true))
-      .orderBy(desc(systemSmtpSettings.updatedAt));
+      .from(systemEmailSettings)
+      .where(eq(systemEmailSettings.isActive, true))
+      .orderBy(desc(systemEmailSettings.updatedAt));
     return settings;
   }
 
-  async createSystemSmtpSettings(settingsData: InsertSystemSmtpSettings): Promise<SystemSmtpSettings> {
+  async createSystemEmailSettings(settingsData: InsertSystemEmailSettings): Promise<SystemEmailSettings> {
     // Deactivate all existing settings first
     await db
-      .update(systemSmtpSettings)
+      .update(systemEmailSettings)
       .set({ isActive: false, updatedAt: new Date() });
 
     const [settings] = await db
-      .insert(systemSmtpSettings)
+      .insert(systemEmailSettings)
       .values({ ...settingsData, isActive: true })
       .returning();
     return settings;
   }
 
-  async updateSystemSmtpSettings(settingsData: Partial<InsertSystemSmtpSettings>): Promise<SystemSmtpSettings> {
-    const activeSettings = await this.getSystemSmtpSettings();
+  async updateSystemEmailSettings(settingsData: Partial<InsertSystemEmailSettings>): Promise<SystemEmailSettings> {
+    const activeSettings = await this.getSystemEmailSettings();
     if (!activeSettings) {
-      throw new Error('No active system SMTP settings found');
+      throw new Error('No active system email settings found');
     }
 
     const [settings] = await db
-      .update(systemSmtpSettings)
+      .update(systemEmailSettings)
       .set({ ...settingsData, updatedAt: new Date() })
-      .where(eq(systemSmtpSettings.id, activeSettings.id))
+      .where(eq(systemEmailSettings.id, activeSettings.id))
       .returning();
     return settings;
   }
@@ -1227,10 +1227,10 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(emailLogs.status, status));
     }
     if (fromDate) {
-      conditions.push(sql`${emailLogs.sentAt} >= ${fromDate}`);
+      conditions.push(sql`${emailLogs.timestamp} >= ${fromDate}`);
     }
     if (toDate) {
-      conditions.push(sql`${emailLogs.sentAt} <= ${toDate}`);
+      conditions.push(sql`${emailLogs.timestamp} <= ${toDate}`);
     }
 
     if (conditions.length > 0) {
@@ -1238,7 +1238,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     return await query
-      .orderBy(desc(emailLogs.sentAt))
+      .orderBy(desc(emailLogs.timestamp))
       .limit(limit)
       .offset(offset);
   }
