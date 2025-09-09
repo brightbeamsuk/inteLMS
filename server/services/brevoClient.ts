@@ -24,19 +24,33 @@ interface KeyResolution {
 }
 
 export function resolveBrevoKey(orgSettings: any, platformSettings: any): KeyResolution {
+  // Debug: Log what we received
+  console.log('🔧 resolveBrevoKey DEBUG:');
+  console.log('  orgSettings:', orgSettings ? Object.keys(orgSettings) : 'null');
+  console.log('  platformSettings:', platformSettings ? Object.keys(platformSettings) : 'null');
+  
   // Check org key first (trim and validate length)
-  const orgKey = (orgSettings?.brevoApiKey || orgSettings?.brevo?.apiKey || "").trim();
+  const orgKeyRaw = orgSettings?.brevoApiKey || orgSettings?.brevo?.apiKey || "";
+  const orgKey = orgKeyRaw.trim();
+  console.log(`  orgKey: length=${orgKey.length}, preview="${orgKey.substring(0, 8)}..."`);
+  
   if (orgKey.length >= 20) {
+    console.log('  ✅ Using ORG key');
     return { key: orgKey, source: "org", isValid: true };
   }
 
   // Fall back to platform key (trim and validate length)
-  const platKey = (platformSettings?.brevoApiKey || "").trim();
+  const platKeyRaw = platformSettings?.brevoApiKey || "";
+  const platKey = platKeyRaw.trim();
+  console.log(`  platKey: length=${platKey.length}, preview="${platKey.substring(0, 8)}..."`);
+  
   if (platKey.length >= 20) {
+    console.log('  ✅ Using PLATFORM key');
     return { key: platKey, source: "platform", isValid: true };
   }
 
   // No valid key found
+  console.log('  ❌ NO VALID KEY FOUND');
   return { key: "", source: "none", isValid: false };
 }
 
@@ -77,6 +91,9 @@ export class BrevoClient {
     this.apiKey = apiKey.trim();
     this.organizationId = organizationId;
     this.keySource = keySource;
+    
+    // Debug log final key details
+    console.log(`🔧 BrevoClient created: source=${keySource}, keyLength=${this.apiKey.length}, preview="${this.getMaskedKey()}"`);
   }
 
   /**
