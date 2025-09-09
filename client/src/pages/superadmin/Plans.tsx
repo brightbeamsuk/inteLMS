@@ -118,6 +118,13 @@ export function SuperAdminPlans() {
       });
       setShowEditPlanModal(false);
       setSelectedPlan(null);
+      setPlanFormData({
+        name: "",
+        description: "",
+        pricePerUser: "",
+        status: "active",
+        featureIds: [],
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/plans'] });
     },
     onError: (error: Error) => {
@@ -671,7 +678,17 @@ export function SuperAdminPlans() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setShowEditPlanModal(false)}
+                  onClick={() => {
+                    setShowEditPlanModal(false);
+                    setSelectedPlan(null);
+                    setPlanFormData({
+                      name: "",
+                      description: "",
+                      pricePerUser: "",
+                      status: "active",
+                      featureIds: [],
+                    });
+                  }}
                   data-testid="button-cancel-edit-plan"
                 >
                   Cancel
@@ -687,7 +704,17 @@ export function SuperAdminPlans() {
               </div>
             </form>
           </div>
-          <div className="modal-backdrop" onClick={() => setShowEditPlanModal(false)}></div>
+          <div className="modal-backdrop" onClick={() => {
+            setShowEditPlanModal(false);
+            setSelectedPlan(null);
+            setPlanFormData({
+              name: "",
+              description: "",
+              pricePerUser: "",
+              status: "active",
+              featureIds: [],
+            });
+          }}></div>
         </div>
       )}
 
