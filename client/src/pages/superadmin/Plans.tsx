@@ -81,10 +81,7 @@ export function SuperAdminPlans() {
 
   const createPlanMutation = useMutation({
     mutationFn: async (planData: typeof planFormData) => {
-      return apiRequest('/api/plans', {
-        method: 'POST',
-        body: JSON.stringify(planData),
-      });
+      return apiRequest('POST', '/api/plans', planData);
     },
     onSuccess: () => {
       toast({
@@ -112,10 +109,7 @@ export function SuperAdminPlans() {
 
   const updatePlanMutation = useMutation({
     mutationFn: async ({ id, ...planData }: typeof planFormData & { id: string }) => {
-      return apiRequest(`/api/plans/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(planData),
-      });
+      return apiRequest('PUT', `/api/plans/${id}`, planData);
     },
     onSuccess: () => {
       toast({
@@ -137,9 +131,7 @@ export function SuperAdminPlans() {
 
   const deletePlanMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/plans/${id}`, {
-        method: 'DELETE',
-      });
+      return apiRequest('DELETE', `/api/plans/${id}`);
     },
     onSuccess: () => {
       toast({
@@ -162,10 +154,7 @@ export function SuperAdminPlans() {
 
   const createFeatureMutation = useMutation({
     mutationFn: async (featureData: typeof featureFormData) => {
-      return apiRequest('/api/plan-features', {
-        method: 'POST',
-        body: JSON.stringify(featureData),
-      });
+      return apiRequest('POST', '/api/plan-features', featureData);
     },
     onSuccess: () => {
       toast({
