@@ -17,6 +17,8 @@ import {
   planFeatureMappings,
   auditLogs,
   emailTemplates,
+  systemSmtpSettings,
+  emailLogs,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -54,6 +56,10 @@ import {
   type InsertAuditLog,
   type EmailTemplate,
   type InsertEmailTemplate,
+  type SystemSmtpSettings,
+  type InsertSystemSmtpSettings,
+  type EmailLog,
+  type InsertEmailLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull } from "drizzle-orm";
@@ -224,6 +230,23 @@ export interface IStorage {
   getEmailTemplatesByOrganisation(organisationId: string): Promise<EmailTemplate[]>;
   updateEmailTemplate(id: string, template: Partial<InsertEmailTemplate>): Promise<EmailTemplate>;
   deleteEmailTemplate(id: string): Promise<void>;
+
+  // System SMTP settings operations (SuperAdmin level)
+  getSystemSmtpSettings(): Promise<SystemSmtpSettings | undefined>;
+  createSystemSmtpSettings(settings: InsertSystemSmtpSettings): Promise<SystemSmtpSettings>;
+  updateSystemSmtpSettings(settings: Partial<InsertSystemSmtpSettings>): Promise<SystemSmtpSettings>;
+  
+  // Email logs operations
+  createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
+  getEmailLogs(filters?: {
+    organisationId?: string;
+    status?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<EmailLog[]>;
+  getEmailLogById(id: string): Promise<EmailLog | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1132,6 +1155,97 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEmailTemplate(id: string): Promise<void> {
     await db.delete(emailTemplates).where(eq(emailTemplates.id, id));
+  }
+
+  // System SMTP settings operations
+  async getSystemSmtpSettings(): Promise<SystemSmtpSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(systemSmtpSettings)
+      .where(eq(systemSmtpSettings.isActive, true))
+      .orderBy(desc(systemSmtpSettings.updatedAt));
+    return settings;
+  }
+
+  async createSystemSmtpSettings(settingsData: InsertSystemSmtpSettings): Promise<SystemSmtpSettings> {
+    // Deactivate all existing settings first
+    await db
+      .update(systemSmtpSettings)
+      .set({ isActive: false, updatedAt: new Date() });
+
+    const [settings] = await db
+      .insert(systemSmtpSettings)
+      .values({ ...settingsData, isActive: true })
+      .returning();
+    return settings;
+  }
+
+  async updateSystemSmtpSettings(settingsData: Partial<InsertSystemSmtpSettings>): Promise<SystemSmtpSettings> {
+    const activeSettings = await this.getSystemSmtpSettings();
+    if (!activeSettings) {
+      throw new Error('No active system SMTP settings found');
+    }
+
+    const [settings] = await db
+      .update(systemSmtpSettings)
+      .set({ ...settingsData, updatedAt: new Date() })
+      .where(eq(systemSmtpSettings.id, activeSettings.id))
+      .returning();
+    return settings;
+  }
+
+  // Email logs operations
+  async createEmailLog(logData: InsertEmailLog): Promise<EmailLog> {
+    const [log] = await db.insert(emailLogs).values(logData).returning();
+    return log;
+  }
+
+  async getEmailLogs(filters: {
+    organisationId?: string;
+    status?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<EmailLog[]> {
+    const {
+      organisationId,
+      status,
+      fromDate,
+      toDate,
+      limit = 50,
+      offset = 0
+    } = filters;
+
+    let query = db.select().from(emailLogs);
+
+    const conditions: any[] = [];
+    if (organisationId) {
+      conditions.push(eq(emailLogs.organisationId, organisationId));
+    }
+    if (status) {
+      conditions.push(eq(emailLogs.status, status));
+    }
+    if (fromDate) {
+      conditions.push(sql`${emailLogs.sentAt} >= ${fromDate}`);
+    }
+    if (toDate) {
+      conditions.push(sql`${emailLogs.sentAt} <= ${toDate}`);
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    return await query
+      .orderBy(desc(emailLogs.sentAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getEmailLogById(id: string): Promise<EmailLog | undefined> {
+    const [log] = await db.select().from(emailLogs).where(eq(emailLogs.id, id));
+    return log;
   }
 }
 

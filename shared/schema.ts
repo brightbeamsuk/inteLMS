@@ -376,6 +376,50 @@ export const emailTemplates = pgTable("email_templates", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// System-wide SMTP settings table (SuperAdmin level)
+export const systemSmtpSettings = pgTable("system_smtp_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  smtpHost: varchar("smtp_host").notNull(),
+  smtpPort: integer("smtp_port").notNull().default(587),
+  smtpUsername: varchar("smtp_username").notNull(),
+  smtpPassword: varchar("smtp_password").notNull(),
+  smtpSecure: boolean("smtp_secure").default(true), // Force TLS
+  fromEmail: varchar("from_email").notNull(),
+  fromName: varchar("from_name").notNull(),
+  isActive: boolean("is_active").default(true),
+  description: text("description"), // e.g., "Production Brevo", "Testing SMTP"
+  updatedBy: varchar("updated_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Email delivery logs table
+export const emailLogs = pgTable("email_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id"), // null for system emails
+  fromEmail: varchar("from_email").notNull(),
+  toEmail: varchar("to_email").notNull(),
+  subject: varchar("subject").notNull(),
+  templateType: emailTemplateTypeEnum("template_type"),
+  smtpHost: varchar("smtp_host").notNull(),
+  smtpPort: integer("smtp_port").notNull(),
+  smtpProvider: varchar("smtp_provider"), // "brevo", "gmail", "outlook", "custom"
+  messageId: varchar("message_id"), // SMTP message ID from provider
+  status: varchar("status").notNull(), // "sent", "failed", "pending"
+  errorMessage: text("error_message"), // Error details if failed
+  tlsUsed: boolean("tls_used").default(true),
+  responseCode: varchar("response_code"), // SMTP response code
+  sentAt: timestamp("sent_at").defaultNow(),
+  
+  // Non-sensitive metadata for debugging
+  userAgent: text("user_agent"),
+  ipAddress: varchar("ip_address"),
+  
+  // Email routing info
+  usedOrgSettings: boolean("used_org_settings").default(false), // true if org SMTP was used
+  fallbackUsed: boolean("fallback_used").default(false), // true if fell back to system SMTP
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   organisation: one(organisations, {
@@ -570,6 +614,20 @@ export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
   }),
 }));
 
+export const systemSmtpSettingsRelations = relations(systemSmtpSettings, ({ one }) => ({
+  updatedByUser: one(users, {
+    fields: [systemSmtpSettings.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+export const emailLogsRelations = relations(emailLogs, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [emailLogs.organisationId],
+    references: [organisations.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -662,6 +720,17 @@ export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit
   updatedAt: true,
 });
 
+export const insertSystemSmtpSettingsSchema = createInsertSchema(systemSmtpSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({
+  id: true,
+  sentAt: true,
+});
+
 // Course folder insert schemas
 export const insertCourseFolderSchema = createInsertSchema(courseFolders).omit({
   id: true,
@@ -731,3 +800,10 @@ export type CourseFolder = typeof courseFolders.$inferSelect;
 
 export type InsertOrganisationCourseFolder = z.infer<typeof insertOrganisationCourseFolderSchema>;
 export type OrganisationCourseFolder = typeof organisationCourseFolders.$inferSelect;
+
+// Email system types
+export type InsertSystemSmtpSettings = z.infer<typeof insertSystemSmtpSettingsSchema>;
+export type SystemSmtpSettings = typeof systemSmtpSettings.$inferSelect;
+
+export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
+export type EmailLog = typeof emailLogs.$inferSelect;

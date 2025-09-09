@@ -1,0 +1,90 @@
+Goal
+Allow emails to be sent through any SMTP provider the admin chooses, with a clear priority system (superadmin default → org admin override), and ensure all outbound mail is routed through a single secure Mailer Service with logs and tests.
+
+What to implement
+
+Centralised SMTP Settings
+
+Superadmin level (platform-wide default)
+
+Fields: SMTP Host, Port, Username, Password/API key, From Name, From Email, Force TLS (toggle).
+
+Saved securely in environment variables or system config.
+
+Organisation admin level (per-org override)
+
+Same fields, but scoped to the organisation only.
+
+If not set, system uses the superadmin default.
+
+If set, override only applies to emails sent from that organisation’s tenant.
+
+Always require From Email domain to be verified with chosen provider (warn if not).
+
+Unified Mailer Service
+
+All emails (user notifications, reminders, admin reports, etc.) go through one service.
+
+Before each send, determine which SMTP settings to apply:
+
+Org-level settings (if present)
+
+Otherwise fall back to superadmin defaults
+
+No direct calls to sendmail or local IP.
+
+Security & Validation
+
+Enforce STARTTLS (port 587) or implicit TLS (port 465).
+
+Block attempts to send if credentials are empty.
+
+Log warnings if:
+
+Host is unreachable
+
+TLS handshake fails
+
+Recipient’s MX domain is known problematic (e.g. Outlook bounce patterns).
+
+Delivery Logs
+
+For each email, log non-sensitive metadata: timestamp, orgId, to/from, subject, SMTP host/port used, TLS status, messageId, and success/failure.
+
+Store logs per organisation, viewable in Admin → Email Logs.
+
+Test & Health Check Tools
+
+SMTP Test Email: In both superadmin and org admin panels.
+
+Inputs: recipient email.
+
+Output on screen + log: host, port, resolved IP, TLS on/off, messageId, SMTP response code.
+
+SMTP Health Check: Resolve host, attempt connect, STARTTLS handshake, report results.
+
+Template Routing
+
+All templates (welcome, course assigned, reminder, expired, completion, failed, password reset, weekly digests, etc.) must call the unified Mailer Service.
+
+Tests should fail the build if any code path bypasses it.
+
+Priority Rules
+
+If org admin SMTP is valid → use it.
+
+If org admin SMTP is missing or invalid → fall back to superadmin SMTP.
+
+If both are missing/invalid → block send and return error “SMTP not configured.”
+
+Acceptance Criteria
+
+Superadmin can configure a default SMTP.
+
+Org admin can override with their own SMTP.
+
+Test emails show correct provider in logs (Brevo, Outlook, Gmail, etc.).
+
+All outbound mail respects org vs platform priority.
+
+No email ever leaves via server IP.
