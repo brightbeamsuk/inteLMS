@@ -36,6 +36,7 @@ import { AdminOrganisationSettings } from "@/pages/admin/OrganisationSettings";
 import { AdminProfile } from "@/pages/admin/Profile";
 import { AdminTrainingMatrix } from "@/pages/admin/TrainingMatrix";
 import AdminCertificates from "@/pages/admin/Certificates";
+import AuditLog from "@/pages/admin/AuditLog";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
@@ -222,6 +223,14 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminBilling />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/audit-log">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AuditLog />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
