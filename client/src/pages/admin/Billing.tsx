@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface Plan {
   id: string;
@@ -38,6 +39,9 @@ interface OrganisationStats {
 }
 
 export function AdminBilling() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
   const { data: currentUser } = useQuery({
     queryKey: ['/api/auth/user'],
   });
@@ -90,6 +94,42 @@ export function AdminBilling() {
   // Find the current plan based on organization's planId
   const currentPlan = plans.find(plan => plan.id === organisation?.planId);
   const currentPlanName = currentPlan?.name || "No Plan";
+
+  // Mutation to change plan
+  const changePlanMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const response = await fetch(`/api/organisations/${organisation?.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ planId }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to update plan: ${response.statusText}`);
+      }
+      
+      return response.json();
+    },
+    onSuccess: (updatedOrganisation) => {
+      toast({
+        title: "Plan Updated",
+        description: `Successfully changed to ${plans.find(p => p.id === updatedOrganisation.planId)?.name || 'new plan'}`,
+      });
+      
+      // Refresh the organisation data
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', currentUser?.organisationId] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update plan",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div>
@@ -434,10 +474,12 @@ export function AdminBilling() {
                           </button>
                         ) : (
                           <button 
-                            className="btn btn-primary btn-sm w-full" 
+                            className={`btn btn-primary btn-sm w-full ${changePlanMutation.isPending ? 'loading' : ''}`}
+                            onClick={() => changePlanMutation.mutate(plan.id)}
+                            disabled={changePlanMutation.isPending}
                             data-testid={`button-upgrade-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
-                            Upgrade to {plan.name}
+                            {changePlanMutation.isPending ? 'Changing...' : `Change to ${plan.name}`}
                           </button>
                         )}
                       </div>
