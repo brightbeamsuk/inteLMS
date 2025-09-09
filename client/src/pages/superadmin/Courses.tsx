@@ -9,6 +9,7 @@ interface Course {
   id: string;
   title: string;
   description: string;
+  folderId?: string;
   scormPackageUrl?: string;
   coverImageUrl?: string;
   estimatedDuration: number;
@@ -17,6 +18,18 @@ interface Course {
   tags: string;
   certificateExpiryPeriod?: number;
   status: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CourseFolder {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  icon: string;
+  sortOrder: number;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +49,7 @@ interface CourseAnalytics {
 export function SuperAdminCourses() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
@@ -45,6 +59,10 @@ export function SuperAdminCourses() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [selectedFolderForEdit, setSelectedFolderForEdit] = useState<CourseFolder | null>(null);
+  const [folderFormData, setFolderFormData] = useState<Partial<CourseFolder>>({});
+  const [showFolderDeleteModal, setShowFolderDeleteModal] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -56,6 +74,10 @@ export function SuperAdminCourses() {
   const { data: analytics, isLoading: analyticsLoading } = useQuery<CourseAnalytics>({
     queryKey: [`/api/courses/${selectedCourse?.id}/analytics`],
     enabled: !!selectedCourse && showAnalyticsModal,
+  });
+
+  const { data: folders = [], isLoading: foldersLoading } = useQuery<CourseFolder[]>({
+    queryKey: ['/api/course-folders'],
   });
 
   const updateCourseMutation = useMutation({
@@ -150,6 +172,76 @@ export function SuperAdminCourses() {
     },
   });
 
+  const createFolderMutation = useMutation({
+    mutationFn: async (data: Partial<CourseFolder>) => {
+      return await apiRequest('POST', '/api/course-folders', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
+      setShowFolderModal(false);
+      setFolderFormData({});
+      toast({
+        title: "Success",
+        description: "Course folder created successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create folder",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateFolderMutation = useMutation({
+    mutationFn: async (data: Partial<CourseFolder>) => {
+      if (!selectedFolderForEdit) throw new Error('No folder selected');
+      return await apiRequest('PUT', `/api/course-folders/${selectedFolderForEdit.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
+      setShowFolderModal(false);
+      setSelectedFolderForEdit(null);
+      setFolderFormData({});
+      toast({
+        title: "Success",
+        description: "Course folder updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update folder",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteFolderMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedFolderForEdit) throw new Error('No folder selected');
+      return await apiRequest('DELETE', `/api/course-folders/${selectedFolderForEdit.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+      setShowFolderDeleteModal(false);
+      setSelectedFolderForEdit(null);
+      toast({
+        title: "Success",
+        description: "Course folder deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete folder",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEditCourse = () => {
     if (selectedCourse) {
       setEditFormData({
@@ -189,13 +281,56 @@ export function SuperAdminCourses() {
     }
   };
 
-  // Filter courses based on search, category, and view mode
+  // Folder management handlers
+  const handleCreateFolder = () => {
+    setSelectedFolderForEdit(null);
+    setFolderFormData({
+      name: '',
+      description: '',
+      color: '#3b82f6',
+      icon: 'fas fa-folder',
+      sortOrder: folders.length,
+    });
+    setShowFolderModal(true);
+  };
+
+  const handleEditFolder = (folder: CourseFolder) => {
+    setSelectedFolderForEdit(folder);
+    setFolderFormData({
+      name: folder.name,
+      description: folder.description,
+      color: folder.color,
+      icon: folder.icon,
+      sortOrder: folder.sortOrder,
+    });
+    setShowFolderModal(true);
+  };
+
+  const handleSaveFolder = () => {
+    if (selectedFolderForEdit) {
+      updateFolderMutation.mutate(folderFormData);
+    } else {
+      createFolderMutation.mutate(folderFormData);
+    }
+  };
+
+  const handleDeleteFolder = (folder: CourseFolder) => {
+    setSelectedFolderForEdit(folder);
+    setShowFolderDeleteModal(true);
+  };
+
+  const confirmDeleteFolder = () => {
+    deleteFolderMutation.mutate();
+  };
+
+  // Filter courses based on search, category, folder, and view mode
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
+    const matchesFolder = !selectedFolder || course.folderId === selectedFolder;
     const matchesViewMode = viewMode === 'active' ? course.status !== 'archived' : course.status === 'archived';
-    return matchesSearch && matchesCategory && matchesViewMode;
+    return matchesSearch && matchesCategory && matchesFolder && matchesViewMode;
   });
 
   // Get unique categories
@@ -266,6 +401,91 @@ export function SuperAdminCourses() {
                 ))}
               </select>
             </div>
+            <div className="form-control">
+              <select 
+                className="select select-bordered"
+                value={selectedFolder}
+                onChange={(e) => setSelectedFolder(e.target.value)}
+                data-testid="select-filter-folder"
+              >
+                <option value="">All Folders</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Folder Management Section */}
+      <div className="card bg-base-100 shadow-sm mb-6">
+        <div className="card-body">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold" data-testid="text-folder-management">Course Folders</h2>
+            <button 
+              className="btn btn-secondary btn-sm" 
+              onClick={handleCreateFolder}
+              data-testid="button-create-folder"
+            >
+              <i className="fas fa-plus"></i> New Folder
+            </button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {foldersLoading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="skeleton h-16 w-full"></div>
+              ))
+            ) : (
+              folders.map((folder) => (
+                <div 
+                  key={folder.id} 
+                  className="card bg-base-200 border-2 border-base-300 hover:border-primary/50 transition-colors cursor-pointer group"
+                  data-testid={`folder-card-${folder.id}`}
+                >
+                  <div className="card-body p-3 text-center">
+                    <div 
+                      className="text-2xl mb-1"
+                      style={{ color: folder.color }}
+                    >
+                      <i className={folder.icon}></i>
+                    </div>
+                    <div className="text-xs font-medium truncate" title={folder.name}>
+                      {folder.name}
+                    </div>
+                    <div className="text-xs text-base-content/60">
+                      {courses.filter(c => c.folderId === folder.id).length} courses
+                    </div>
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+                      <div className="flex justify-center gap-1">
+                        <button
+                          className="btn btn-xs btn-ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditFolder(folder);
+                          }}
+                          data-testid={`button-edit-folder-${folder.id}`}
+                        >
+                          <i className="fas fa-edit"></i>
+                        </button>
+                        <button
+                          className="btn btn-xs btn-ghost text-error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFolder(folder);
+                          }}
+                          data-testid={`button-delete-folder-${folder.id}`}
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -910,6 +1130,152 @@ export function SuperAdminCourses() {
                   <span className="loading loading-spinner loading-sm"></span>
                 ) : (
                   'Delete Permanently'
+                )}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Folder Modal */}
+      {showFolderModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-folder-modal-title">
+              {selectedFolderForEdit ? 'Edit Folder' : 'Create New Folder'}
+            </h3>
+            
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Folder Name</span>
+              </label>
+              <input 
+                type="text" 
+                className="input input-bordered" 
+                value={folderFormData.name || ''}
+                onChange={(e) => setFolderFormData({...folderFormData, name: e.target.value})}
+                placeholder="Enter folder name"
+                data-testid="input-folder-name"
+              />
+            </div>
+
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Description</span>
+              </label>
+              <textarea 
+                className="textarea textarea-bordered" 
+                value={folderFormData.description || ''}
+                onChange={(e) => setFolderFormData({...folderFormData, description: e.target.value})}
+                placeholder="Enter folder description"
+                data-testid="input-folder-description"
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Color</span>
+                </label>
+                <input 
+                  type="color" 
+                  className="input input-bordered h-12" 
+                  value={folderFormData.color || '#3b82f6'}
+                  onChange={(e) => setFolderFormData({...folderFormData, color: e.target.value})}
+                  data-testid="input-folder-color"
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Icon</span>
+                </label>
+                <select 
+                  className="select select-bordered"
+                  value={folderFormData.icon || 'fas fa-folder'}
+                  onChange={(e) => setFolderFormData({...folderFormData, icon: e.target.value})}
+                  data-testid="select-folder-icon"
+                >
+                  <option value="fas fa-folder">📁 Folder</option>
+                  <option value="fas fa-baby">👶 Baby</option>
+                  <option value="fas fa-heart">❤️ Heart</option>
+                  <option value="fas fa-hard-hat">👷 Hard Hat</option>
+                  <option value="fas fa-user-md">👨‍⚕️ Doctor</option>
+                  <option value="fas fa-shield-alt">🛡️ Shield</option>
+                  <option value="fas fa-briefcase">💼 Briefcase</option>
+                  <option value="fas fa-graduation-cap">🎓 Graduation</option>
+                  <option value="fas fa-tools">🔧 Tools</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowFolderModal(false);
+                  setSelectedFolderForEdit(null);
+                  setFolderFormData({});
+                }}
+                data-testid="button-cancel-folder"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleSaveFolder}
+                disabled={!folderFormData.name || createFolderMutation.isPending || updateFolderMutation.isPending}
+                data-testid="button-save-folder"
+              >
+                {(createFolderMutation.isPending || updateFolderMutation.isPending) ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  selectedFolderForEdit ? 'Update Folder' : 'Create Folder'
+                )}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Delete Folder Confirmation Modal */}
+      {showFolderDeleteModal && selectedFolderForEdit && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg text-error mb-4" data-testid="text-delete-folder-modal-title">
+              Delete Folder: {selectedFolderForEdit.name}
+            </h3>
+            
+            <div className="alert alert-error mb-4">
+              <i className="fas fa-exclamation-triangle"></i>
+              <div>
+                <p className="font-semibold">Warning: This action cannot be undone</p>
+                <p className="text-sm">This will permanently delete the folder. Any courses in this folder will need to be moved to another folder first.</p>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowFolderDeleteModal(false);
+                  setSelectedFolderForEdit(null);
+                }}
+                data-testid="button-cancel-delete-folder"
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-error" 
+                onClick={confirmDeleteFolder}
+                disabled={deleteFolderMutation.isPending}
+                data-testid="button-confirm-delete-folder"
+              >
+                {deleteFolderMutation.isPending ? (
+                  <span className="loading loading-spinner loading-sm"></span>
+                ) : (
+                  'Delete Folder'
                 )}
               </button>
             </div>
