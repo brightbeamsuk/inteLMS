@@ -3478,6 +3478,165 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Course folder routes
+  app.get('/api/course-folders', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const folders = await storage.getAllCourseFolders();
+      res.json(folders);
+    } catch (error) {
+      console.error('Error fetching course folders:', error);
+      res.status(500).json({ message: 'Failed to fetch course folders' });
+    }
+  });
+
+  app.post('/api/course-folders', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const folderData = {
+        ...req.body,
+        createdBy: user.id,
+      };
+
+      const folder = await storage.createCourseFolder(folderData);
+      res.status(201).json(folder);
+    } catch (error) {
+      console.error('Error creating course folder:', error);
+      res.status(500).json({ message: 'Failed to create course folder' });
+    }
+  });
+
+  app.put('/api/course-folders/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const folder = await storage.updateCourseFolder(id, req.body);
+      res.json(folder);
+    } catch (error) {
+      console.error('Error updating course folder:', error);
+      res.status(500).json({ message: 'Failed to update course folder' });
+    }
+  });
+
+  app.delete('/api/course-folders/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      
+      // Check if any courses are in this folder
+      const coursesInFolder = await storage.getCoursesByFolder(id);
+      if (coursesInFolder.length > 0) {
+        return res.status(400).json({ 
+          message: 'Cannot delete folder that contains courses. Please move or delete the courses first.' 
+        });
+      }
+      
+      await storage.deleteCourseFolder(id);
+      res.json({ message: 'Course folder deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting course folder:', error);
+      res.status(500).json({ message: 'Failed to delete course folder' });
+    }
+  });
+
+  app.get('/api/course-folders/:id/courses', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const courses = await storage.getCoursesByFolder(id);
+      res.json(courses);
+    } catch (error) {
+      console.error('Error fetching courses by folder:', error);
+      res.status(500).json({ message: 'Failed to fetch courses by folder' });
+    }
+  });
+
+  // Organisation course folder access routes
+  app.post('/api/organisations/:organisationId/folder-access', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { organisationId } = req.params;
+      const { folderId } = req.body;
+      
+      const accessData = {
+        organisationId,
+        folderId,
+        grantedBy: user.id,
+      };
+
+      const access = await storage.grantOrganisationFolderAccess(accessData);
+      res.status(201).json(access);
+    } catch (error) {
+      console.error('Error granting folder access:', error);
+      res.status(500).json({ message: 'Failed to grant folder access' });
+    }
+  });
+
+  app.delete('/api/organisations/:organisationId/folder-access/:folderId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { organisationId, folderId } = req.params;
+      
+      await storage.revokeOrganisationFolderAccess(organisationId, folderId);
+      res.json({ message: 'Folder access revoked successfully' });
+    } catch (error) {
+      console.error('Error revoking folder access:', error);
+      res.status(500).json({ message: 'Failed to revoke folder access' });
+    }
+  });
+
+  app.get('/api/organisations/:organisationId/folder-access', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'superadmin' && user.organisationId !== req.params.organisationId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { organisationId } = req.params;
+      const folders = await storage.getOrganisationFolderAccess(organisationId);
+      res.json(folders);
+    } catch (error) {
+      console.error('Error fetching organisation folder access:', error);
+      res.status(500).json({ message: 'Failed to fetch organisation folder access' });
+    }
+  });
+
   // Assignments routes
   app.get('/api/assignments', requireAuth, async (req: any, res) => {
     try {
