@@ -612,18 +612,6 @@ The {{organisationDisplayName}} Team`
     setShowTestEmailModal(false);
   };
 
-  const sendAdminTestEmail = () => {
-    if (!testEmailAddress) {
-      toast({
-        title: "Error",
-        description: "Please enter a valid email address",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    adminTestEmailMutation.mutate(testEmailAddress);
-  };
 
   const closeTestEmailModal = () => {
     setShowTestEmailModal(false);
