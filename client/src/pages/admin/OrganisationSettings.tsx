@@ -99,6 +99,8 @@ export function AdminOrganisationSettings() {
     fromEmail: '',
     fromName: '',
     useSecure: true,
+    brevoApiKey: '',
+    useBrevoApi: false,
   });
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
@@ -254,6 +256,14 @@ The {{organisationDisplayName}} Team`
       useSecure: true,
       instructions: 'Use your Brevo login email and SMTP Key (not login password)'
     },
+    'brevo-api': {
+      name: 'Brevo API (Recommended)',
+      smtpHost: '',
+      smtpPort: '',
+      useSecure: true,
+      instructions: 'Use Brevo API for faster, more reliable email delivery. Get your API key from Brevo dashboard → API Keys',
+      isApi: true
+    },
     sendgrid: {
       name: 'SendGrid',
       smtpHost: 'smtp.sendgrid.net',
@@ -293,11 +303,13 @@ The {{organisationDisplayName}} Team`
         smtpHost: config.smtpHost,
         smtpPort: config.smtpPort,
         useSecure: config.useSecure,
+        useBrevoApi: (config as any).isApi || false,
         // Keep existing credentials but clear if switching provider
         smtpUsername: provider === prev.provider ? prev.smtpUsername : '',
         smtpPassword: provider === prev.provider ? prev.smtpPassword : '',
         fromEmail: provider === prev.provider ? prev.fromEmail : '',
         fromName: provider === prev.provider ? prev.fromName : '',
+        brevoApiKey: provider === prev.provider ? prev.brevoApiKey : '',
       }));
     }
   };
@@ -449,6 +461,8 @@ The {{organisationDisplayName}} Team`
         fromEmail: orgSettings.fromEmail || '',
         fromName: orgSettings.fromName || '',
         useSecure: orgSettings.smtpSecure !== false,
+        brevoApiKey: (orgSettings as any).brevoApiKey || '',
+        useBrevoApi: (orgSettings as any).useBrevoApi || false,
       });
       setNotificationData({
         assignmentEmailsEnabled: orgSettings.assignmentEmailsEnabled !== false,
@@ -473,6 +487,8 @@ The {{organisationDisplayName}} Team`
         smtpSecure: emailData.useSecure,
         fromEmail: emailData.fromEmail,
         fromName: emailData.fromName,
+        brevoApiKey: emailData.brevoApiKey,
+        useBrevoApi: emailData.useBrevoApi,
       });
     },
     onSuccess: () => {
@@ -1205,21 +1221,23 @@ The {{organisationDisplayName}} Team`
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">SMTP Host</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className={`input input-bordered ${emailSettings.provider !== 'custom' ? 'input-disabled' : ''}`}
-                      placeholder="smtp.gmail.com"
-                      value={emailSettings.smtpHost}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
-                      readOnly={emailSettings.provider !== 'custom'}
-                      data-testid="input-smtp-host"
-                    />
-                  </div>
+                {/* Show SMTP fields only when not using API */}
+                {!emailSettings.useBrevoApi && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">SMTP Host</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className={`input input-bordered ${emailSettings.provider !== 'custom' ? 'input-disabled' : ''}`}
+                        placeholder="smtp.gmail.com"
+                        value={emailSettings.smtpHost}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                        readOnly={emailSettings.provider !== 'custom'}
+                        data-testid="input-smtp-host"
+                      />
+                    </div>
 
                   <div className="form-control">
                     <label className="label">
@@ -1266,7 +1284,30 @@ The {{organisationDisplayName}} Team`
                       data-testid="input-smtp-password"
                     />
                   </div>
+                </div>
+                )}
 
+                {/* Brevo API Key - Only show when Brevo API is selected */}
+                {emailSettings.provider === 'brevo-api' && (
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">Brevo API Key *</span>
+                    </label>
+                    <input 
+                      type="password" 
+                      className="input input-bordered" 
+                      placeholder="xkeysib-xxxxxxxxxxxxxxxx"
+                      value={emailSettings.brevoApiKey}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, brevoApiKey: e.target.value }))}
+                      data-testid="input-brevo-api-key"
+                    />
+                    <div className="label">
+                      <span className="label-text-alt">Get your API key from Brevo dashboard → API Keys</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="form-control">
                     <label className="label">
                       <span className="label-text font-semibold">From Email</span>
