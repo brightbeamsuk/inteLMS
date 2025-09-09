@@ -981,6 +981,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get plan feature mappings for a specific plan
+  app.get('/api/plan-features/mappings/:planId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || !['superadmin', 'admin'].includes(user.role)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { planId } = req.params;
+      
+      // Get plan feature mappings with feature details
+      const mappings = await storage.getPlanFeatureMappings(planId);
+      
+      // Enrich with feature details
+      const enrichedMappings = await Promise.all(mappings.map(async (mapping) => {
+        const feature = await storage.getPlanFeature(mapping.featureId);
+        return {
+          ...mapping,
+          featureId: feature?.key || mapping.featureId,
+          featureName: feature?.name,
+          featureDescription: feature?.description,
+        };
+      }));
+
+      res.json(enrichedMappings);
+    } catch (error) {
+      console.error('Error fetching plan feature mappings:', error);
+      res.status(500).json({ message: 'Failed to fetch plan feature mappings' });
+    }
+  });
+
   // Create a new plan feature
   app.post('/api/plan-features', requireAuth, async (req: any, res) => {
     try {
