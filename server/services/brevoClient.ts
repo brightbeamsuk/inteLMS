@@ -1,0 +1,243 @@
+/**
+ * Centralized Brevo API Client
+ * Ensures all Brevo API requests use the correct endpoint and proper error handling
+ */
+
+const BREVO_BASE_URL = "https://api.brevo.com/v3";
+
+interface BrevoSendEmailParams {
+  fromName: string;
+  fromEmail: string;
+  toEmail: string;
+  subject: string;
+  textContent: string;
+  htmlContent?: string;
+}
+
+interface BrevoResponse {
+  success: boolean;
+  httpStatus: number;
+  message: string;
+  messageId?: string;
+  data?: any;
+  endpoint: string;
+}
+
+export class BrevoClient {
+  private apiKey: string;
+
+  constructor(apiKey: string) {
+    if (!apiKey || typeof apiKey !== 'string') {
+      throw new Error('Brevo API key is required');
+    }
+    this.apiKey = apiKey.trim();
+  }
+
+  /**
+   * Validates that we're using the correct Brevo API endpoint
+   */
+  private validateEndpoint(): void {
+    if (!BREVO_BASE_URL.includes('api.brevo.com')) {
+      throw new Error('Wrong Brevo API host. Must use https://api.brevo.com/v3');
+    }
+  }
+
+  /**
+   * Creates standardized headers for Brevo API requests
+   */
+  private getHeaders(): Record<string, string> {
+    return {
+      'api-key': this.apiKey,
+      'accept': 'application/json',
+      'content-type': 'application/json'
+    };
+  }
+
+  /**
+   * Makes a request to Brevo API with proper error handling
+   */
+  private async makeRequest(
+    endpoint: string, 
+    method: 'GET' | 'POST', 
+    body?: any,
+    timeoutMs: number = 15000
+  ): Promise<BrevoResponse> {
+    this.validateEndpoint();
+
+    const url = `${BREVO_BASE_URL}${endpoint}`;
+    
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: this.getHeaders(),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      const responseText = await response.text();
+      let responseJson: any;
+      
+      try {
+        responseJson = JSON.parse(responseText);
+      } catch {
+        responseJson = { message: responseText };
+      }
+
+      return {
+        success: response.ok,
+        httpStatus: response.status,
+        message: responseJson.message || responseText,
+        messageId: responseJson.messageId,
+        data: responseJson,
+        endpoint
+      };
+    } catch (error: any) {
+      if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        return {
+          success: false,
+          httpStatus: 0,
+          message: 'Network timeout reaching Brevo',
+          endpoint
+        };
+      }
+
+      if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        return {
+          success: false,
+          httpStatus: 0,
+          message: 'Network issue reaching Brevo',
+          endpoint
+        };
+      }
+
+      return {
+        success: false,
+        httpStatus: 0,
+        message: `Network error: ${error.message}`,
+        endpoint
+      };
+    }
+  }
+
+  /**
+   * Health check to verify API key and account access
+   */
+  async checkAccount(): Promise<BrevoResponse> {
+    const response = await this.makeRequest('/account', 'GET', undefined, 10000);
+
+    // Handle specific status codes with friendly messages
+    if (response.httpStatus === 401 || response.httpStatus === 403) {
+      return {
+        ...response,
+        message: 'Brevo rejected the API key. Generate a new one and paste it here.'
+      };
+    }
+
+    if (response.httpStatus === 429) {
+      return {
+        ...response,
+        message: 'Brevo rate limited the request. Try again later.'
+      };
+    }
+
+    if (response.httpStatus >= 500) {
+      return {
+        ...response,
+        message: `Brevo service error (${response.httpStatus}). Try again later.`
+      };
+    }
+
+    if (response.httpStatus === 200) {
+      return {
+        ...response,
+        message: 'Brevo API key is valid and account is accessible'
+      };
+    }
+
+    return {
+      ...response,
+      message: `Unexpected response from Brevo (${response.httpStatus})`
+    };
+  }
+
+  /**
+   * Send email via Brevo API
+   */
+  async sendEmail(params: BrevoSendEmailParams): Promise<BrevoResponse> {
+    const emailPayload = {
+      sender: { 
+        name: params.fromName, 
+        email: params.fromEmail 
+      },
+      to: [{ email: params.toEmail }],
+      subject: params.subject,
+      textContent: params.textContent,
+      ...(params.htmlContent && { htmlContent: params.htmlContent })
+    };
+
+    const response = await this.makeRequest('/smtp/email', 'POST', emailPayload, 20000);
+
+    // Handle specific status codes with user-friendly messages
+    if (response.httpStatus === 201) {
+      return {
+        ...response,
+        message: 'Email sent successfully via Brevo API'
+      };
+    }
+
+    if (response.httpStatus === 400) {
+      let errorMessage = 'Bad request - please check your configuration';
+      
+      if (response.data?.message) {
+        const msg = response.data.message.toLowerCase();
+        if (msg.includes('sender') || msg.includes('domain')) {
+          errorMessage = 'Sender not allowed (verify domain in Brevo)';
+        } else if (msg.includes('recipient') || msg.includes('email')) {
+          errorMessage = 'Recipient email appears invalid';
+        } else if (msg.includes('content')) {
+          errorMessage = 'Email content validation failed';
+        } else {
+          errorMessage = response.data.message;
+        }
+      }
+
+      return {
+        ...response,
+        message: errorMessage
+      };
+    }
+
+    if (response.httpStatus === 401 || response.httpStatus === 403) {
+      return {
+        ...response,
+        message: 'Invalid API key'
+      };
+    }
+
+    if (response.httpStatus === 429) {
+      return {
+        ...response,
+        message: 'Rate limited'
+      };
+    }
+
+    if (response.httpStatus >= 500) {
+      return {
+        ...response,
+        message: 'Brevo service error'
+      };
+    }
+
+    return {
+      ...response,
+      message: response.message || `Unexpected error (${response.httpStatus})`
+    };
+  }
+
+  /**
+   * Static method to create a client with validation
+   */
+  static create(apiKey: string): BrevoClient {
+    return new BrevoClient(apiKey);
+  }
+}

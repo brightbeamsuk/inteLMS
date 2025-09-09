@@ -1,0 +1,108 @@
+Ensure all Brevo API requests go to https://api.brevo.com/v3/... with the correct api-key header. Block any attempt to call the legacy Sendinblue endpoint.
+
+What to implement
+
+Central Brevo client
+
+Create a reusable BrevoClient in your codebase.
+
+Set:
+
+const BREVO_BASE_URL = "https://api.brevo.com/v3";
+
+
+Before each request:
+
+Verify BREVO_BASE_URL contains api.brevo.com.
+
+If not, throw: "Wrong Brevo API host. Must use https://api.brevo.com/v3".
+
+Attach headers:
+
+api-key: <BREVO_API_KEY>
+accept: application/json
+content-type: application/json
+
+
+Trim whitespace from the API key before using it.
+
+Health check
+
+Add a method checkAccount() that calls:
+
+GET https://api.brevo.com/v3/account
+
+
+On 200: return JSON with account details.
+
+On 401/403: return a clear error → “Brevo rejected the API key. Generate a new one and paste it here.”
+
+On network/timeout: return “Network issue reaching Brevo.”
+
+Send email
+
+Add a method sendEmail({ fromName, fromEmail, toEmail, subject, textContent, htmlContent? }).
+
+Call:
+
+POST https://api.brevo.com/v3/smtp/email
+
+
+JSON body (minimum):
+
+{
+  "sender": { "name": "<fromName>", "email": "<fromEmail>" },
+  "to": [{ "email": "<toEmail>" }],
+  "subject": "<subject>",
+  "textContent": "<textContent>"
+}
+
+
+On 201: return success + messageId.
+
+On 400: parse response → e.g. “Sender not allowed (verify domain in Brevo).”
+
+On 401: return “Invalid API key.”
+
+On 429: return “Rate limited.”
+
+On 5xx: return “Brevo service error.”
+
+Test Email UI
+
+When the admin clicks “Send Test Email”:
+
+First call checkAccount() to confirm the key works.
+
+If OK → call sendEmail() with test details.
+
+Always return structured JSON:
+
+{
+  "provider": "brevo_api",
+  "endpoint": "/v3/smtp/email",
+  "httpStatus": <status>,
+  "from": "<fromEmail>",
+  "to": "<toEmail>",
+  "messageId": "<id or null>",
+  "message": "<friendly error or success text>"
+}
+
+
+Delivery logs
+
+Save: timestamp, orgId, provider (brevo_api), endpoint, httpStatus, messageId, errorText.
+
+Never log the API key.
+
+Acceptance criteria
+
+All Brevo requests use https://api.brevo.com/v3/... (no sendinblue.com calls).
+
+Test Email with invalid key → 401 with friendly “API key rejected” message.
+
+Test Email with unverified sender → 400 with “Sender not allowed” message.
+
+Test Email with valid key + verified sender → 201 success + messageId in logs.
+
+Delivery logs always show provider = brevo_api, not unknown.
