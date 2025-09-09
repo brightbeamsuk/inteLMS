@@ -63,6 +63,7 @@ export function SuperAdminCourses() {
   const [selectedFolderForEdit, setSelectedFolderForEdit] = useState<CourseFolder | null>(null);
   const [folderFormData, setFolderFormData] = useState<Partial<CourseFolder>>({});
   const [showFolderDeleteModal, setShowFolderDeleteModal] = useState(false);
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -174,12 +175,24 @@ export function SuperAdminCourses() {
 
   const createFolderMutation = useMutation({
     mutationFn: async (data: Partial<CourseFolder>) => {
-      return await apiRequest('POST', '/api/course-folders', data);
+      const response = await apiRequest('POST', '/api/course-folders', data);
+      const newFolder = await response.json();
+      
+      // Also update course assignments if any courses are selected
+      if (selectedCourseIds.length > 0) {
+        await updateCourseAssignmentsMutation.mutateAsync({ 
+          folderId: newFolder.id, 
+          courseIds: selectedCourseIds 
+        });
+      }
+      
+      return newFolder;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
       setShowFolderModal(false);
       setFolderFormData({});
+      setSelectedCourseIds([]);
       toast({
         title: "Success",
         description: "Course folder created successfully",
@@ -197,16 +210,25 @@ export function SuperAdminCourses() {
   const updateFolderMutation = useMutation({
     mutationFn: async (data: Partial<CourseFolder>) => {
       if (!selectedFolderForEdit) throw new Error('No folder selected');
-      return await apiRequest('PUT', `/api/course-folders/${selectedFolderForEdit.id}`, data);
+      const folderResponse = await apiRequest('PUT', `/api/course-folders/${selectedFolderForEdit.id}`, data);
+      
+      // Also update course assignments
+      await updateCourseAssignmentsMutation.mutateAsync({ 
+        folderId: selectedFolderForEdit.id, 
+        courseIds: selectedCourseIds 
+      });
+      
+      return folderResponse;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/course-folders'] });
       setShowFolderModal(false);
       setSelectedFolderForEdit(null);
       setFolderFormData({});
+      setSelectedCourseIds([]);
       toast({
         title: "Success",
-        description: "Course folder updated successfully",
+        description: "Course folder and assignments updated successfully",
       });
     },
     onError: (error: any) => {
@@ -237,6 +259,34 @@ export function SuperAdminCourses() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete folder",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateCourseAssignmentsMutation = useMutation({
+    mutationFn: async ({ folderId, courseIds }: { folderId: string; courseIds: string[] }) => {
+      // Update all courses to assign them to this folder
+      const updatePromises = courseIds.map(courseId => 
+        apiRequest('PUT', `/api/courses/${courseId}`, { folderId })
+      );
+      
+      // Also remove this folder from courses that were previously in it but are no longer selected
+      const coursesInFolder = courses.filter(c => c.folderId === folderId);
+      const coursesToRemove = coursesInFolder.filter(c => !courseIds.includes(c.id));
+      const removePromises = coursesToRemove.map(course => 
+        apiRequest('PUT', `/api/courses/${course.id}`, { folderId: null })
+      );
+      
+      return Promise.all([...updatePromises, ...removePromises]);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/courses'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update course assignments",
         variant: "destructive",
       });
     },
@@ -291,6 +341,7 @@ export function SuperAdminCourses() {
       icon: 'fas fa-folder',
       sortOrder: folders.length,
     });
+    setSelectedCourseIds([]);
     setShowFolderModal(true);
   };
 
@@ -303,6 +354,9 @@ export function SuperAdminCourses() {
       icon: folder.icon,
       sortOrder: folder.sortOrder,
     });
+    // Set currently assigned courses to this folder
+    const coursesInFolder = courses.filter(c => c.folderId === folder.id).map(c => c.id);
+    setSelectedCourseIds(coursesInFolder);
     setShowFolderModal(true);
   };
 
@@ -1210,6 +1264,72 @@ export function SuperAdminCourses() {
               </div>
             </div>
 
+            {/* Course Assignment Section */}
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Assign Courses to This Folder</span>
+              </label>
+              <div className="bg-base-200 rounded-lg p-4 max-h-60 overflow-y-auto" data-testid="course-assignment-section">
+                {isLoading ? (
+                  <div className="text-center py-4">
+                    <span className="loading loading-spinner loading-sm"></span>
+                    <p className="text-sm text-base-content/60 mt-2">Loading courses...</p>
+                  </div>
+                ) : courses.length === 0 ? (
+                  <p className="text-sm text-base-content/60 text-center py-4">No courses available</p>
+                ) : (
+                  <div className="space-y-2">
+                    {courses
+                      .filter(course => course.status !== 'archived')
+                      .map(course => {
+                        const isSelected = selectedCourseIds.includes(course.id);
+                        const isCurrentlyInOtherFolder = course.folderId && course.folderId !== selectedFolderForEdit?.id;
+                        
+                        return (
+                          <label 
+                            key={course.id} 
+                            className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-base-300 ${isSelected ? 'bg-primary/10' : ''}`}
+                            data-testid={`course-checkbox-${course.id}`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-sm"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCourseIds(prev => [...prev, course.id]);
+                                } else {
+                                  setSelectedCourseIds(prev => prev.filter(id => id !== course.id));
+                                }
+                              }}
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{course.title}</div>
+                              <div className="text-xs text-base-content/60">
+                                {course.category} • {course.estimatedDuration} min
+                                {isCurrentlyInOtherFolder && (
+                                  <span className="ml-2 badge badge-warning badge-xs">
+                                    In "{folders.find(f => f.id === course.folderId)?.name || 'Unknown'}"
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                  </div>
+                )}
+                
+                {selectedCourseIds.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-base-300">
+                    <p className="text-sm font-medium">
+                      {selectedCourseIds.length} course{selectedCourseIds.length !== 1 ? 's' : ''} selected
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="modal-action">
               <button 
                 className="btn btn-ghost" 
@@ -1217,6 +1337,7 @@ export function SuperAdminCourses() {
                   setShowFolderModal(false);
                   setSelectedFolderForEdit(null);
                   setFolderFormData({});
+                  setSelectedCourseIds([]);
                 }}
                 data-testid="button-cancel-folder"
               >
