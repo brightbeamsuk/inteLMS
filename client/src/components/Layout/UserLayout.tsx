@@ -1,16 +1,49 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface UserLayoutProps {
   children: React.ReactNode;
 }
 
+interface Organization {
+  id: string;
+  planId: string;
+  logoUrl?: string;
+  displayName: string;
+}
+
 export function UserLayout({ children }: UserLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Fetch organization data for the current user
+  const { data: organization } = useQuery<Organization>({
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
+  });
+
+  // Fetch plan features to check access
+  const { data: planFeatures = [] } = useQuery({
+    queryKey: ['/api/plan-features/mappings', organization?.planId],
+    enabled: !!organization?.planId,
+    queryFn: async () => {
+      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch plan features');
+      }
+      return response.json();
+    },
+  });
+
+  // Check if branding feature is enabled
+  const removeBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'remove_branding');
+  const hasBrandingAccess = removeBrandingFeature?.enabled || false;
 
   const menuItems = [
     { path: "/user", icon: "fas fa-tachometer-alt", label: "Dashboard" },
@@ -36,8 +69,8 @@ export function UserLayout({ children }: UserLayoutProps) {
           </div>
           <Link href="/user" className="btn btn-ghost" data-testid="link-home">
             <img 
-              src={inteLMSLogo} 
-              alt="inteLMS" 
+              src={hasBrandingAccess && organization?.logoUrl ? organization.logoUrl : inteLMSLogo} 
+              alt={hasBrandingAccess && organization?.displayName ? organization.displayName : "inteLMS"} 
               className="h-16 w-auto object-contain"
             />
           </Link>
