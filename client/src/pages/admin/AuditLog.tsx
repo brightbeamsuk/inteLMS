@@ -108,6 +108,52 @@ export default function AuditLog() {
     return user.email || 'Unknown User';
   };
 
+  const formatDetails = (details: any) => {
+    if (!details) return 'No additional details';
+    
+    // If it's already a string, return it
+    if (typeof details === 'string') {
+      try {
+        // Try to parse it as JSON for prettier display
+        const parsed = JSON.parse(details);
+        return formatJsonDetails(parsed);
+      } catch {
+        // If it's not valid JSON, return as-is
+        return details;
+      }
+    }
+    
+    // If it's an object, format it
+    if (typeof details === 'object') {
+      return formatJsonDetails(details);
+    }
+    
+    return String(details);
+  };
+
+  const formatJsonDetails = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return String(obj);
+    
+    // Create a human-readable summary
+    const entries = Object.entries(obj);
+    if (entries.length === 0) return 'No details';
+    
+    return entries
+      .map(([key, value]) => {
+        const formattedKey = key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').toLowerCase();
+        const capitalizedKey = formattedKey.charAt(0).toUpperCase() + formattedKey.slice(1);
+        
+        if (typeof value === 'boolean') {
+          return `${capitalizedKey}: ${value ? 'Yes' : 'No'}`;
+        }
+        if (Array.isArray(value)) {
+          return `${capitalizedKey}: ${value.join(', ')}`;
+        }
+        return `${capitalizedKey}: ${value}`;
+      })
+      .join(', ');
+  };
+
   // Handle feature access error
   if (error && error.message.includes('Audit log feature not available')) {
     return (
@@ -226,8 +272,8 @@ export default function AuditLog() {
                         </div>
                       </TableCell>
                       <TableCell className="max-w-xs">
-                        <div className="truncate" title={log.details}>
-                          {log.details || 'No additional details'}
+                        <div className="truncate" title={formatDetails(log.details)}>
+                          {formatDetails(log.details)}
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-sm text-muted-foreground">
