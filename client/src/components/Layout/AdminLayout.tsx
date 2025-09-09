@@ -27,6 +27,25 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  // Fetch plan features to check access
+  const { data: planFeatures = [] } = useQuery({
+    queryKey: ['/api/plan-features/mappings', organization?.planId],
+    enabled: !!organization?.planId,
+    queryFn: async () => {
+      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch plan features');
+      }
+      return response.json();
+    },
+  });
+
+
+  // Check if audit log feature is enabled
+  const auditLogFeature = planFeatures.find((feature: any) => feature.featureId === 'audit_log');
+  const hasAuditLogAccess = auditLogFeature?.enabled || false;
 
   const menuItems = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
@@ -35,6 +54,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { path: "/admin/training-matrix", icon: "fas fa-table", label: "Training Matrix" },
     { path: "/admin/certificates", icon: "fas fa-certificate", label: "Certificates" },
     { path: "/admin/billing", icon: "fas fa-credit-card", label: "Billing" },
+    ...(hasAuditLogAccess ? [{ path: "/admin/audit-log", icon: "fas fa-history", label: "Audit Log" }] : []),
     { path: "/admin/settings", icon: "fas fa-cog", label: "Organisation Settings" },
   ];
 
