@@ -115,6 +115,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // Helper function to check if an organisation has a specific feature enabled
+  async function hasFeatureAccess(organisationId: string, featureKey: string): Promise<boolean> {
+    try {
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation?.planId) {
+        return false;
+      }
+
+      const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
+      
+      // Get all features to map IDs to keys
+      const allFeatures = await storage.getAllPlanFeatures();
+      const featureMap = new Map(allFeatures.map(f => [f.id, f.key]));
+      
+      // Check if the feature is enabled
+      const mapping = planFeatures.find(mapping => 
+        featureMap.get(mapping.featureId) === featureKey && mapping.enabled
+      );
+      
+      return !!mapping;
+    } catch (error) {
+      console.error('Error checking feature access:', error);
+      return false;
+    }
+  }
+
   // Initialize SCORM preview service
   const scormPreviewService = new ScormPreviewService();
 
@@ -2231,34 +2257,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if subdomain is being updated and validate custom domain feature access
       if (updateData.subdomain !== undefined && user.role === 'admin') {
-        // Get organization to check plan features
-        const organisation = await storage.getOrganisation(id);
-        if (!organisation) {
-          return res.status(404).json({ message: 'Organisation not found' });
-        }
-
-        // Check if custom domain feature is enabled for the organisation's plan
-        const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
-        const customDomainFeature = planFeatures.find(mapping => mapping.featureId === 'custom_domain');
-        
-        if (!customDomainFeature || !customDomainFeature.enabled) {
+        const hasCustomDomainAccess = await hasFeatureAccess(id, 'custom_domain');
+        if (!hasCustomDomainAccess) {
           return res.status(403).json({ message: 'Custom domain feature not available for your plan' });
         }
       }
 
       // Check if logo is being updated and validate remove branding feature access
       if (updateData.logoUrl !== undefined && user.role === 'admin') {
-        // Get organization to check plan features
-        const organisation = await storage.getOrganisation(id);
-        if (!organisation) {
-          return res.status(404).json({ message: 'Organisation not found' });
-        }
-
-        // Check if remove branding feature is enabled for the organisation's plan
-        const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
-        const removeBrandingFeature = planFeatures.find(mapping => mapping.featureId === 'remove_branding');
-        
-        if (!removeBrandingFeature || !removeBrandingFeature.enabled) {
+        const hasRemoveBrandingAccess = await hasFeatureAccess(id, 'remove_branding');
+        if (!hasRemoveBrandingAccess) {
           return res.status(403).json({ message: 'Custom branding feature not available for your plan' });
         }
       }
@@ -2902,10 +2910,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if audit log feature is enabled for the organisation's plan
-      const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
-      const auditLogFeature = planFeatures.find(mapping => mapping.featureId === 'audit_log');
-      
-      if (!auditLogFeature || !auditLogFeature.enabled) {
+      const hasAuditLogAccess = await hasFeatureAccess(organisationId, 'audit_log');
+      if (!hasAuditLogAccess) {
         return res.status(403).json({ message: 'Audit log feature not available for your plan' });
       }
 
