@@ -54,66 +54,162 @@ export function SuperAdminSettings() {
     footerLinks: 'Privacy Policy | Terms of Service | Contact Support',
   });
 
-  // Enhanced system SMTP settings state
+  // Provider-agnostic email settings state
   const [emailSettings, setEmailSettings] = useState({
-    smtpHost: '',
-    smtpPort: 587,
-    smtpUsername: '',
-    smtpPassword: '',
-    smtpSecure: true, // Default to secure
+    provider: 'sendgrid_api' as 'smtp_generic' | 'sendgrid_api' | 'brevo_api' | 'mailgun_api' | 'postmark_api' | 'mailjet_api' | 'sparkpost_api',
     fromEmail: '',
     fromName: '',
+    replyTo: '',
     description: '',
-    provider: 'custom',
+    // SMTP fields
+    smtpHost: '',
+    smtpPort: '587',
+    smtpUsername: '',
+    smtpPassword: '',
+    smtpSecure: true,
+    // API fields
+    apiKey: '',
+    apiSecret: '', // Mailjet
+    apiBaseUrl: '',
+    apiDomain: '', // Mailgun
+    apiRegion: '', // SES
     hasPassword: false,
   });
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [testResult, setTestResult] = useState<any>(null);
+  const [showTestResultModal, setShowTestResultModal] = useState(false);
 
-  // Email provider presets
+  // Provider configurations - supports both SMTP and API providers (same as org settings)
   const emailProviders = {
-    gmail: { host: 'smtp.gmail.com', port: 587, secure: false },
-    outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
-    brevo: { host: 'smtp-relay.brevo.com', port: 587, secure: false },
-    sendgrid: { host: 'smtp.sendgrid.net', port: 587, secure: false },
-    mailgun: { host: 'smtp.mailgun.org', port: 587, secure: false },
-    amazonses: { host: 'email-smtp.us-east-1.amazonaws.com', port: 587, secure: false },
+    smtp_generic: {
+      name: 'Generic SMTP',
+      type: 'smtp',
+      presets: {
+        'Microsoft 365': { smtpHost: 'smtp.office365.com', smtpPort: '587', smtpSecure: true },
+        'Gmail': { smtpHost: 'smtp.gmail.com', smtpPort: '587', smtpSecure: true },
+        'Amazon SES SMTP': { smtpHost: 'email-smtp.us-east-1.amazonaws.com', smtpPort: '587', smtpSecure: true },
+        'SMTP2GO': { smtpHost: 'mail.smtp2go.com', smtpPort: '2525', smtpSecure: true },
+        'Postmark SMTP': { smtpHost: 'smtp.postmarkapp.com', smtpPort: '587', smtpSecure: true },
+        'Custom': { smtpHost: '', smtpPort: '587', smtpSecure: true }
+      },
+      instructions: 'Configure any SMTP server as platform default. Organizations can override this.',
+      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword']
+    },
+    sendgrid_api: {
+      name: 'SendGrid API',
+      type: 'api',
+      instructions: 'Set SendGrid as platform default. Organizations inherit this unless they configure their own.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://sendgrid.com'
+    },
+    brevo_api: {
+      name: 'Brevo API',
+      type: 'api',
+      instructions: 'Set Brevo as platform default. Note: IP restrictions may apply.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://brevo.com'
+    },
+    mailgun_api: {
+      name: 'Mailgun API',
+      type: 'api',
+      instructions: 'Set Mailgun as platform default. Domain must be verified.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey', 'apiDomain'],
+      website: 'https://mailgun.com'
+    },
+    postmark_api: {
+      name: 'Postmark API',
+      type: 'api',
+      instructions: 'Set Postmark as platform default. Requires confirmed sender signature.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://postmarkapp.com'
+    },
+    mailjet_api: {
+      name: 'Mailjet API',
+      type: 'api',
+      instructions: 'Set Mailjet as platform default. Organizations can override with their own keys.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey', 'apiSecret'],
+      website: 'https://mailjet.com'
+    },
+    sparkpost_api: {
+      name: 'SparkPost API',
+      type: 'api',
+      instructions: 'Set SparkPost as platform default. Requires transmissions permission.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://sparkpost.com'
+    }
   };
 
-  // Load enhanced system SMTP settings
-  const { data: systemSmtpData, isLoading: emailLoading } = useQuery({
-    queryKey: ['/api/system/smtp-settings'],
+  // Load system email settings
+  const { data: systemEmailData, isLoading: emailLoading } = useQuery({
+    queryKey: ['/api/system/email-settings'],
     retry: false,
   });
 
   useEffect(() => {
-    if (systemSmtpData) {
-      // Detect provider based on host
-      let detectedProvider = 'custom';
-      if (systemSmtpData.smtpHost) {
-        for (const [key, config] of Object.entries(emailProviders)) {
-          if (config.host === systemSmtpData.smtpHost) {
-            detectedProvider = key;
-            break;
-          }
-        }
-      }
-
+    if (systemEmailData) {
       setEmailSettings({
-        smtpHost: systemSmtpData.smtpHost || '',
-        smtpPort: systemSmtpData.smtpPort || 587,
-        smtpUsername: systemSmtpData.smtpUsername || '',
-        smtpPassword: '', // Don't populate password for security
-        smtpSecure: systemSmtpData.smtpSecure !== false,
-        fromEmail: systemSmtpData.fromEmail || '',
-        fromName: systemSmtpData.fromName || '',
-        description: systemSmtpData.description || '',
-        provider: detectedProvider,
-        hasPassword: systemSmtpData.hasPassword || false,
+        provider: (systemEmailData as any).emailProvider || 'sendgrid_api',
+        fromEmail: systemEmailData.fromEmail || '',
+        fromName: systemEmailData.fromName || '',
+        replyTo: (systemEmailData as any).replyTo || '',
+        description: systemEmailData.description || '',
+        // SMTP fields
+        smtpHost: systemEmailData.smtpHost || '',
+        smtpPort: systemEmailData.smtpPort?.toString() || '587',
+        smtpUsername: systemEmailData.smtpUsername || '',
+        smtpPassword: '', // Never populate password for security
+        smtpSecure: systemEmailData.smtpSecure !== false,
+        // API fields
+        apiKey: '', // Never populate for security
+        apiSecret: '', // Never populate for security
+        apiBaseUrl: (systemEmailData as any).apiBaseUrl || '',
+        apiDomain: (systemEmailData as any).apiDomain || '',
+        apiRegion: (systemEmailData as any).apiRegion || '',
+        hasPassword: systemEmailData.hasPassword || false,
       });
     }
-  }, [systemSmtpData]);
+  }, [systemEmailData]);
+
+  const handleProviderChange = (provider: string) => {
+    const config = emailProviders[provider as keyof typeof emailProviders];
+    if (config) {
+      setEmailSettings(prev => ({
+        ...prev,
+        provider: provider as any,
+        // Clear provider-specific fields when switching
+        smtpHost: '',
+        smtpPort: '587',
+        smtpUsername: '',
+        smtpPassword: '',
+        smtpSecure: true,
+        apiKey: '',
+        apiSecret: '',
+        apiBaseUrl: '',
+        apiDomain: '',
+        apiRegion: '',
+        // Keep common fields when switching provider
+        fromEmail: prev.fromEmail,
+        fromName: prev.fromName,
+        replyTo: prev.replyTo,
+        description: prev.description,
+      }));
+    }
+  };
+
+  const handleSMTPPresetChange = (preset: string) => {
+    const config = emailProviders.smtp_generic;
+    if (config && config.presets[preset]) {
+      const presetConfig = config.presets[preset];
+      setEmailSettings(prev => ({
+        ...prev,
+        smtpHost: presetConfig.smtpHost,
+        smtpPort: presetConfig.smtpPort,
+        smtpSecure: presetConfig.smtpSecure,
+      }));
+    }
+  };
 
   // Fetch existing templates
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
@@ -158,19 +254,52 @@ export function SuperAdminSettings() {
     saveTemplateMutation.mutate(templateData);
   };
 
-  // Enhanced system SMTP settings mutations
+  // System email settings mutations
   const saveEmailSettingsMutation = useMutation({
-    mutationFn: async (settings: typeof emailSettings) => {
-      // Use POST for new settings, PUT for updates
-      const method = systemSmtpData ? 'PUT' : 'POST';
-      const response = await apiRequest(method, '/api/system/smtp-settings', settings);
+    mutationFn: async (emailData: typeof emailSettings) => {
+      // Build settings object based on provider type
+      const settings: any = {
+        emailProvider: emailData.provider,
+        fromEmail: emailData.fromEmail,
+        fromName: emailData.fromName,
+        replyTo: emailData.replyTo,
+        description: emailData.description,
+      };
+
+      // Add provider-specific fields
+      if (emailData.provider === 'smtp_generic') {
+        settings.smtpHost = emailData.smtpHost;
+        settings.smtpPort = parseInt(emailData.smtpPort);
+        settings.smtpUsername = emailData.smtpUsername;
+        settings.smtpPassword = emailData.smtpPassword;
+        settings.smtpSecure = emailData.smtpSecure;
+      } else {
+        // API providers
+        settings.apiKey = emailData.apiKey;
+        
+        if (emailData.provider === 'mailjet_api') {
+          settings.apiSecret = emailData.apiSecret;
+        }
+        if (emailData.provider === 'mailgun_api') {
+          settings.apiDomain = emailData.apiDomain;
+        }
+        if (emailData.apiBaseUrl) {
+          settings.apiBaseUrl = emailData.apiBaseUrl;
+        }
+        if (emailData.apiRegion) {
+          settings.apiRegion = emailData.apiRegion;
+        }
+      }
+
+      const method = systemEmailData ? 'PUT' : 'POST';
+      const response = await apiRequest(method, '/api/system/email-settings', settings);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/system/smtp-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/system/email-settings'] });
       toast({
         title: "Success",
-        description: "System SMTP settings saved successfully",
+        description: "System email settings saved successfully",
       });
     },
     onError: (error: any) => {
@@ -231,19 +360,6 @@ export function SuperAdminSettings() {
   });
 
   // Email helper functions
-  const handleProviderChange = (provider: string) => {
-    if (provider && emailProviders[provider as keyof typeof emailProviders]) {
-      const preset = emailProviders[provider as keyof typeof emailProviders];
-      setEmailSettings(prev => ({
-        ...prev,
-        provider,
-        smtpHost: preset.host,
-        smtpPort: preset.port,
-        smtpSecure: preset.secure,
-        description: `${provider.charAt(0).toUpperCase() + provider.slice(1)} SMTP Configuration`,
-      }));
-    }
-  };
 
   const handleSaveEmailSettings = () => {
     if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.fromEmail || !emailSettings.fromName) {

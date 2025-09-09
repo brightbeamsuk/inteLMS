@@ -91,16 +91,22 @@ export function AdminOrganisationSettings() {
   const [templateContent, setTemplateContent] = useState('');
   
   const [emailSettings, setEmailSettings] = useState({
-    provider: 'brevo-api',
+    provider: 'sendgrid_api' as 'smtp_generic' | 'sendgrid_api' | 'brevo_api' | 'mailgun_api' | 'postmark_api' | 'mailjet_api' | 'sparkpost_api',
+    fromEmail: '',
+    fromName: '',
+    replyTo: '',
+    // SMTP fields
     smtpHost: '',
     smtpPort: '587',
     smtpUsername: '',
     smtpPassword: '',
-    fromEmail: '',
-    fromName: '',
-    useSecure: true,
-    brevoApiKey: '',
-    useBrevoApi: true,
+    smtpSecure: true,
+    // API fields
+    apiKey: '',
+    apiSecret: '', // Mailjet
+    apiBaseUrl: '',
+    apiDomain: '', // Mailgun
+    apiRegion: '', // SES
   });
 
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
@@ -235,64 +241,63 @@ The {{organisationDisplayName}} Team`
     return templates[templateType] || { subject: '', content: '' };
   };
 
-  // Email provider configurations
+  // Provider configurations - supports both SMTP and API providers
   const emailProviders = {
-    gmail: {
-      name: 'Gmail',
-      smtpHost: 'smtp.gmail.com',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Use your Gmail address and App Password (not your regular password)'
+    smtp_generic: {
+      name: 'Generic SMTP',
+      type: 'smtp',
+      presets: {
+        'Microsoft 365': { smtpHost: 'smtp.office365.com', smtpPort: '587', smtpSecure: true },
+        'Gmail': { smtpHost: 'smtp.gmail.com', smtpPort: '587', smtpSecure: true },
+        'Amazon SES SMTP': { smtpHost: 'email-smtp.us-east-1.amazonaws.com', smtpPort: '587', smtpSecure: true },
+        'SMTP2GO': { smtpHost: 'mail.smtp2go.com', smtpPort: '2525', smtpSecure: true },
+        'Postmark SMTP': { smtpHost: 'smtp.postmarkapp.com', smtpPort: '587', smtpSecure: true },
+        'Custom': { smtpHost: '', smtpPort: '587', smtpSecure: true }
+      },
+      instructions: 'Configure any SMTP server. Use app-specific passwords for Gmail/Outlook.',
+      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword']
     },
-    outlook: {
-      name: 'Outlook/Hotmail',
-      smtpHost: 'smtp-mail.outlook.com',
-      smtpPort: '587', 
-      useSecure: true,
-      instructions: 'Use your Outlook address and App Password'
+    sendgrid_api: {
+      name: 'SendGrid API',
+      type: 'api',
+      instructions: 'Get your API key from SendGrid Dashboard → Settings → API Keys. Requires verified sender.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://sendgrid.com'
     },
-    brevo: {
-      name: 'Brevo (Sendinblue)',
-      smtpHost: 'smtp-relay.brevo.com',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Use your Brevo login email and SMTP Key (not login password)'
+    brevo_api: {
+      name: 'Brevo API',
+      type: 'api',
+      instructions: 'Get your API key from Brevo Dashboard → SMTP & API → API Keys. Note: IP restrictions may apply.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://brevo.com'
     },
-    'brevo-api': {
-      name: 'Brevo API (Recommended)',
-      smtpHost: '',
-      smtpPort: '',
-      useSecure: true,
-      instructions: 'Use Brevo API for faster, more reliable email delivery. Get your API key from Brevo dashboard → API Keys',
-      isApi: true
+    mailgun_api: {
+      name: 'Mailgun API',
+      type: 'api',
+      instructions: 'Get your API key and domain from Mailgun Dashboard → Settings → API Keys. Domain must be verified.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey', 'apiDomain'],
+      website: 'https://mailgun.com'
     },
-    sendgrid: {
-      name: 'SendGrid',
-      smtpHost: 'smtp.sendgrid.net',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Use "apikey" as username and your SendGrid API key as password'
+    postmark_api: {
+      name: 'Postmark API',
+      type: 'api',
+      instructions: 'Get your Server API Token from Postmark Dashboard → Servers → API Tokens. Requires confirmed sender signature.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://postmarkapp.com'
     },
-    mailgun: {
-      name: 'Mailgun',
-      smtpHost: 'smtp.mailgun.org',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Use your Mailgun SMTP credentials from your domain settings'
+    mailjet_api: {
+      name: 'Mailjet API',
+      type: 'api',
+      instructions: 'Get your API Key and Secret Key from Mailjet Dashboard → Account Settings → REST API.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey', 'apiSecret'],
+      website: 'https://mailjet.com'
     },
-    amazon_ses: {
-      name: 'Amazon SES',
-      smtpHost: 'email-smtp.us-east-1.amazonaws.com',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Use your AWS SES SMTP username and password'
-    },
-    custom: {
-      name: 'Custom SMTP Server',
-      smtpHost: '',
-      smtpPort: '587',
-      useSecure: true,
-      instructions: 'Enter your custom SMTP server details'
+    sparkpost_api: {
+      name: 'SparkPost API',
+      type: 'api',
+      instructions: 'Get your API key from SparkPost Dashboard → Account → API Keys. Requires transmissions permission.',
+      requiredFields: ['fromEmail', 'fromName', 'apiKey'],
+      website: 'https://sparkpost.com'
     }
   };
 
@@ -301,17 +306,35 @@ The {{organisationDisplayName}} Team`
     if (config) {
       setEmailSettings(prev => ({
         ...prev,
-        provider,
-        smtpHost: config.smtpHost,
-        smtpPort: config.smtpPort,
-        useSecure: config.useSecure,
-        useBrevoApi: (config as any).isApi || false,
-        // Keep existing credentials but clear if switching provider
-        smtpUsername: provider === prev.provider ? prev.smtpUsername : '',
-        smtpPassword: provider === prev.provider ? prev.smtpPassword : '',
-        fromEmail: provider === prev.provider ? prev.fromEmail : '',
-        fromName: provider === prev.provider ? prev.fromName : '',
-        brevoApiKey: provider === prev.provider ? prev.brevoApiKey : '',
+        provider: provider as any,
+        // Clear provider-specific fields when switching
+        smtpHost: '',
+        smtpPort: '587',
+        smtpUsername: '',
+        smtpPassword: '',
+        smtpSecure: true,
+        apiKey: '',
+        apiSecret: '',
+        apiBaseUrl: '',
+        apiDomain: '',
+        apiRegion: '',
+        // Keep common fields when switching provider
+        fromEmail: prev.fromEmail,
+        fromName: prev.fromName,
+        replyTo: prev.replyTo,
+      }));
+    }
+  };
+
+  const handleSMTPPresetChange = (preset: string) => {
+    const config = emailProviders.smtp_generic;
+    if (config && config.presets[preset]) {
+      const presetConfig = config.presets[preset];
+      setEmailSettings(prev => ({
+        ...prev,
+        smtpHost: presetConfig.smtpHost,
+        smtpPort: presetConfig.smtpPort,
+        smtpSecure: presetConfig.smtpSecure,
       }));
     }
   };
@@ -443,28 +466,23 @@ The {{organisationDisplayName}} Team`
   // Load email settings when org settings become available
   useEffect(() => {
     if (orgSettings) {
-      // Determine provider based on existing settings
-      let detectedProvider = 'custom';
-      if (orgSettings.smtpHost) {
-        for (const [key, config] of Object.entries(emailProviders)) {
-          if (config.smtpHost === orgSettings.smtpHost) {
-            detectedProvider = key;
-            break;
-          }
-        }
-      }
-
       setEmailSettings({
-        provider: (orgSettings as any).useBrevoApi ? 'brevo-api' : detectedProvider,
+        provider: (orgSettings as any).emailProvider || 'sendgrid_api',
+        fromEmail: orgSettings.fromEmail || '',
+        fromName: orgSettings.fromName || '',
+        replyTo: (orgSettings as any).replyTo || '',
+        // SMTP fields
         smtpHost: orgSettings.smtpHost || '',
         smtpPort: orgSettings.smtpPort?.toString() || '587',
         smtpUsername: orgSettings.smtpUsername || '',
-        smtpPassword: orgSettings.smtpPassword || '',
-        fromEmail: orgSettings.fromEmail || '',
-        fromName: orgSettings.fromName || '',
-        useSecure: orgSettings.smtpSecure !== false,
-        brevoApiKey: (orgSettings as any).brevoApiKey || '',
-        useBrevoApi: (orgSettings as any).useBrevoApi || true,
+        smtpPassword: '', // Never populate password for security
+        smtpSecure: orgSettings.smtpSecure !== false,
+        // API fields
+        apiKey: '', // Never populate for security
+        apiSecret: '', // Never populate for security
+        apiBaseUrl: (orgSettings as any).apiBaseUrl || '',
+        apiDomain: (orgSettings as any).apiDomain || '',
+        apiRegion: (orgSettings as any).apiRegion || '',
       });
       setNotificationData({
         assignmentEmailsEnabled: orgSettings.assignmentEmailsEnabled !== false,
@@ -481,17 +499,40 @@ The {{organisationDisplayName}} Team`
   // Save email settings mutation
   const saveEmailSettingsMutation = useMutation({
     mutationFn: async (emailData: typeof emailSettings) => {
-      return await apiRequest('PUT', `/api/organisations/${user?.organisationId}/email-settings`, {
-        smtpHost: emailData.smtpHost,
-        smtpPort: parseInt(emailData.smtpPort),
-        smtpUsername: emailData.smtpUsername,
-        smtpPassword: emailData.smtpPassword,
-        smtpSecure: emailData.useSecure,
+      // Build settings object based on provider type
+      const settings: any = {
+        emailProvider: emailData.provider,
         fromEmail: emailData.fromEmail,
         fromName: emailData.fromName,
-        brevoApiKey: emailData.brevoApiKey,
-        useBrevoApi: emailData.useBrevoApi,
-      });
+        replyTo: emailData.replyTo,
+      };
+
+      // Add provider-specific fields
+      if (emailData.provider === 'smtp_generic') {
+        settings.smtpHost = emailData.smtpHost;
+        settings.smtpPort = parseInt(emailData.smtpPort);
+        settings.smtpUsername = emailData.smtpUsername;
+        settings.smtpPassword = emailData.smtpPassword;
+        settings.smtpSecure = emailData.smtpSecure;
+      } else {
+        // API providers
+        settings.apiKey = emailData.apiKey;
+        
+        if (emailData.provider === 'mailjet_api') {
+          settings.apiSecret = emailData.apiSecret;
+        }
+        if (emailData.provider === 'mailgun_api') {
+          settings.apiDomain = emailData.apiDomain;
+        }
+        if (emailData.apiBaseUrl) {
+          settings.apiBaseUrl = emailData.apiBaseUrl;
+        }
+        if (emailData.apiRegion) {
+          settings.apiRegion = emailData.apiRegion;
+        }
+      }
+
+      return await apiRequest('PUT', `/api/organisations/${user?.organisationId}/email-settings`, settings);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
@@ -509,10 +550,10 @@ The {{organisationDisplayName}} Team`
     },
   });
 
-  // Test email mutation - Enhanced with structured response handling
+  // Test email mutation - Uses new provider-agnostic endpoint
   const testEmailMutation = useMutation({
     mutationFn: async (testEmail: string) => {
-      const response = await apiRequest('POST', `/api/organisations/${user?.organisationId}/test-email`, {
+      const response = await apiRequest('POST', '/api/admin/email/test', {
         testEmail,
       });
       return response.json();
@@ -528,13 +569,15 @@ The {{organisationDisplayName}} Team`
       setTestResult({
         success: false,
         provider: 'unknown',
-        httpStatus: 0,
-        message: error.message || 'Network error occurred',
-        details: {
-          endpoint: 'N/A',
-          from: 'N/A',
-          to: testEmailAddress,
-          error: error.message
+        step: 'error',
+        error: {
+          code: 'NETWORK_ERROR',
+          message: error.message || 'Network error occurred',
+          details: error.message
+        },
+        diagnostics: {
+          context: 'Organization level',
+          timestamp: new Date().toISOString()
         }
       });
       setShowTestResultModal(true);
@@ -597,10 +640,42 @@ The {{organisationDisplayName}} Team`
   const openTestEmailModal = () => {
     if (!user?.organisationId) return;
     
-    if (!emailSettings.brevoApiKey || !emailSettings.fromEmail) {
+    if (!emailSettings.fromEmail) {
       toast({
         title: "Error",
-        description: "Please configure Brevo API key and from email before testing",
+        description: "Please configure email settings and from email before testing",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Check provider-specific requirements
+    const config = emailProviders[emailSettings.provider];
+    const missingFields = [];
+    
+    if (config.requiredFields.includes('apiKey') && !emailSettings.apiKey) {
+      missingFields.push('API Key');
+    }
+    if (config.requiredFields.includes('apiSecret') && !emailSettings.apiSecret) {
+      missingFields.push('API Secret');
+    }
+    if (config.requiredFields.includes('apiDomain') && !emailSettings.apiDomain) {
+      missingFields.push('API Domain');
+    }
+    if (config.requiredFields.includes('smtpHost') && !emailSettings.smtpHost) {
+      missingFields.push('SMTP Host');
+    }
+    if (config.requiredFields.includes('smtpUsername') && !emailSettings.smtpUsername) {
+      missingFields.push('SMTP Username');
+    }
+    if (config.requiredFields.includes('smtpPassword') && !emailSettings.smtpPassword) {
+      missingFields.push('SMTP Password');
+    }
+    
+    if (missingFields.length > 0) {
+      toast({
+        title: "Error",
+        description: `Please configure the following fields: ${missingFields.join(', ')}`,
         variant: "destructive",
       });
       return;
@@ -1098,103 +1173,291 @@ The {{organisationDisplayName}} Team`
           {/* Email Settings Tab */}
           {hasEmailTemplatesAccess && activeTab === tabs.indexOf("Email Settings") && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold">Email Settings</h3>
-              
-              {/* Email API Configuration Section */}
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-md font-semibold">Email API Configuration</h4>
-                  <div className="flex gap-2">
-                    <button 
-                      className="btn btn-outline btn-xs"
-                      data-testid="button-test-email"
-                      onClick={openTestEmailModal}
-                      disabled={testEmailMutation.isPending || !emailSettings.brevoApiKey || !emailSettings.fromEmail}
-                      title="Send test email using Brevo API"
-                    >
-                      <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
-                      {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="alert alert-info">
-                  <i className="fas fa-key"></i>
-                  <div>
-                    <div className="font-bold">Brevo API Email Delivery</div>
-                    <div className="text-sm">
-                      Configure your Brevo API key below to enable system emails (assignments, reminders, completions). Fast, reliable delivery without SMTP configuration.
-                    </div>
-                  </div>
-                </div>
-
-
-
-                {/* Brevo API Key - Always show in API mode */}
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-semibold">Brevo API Key *</span>
-                  </label>
-                  <input 
-                    type="password" 
-                    className="input input-bordered" 
-                    placeholder="xkeysib-xxxxxxxxxxxxxxxx"
-                    value={emailSettings.brevoApiKey}
-                    onChange={(e) => setEmailSettings(prev => ({ ...prev, brevoApiKey: e.target.value }))}
-                    data-testid="input-brevo-api-key"
-                  />
-                  <div className="label">
-                    <span className="label-text-alt">Get your API key from Brevo dashboard → API Keys</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">From Email</span>
-                    </label>
-                    <input 
-                      type="email" 
-                      className="input input-bordered" 
-                      placeholder="noreply@yourdomain.com"
-                      value={emailSettings.fromEmail}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
-                      data-testid="input-from-email"
-                    />
-                  </div>
-
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-semibold">From Name</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered" 
-                      placeholder="Your Organization LMS"
-                      value={emailSettings.fromName}
-                      onChange={(e) => setEmailSettings(prev => ({ ...prev, fromName: e.target.value }))}
-                      data-testid="input-from-name"
-                    />
-                  </div>
-                </div>
-
-
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Email Settings</h3>
                 <div className="flex gap-2">
                   <button 
-                    className="btn btn-primary"
-                    data-testid="button-save-email-settings"
+                    className={`btn btn-outline btn-sm ${testEmailMutation.isPending ? 'loading' : ''}`}
+                    data-testid="button-test-email"
+                    onClick={openTestEmailModal}
+                    disabled={testEmailMutation.isPending || !emailSettings.fromEmail}
+                    title="Send test email using current provider"
+                  >
+                    <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                    {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
+                  </button>
+                  <button 
+                    className={`btn btn-primary btn-sm ${saveEmailSettingsMutation.isPending ? 'loading' : ''}`}
                     onClick={saveEmailSettings}
                     disabled={saveEmailSettingsMutation.isPending}
-                    style={{
-                      backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
-                      borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
-                    } as React.CSSProperties}
+                    data-testid="button-save-email-settings"
                   >
-                    <i className={`fas ${saveEmailSettingsMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
-                    {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Email Settings'}
+                    <i className="fas fa-save"></i>
+                    {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
                   </button>
                 </div>
               </div>
+              
+              {/* Provider Selection */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-semibold">Email Provider</span>
+                </label>
+                <select 
+                  className="select select-bordered"
+                  value={emailSettings.provider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  data-testid="select-email-provider"
+                >
+                  {Object.entries(emailProviders).map(([key, config]) => (
+                    <option key={key} value={key}>
+                      {config.name} {config.type === 'api' ? '(API)' : '(SMTP)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Provider Information */}
+              <div className="alert alert-info">
+                <i className={`fas ${emailProviders[emailSettings.provider].type === 'api' ? 'fa-key' : 'fa-server'}`}></i>
+                <div>
+                  <div className="font-bold">{emailProviders[emailSettings.provider].name}</div>
+                  <div className="text-sm">
+                    {emailProviders[emailSettings.provider].instructions}
+                    {emailProviders[emailSettings.provider].website && (
+                      <span>
+                        {' '}
+                        <a 
+                          href={emailProviders[emailSettings.provider].website} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="link text-info"
+                        >
+                          Visit website →
+                        </a>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Common Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-semibold">From Email *</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    className="input input-bordered" 
+                    placeholder="noreply@yourdomain.com"
+                    value={emailSettings.fromEmail}
+                    onChange={(e) => setEmailSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
+                    data-testid="input-from-email"
+                  />
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-semibold">From Name *</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input input-bordered" 
+                    placeholder="Your Organization LMS"
+                    value={emailSettings.fromName}
+                    onChange={(e) => setEmailSettings(prev => ({ ...prev, fromName: e.target.value }))}
+                    data-testid="input-from-name"
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Reply To Email</span>
+                </label>
+                <input 
+                  type="email" 
+                  className="input input-bordered" 
+                  placeholder="Optional reply-to address"
+                  value={emailSettings.replyTo}
+                  onChange={(e) => setEmailSettings(prev => ({ ...prev, replyTo: e.target.value }))}
+                  data-testid="input-reply-to"
+                />
+              </div>
+
+              {/* SMTP Provider Fields */}
+              {emailSettings.provider === 'smtp_generic' && (
+                <div className="space-y-4">
+                  <div className="divider">SMTP Configuration</div>
+                  
+                  {/* SMTP Preset Selection */}
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">SMTP Preset</span>
+                    </label>
+                    <select 
+                      className="select select-bordered"
+                      onChange={(e) => handleSMTPPresetChange(e.target.value)}
+                      data-testid="select-smtp-preset"
+                    >
+                      <option value="">Select a preset or configure manually</option>
+                      {Object.keys(emailProviders.smtp_generic.presets).map(preset => (
+                        <option key={preset} value={preset}>{preset}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">SMTP Host *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="smtp.example.com"
+                        value={emailSettings.smtpHost}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                        data-testid="input-smtp-host"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">SMTP Port *</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        className="input input-bordered" 
+                        placeholder="587"
+                        value={emailSettings.smtpPort}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: e.target.value }))}
+                        data-testid="input-smtp-port"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">SMTP Username *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="username@example.com"
+                        value={emailSettings.smtpUsername}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
+                        data-testid="input-smtp-username"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">SMTP Password *</span>
+                      </label>
+                      <input 
+                        type="password" 
+                        className="input input-bordered" 
+                        placeholder="••••••••"
+                        value={emailSettings.smtpPassword}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
+                        data-testid="input-smtp-password"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input 
+                        type="checkbox" 
+                        className="checkbox" 
+                        checked={emailSettings.smtpSecure}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpSecure: e.target.checked }))}
+                        data-testid="checkbox-smtp-secure"
+                      />
+                      <span className="label-text">Use TLS/STARTTLS encryption (recommended)</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* API Provider Fields */}
+              {emailSettings.provider !== 'smtp_generic' && (
+                <div className="space-y-4">
+                  <div className="divider">API Configuration</div>
+                  
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">API Key *</span>
+                    </label>
+                    <input 
+                      type="password" 
+                      className="input input-bordered" 
+                      placeholder="Enter your API key"
+                      value={emailSettings.apiKey}
+                      onChange={(e) => setEmailSettings(prev => ({ ...prev, apiKey: e.target.value }))}
+                      data-testid="input-api-key"
+                    />
+                  </div>
+
+                  {emailSettings.provider === 'mailjet_api' && (
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">API Secret *</span>
+                      </label>
+                      <input 
+                        type="password" 
+                        className="input input-bordered" 
+                        placeholder="Enter your API secret"
+                        value={emailSettings.apiSecret}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, apiSecret: e.target.value }))}
+                        data-testid="input-api-secret"
+                      />
+                    </div>
+                  )}
+
+                  {emailSettings.provider === 'mailgun_api' && (
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">API Domain *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="mg.yourdomain.com"
+                        value={emailSettings.apiDomain}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, apiDomain: e.target.value }))}
+                        data-testid="input-api-domain"
+                      />
+                      <div className="label">
+                        <span className="label-text-alt">Use your verified Mailgun domain</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {emailSettings.provider === 'ses_api' && (
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-semibold">AWS Region *</span>
+                      </label>
+                      <select 
+                        className="select select-bordered"
+                        value={emailSettings.apiRegion}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, apiRegion: e.target.value }))}
+                        data-testid="select-aws-region"
+                      >
+                        <option value="">Select AWS region</option>
+                        <option value="us-east-1">US East (N. Virginia)</option>
+                        <option value="us-west-2">US West (Oregon)</option>
+                        <option value="eu-west-1">Europe (Ireland)</option>
+                        <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="divider"></div>
 
@@ -1490,10 +1753,10 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
-          {/* Test Result Modal - Structured API Response */}
+          {/* Test Result Modal - Provider-Agnostic Diagnostics */}
           {showTestResultModal && testResult && (
             <div className="modal modal-open">
-              <div className="modal-box w-11/12 max-w-2xl">
+              <div className="modal-box w-11/12 max-w-3xl">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="font-bold text-lg">
                     {testResult.success ? '✅ Email Test Successful' : '❌ Email Test Failed'}
@@ -1512,94 +1775,171 @@ The {{organisationDisplayName}} Team`
                   <div className={`alert ${testResult.success ? 'alert-success' : 'alert-error'}`}>
                     <div>
                       <div className="font-bold">
-                        {testResult.success ? 'Test email sent successfully!' : 'Test email failed'}
+                        {testResult.success ? 'Email delivered successfully!' : `Failed at: ${testResult.step || 'unknown'}`}
                       </div>
-                      <div className="text-sm">{testResult.message}</div>
+                      <div className="text-sm">
+                        {testResult.success ? 
+                          `Test email sent via ${testResult.provider}` : 
+                          testResult.error?.message || 'Unknown error occurred'
+                        }
+                      </div>
                     </div>
                   </div>
 
-                  {/* Technical Details */}
-                  <div className="bg-base-200 p-4 rounded-lg">
-                    <h4 className="font-semibold mb-3">Technical Details</h4>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="font-medium">Provider:</span>
-                        <span className="ml-2 badge badge-outline">{testResult.provider}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium">HTTP Status:</span>
-                        <span className={`ml-2 badge ${testResult.httpStatus === 201 ? 'badge-success' : 'badge-error'}`}>
-                          {testResult.httpStatus}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="font-medium">Endpoint:</span>
-                        <span className="ml-2 font-mono text-xs">{testResult.details?.endpoint}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium">From:</span>
-                        <span className="ml-2">{testResult.details?.from}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium">To:</span>
-                        <span className="ml-2">{testResult.details?.to}</span>
-                      </div>
-                      {testResult.details?.messageId && (
+                  {/* Configuration Info */}
+                  {testResult.diagnostics && (
+                    <div className="bg-base-200 p-4 rounded-lg">
+                      <h4 className="font-semibold mb-3">Configuration Details</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
-                          <span className="font-medium">Message ID:</span>
-                          <span className="ml-2 font-mono text-xs">{testResult.details.messageId}</span>
+                          <span className="font-medium">Provider:</span>
+                          <span className="ml-2 badge badge-outline">{testResult.provider}</span>
                         </div>
-                      )}
-                      {testResult.details?.latencyMs && (
                         <div>
-                          <span className="font-medium">Response Time:</span>
-                          <span className="ml-2">{testResult.details.latencyMs}ms</span>
+                          <span className="font-medium">Context:</span>
+                          <span className="ml-2">{testResult.diagnostics.context}</span>
                         </div>
-                      )}
+                        {testResult.diagnostics.platformProvider && (
+                          <div>
+                            <span className="font-medium">Platform Default:</span>
+                            <span className="ml-2">{testResult.diagnostics.platformProvider}</span>
+                          </div>
+                        )}
+                        {testResult.diagnostics.settings && (
+                          <>
+                            <div>
+                              <span className="font-medium">From:</span>
+                              <span className="ml-2">{testResult.diagnostics.settings.fromEmail}</span>
+                            </div>
+                            <div>
+                              <span className="font-medium">From Name:</span>
+                              <span className="ml-2">{testResult.diagnostics.settings.fromName}</span>
+                            </div>
+                            {testResult.diagnostics.settings.replyTo && (
+                              <div>
+                                <span className="font-medium">Reply To:</span>
+                                <span className="ml-2">{testResult.diagnostics.settings.replyTo}</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Health Check Results */}
+                  {testResult.healthCheck && (
+                    <div className="bg-base-200 p-4 rounded-lg">
+                      <h4 className="font-semibold mb-3">Health Check</h4>
+                      <div className="grid grid-cols-1 gap-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className={`badge badge-sm ${testResult.healthCheck.connection ? 'badge-success' : 'badge-error'}`}>
+                            {testResult.healthCheck.connection ? '✓' : '✗'}
+                          </span>
+                          <span>Connection to {testResult.provider}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`badge badge-sm ${testResult.healthCheck.authentication ? 'badge-success' : 'badge-error'}`}>
+                            {testResult.healthCheck.authentication ? '✓' : '✗'}
+                          </span>
+                          <span>Authentication</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`badge badge-sm ${testResult.healthCheck.configuration ? 'badge-success' : 'badge-error'}`}>
+                            {testResult.healthCheck.configuration ? '✓' : '✗'}
+                          </span>
+                          <span>Configuration validity</span>
+                        </div>
+                        {testResult.healthCheck.quota !== undefined && (
+                          <div className="flex items-center gap-2">
+                            <span className={`badge badge-sm ${testResult.healthCheck.quota ? 'badge-success' : 'badge-warning'}`}>
+                              {testResult.healthCheck.quota ? '✓' : '!'}
+                            </span>
+                            <span>Quota check</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Delivery Details */}
+                  {testResult.delivery && (
+                    <div className="bg-base-200 p-4 rounded-lg">
+                      <h4 className="font-semibold mb-3">Delivery Details</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {testResult.delivery.messageId && (
+                          <div>
+                            <span className="font-medium">Message ID:</span>
+                            <span className="ml-2 font-mono text-xs">{testResult.delivery.messageId}</span>
+                          </div>
+                        )}
+                        {testResult.delivery.status && (
+                          <div>
+                            <span className="font-medium">Status:</span>
+                            <span className={`ml-2 badge ${testResult.delivery.status === 'sent' ? 'badge-success' : 'badge-error'}`}>
+                              {testResult.delivery.status}
+                            </span>
+                          </div>
+                        )}
+                        {testResult.delivery.to && (
+                          <div>
+                            <span className="font-medium">Recipient:</span>
+                            <span className="ml-2">{testResult.delivery.to}</span>
+                          </div>
+                        )}
+                        {testResult.delivery.subject && (
+                          <div>
+                            <span className="font-medium">Subject:</span>
+                            <span className="ml-2">{testResult.delivery.subject}</span>
+                          </div>
+                        )}
+                        {testResult.delivery.latencyMs && (
+                          <div>
+                            <span className="font-medium">Response Time:</span>
+                            <span className="ml-2">{testResult.delivery.latencyMs}ms</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Error Details */}
-                  {!testResult.success && testResult.details?.brevoError && (
-                    <div className="bg-red-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-red-800 mb-2">Brevo API Error</h4>
-                      <p className="text-sm text-red-700 font-mono">{testResult.details.brevoError}</p>
-                    </div>
-                  )}
-
-                  {/* Help Text */}
-                  {testResult.details?.helpText && (
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-blue-800 mb-2">💡 What to do next</h4>
-                      <p className="text-sm text-blue-700">{testResult.details.helpText}</p>
-                    </div>
-                  )}
-
-                  {/* Validation Errors */}
-                  {testResult.details?.validationErrors && testResult.details.validationErrors.length > 0 && (
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Configuration Issues</h4>
-                      <ul className="text-sm text-yellow-700">
-                        {testResult.details.validationErrors.map((error: string, index: number) => (
-                          <li key={index} className="mb-1">• {error}</li>
-                        ))}
-                      </ul>
+                  {!testResult.success && testResult.error && (
+                    <div className="bg-error/10 p-4 rounded-lg border border-error/20">
+                      <h4 className="font-semibold text-error mb-2">
+                        {testResult.error.code}: {testResult.error.message}
+                      </h4>
+                      {testResult.error.details && (
+                        <p className="text-sm text-error/80 font-mono bg-error/5 p-2 rounded">
+                          {testResult.error.details}
+                        </p>
+                      )}
                     </div>
                   )}
 
                   {/* Success Guidance */}
                   {testResult.success && (
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-green-800 mb-2">🎉 Success!</h4>
-                      <p className="text-sm text-green-700">
-                        Your Brevo API configuration is working correctly. System emails (assignments, reminders, completions) will now be delivered via Brevo.
+                    <div className="bg-success/10 p-4 rounded-lg border border-success/20">
+                      <h4 className="font-semibold text-success mb-2">🎉 Success!</h4>
+                      <p className="text-sm text-success/80">
+                        Your {testResult.provider} configuration is working correctly. System emails will be delivered reliably.
                       </p>
-                      {testResult.details?.helpText && (
-                        <p className="text-xs text-green-600 mt-2">
-                          Note: {testResult.details.helpText}
+                      {testResult.delivery?.additionalInfo && (
+                        <p className="text-xs text-success/70 mt-2">
+                          {testResult.delivery.additionalInfo}
                         </p>
                       )}
                     </div>
+                  )}
+
+                  {/* Raw Response (for debugging) */}
+                  {testResult.rawResponse && (
+                    <details className="bg-base-100 p-4 rounded-lg border">
+                      <summary className="font-semibold cursor-pointer">Raw API Response (Debug)</summary>
+                      <pre className="text-xs mt-2 overflow-auto max-h-32 font-mono bg-base-200 p-2 rounded">
+                        {JSON.stringify(testResult.rawResponse, null, 2)}
+                      </pre>
+                    </details>
                   )}
                 </div>
 
