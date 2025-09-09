@@ -93,6 +93,22 @@ export function AdminOrganisationSettings() {
     setShowTemplateEditor(true);
   };
 
+  const handleCloseTemplateEditor = () => {
+    setShowTemplateEditor(false);
+    setSelectedTemplate(null);
+  };
+
+  const getTemplateDisplayName = (templateType: string) => {
+    const names: Record<string, string> = {
+      'welcome_email': 'Welcome Email',
+      'course_assignment': 'Course Assignment',
+      'course_reminder': 'Course Reminder', 
+      'course_completion': 'Course Completion',
+      'password_reset': 'Password Reset'
+    };
+    return names[templateType] || templateType;
+  };
+
   // Load organization data when it becomes available
   useEffect(() => {
     if (organization) {
@@ -762,6 +778,82 @@ export function AdminOrganisationSettings() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Template Editor Modal */}
+          {showTemplateEditor && selectedTemplate && (
+            <div className="modal modal-open">
+              <div className="modal-box w-11/12 max-w-4xl">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-lg">
+                    Edit {getTemplateDisplayName(selectedTemplate)}
+                  </h3>
+                  <button 
+                    className="btn btn-sm btn-circle btn-ghost"
+                    onClick={handleCloseTemplateEditor}
+                    data-testid="button-close-editor"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">
+                      <span className="label-text font-semibold">Subject</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered w-full" 
+                      placeholder="Email subject line"
+                      data-testid="input-email-subject"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">
+                      <span className="label-text font-semibold">Email Content</span>
+                    </label>
+                    <textarea 
+                      className="textarea textarea-bordered w-full h-64" 
+                      placeholder="Email body content"
+                      data-testid="textarea-email-content"
+                    ></textarea>
+                  </div>
+
+                  <div className="alert alert-info">
+                    <i className="fas fa-info-circle"></i>
+                    <div>
+                      <div className="font-bold">Available Placeholders</div>
+                      <div className="text-sm">
+                        [FirstName], [LastName], [Email], [OrganisationName], [CourseName], [DueDate], [CompletionDate], [Score]
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-action">
+                  <button 
+                    className="btn btn-ghost" 
+                    onClick={handleCloseTemplateEditor}
+                    data-testid="button-cancel-edit"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    className="btn btn-primary"
+                    data-testid="button-save-template"
+                    style={{
+                      backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                      borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                    } as React.CSSProperties}
+                  >
+                    Save Template
+                  </button>
+                </div>
+              </div>
+              <div className="modal-backdrop" onClick={handleCloseTemplateEditor}></div>
             </div>
           )}
 
