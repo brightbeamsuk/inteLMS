@@ -27,7 +27,7 @@ export function UserLayout({ children }: UserLayoutProps) {
   });
 
   // Fetch plan features to check access
-  const { data: planFeatures = [] } = useQuery({
+  const { data: planFeatures = [], isLoading: planFeaturesLoading } = useQuery({
     queryKey: ['/api/plan-features/mappings', organization?.planId],
     enabled: !!organization?.planId,
     queryFn: async () => {
@@ -41,9 +41,17 @@ export function UserLayout({ children }: UserLayoutProps) {
     },
   });
 
+  // Helper function to check feature access
+  const hasFeatureAccess = (featureId: string) => {
+    // If plan features are still loading, assume access is available to prevent UI flash
+    if (planFeaturesLoading) return true;
+    
+    const feature = planFeatures.find((f: any) => f.featureId === featureId);
+    return feature?.enabled || false;
+  };
+
   // Check if branding feature is enabled
-  const removeBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'remove_branding');
-  const hasBrandingAccess = removeBrandingFeature?.enabled || false;
+  const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
   const menuItems = [
     { path: "/user", icon: "fas fa-tachometer-alt", label: "Dashboard" },
