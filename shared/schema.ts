@@ -53,6 +53,25 @@ export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['not_start
 // Plan status enum
 export const planStatusEnum = pgEnum('plan_status', ['active', 'inactive', 'archived']);
 
+// Email template type enum
+export const emailTemplateTypeEnum = pgEnum('email_template_type', [
+  'welcome_account_created',
+  'course_assigned', 
+  'course_reminder',
+  'course_overdue',
+  'training_expiring_soon',
+  'training_expired',
+  'course_completion_certificate',
+  'failed_attempt',
+  'password_reset',
+  'new_user_registered',
+  'user_completed_course',
+  'user_failed_course',
+  'staff_training_expiring',
+  'staff_training_expired',
+  'weekly_training_summary'
+]);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -334,6 +353,21 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Email templates table - stores customizable email templates for organisations
+export const emailTemplates = pgTable("email_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  templateType: emailTemplateTypeEnum("template_type").notNull(),
+  subject: varchar("subject").notNull(),
+  htmlContent: text("html_content").notNull(),
+  textContent: text("text_content"),
+  isEnabled: boolean("is_enabled").default(true),
+  reminderDays: integer("reminder_days"), // For reminder templates (e.g., 7 days, 3 days)
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   organisation: one(organisations, {
@@ -517,6 +551,17 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
+export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [emailTemplates.organisationId],
+    references: [organisations.id],
+  }),
+  createdByUser: one(users, {
+    fields: [emailTemplates.createdBy],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -603,6 +648,12 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Course folder insert schemas
 export const insertCourseFolderSchema = createInsertSchema(courseFolders).omit({
   id: true,
@@ -662,6 +713,9 @@ export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
 
 // Course folder types
 export type InsertCourseFolder = z.infer<typeof insertCourseFolderSchema>;
