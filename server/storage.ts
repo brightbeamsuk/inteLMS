@@ -15,6 +15,7 @@ import {
   plans,
   planFeatures,
   planFeatureMappings,
+  auditLogs,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -48,6 +49,8 @@ import {
   type InsertPlanFeature,
   type PlanFeatureMapping,
   type InsertPlanFeatureMapping,
+  type AuditLog,
+  type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull } from "drizzle-orm";
@@ -206,6 +209,11 @@ export interface IStorage {
   deletePlanFeatureMapping(id: string): Promise<void>;
   getPlanFeatureMappings(planId: string): Promise<PlanFeatureMapping[]>;
   setPlanFeatures(planId: string, featureIds: string[]): Promise<void>;
+
+  // Audit log operations
+  createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(organisationId: string, limit?: number, offset?: number): Promise<AuditLog[]>;
+  getAuditLogsByUser(userId: string, limit?: number, offset?: number): Promise<AuditLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1040,6 +1048,49 @@ export class DatabaseStorage implements IStorage {
       }));
       await db.insert(planFeatureMappings).values(mappings);
     }
+  }
+
+  // Audit log operations
+  async createAuditLog(auditLogData: InsertAuditLog): Promise<AuditLog> {
+    const [auditLog] = await db.insert(auditLogs).values(auditLogData).returning();
+    return auditLog;
+  }
+
+  async getAuditLogs(organisationId: string, limit: number = 50, offset: number = 0): Promise<AuditLog[]> {
+    return await db
+      .select({
+        id: auditLogs.id,
+        organisationId: auditLogs.organisationId,
+        userId: auditLogs.userId,
+        action: auditLogs.action,
+        resource: auditLogs.resource,
+        resourceId: auditLogs.resourceId,
+        details: auditLogs.details,
+        ipAddress: auditLogs.ipAddress,
+        userAgent: auditLogs.userAgent,
+        createdAt: auditLogs.createdAt,
+        user: {
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(eq(auditLogs.organisationId, organisationId))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getAuditLogsByUser(userId: string, limit: number = 50, offset: number = 0): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.userId, userId))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
   }
 }
 
