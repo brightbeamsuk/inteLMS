@@ -85,6 +85,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // Check if branding feature is enabled
   const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
+  // Apply custom colors if enabled
+  const customStyles = organization?.useCustomColors ? {
+    '--primary-color': organization.primaryColor || '#3b82f6',
+    '--accent-color': organization.accentColor || '#3b82f6',
+  } : {};
+
   // Feature definitions for premium features
   const featureDefinitions = {
     training_matrix: {
@@ -150,7 +156,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-base-100" data-theme="light">
+      <div className="min-h-screen bg-base-100" data-theme="light" style={customStyles}>
         {/* Header */}
         <div className="navbar bg-base-300 shadow-lg">
           <div className="navbar-start">

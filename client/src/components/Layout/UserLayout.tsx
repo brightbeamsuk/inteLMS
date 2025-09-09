@@ -53,6 +53,12 @@ export function UserLayout({ children }: UserLayoutProps) {
   // Check if branding feature is enabled
   const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
+  // Apply custom colors if enabled
+  const customStyles = organization?.useCustomColors ? {
+    '--primary-color': organization.primaryColor || '#3b82f6',
+    '--accent-color': organization.accentColor || '#3b82f6',
+  } : {};
+
   const menuItems = [
     { path: "/user", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/user/courses", icon: "fas fa-graduation-cap", label: "My Courses" },
@@ -60,7 +66,7 @@ export function UserLayout({ children }: UserLayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-base-100" data-theme="light">
+    <div className="min-h-screen bg-base-100" data-theme="light" style={customStyles}>
       {/* Header */}
       <div className="navbar bg-base-300 shadow-lg">
         <div className="navbar-start">
