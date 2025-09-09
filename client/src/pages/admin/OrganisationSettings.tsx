@@ -324,10 +324,14 @@ export function AdminOrganisationSettings() {
                     <label className="label cursor-pointer justify-start gap-3">
                       <input 
                         type="checkbox" 
-                        className={`toggle ${brandingData.useCustomColors ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
+                        className={`toggle ${brandingData.useCustomColors ? 'toggle-success' : ''}`}
                         checked={brandingData.useCustomColors}
                         onChange={(e) => setBrandingData(prev => ({ ...prev, useCustomColors: e.target.checked }))}
                         data-testid="toggle-custom-colors"
+                        style={{
+                          '--tglbg': brandingData.useCustomColors ? '#4ade80' : '#d1d5db',
+                          backgroundColor: brandingData.useCustomColors ? '#4ade80' : '#d1d5db',
+                        } as React.CSSProperties}
                       />
                       <span className="label-text font-semibold">Enable Custom Brand Colors</span>
                     </label>
