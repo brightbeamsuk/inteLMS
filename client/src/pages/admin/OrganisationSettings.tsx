@@ -85,6 +85,14 @@ export function AdminOrganisationSettings() {
     defaultCertificateDownload: false,
   });
 
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+
+  const handleEditTemplate = (templateType: string) => {
+    setSelectedTemplate(templateType);
+    setShowTemplateEditor(true);
+  };
+
   // Load organization data when it becomes available
   useEffect(() => {
     if (organization) {
@@ -656,21 +664,7 @@ export function AdminOrganisationSettings() {
           {/* Email Templates Tab */}
           {hasEmailTemplatesAccess && activeTab === tabs.indexOf("Email Templates") && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Email Templates</h3>
-                <button 
-                  className="btn btn-primary"
-                  data-testid="button-add-template"
-                  style={{
-                    '--primary-color': organization?.primaryColor || '#3b82f6',
-                    backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
-                    borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
-                  } as React.CSSProperties}
-                >
-                  <i className="fas fa-plus"></i>
-                  New Template
-                </button>
-              </div>
+              <h3 className="text-lg font-semibold">Email Templates</h3>
               
               <div className="alert alert-info">
                 <i className="fas fa-info-circle"></i>
@@ -688,7 +682,11 @@ export function AdminOrganisationSettings() {
                     <h4 className="card-title text-base">Welcome Email</h4>
                     <p className="text-sm text-base-content/70">Sent when new users are created</p>
                     <div className="card-actions justify-end">
-                      <button className="btn btn-outline btn-sm" data-testid="button-edit-welcome">
+                      <button 
+                        className="btn btn-outline btn-sm" 
+                        data-testid="button-edit-welcome"
+                        onClick={() => handleEditTemplate('welcome_email')}
+                      >
                         <i className="fas fa-edit"></i>
                         Edit
                       </button>
@@ -701,7 +699,11 @@ export function AdminOrganisationSettings() {
                     <h4 className="card-title text-base">Course Assignment</h4>
                     <p className="text-sm text-base-content/70">Sent when courses are assigned to users</p>
                     <div className="card-actions justify-end">
-                      <button className="btn btn-outline btn-sm" data-testid="button-edit-assignment">
+                      <button 
+                        className="btn btn-outline btn-sm" 
+                        data-testid="button-edit-assignment"
+                        onClick={() => handleEditTemplate('course_assignment')}
+                      >
                         <i className="fas fa-edit"></i>
                         Edit
                       </button>
@@ -714,7 +716,11 @@ export function AdminOrganisationSettings() {
                     <h4 className="card-title text-base">Course Reminder</h4>
                     <p className="text-sm text-base-content/70">Reminder emails for upcoming due dates</p>
                     <div className="card-actions justify-end">
-                      <button className="btn btn-outline btn-sm" data-testid="button-edit-reminder">
+                      <button 
+                        className="btn btn-outline btn-sm" 
+                        data-testid="button-edit-reminder"
+                        onClick={() => handleEditTemplate('course_reminder')}
+                      >
                         <i className="fas fa-edit"></i>
                         Edit
                       </button>
@@ -727,7 +733,11 @@ export function AdminOrganisationSettings() {
                     <h4 className="card-title text-base">Course Completion</h4>
                     <p className="text-sm text-base-content/70">Sent when users complete courses</p>
                     <div className="card-actions justify-end">
-                      <button className="btn btn-outline btn-sm" data-testid="button-edit-completion">
+                      <button 
+                        className="btn btn-outline btn-sm" 
+                        data-testid="button-edit-completion"
+                        onClick={() => handleEditTemplate('course_completion')}
+                      >
                         <i className="fas fa-edit"></i>
                         Edit
                       </button>
@@ -740,7 +750,11 @@ export function AdminOrganisationSettings() {
                     <h4 className="card-title text-base">Password Reset</h4>
                     <p className="text-sm text-base-content/70">Sent when users request password resets</p>
                     <div className="card-actions justify-end">
-                      <button className="btn btn-outline btn-sm" data-testid="button-edit-password-reset">
+                      <button 
+                        className="btn btn-outline btn-sm" 
+                        data-testid="button-edit-password-reset"
+                        onClick={() => handleEditTemplate('password_reset')}
+                      >
                         <i className="fas fa-edit"></i>
                         Edit
                       </button>
