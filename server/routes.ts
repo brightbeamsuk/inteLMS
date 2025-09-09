@@ -11,6 +11,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { emailService } from "./services/emailService";
 import { unifiedMailerService } from "./services/unifiedMailerService";
+import { singleMailerService } from "./services/singleMailerService";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
@@ -2929,7 +2930,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Enhanced system SMTP test with comprehensive logging
+  // Single Mailer Service - Health Check Endpoint
+  app.post('/api/smtp/health-check', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied. Admin or SuperAdmin role required.' });
+      }
+
+      const { organisationId } = req.body;
+      
+      // For admins, restrict to their own organization
+      const targetOrgId = user.role === 'admin' ? user.organisationId : organisationId;
+      
+      const healthResult = await singleMailerService.healthCheck(targetOrgId);
+      
+      res.json(healthResult);
+    } catch (error: any) {
+      console.error('Error in SMTP health check:', error);
+      res.status(500).json({
+        success: false,
+        timestamp: new Date().toISOString(),
+        error: error.message || 'Health check failed',
+        dnsResolution: false,
+        tcpConnection: false,
+        startTlsSupport: false
+      });
+    }
+  });
+
+  // Single Mailer Service - Admin Test Email Endpoint  
+  app.post('/api/smtp/admin-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || (user.role !== 'superadmin' && user.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied. Admin or SuperAdmin role required.' });
+      }
+
+      const { testEmail, organisationId } = req.body;
+      
+      if (!testEmail) {
+        return res.status(400).json({ message: 'Test email address is required' });
+      }
+
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(testEmail)) {
+        return res.status(400).json({ message: 'Invalid test email address' });
+      }
+
+      // For admins, restrict to their own organization
+      const targetOrgId = user.role === 'admin' ? user.organisationId : organisationId;
+      
+      const testResult = await singleMailerService.sendTestEmail(testEmail, targetOrgId, {
+        userAgent: req.get('User-Agent'),
+        ipAddress: req.ip,
+        userId: user.id
+      });
+      
+      // Return detailed metadata for admin UI
+      res.json({
+        ...testResult,
+        testDetails: {
+          sentBy: user.email,
+          sentAt: testResult.timestamp,
+          userAgent: req.get('User-Agent'),
+          clientIp: req.ip,
+          organisationLevel: targetOrgId ? 'organisation' : 'system'
+        }
+      });
+    } catch (error: any) {
+      console.error('Error in admin SMTP test:', error);
+      res.status(500).json({
+        success: false,
+        timestamp: new Date().toISOString(),
+        error: error.message || 'SMTP test failed',
+        tlsEnabled: false,
+        source: 'none'
+      });
+    }
+  });
+
+  // Enhanced system SMTP test with comprehensive logging (Legacy Support)
   app.post('/api/system/smtp-test', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);

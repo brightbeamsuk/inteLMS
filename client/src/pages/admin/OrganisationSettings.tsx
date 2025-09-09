@@ -513,6 +513,98 @@ The {{organisationDisplayName}} Team`
     },
   });
 
+  // Single Mailer Service - Admin Test with comprehensive logging
+  const adminTestEmailMutation = useMutation({
+    mutationFn: async (testEmail: string) => {
+      const response = await apiRequest('POST', '/api/smtp/admin-test', { 
+        testEmail, 
+        organisationId: user?.organisationId 
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const details = data.testDetails || {};
+      toast({
+        title: data.success ? "SMTP Test Successful" : "SMTP Test Failed",
+        description: data.success 
+          ? `Email sent via ${data.smtpHost}:${data.smtpPort} (${data.provider || 'Unknown'}) - TLS: ${data.tlsEnabled ? 'Enabled' : 'Disabled'}`
+          : data.error || "Failed to send test email",
+        variant: data.success ? "default" : "destructive",
+      });
+      
+      // Log comprehensive metadata to console for debugging
+      console.log('SMTP Test Result:', {
+        timestamp: data.timestamp,
+        smtpHost: data.smtpHost,
+        smtpPort: data.smtpPort,
+        resolvedIp: data.resolvedIp,
+        tlsEnabled: data.tlsEnabled,
+        messageId: data.messageId,
+        source: data.source,
+        provider: data.provider,
+        sentBy: details.sentBy,
+        userAgent: details.userAgent,
+        clientIp: details.clientIp
+      });
+      
+      setShowTestEmailModal(false);
+      setTestEmailAddress('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "SMTP Test Error",
+        description: error.message || "Failed to send test email",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // SMTP Health Check mutation
+  const healthCheckMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/smtp/health-check', { 
+        organisationId: user?.organisationId 
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const status = data.success ? 'Healthy' : 'Failed';
+      const details = [
+        `DNS: ${data.dnsResolution ? '✓' : '✗'}`,
+        `TCP: ${data.tcpConnection ? '✓' : '✗'}`,
+        `TLS: ${data.startTlsSupport ? '✓' : '✗'}`
+      ].join(' | ');
+      
+      toast({
+        title: `SMTP Health Check: ${status}`,
+        description: data.success 
+          ? `${data.smtpHost}:${data.smtpPort} - ${details} (${data.latencyMs}ms)`
+          : `${data.error} - ${details}`,
+        variant: data.success ? "default" : "destructive",
+      });
+      
+      // Log detailed health check to console
+      console.log('SMTP Health Check:', {
+        timestamp: data.timestamp,
+        smtpHost: data.smtpHost,
+        smtpPort: data.smtpPort,
+        resolvedIp: data.resolvedIp,
+        dnsResolution: data.dnsResolution,
+        tcpConnection: data.tcpConnection,
+        startTlsSupport: data.startTlsSupport,
+        latencyMs: data.latencyMs,
+        error: data.error
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Health Check Error",
+        description: error.message || "Failed to perform health check",
+        variant: "destructive",
+      });
+    }
+  });
+
   const saveEmailSettings = () => {
     if (!user?.organisationId) return;
     saveEmailSettingsMutation.mutate(emailSettings);
@@ -547,6 +639,19 @@ The {{organisationDisplayName}} Team`
     
     testEmailMutation.mutate(testEmailAddress);
     setShowTestEmailModal(false);
+  };
+
+  const sendAdminTestEmail = () => {
+    if (!testEmailAddress) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    adminTestEmailMutation.mutate(testEmailAddress);
   };
 
   const closeTestEmailModal = () => {
@@ -1022,15 +1127,41 @@ The {{organisationDisplayName}} Team`
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h4 className="text-md font-semibold">Email API Configuration</h4>
-                  <button 
-                    className="btn btn-outline btn-sm"
-                    data-testid="button-test-email"
-                    onClick={openTestEmailModal}
-                    disabled={testEmailMutation.isPending}
-                  >
-                    <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
-                    {testEmailMutation.isPending ? 'Sending...' : 'Test Email'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      className="btn btn-outline btn-xs"
+                      onClick={() => healthCheckMutation.mutate()}
+                      disabled={healthCheckMutation.isPending}
+                      data-testid="button-health-check"
+                      title="Test DNS resolution, TCP connection, and STARTTLS support"
+                    >
+                      <i className={`fas ${healthCheckMutation.isPending ? 'fa-spinner fa-spin' : 'fa-heartbeat'}`}></i>
+                      {healthCheckMutation.isPending ? 'Checking...' : 'Health Check'}
+                    </button>
+                    <button 
+                      className="btn btn-outline btn-xs"
+                      onClick={() => {
+                        setTestEmailAddress(user?.email || '');
+                        setShowTestEmailModal(true);
+                      }}
+                      disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername}
+                      data-testid="button-admin-test"
+                      title="Send test email with comprehensive logging and metadata"
+                    >
+                      <i className="fas fa-flask"></i>
+                      Admin Test
+                    </button>
+                    <button 
+                      className="btn btn-outline btn-xs"
+                      data-testid="button-test-email"
+                      onClick={openTestEmailModal}
+                      disabled={testEmailMutation.isPending}
+                      title="Send simple test email (legacy)"
+                    >
+                      <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                      {testEmailMutation.isPending ? 'Sending...' : 'Quick Test'}
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="alert alert-warning">
@@ -1488,7 +1619,7 @@ The {{organisationDisplayName}} Team`
                       } as React.CSSProperties}
                     >
                       <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
-                      {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                      {adminTestEmailMutation.isPending ? 'Sending...' : 'Send Admin Test'}
                     </button>
                   </div>
                 </div>
