@@ -87,15 +87,22 @@ export function AdminOrganisationSettings() {
 
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [templateSubject, setTemplateSubject] = useState('');
+  const [templateContent, setTemplateContent] = useState('');
 
   const handleEditTemplate = (templateType: string) => {
+    const defaultTemplate = getDefaultTemplate(templateType);
     setSelectedTemplate(templateType);
+    setTemplateSubject(defaultTemplate.subject);
+    setTemplateContent(defaultTemplate.content);
     setShowTemplateEditor(true);
   };
 
   const handleCloseTemplateEditor = () => {
     setShowTemplateEditor(false);
     setSelectedTemplate(null);
+    setTemplateSubject('');
+    setTemplateContent('');
   };
 
   const getTemplateDisplayName = (templateType: string) => {
@@ -107,6 +114,102 @@ export function AdminOrganisationSettings() {
       'password_reset': 'Password Reset'
     };
     return names[templateType] || templateType;
+  };
+
+  const getDefaultTemplate = (templateType: string) => {
+    const templates: Record<string, { subject: string; content: string }> = {
+      'welcome_email': {
+        subject: 'Welcome to [OrganisationName] Learning Platform',
+        content: `Dear [FirstName] [LastName],
+
+Welcome to [OrganisationName]! We're excited to have you join our learning platform.
+
+Your account has been successfully created with the following details:
+• Email: [Email]
+• Organization: [OrganisationName]
+
+You can now log in to access your assigned training courses and track your progress.
+
+If you have any questions or need assistance, please don't hesitate to contact your administrator.
+
+Best regards,
+The [OrganisationName] Team`
+      },
+      'course_assignment': {
+        subject: 'New Course Assigned: [CourseName]',
+        content: `Hello [FirstName],
+
+You have been assigned a new training course: [CourseName]
+
+Course Details:
+• Course: [CourseName]
+• Due Date: [DueDate]
+• Organization: [OrganisationName]
+
+Please log in to your learning platform to begin this course. Make sure to complete it before the due date.
+
+If you have any questions about this course, please contact your administrator.
+
+Best regards,
+The [OrganisationName] Team`
+      },
+      'course_reminder': {
+        subject: 'Reminder: [CourseName] Due Soon',
+        content: `Hello [FirstName],
+
+This is a friendly reminder that your course "[CourseName]" is due soon.
+
+Course Details:
+• Course: [CourseName]
+• Due Date: [DueDate]
+• Organization: [OrganisationName]
+
+Please log in to your learning platform to complete this course before the deadline.
+
+If you have already completed this course, please disregard this message.
+
+Best regards,
+The [OrganisationName] Team`
+      },
+      'course_completion': {
+        subject: 'Course Completed: [CourseName]',
+        content: `Dear [FirstName],
+
+Congratulations! You have successfully completed the course "[CourseName]".
+
+Completion Details:
+• Course: [CourseName]
+• Completion Date: [CompletionDate]
+• Score: [Score]
+• Organization: [OrganisationName]
+
+Your certificate is now available for download from your learning platform.
+
+Thank you for your dedication to professional development.
+
+Best regards,
+The [OrganisationName] Team`
+      },
+      'password_reset': {
+        subject: 'Password Reset Request - [OrganisationName]',
+        content: `Hello [FirstName],
+
+We received a request to reset your password for your [OrganisationName] learning platform account.
+
+Account Details:
+• Email: [Email]
+• Organization: [OrganisationName]
+
+If you requested this password reset, please follow the instructions provided by your administrator to set a new password.
+
+If you did not request this password reset, please contact your administrator immediately.
+
+Best regards,
+The [OrganisationName] Team`
+      }
+    };
+    
+    return templates[templateType] || { subject: '', content: '' };
   };
 
   // Load organization data when it becomes available
@@ -807,6 +910,8 @@ export function AdminOrganisationSettings() {
                       type="text" 
                       className="input input-bordered w-full" 
                       placeholder="Email subject line"
+                      value={templateSubject}
+                      onChange={(e) => setTemplateSubject(e.target.value)}
                       data-testid="input-email-subject"
                     />
                   </div>
@@ -818,6 +923,8 @@ export function AdminOrganisationSettings() {
                     <textarea 
                       className="textarea textarea-bordered w-full h-64" 
                       placeholder="Email body content"
+                      value={templateContent}
+                      onChange={(e) => setTemplateContent(e.target.value)}
                       data-testid="textarea-email-content"
                     ></textarea>
                   </div>
