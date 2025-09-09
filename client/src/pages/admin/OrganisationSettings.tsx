@@ -529,10 +529,14 @@ export function AdminOrganisationSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.assignmentEmailsEnabled}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, assignmentEmailsEnabled: e.target.checked }))}
                       data-testid="toggle-assignment-emails"
+                      style={{
+                        '--tglbg': notificationData.assignmentEmailsEnabled ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.assignmentEmailsEnabled ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Assignment Emails</strong>
@@ -545,10 +549,14 @@ export function AdminOrganisationSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.reminderEmailsEnabled}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, reminderEmailsEnabled: e.target.checked }))}
                       data-testid="toggle-reminder-emails"
+                      style={{
+                        '--tglbg': notificationData.reminderEmailsEnabled ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.reminderEmailsEnabled ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Reminder Emails</strong>
@@ -580,10 +588,14 @@ export function AdminOrganisationSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.completionEmailsEnabled}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, completionEmailsEnabled: e.target.checked }))}
                       data-testid="toggle-completion-emails"
+                      style={{
+                        '--tglbg': notificationData.completionEmailsEnabled ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.completionEmailsEnabled ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Completion Emails to Admin</strong>
@@ -604,10 +616,14 @@ export function AdminOrganisationSettings() {
                 <label className="label cursor-pointer justify-start gap-3">
                   <input 
                     type="checkbox" 
-                    className="toggle toggle-primary" 
+                    className="toggle" 
                     checked={privacyData.defaultCertificateDownload}
                     onChange={(e) => setPrivacyData(prev => ({ ...prev, defaultCertificateDownload: e.target.checked }))}
                     data-testid="toggle-default-cert-download"
+                    style={{
+                      '--tglbg': privacyData.defaultCertificateDownload ? '#4ade80' : '#d1d5db',
+                      backgroundColor: privacyData.defaultCertificateDownload ? '#4ade80' : '#d1d5db',
+                    } as React.CSSProperties}
                   />
                   <span className="label-text">
                     <strong>Allow Certificate Download by Default</strong>

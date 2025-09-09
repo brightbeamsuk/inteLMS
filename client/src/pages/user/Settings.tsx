@@ -232,10 +232,14 @@ export function UserSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.assignmentEmails}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, assignmentEmails: e.target.checked }))}
                       data-testid="toggle-assignment-emails"
+                      style={{
+                        '--tglbg': notificationData.assignmentEmails ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.assignmentEmails ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Course Assignment Emails</strong>
@@ -248,10 +252,14 @@ export function UserSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.reminderEmails}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, reminderEmails: e.target.checked }))}
                       data-testid="toggle-reminder-emails"
+                      style={{
+                        '--tglbg': notificationData.reminderEmails ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.reminderEmails ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Reminder Emails</strong>
@@ -264,10 +272,14 @@ export function UserSettings() {
                   <label className="label cursor-pointer justify-start gap-3">
                     <input 
                       type="checkbox" 
-                      className="toggle toggle-primary" 
+                      className="toggle" 
                       checked={notificationData.completionEmails}
                       onChange={(e) => setNotificationData(prev => ({ ...prev, completionEmails: e.target.checked }))}
                       data-testid="toggle-completion-emails"
+                      style={{
+                        '--tglbg': notificationData.completionEmails ? '#4ade80' : '#d1d5db',
+                        backgroundColor: notificationData.completionEmails ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
                     />
                     <span className="label-text">
                       <strong>Completion Confirmations</strong>

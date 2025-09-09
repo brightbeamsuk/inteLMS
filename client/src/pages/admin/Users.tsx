@@ -911,7 +911,7 @@ export function AdminUsers() {
                       <label className="label cursor-pointer justify-start gap-3">
                         <input 
                           type="checkbox" 
-                          className={`toggle ${selectedUser.allowCertificateDownload ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
+                          className="toggle"
                           checked={selectedUser.allowCertificateDownload}
                           onChange={(e) => {
                             const newValue = e.target.checked;
@@ -924,6 +924,10 @@ export function AdminUsers() {
                           }}
                           disabled={updateUserMutation.isPending}
                           data-testid="toggle-cert-download"
+                          style={{
+                            '--tglbg': selectedUser.allowCertificateDownload ? '#4ade80' : '#d1d5db',
+                            backgroundColor: selectedUser.allowCertificateDownload ? '#4ade80' : '#d1d5db',
+                          } as React.CSSProperties}
                         />
                         <span className="label-text">Allowed</span>
                       </label>
@@ -1379,10 +1383,14 @@ export function AdminUsers() {
                 <label className="label cursor-pointer justify-start gap-3">
                   <input 
                     type="checkbox" 
-                    className={`toggle ${editFormData.allowCertificateDownload ? 'toggle-success [--tglbg:#22c55e] checked:bg-green-500' : '[--tglbg:#9ca3af] bg-gray-400 border-gray-400'}`}
+                    className="toggle"
                     checked={editFormData.allowCertificateDownload}
                     onChange={(e) => setEditFormData({...editFormData, allowCertificateDownload: e.target.checked})}
                     data-testid="toggle-edit-cert-download"
+                    style={{
+                      '--tglbg': editFormData.allowCertificateDownload ? '#4ade80' : '#d1d5db',
+                      backgroundColor: editFormData.allowCertificateDownload ? '#4ade80' : '#d1d5db',
+                    } as React.CSSProperties}
                   />
                   <span className="label-text">Allow Certificate Downloads</span>
                 </label>
