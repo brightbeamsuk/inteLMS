@@ -66,31 +66,28 @@
 }
 
 /* Override DaisyUI button colors with inteLMS #634396 theme */
-.btn-primary,
-[data-custom-colors="true"] .btn-primary {
-  background-color: #634396;
-  border-color: #634396;
+.btn-primary {
+  background-color: var(--primary-color, #634396);
+  border-color: var(--primary-color, #634396);
   color: white;
 }
 
-.btn-primary:hover,
-[data-custom-colors="true"] .btn-primary:hover {
-  background-color: rgba(99, 67, 150, 0.8);
-  border-color: rgba(99, 67, 150, 0.8);
+.btn-primary:hover {
+  background-color: color-mix(in srgb, var(--primary-color, #634396) 80%, black);
+  border-color: color-mix(in srgb, var(--primary-color, #634396) 80%, black);
   color: white;
 }
 
-.btn-secondary,
-[data-custom-colors="true"] .btn-secondary {
-  background-color: #ec84b5;
-  border-color: #ec84b5;
+
+.btn-secondary {
+  background-color: var(--accent-color, #ec84b5);
+  border-color: var(--accent-color, #ec84b5);
   color: white;
 }
 
-.btn-secondary:hover,
-[data-custom-colors="true"] .btn-secondary:hover {
-  background-color: rgba(236, 132, 181, 0.8);
-  border-color: rgba(236, 132, 181, 0.8);
+.btn-secondary:hover {
+  background-color: color-mix(in srgb, var(--accent-color, #ec84b5) 80%, black);
+  border-color: color-mix(in srgb, var(--accent-color, #ec84b5) 80%, black);
   color: white;
 }
 
@@ -110,17 +107,15 @@
   color: white;
 }
 
-.btn-accent,
-[data-custom-colors="true"] .btn-accent {
-  background-color: #634396;
-  border-color: #634396;
+.btn-accent {
+  background-color: var(--accent-color, #634396);
+  border-color: var(--accent-color, #634396);
   color: white;
 }
 
-.btn-accent:hover,
-[data-custom-colors="true"] .btn-accent:hover {
-  background-color: rgba(99, 67, 150, 0.8);
-  border-color: rgba(99, 67, 150, 0.8);
+.btn-accent:hover {
+  background-color: color-mix(in srgb, var(--accent-color, #634396) 80%, black);
+  border-color: color-mix(in srgb, var(--accent-color, #634396) 80%, black);
   color: white;
 }
 
@@ -491,4 +486,16 @@
 .badge-role {
   font-weight: 600;
   font-size: 0.75rem;
+}
+
+.badge-accent {
+  background-color: var(--accent-color, #634396);
+  border-color: var(--accent-color, #634396);
+  color: white;
+}
+
+.badge-secondary {
+  background-color: var(--accent-color, #ec84b5);
+  border-color: var(--accent-color, #ec84b5);
+  color: white;
 }

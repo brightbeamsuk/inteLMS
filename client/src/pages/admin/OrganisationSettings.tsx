@@ -135,6 +135,14 @@ export function AdminOrganisationSettings() {
     onSuccess: () => {
       // Invalidate organization queries to refresh data everywhere
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      
+      // Force a page refresh for color changes to take immediate effect
+      if (brandingData.useCustomColors) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }
+      
       toast({
         title: "Success",
         description: "Organization settings saved successfully",
