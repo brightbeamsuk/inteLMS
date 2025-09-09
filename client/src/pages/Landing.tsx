@@ -1,6 +1,14 @@
+import { useState } from 'react';
+import { SignIn } from "@/components/auth/SignIn";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 export function Landing() {
+  const [showLoginForm, setShowLoginForm] = useState(false);
+
+  // If user clicked login/signup, show the login form
+  if (showLoginForm) {
+    return <SignIn />;
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Navigation Header */}
@@ -15,20 +23,20 @@ export function Landing() {
               />
             </div>
             <div className="flex items-center space-x-4">
-              <a 
-                href="/api/login" 
+              <button 
+                onClick={() => setShowLoginForm(true)}
                 className="btn btn-outline btn-primary"
                 data-testid="button-login"
               >
                 Sign In
-              </a>
-              <a 
-                href="/api/login" 
+              </button>
+              <button 
+                onClick={() => setShowLoginForm(true)}
                 className="btn btn-primary"
                 data-testid="button-signup"
               >
                 Get Started
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -50,14 +58,14 @@ export function Landing() {
               </p>
               <div className="mt-8 sm:flex sm:justify-center lg:justify-start">
                 <div className="rounded-md shadow">
-                  <a 
-                    href="/api/login" 
+                  <button 
+                    onClick={() => setShowLoginForm(true)}
                     className="btn btn-primary btn-lg w-full sm:w-auto"
                     data-testid="button-hero-cta"
                   >
                     <i className="fas fa-rocket mr-2"></i>
                     Start Free Trial
-                  </a>
+                  </button>
                 </div>
                 <div className="mt-3 sm:mt-0 sm:ml-3">
                   <button className="btn btn-outline btn-lg w-full sm:w-auto">
@@ -294,14 +302,14 @@ export function Landing() {
             exceptional learning experiences.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-            <a 
-              href="/api/login" 
+            <button 
+              onClick={() => setShowLoginForm(true)}
               className="btn btn-white btn-lg"
               data-testid="button-cta-signup"
             >
               <i className="fas fa-rocket mr-2"></i>
               Start Your Free Trial
-            </a>
+            </button>
             <button className="btn btn-outline border-white text-white hover:bg-white hover:text-primary btn-lg">
               <i className="fas fa-phone mr-2"></i>
               Contact Sales
