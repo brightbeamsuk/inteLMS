@@ -2735,6 +2735,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Audit Log API (Admin access with feature check)
+  app.get('/api/admin/audit-logs/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = req.params.organisationId;
+      
+      // For admins, ensure they can only access their own organisation's data
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied: Cannot access other organisation data' });
+      }
+
+      // Get organisation to check plan features
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      // Check if audit log feature is enabled for the organisation's plan
+      const planFeatures = await storage.getPlanFeatureMappings(organisation.planId);
+      const auditLogFeature = planFeatures.find(mapping => mapping.featureId === 'audit_log');
+      
+      if (!auditLogFeature || !auditLogFeature.enabled) {
+        return res.status(403).json({ message: 'Audit log feature not available for your plan' });
+      }
+
+      // Get pagination parameters
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      // Fetch audit logs for the organisation
+      const auditLogs = await storage.getAuditLogs(organisationId, limit, offset);
+      
+      res.json(auditLogs);
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
+      res.status(500).json({ message: 'Failed to fetch audit logs' });
+    }
+  });
+
+  // Create audit log entry (internal use)
+  app.post('/api/admin/audit-logs', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { organisationId, action, resource, resourceId, details } = req.body;
+      
+      // For admins, ensure they can only create logs for their own organisation
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied: Cannot create logs for other organisation' });
+      }
+
+      // Create audit log entry
+      const auditLog = await storage.createAuditLog({
+        organisationId,
+        userId: user.id,
+        action,
+        resource,
+        resourceId,
+        details: details || '',
+        ipAddress: req.ip || req.connection.remoteAddress || '',
+        userAgent: req.get('User-Agent') || '',
+      });
+      
+      res.status(201).json(auditLog);
+    } catch (error) {
+      console.error('Error creating audit log:', error);
+      res.status(500).json({ message: 'Failed to create audit log' });
+    }
+  });
+
   // Get training matrix data
   app.get('/api/training-matrix', requireAuth, async (req: any, res) => {
     try {
