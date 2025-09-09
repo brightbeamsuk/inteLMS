@@ -18,7 +18,53 @@ interface PlanFeature {
   isDefault: boolean;
 }
 
+interface Organisation {
+  id: string;
+  name: string;
+  displayName: string;
+  planId?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  status: string;
+}
+
+interface OrganisationStats {
+  activeUsers: number;
+  adminUsers: number;
+  coursesAssigned: number;
+  completedCourses: number;
+  totalUsers: number;
+  averageScore: number;
+}
+
 export function AdminBilling() {
+  const { data: currentUser } = useQuery({
+    queryKey: ['/api/auth/user'],
+  });
+
+  const { data: organisation, isLoading: orgLoading } = useQuery<Organisation>({
+    queryKey: ['/api/organisations', currentUser?.organisationId],
+    enabled: !!currentUser?.organisationId,
+    queryFn: async () => {
+      const response = await fetch(`/api/organisations/${currentUser.organisationId}`, { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch organisation: ${response.statusText}`);
+      }
+      return response.json();
+    },
+  });
+
+  const { data: organisationStats, isLoading: statsLoading } = useQuery<OrganisationStats>({
+    queryKey: ['/api/admin/stats'],
+    queryFn: async () => {
+      const response = await fetch('/api/admin/stats', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch organisation stats: ${response.statusText}`);
+      }
+      return response.json();
+    },
+  });
+
   const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
     queryKey: ['/api/plans'],
     queryFn: async () => {
@@ -41,8 +87,9 @@ export function AdminBilling() {
     },
   });
 
-  // Mock current plan - in real implementation this would come from organization data
-  const currentPlanName = "Professional";
+  // Find the current plan based on organization's planId
+  const currentPlan = plans.find(plan => plan.id === organisation?.planId);
+  const currentPlanName = currentPlan?.name || "No Plan";
 
   return (
     <div>
@@ -70,61 +117,123 @@ export function AdminBilling() {
       {/* Current Plan */}
       <div className="card bg-base-200 shadow-sm mb-6">
         <div className="card-body">
-          <div className="flex justify-between items-start">
-            <div>
-              <h2 className="text-2xl font-bold mb-2" data-testid="text-plan-name">Professional Plan</h2>
-              <p className="text-base-content/60 mb-4" data-testid="text-plan-description">
-                Full LMS features with up to 100 users and unlimited courses
-              </p>
-              <div className="text-3xl font-bold text-primary" data-testid="text-plan-price">
-                £89<span className="text-base font-normal">/month</span>
+          {orgLoading ? (
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <div className="skeleton h-8 w-48 mb-2"></div>
+                <div className="skeleton h-4 w-64 mb-4"></div>
+                <div className="skeleton h-10 w-32"></div>
+              </div>
+              <div className="text-right">
+                <div className="skeleton h-6 w-16 mb-2"></div>
+                <div className="skeleton h-4 w-32 mb-1"></div>
+                <div className="skeleton h-4 w-24"></div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="badge badge-success mb-2" data-testid="badge-plan-status">Active</div>
-              <div className="text-sm text-base-content/60">
-                <div data-testid="text-renewal-date">Next billing: March 15, 2024</div>
-                <div data-testid="text-billing-cycle">Monthly billing</div>
+          ) : (
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold mb-2" data-testid="text-plan-name">
+                  {currentPlan?.name || "No Plan Assigned"}
+                </h2>
+                <p className="text-base-content/60 mb-4" data-testid="text-plan-description">
+                  {currentPlan?.description || "No plan description available"}
+                </p>
+                <div className="text-3xl font-bold text-primary" data-testid="text-plan-price">
+                  {currentPlan ? (
+                    <>£{currentPlan.pricePerUser.toFixed(2)}<span className="text-base font-normal">/user/month</span></>
+                  ) : (
+                    <span className="text-lg">Contact support for pricing</span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`badge mb-2 ${organisation?.status === 'active' ? 'badge-success' : 'badge-warning'}`} data-testid="badge-plan-status">
+                  {organisation?.status === 'active' ? 'Active' : organisation?.status || 'Unknown'}
+                </div>
+                <div className="text-sm text-base-content/60">
+                  <div data-testid="text-organisation-name">{organisation?.displayName}</div>
+                  <div data-testid="text-billing-cycle">Monthly billing</div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* Usage Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-primary">
-            <i className="fas fa-users text-2xl"></i>
-          </div>
-          <div className="stat-title">Users</div>
-          <div className="stat-value text-primary" data-testid="stat-users-count">47</div>
-          <div className="stat-desc" data-testid="stat-users-limit">of 100 limit</div>
-          <div className="mt-2">
-            <progress className="progress progress-primary w-full" value="47" max="100"></progress>
-          </div>
-        </div>
-        
-        <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-secondary">
-            <i className="fas fa-graduation-cap text-2xl"></i>
-          </div>
-          <div className="stat-title">Course Assignments</div>
-          <div className="stat-value text-secondary" data-testid="stat-assignments-count">342</div>
-          <div className="stat-desc" data-testid="stat-assignments-period">This month</div>
-        </div>
-        
-        <div className="stat bg-base-200 rounded-lg shadow-sm">
-          <div className="stat-figure text-accent">
-            <i className="fas fa-cloud text-2xl"></i>
-          </div>
-          <div className="stat-title">Storage Used</div>
-          <div className="stat-value text-accent" data-testid="stat-storage-used">2.3 GB</div>
-          <div className="stat-desc" data-testid="stat-storage-limit">of 10 GB limit</div>
-          <div className="mt-2">
-            <progress className="progress progress-accent w-full" value="23" max="100"></progress>
-          </div>
-        </div>
+        {statsLoading ? (
+          Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="stat bg-base-200 rounded-lg shadow-sm">
+              <div className="stat-figure">
+                <div className="skeleton w-8 h-8 rounded-full"></div>
+              </div>
+              <div className="skeleton h-4 w-16 mb-2"></div>
+              <div className="skeleton h-8 w-12 mb-2"></div>
+              <div className="skeleton h-3 w-20"></div>
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="stat bg-base-200 rounded-lg shadow-sm">
+              <div className="stat-figure text-primary">
+                <i className="fas fa-users text-2xl"></i>
+              </div>
+              <div className="stat-title">Active Users</div>
+              <div className="stat-value text-primary" data-testid="stat-users-count">
+                {organisationStats?.activeUsers || 0}
+              </div>
+              <div className="stat-desc" data-testid="stat-users-total">
+                of {organisationStats?.totalUsers || 0} total users
+              </div>
+              {organisationStats?.totalUsers ? (
+                <div className="mt-2">
+                  <progress 
+                    className="progress progress-primary w-full" 
+                    value={organisationStats.activeUsers || 0} 
+                    max={organisationStats.totalUsers}
+                  ></progress>
+                </div>
+              ) : null}
+            </div>
+            
+            <div className="stat bg-base-200 rounded-lg shadow-sm">
+              <div className="stat-figure text-secondary">
+                <i className="fas fa-graduation-cap text-2xl"></i>
+              </div>
+              <div className="stat-title">Course Assignments</div>
+              <div className="stat-value text-secondary" data-testid="stat-assignments-count">
+                {organisationStats?.coursesAssigned || 0}
+              </div>
+              <div className="stat-desc" data-testid="stat-assignments-period">
+                Total assigned
+              </div>
+            </div>
+            
+            <div className="stat bg-base-200 rounded-lg shadow-sm">
+              <div className="stat-figure text-accent">
+                <i className="fas fa-trophy text-2xl"></i>
+              </div>
+              <div className="stat-title">Completed Courses</div>
+              <div className="stat-value text-accent" data-testid="stat-completed-count">
+                {organisationStats?.completedCourses || 0}
+              </div>
+              <div className="stat-desc" data-testid="stat-average-score">
+                Avg score: {organisationStats?.averageScore ? `${organisationStats.averageScore.toFixed(1)}%` : 'N/A'}
+              </div>
+              {organisationStats?.coursesAssigned ? (
+                <div className="mt-2">
+                  <progress 
+                    className="progress progress-accent w-full" 
+                    value={organisationStats.completedCourses || 0} 
+                    max={organisationStats.coursesAssigned}
+                  ></progress>
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Payment Method */}
