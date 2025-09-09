@@ -475,11 +475,11 @@ The {{organisationDisplayName}} Team`
         smtpHost: orgSettings.smtpHost || '',
         smtpPort: orgSettings.smtpPort?.toString() || '587',
         smtpUsername: orgSettings.smtpUsername || '',
-        smtpPassword: '', // Never populate password for security
+        smtpPassword: (orgSettings as any).apiKey || orgSettings.smtpPassword ? '••••••••' : '', // Show masked if exists
         smtpSecure: orgSettings.smtpSecure !== false,
-        // API fields
-        apiKey: '', // Never populate for security
-        apiSecret: '', // Never populate for security
+        // API fields - show masked values if they exist
+        apiKey: (orgSettings as any).apiKey ? '••••••••••••••••' : '',
+        apiSecret: (orgSettings as any).apiSecret ? '••••••••••••••••' : '',
         apiBaseUrl: (orgSettings as any).apiBaseUrl || '',
         apiDomain: (orgSettings as any).apiDomain || '',
         apiRegion: (orgSettings as any).apiRegion || '',
@@ -512,14 +512,21 @@ The {{organisationDisplayName}} Team`
         settings.smtpHost = emailData.smtpHost;
         settings.smtpPort = parseInt(emailData.smtpPort);
         settings.smtpUsername = emailData.smtpUsername;
-        settings.smtpPassword = emailData.smtpPassword;
+        // Only send password if it's not a masked value
+        if (emailData.smtpPassword && !emailData.smtpPassword.startsWith('••')) {
+          settings.smtpPassword = emailData.smtpPassword;
+        }
         settings.smtpSecure = emailData.smtpSecure;
       } else {
-        // API providers
-        settings.apiKey = emailData.apiKey;
+        // API providers - only send keys if they're not masked values
+        if (emailData.apiKey && !emailData.apiKey.startsWith('••')) {
+          settings.apiKey = emailData.apiKey;
+        }
         
         if (emailData.provider === 'mailjet_api') {
-          settings.apiSecret = emailData.apiSecret;
+          if (emailData.apiSecret && !emailData.apiSecret.startsWith('••')) {
+            settings.apiSecret = emailData.apiSecret;
+          }
         }
         if (emailData.provider === 'mailgun_api') {
           settings.apiDomain = emailData.apiDomain;
@@ -1360,11 +1367,16 @@ The {{organisationDisplayName}} Team`
                       <input 
                         type="password" 
                         className="input input-bordered" 
-                        placeholder="••••••••"
+                        placeholder={emailSettings.smtpPassword && emailSettings.smtpPassword.startsWith('••') ? "Password configured" : "Enter password"}
                         value={emailSettings.smtpPassword}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
                         data-testid="input-smtp-password"
                       />
+                      {emailSettings.smtpPassword && emailSettings.smtpPassword.startsWith('••') && (
+                        <div className="label">
+                          <span className="label-text-alt text-success">✓ Password is configured. Leave blank to keep existing password.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1395,11 +1407,16 @@ The {{organisationDisplayName}} Team`
                     <input 
                       type="password" 
                       className="input input-bordered" 
-                      placeholder="Enter your API key"
+                      placeholder={emailSettings.apiKey && emailSettings.apiKey.startsWith('••') ? "API key configured" : "Enter your API key"}
                       value={emailSettings.apiKey}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, apiKey: e.target.value }))}
                       data-testid="input-api-key"
                     />
+                    {emailSettings.apiKey && emailSettings.apiKey.startsWith('••') && (
+                      <div className="label">
+                        <span className="label-text-alt text-success">✓ API key is configured. Leave blank to keep existing key.</span>
+                      </div>
+                    )}
                   </div>
 
                   {emailSettings.provider === 'mailjet_api' && (
@@ -1410,11 +1427,16 @@ The {{organisationDisplayName}} Team`
                       <input 
                         type="password" 
                         className="input input-bordered" 
-                        placeholder="Enter your API secret"
+                        placeholder={emailSettings.apiSecret && emailSettings.apiSecret.startsWith('••') ? "API secret configured" : "Enter your API secret"}
                         value={emailSettings.apiSecret}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, apiSecret: e.target.value }))}
                         data-testid="input-api-secret"
                       />
+                      {emailSettings.apiSecret && emailSettings.apiSecret.startsWith('••') && (
+                        <div className="label">
+                          <span className="label-text-alt text-success">✓ API secret is configured. Leave blank to keep existing secret.</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
