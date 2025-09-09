@@ -16,6 +16,21 @@ interface OrganisationSettings {
   defaultCertificateDownload: boolean;
 }
 
+interface Organisation {
+  id: string;
+  name: string;
+  planId?: string;
+  logoUrl?: string;
+  displayName?: string;
+  subdomain?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  useCustomColors?: boolean;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+}
+
 export function AdminOrganisationSettings() {
   const [activeTab, setActiveTab] = useState(0);
   const { toast } = useToast();
@@ -23,7 +38,7 @@ export function AdminOrganisationSettings() {
   const { user } = useAuth();
 
   // Fetch current organization data
-  const { data: organization, isLoading: orgLoading } = useQuery({
+  const { data: organization, isLoading: orgLoading } = useQuery<Organisation>({
     queryKey: ['/api/organisations', user?.organisationId],
     enabled: !!user?.organisationId,
   });
@@ -33,7 +48,7 @@ export function AdminOrganisationSettings() {
     queryKey: ['/api/plan-features/mappings', organization?.planId],
     enabled: !!organization?.planId,
     queryFn: async () => {
-      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+      const response = await fetch(`/api/plan-features/mappings/${organization?.planId}`, {
         credentials: 'include'
       });
       if (!response.ok) {
