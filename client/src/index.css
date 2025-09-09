@@ -202,47 +202,6 @@
   color: var(--color-primary);
 }
 
-/* Default toggle styling - green throughout the system */
-.toggle:checked,
-.toggle-primary:checked,
-input[type="checkbox"]:checked.toggle,
-input[type="checkbox"]:checked.toggle-primary,
-.form-control .toggle:checked,
-.toggle.toggle-primary:checked {
-  background-color: #4ade80 !important;
-  border-color: #4ade80 !important;
-  --tglbg: #4ade80 !important;
-}
-
-.toggle,
-.toggle-primary,
-input[type="checkbox"].toggle,
-input[type="checkbox"].toggle-primary,
-.form-control .toggle,
-.toggle.toggle-primary {
-  background-color: white !important;
-  border-color: #d1d5db !important;
-  --tglbg: white !important;
-}
-
-.toggle:checked::after,
-.toggle-primary:checked::after,
-input[type="checkbox"]:checked.toggle::after,
-input[type="checkbox"]:checked.toggle-primary::after,
-.form-control .toggle:checked::after,
-.toggle.toggle-primary:checked::after {
-  background-color: white !important;
-}
-
-.toggle::after,
-.toggle-primary::after,
-input[type="checkbox"].toggle::after,
-input[type="checkbox"].toggle-primary::after,
-.form-control .toggle::after,
-.toggle.toggle-primary::after {
-  background-color: #d1d5db !important;
-}
-
 /* Custom brand color overrides - only when custom colors are enabled */
 [data-custom-colors="true"] .toggle:checked,
 [data-custom-colors="true"] .toggle-primary:checked,
@@ -253,6 +212,35 @@ input[type="checkbox"].toggle-primary::after,
   background-color: var(--primary-color, #634396) !important;
   border-color: var(--primary-color, #634396) !important;
   --tglbg: var(--primary-color, #634396) !important;
+}
+
+[data-custom-colors="true"] .toggle,
+[data-custom-colors="true"] .toggle-primary,
+[data-custom-colors="true"] input[type="checkbox"].toggle,
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary,
+[data-custom-colors="true"] .form-control .toggle,
+[data-custom-colors="true"] .toggle.toggle-primary {
+  background-color: white !important;
+  border-color: #d1d5db !important;
+  --tglbg: white !important;
+}
+
+[data-custom-colors="true"] .toggle:checked::after,
+[data-custom-colors="true"] .toggle-primary:checked::after,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle::after,
+[data-custom-colors="true"] input[type="checkbox"]:checked.toggle-primary::after,
+[data-custom-colors="true"] .form-control .toggle:checked::after,
+[data-custom-colors="true"] .toggle.toggle-primary:checked::after {
+  background-color: white !important;
+}
+
+[data-custom-colors="true"] .toggle::after,
+[data-custom-colors="true"] .toggle-primary::after,
+[data-custom-colors="true"] input[type="checkbox"].toggle::after,
+[data-custom-colors="true"] input[type="checkbox"].toggle-primary::after,
+[data-custom-colors="true"] .form-control .toggle::after,
+[data-custom-colors="true"] .toggle.toggle-primary::after {
+  background-color: #9ca3af !important;
 }
 
 /* Checkbox styling with custom brand colors */
