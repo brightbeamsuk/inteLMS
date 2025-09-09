@@ -23,6 +23,7 @@ interface BrevoResponse {
   messageId?: string;
   data?: any;
   endpoint: string;
+  latencyMs?: number;
 }
 
 export class BrevoClient {
@@ -253,11 +254,13 @@ export class BrevoClient {
     try {
       await storage.createEmailLog({
         organisationId: this.organizationId,
-        recipient: recipientEmail || 'unknown',
+        toEmail: recipientEmail || 'unknown',
         subject: 'Test Email',
-        provider: 'brevo_api',
         status: httpStatus >= 200 && httpStatus < 300 ? 'sent' : 'failed',
         sentAt: new Date(),
+        smtpHost: 'api.brevo.com',
+        smtpPort: 443,
+        fromEmail: 'system@inteLMS.com',
         metadata: {
           provider: 'brevo_api',
           endpoint,
@@ -291,7 +294,7 @@ export class BrevoClient {
     return {
       ...response,
       latencyMs
-    };
+    } as BrevoResponse;
   }
 
   /**
