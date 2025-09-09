@@ -180,7 +180,7 @@
 /* Left menu styling for selected items - inteLMS #634396 theme */
 .drawer-side .menu a.active,
 .menu a.active {
-  background-color: #634396 !important;
+  background-color: var(--primary-color, #634396) !important;
   color: white !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
@@ -189,29 +189,13 @@
 
 .drawer-side .menu a:hover:not(.active),
 .menu a:hover:not(.active) {
-  background-color: rgba(99, 67, 150, 0.1) !important;
-  color: #634396 !important;
+  background-color: color-mix(in srgb, var(--primary-color, #634396) 10%, transparent) !important;
+  color: var(--primary-color, #634396) !important;
   opacity: 1 !important;
   border-radius: 0.5rem !important;
 }
 
-/* Override for custom colors when active */
-[data-custom-colors="true"] .drawer-side .menu a.active,
-[data-custom-colors="true"] .menu a.active {
-  background-color: #634396 !important;
-  color: white !important;
-  opacity: 1 !important;
-  border-radius: 0.5rem !important;
-  font-weight: 600 !important;
-}
-
-[data-custom-colors="true"] .drawer-side .menu a:hover:not(.active),
-[data-custom-colors="true"] .menu a:hover:not(.active) {
-  background-color: rgba(99, 67, 150, 0.1) !important;
-  color: #634396 !important;
-  opacity: 1 !important;
-  border-radius: 0.5rem !important;
-}
+/* Remove these overrides as they're now handled by the CSS variables above */
 
 /* Breadcrumb active states */
 [data-custom-colors="true"] .breadcrumbs ul li a:hover {
