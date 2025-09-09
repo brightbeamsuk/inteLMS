@@ -87,6 +87,10 @@ export function AdminOrganisationSettings() {
   const customDomainFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_domain');
   const hasCustomDomainAccess = customDomainFeature?.enabled || false;
 
+  // Check if remove branding feature is enabled
+  const removeBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'remove_branding');
+  const hasBrandingAccess = removeBrandingFeature?.enabled || false;
+
   const handleLogoUpload = async () => {
     try {
       const response = await apiRequest('POST', '/api/objects/upload', {});
@@ -214,22 +218,43 @@ export function AdminOrganisationSettings() {
               <div className="form-control max-w-md">
                 <label className="label">
                   <span className="label-text">Organisation Logo</span>
+                  {!hasBrandingAccess && (
+                    <span className="label-text-alt text-warning">
+                      <i className="fas fa-lock mr-1"></i>
+                      Premium Feature
+                    </span>
+                  )}
                 </label>
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={5242880} // 5MB
-                  onGetUploadParameters={handleLogoUpload}
-                  onComplete={handleLogoComplete}
-                  buttonClassName="btn btn-outline w-full"
-                >
-                  <i className="fas fa-upload mr-2"></i>
-                  {brandingData.logoUrl ? "Change Logo" : "Upload Logo"}
-                </ObjectUploader>
-                {brandingData.logoUrl && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <img src={brandingData.logoUrl} alt="Logo preview" className="w-12 h-12 object-contain" />
-                    <span className="text-sm text-success">Logo uploaded</span>
-                  </div>
+                {hasBrandingAccess ? (
+                  <>
+                    <ObjectUploader
+                      maxNumberOfFiles={1}
+                      maxFileSize={5242880} // 5MB
+                      onGetUploadParameters={handleLogoUpload}
+                      onComplete={handleLogoComplete}
+                      buttonClassName="btn btn-outline w-full"
+                    >
+                      <i className="fas fa-upload mr-2"></i>
+                      {brandingData.logoUrl ? "Change Logo" : "Upload Logo"}
+                    </ObjectUploader>
+                    {brandingData.logoUrl && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={brandingData.logoUrl} alt="Logo preview" className="w-12 h-12 object-contain" />
+                        <span className="text-sm text-success">Logo uploaded</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="btn btn-outline btn-disabled w-full">
+                      <i className="fas fa-lock mr-2"></i>
+                      Custom Logo Upload (Premium)
+                    </div>
+                    <div className="alert alert-info mt-2">
+                      <i className="fas fa-info-circle"></i>
+                      <span>Custom logo branding is available with premium plans. Your organization will use the default inteLMS logo. Contact support to upgrade your plan.</span>
+                    </div>
+                  </>
                 )}
               </div>
 
