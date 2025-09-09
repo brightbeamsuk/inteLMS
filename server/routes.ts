@@ -2733,7 +2733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           </div>
         `,
         organisationId,
-        templateType: 'test_email',
+        templateType: 'smtp_test',
         metadata: {
           userAgent: req.get('User-Agent'),
           ipAddress: req.ip,
