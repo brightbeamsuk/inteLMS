@@ -93,11 +93,25 @@ export const organisations = pgTable("organisations", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Course folders table
+export const courseFolders = pgTable("course_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(), // e.g., "Childcare", "Elderly Care", "Construction"
+  description: text("description"),
+  color: varchar("color").default('#3b82f6'), // folder color for UI
+  icon: varchar("icon").default('fas fa-folder'), // FontAwesome icon class
+  sortOrder: integer("sort_order").default(0),
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Courses table
 export const courses = pgTable("courses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: varchar("title").notNull(),
   description: text("description"),
+  folderId: varchar("folder_id"), // Reference to course folder
   scormPackageUrl: varchar("scorm_package_url"),
   coverImageUrl: varchar("cover_image_url"),
   estimatedDuration: integer("estimated_duration"), // in minutes
@@ -114,6 +128,15 @@ export const courses = pgTable("courses", {
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Organisation course folder access table
+export const organisationCourseFolders = pgTable("organisation_course_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  folderId: varchar("folder_id").notNull(),
+  grantedBy: varchar("granted_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Course assignments table
@@ -316,18 +339,47 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   certificates: many(certificates),
   settings: one(organisationSettings),
   certificateTemplates: many(certificateTemplates),
+  courseFolderAccess: many(organisationCourseFolders),
   plan: one(plans, {
     fields: [organisations.planId],
     references: [plans.id],
   }),
 }));
 
+export const courseFoldersRelations = relations(courseFolders, ({ one, many }) => ({
+  courses: many(courses),
+  createdByUser: one(users, {
+    fields: [courseFolders.createdBy],
+    references: [users.id],
+  }),
+  organisationAccess: many(organisationCourseFolders),
+}));
+
 export const coursesRelations = relations(courses, ({ one, many }) => ({
   assignments: many(assignments),
   completions: many(completions),
   certificates: many(certificates),
+  folder: one(courseFolders, {
+    fields: [courses.folderId],
+    references: [courseFolders.id],
+  }),
   createdByUser: one(users, {
     fields: [courses.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const organisationCourseFoldersRelations = relations(organisationCourseFolders, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [organisationCourseFolders.organisationId],
+    references: [organisations.id],
+  }),
+  folder: one(courseFolders, {
+    fields: [organisationCourseFolders.folderId],
+    references: [courseFolders.id],
+  }),
+  grantedByUser: one(users, {
+    fields: [organisationCourseFolders.grantedBy],
     references: [users.id],
   }),
 }));
@@ -521,6 +573,18 @@ export const insertPlanFeatureMappingSchema = createInsertSchema(planFeatureMapp
   createdAt: true,
 });
 
+// Course folder insert schemas
+export const insertCourseFolderSchema = createInsertSchema(courseFolders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrganisationCourseFolderSchema = createInsertSchema(organisationCourseFolders).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -565,3 +629,10 @@ export type PlanFeature = typeof planFeatures.$inferSelect;
 
 export type InsertPlanFeatureMapping = z.infer<typeof insertPlanFeatureMappingSchema>;
 export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
+
+// Course folder types
+export type InsertCourseFolder = z.infer<typeof insertCourseFolderSchema>;
+export type CourseFolder = typeof courseFolders.$inferSelect;
+
+export type InsertOrganisationCourseFolder = z.infer<typeof insertOrganisationCourseFolderSchema>;
+export type OrganisationCourseFolder = typeof organisationCourseFolders.$inferSelect;
