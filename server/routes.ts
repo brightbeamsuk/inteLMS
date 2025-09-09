@@ -10,7 +10,7 @@ import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { singleMailerService } from "./services/singleMailerService";
-import { BrevoClient } from "./services/brevoClient";
+import { BrevoClient, resolveBrevoKey } from "./services/brevoClient";
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
@@ -2752,13 +2752,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         useBrevoApi
       } = req.body;
 
+      // Get existing settings to prevent masked value override
+      const existingOrg = await storage.getOrganisationById(organisationId);
+      const existingSettings = existingOrg?.emailSettings || {};
+
+      // Clean and validate API key - prevent masked value storage
+      const cleanBrevoKey = (key: string | undefined): string | null => {
+        if (!key) return null;
+        const cleaned = key.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
+        // If it's a masked value (contains only • or similar characters), keep existing
+        if (cleaned && /^[•*]+$/.test(cleaned)) {
+          return existingSettings.brevoApiKey || null;
+        }
+        return cleaned || null;
+      };
+
+      // Clean SMTP password similarly
+      const cleanSmtpPassword = (password: string | undefined): string | null => {
+        if (!password) return null;
+        const cleaned = password.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
+        // If it's a masked value, keep existing
+        if (cleaned && /^[•*]+$/.test(cleaned)) {
+          return existingSettings.smtpPassword || null;
+        }
+        return cleaned || null;
+      };
+
+      const processedBrevoKey = cleanBrevoKey(brevoApiKey);
+      const processedSmtpPassword = cleanSmtpPassword(smtpPassword);
+
       // Validate required fields based on delivery method
       if (useBrevoApi) {
-        if (!brevoApiKey || !fromEmail) {
+        if (!processedBrevoKey || !fromEmail) {
           return res.status(400).json({ message: 'Brevo API key and from email are required for API delivery' });
         }
       } else {
-        if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+        if (!smtpHost || !smtpUsername || !processedSmtpPassword || !fromEmail) {
           return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
         }
       }
@@ -2767,11 +2796,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         smtpHost: smtpHost || null,
         smtpPort: smtpPort || 587,
         smtpUsername: smtpUsername || null,
-        smtpPassword: smtpPassword || null,
+        smtpPassword: processedSmtpPassword,
         smtpSecure: smtpSecure !== false, // Default to true
         fromEmail,
         fromName: fromName || 'LMS System',
-        brevoApiKey: brevoApiKey || null,
+        brevoApiKey: processedBrevoKey,
         useBrevoApi: useBrevoApi || false,
       };
 
@@ -2912,11 +2941,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // BREVO API HEALTH CHECK AND SEND USING CENTRALIZED CLIENT
+      // BREVO API HEALTH CHECK AND SEND USING ENHANCED CLIENT WITH KEY RESOLUTION
       if (settings.provider === 'brevo_api') {
-        console.log('Using BrevoClient for health check and send...');
+        console.log('Using enhanced BrevoClient with key resolution...');
         
-        const brevoClient = BrevoClient.create(settings.brevo.apiKey, organisationId);
+        // Use key resolution with org/platform fallback
+        let brevoClient;
+        try {
+          // Get platform settings for fallback
+          const platformSettings = await storage.getSystemSmtpSettings();
+          
+          // Resolve best available key 
+          brevoClient = BrevoClient.createWithKeyResolution(
+            { brevo: settings.brevo }, 
+            platformSettings, 
+            organisationId
+          );
+        } catch (keyError) {
+          console.error('Brevo key resolution failed:', keyError);
+          return res.status(422).json({
+            success: false,
+            provider: 'brevo_api',
+            httpStatus: 422,
+            message: `API key appears empty/invalid`,
+            details: {
+              endpoint: '/v3/account',
+              from: settings.fromEmail,
+              to: testEmail,
+              apiKeySource: 'none',
+              apiKeyLength: 0,
+              helpText: 'Configure a valid Brevo API key in your organisation settings or platform settings.'
+            }
+          });
+        }
         
         // Health check first
         const healthCheck = await brevoClient.checkAccount();
@@ -2924,13 +2981,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!healthCheck.success) {
           return res.json({
             success: false,
-            provider: 'brevo_api',
+            provider: healthCheck.provider || 'brevo_api',
             httpStatus: healthCheck.httpStatus,
             message: healthCheck.message,
             details: {
               endpoint: healthCheck.endpoint,
+              endpointHost: healthCheck.endpointHost,
               from: settings.fromEmail,
               to: testEmail,
+              apiKeySource: healthCheck.apiKeySource,
+              apiKeyPreview: healthCheck.apiKeyPreview,
+              apiKeyLength: healthCheck.apiKeyLength,
               helpText: healthCheck.httpStatus === 401 || healthCheck.httpStatus === 403 ? 
                 'Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.' : undefined
             }
@@ -2939,7 +3000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log('Brevo health check passed, proceeding with send...');
 
-        // SEND EMAIL VIA BREVO CLIENT WITH LOGGING
+        // SEND EMAIL VIA BREVO CLIENT WITH ENHANCED LOGGING
         const sendResult = await brevoClient.sendEmailWithLogging({
           fromName: settings.fromName || 'inteLMS System',
           fromEmail: settings.fromEmail,
@@ -2948,18 +3009,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           textContent: 'This is a test from inteLMS (brevo_api).'
         });
 
-        // Return structured response format
+        // Return enhanced structured response format with full diagnostics
         return res.json({
           success: sendResult.success,
-          provider: 'brevo_api',
+          provider: sendResult.provider || 'brevo_api',
           httpStatus: sendResult.httpStatus,
           message: sendResult.message,
           details: {
             endpoint: sendResult.endpoint,
+            endpointHost: sendResult.endpointHost,
             from: settings.fromEmail,
             to: testEmail,
             messageId: sendResult.messageId || null,
             latencyMs: (sendResult as any).latencyMs,
+            apiKeySource: sendResult.apiKeySource,
+            apiKeyPreview: sendResult.apiKeyPreview,
+            apiKeyLength: sendResult.apiKeyLength,
             helpText: sendResult.success ? 
               'Check Spam/Quarantine if you don\'t see the email. Also confirm the recipient server isn\'t blocking transactional mail.' :
               (sendResult.httpStatus === 400 && sendResult.message.toLowerCase().includes('sender')) ? 
