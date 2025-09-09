@@ -13,6 +13,7 @@ import type { Transporter } from "nodemailer";
 import { createConnection } from "net";
 import { promisify } from "util";
 import { lookup } from "dns";
+import * as brevo from '@getbrevo/brevo';
 
 const dnsLookup = promisify(lookup);
 
@@ -83,7 +84,7 @@ export class SingleMailerService {
       const smtpConfig = await this.getEffectiveSmtpSettings(options.organisationId);
       
       if (!smtpConfig.settings) {
-        const error = `SMTP not configured. Email delivery requires valid SMTP credentials. No sendmail/direct MX fallbacks allowed. Configure SMTP settings for ${options.organisationId ? 'organisation' : 'system'} level.`;
+        const error = `Email delivery not configured. SMTP/API credentials required. No sendmail/direct MX fallbacks allowed. Configure email settings for ${options.organisationId ? 'organisation' : 'system'} level.`;
         
         // Log failed attempt - STRICT SMTP-ONLY ENFORCEMENT
         await this.logEmailAttempt({
@@ -98,12 +99,17 @@ export class SingleMailerService {
           success: false,
           messageId: null,
           smtpResponse: null,
-          error: `SMTP_NOT_CONFIGURED: ${error}`,
+          error: `EMAIL_NOT_CONFIGURED: ${error}`,
           metadata: options.metadata
         });
         
-        // NO FALLBACKS - Fail immediately if SMTP not configured
+        // NO FALLBACKS - Fail immediately if email not configured
         throw new Error(error);
+      }
+
+      // Check if using Brevo API instead of SMTP
+      if (smtpConfig.settings.useBrevoApi && smtpConfig.settings.brevoApiKey) {
+        return await this.sendViaBrevoApi(options, smtpConfig.settings);
       }
 
       // Resolve DNS to get actual IP
@@ -266,7 +272,7 @@ export class SingleMailerService {
       try {
         const result = await dnsLookup(host);
         resolvedIp = Array.isArray(result) ? result[0].address : result.address;
-      } catch (error) {
+      } catch (error: any) {
         return {
           success: false,
           timestamp,
@@ -360,7 +366,7 @@ export class SingleMailerService {
       }
       
       return { source: 'none' };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting effective SMTP settings:', error);
       return { source: 'none' };
     }
@@ -398,7 +404,7 @@ export class SingleMailerService {
     try {
       const result = await dnsLookup(host);
       return Array.isArray(result) ? result[0].address : result.address;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`DNS resolution failed for ${host}:`, error);
       return 'unresolved';
     }
@@ -534,7 +540,7 @@ export class SingleMailerService {
       };
       
       await storage.createEmailLog(emailLog);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to log email attempt:', error);
       // Don't throw error - logging failure shouldn't break email sending
     }
@@ -617,6 +623,116 @@ export class SingleMailerService {
       <hr>
       <p>Best regards,<br>${organisation.name}</p>
     `;
+  }
+
+  /**
+   * Send email via Brevo API
+   */
+  private async sendViaBrevoApi(
+    options: {
+      to: string;
+      subject: string;
+      html: string;
+      organisationId?: string;
+      templateType?: string;
+      metadata?: EmailMetadata;
+    },
+    settings: any
+  ): Promise<SmtpTestResult> {
+    const startTime = Date.now();
+    const timestamp = new Date().toISOString();
+
+    try {
+      // Configure Brevo API client
+      const apiInstance = new brevo.TransactionalEmailsApi();
+      apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, settings.brevoApiKey);
+
+      // Prepare email data
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.to = [{ email: options.to }];
+      sendSmtpEmail.sender = { 
+        email: settings.fromEmail, 
+        name: settings.fromName || 'LMS Platform' 
+      };
+      sendSmtpEmail.subject = options.subject;
+      sendSmtpEmail.htmlContent = options.html;
+      sendSmtpEmail.headers = {
+        'X-Mailer': 'LMS-Brevo-API-Service',
+        'X-API-Provider': 'Brevo',
+        'X-TLS-Enforced': 'true',
+        'X-No-Fallback': 'strict-api-only'
+      };
+
+      // Send email via Brevo API
+      const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
+      const endTime = Date.now();
+
+      // Log successful send
+      await this.logEmailAttempt({
+        organisationId: options.organisationId,
+        templateType: options.templateType || 'unknown',
+        toEmail: options.to,
+        subject: options.subject,
+        smtpHost: 'brevo-api',
+        smtpPort: 443,
+        resolvedIp: 'api.brevo.com',
+        tlsUsed: true,
+        success: true,
+        messageId: result.response?.body?.messageId || 'brevo-api-sent',
+        smtpResponse: 'Brevo API success',
+        metadata: options.metadata,
+        latencyMs: endTime - startTime
+      });
+
+      return {
+        success: true,
+        timestamp,
+        organisationId: options.organisationId,
+        smtpHost: 'brevo-api',
+        smtpPort: 443,
+        resolvedIp: 'api.brevo.com',
+        tlsEnabled: true,
+        messageId: result.response?.body?.messageId || 'brevo-api-sent',
+        smtpResponse: 'Email sent via Brevo API',
+        latencyMs: endTime - startTime,
+        source: 'organisation'
+      };
+
+    } catch (error: any) {
+      const endTime = Date.now();
+      const errorMessage = error.message || 'Unknown Brevo API error';
+
+      // Log failed attempt
+      await this.logEmailAttempt({
+        organisationId: options.organisationId,
+        templateType: options.templateType || 'unknown',
+        toEmail: options.to,
+        subject: options.subject,
+        smtpHost: 'brevo-api',
+        smtpPort: 443,
+        resolvedIp: 'api.brevo.com',
+        tlsUsed: true,
+        success: false,
+        messageId: null,
+        smtpResponse: null,
+        error: errorMessage,
+        metadata: options.metadata,
+        latencyMs: endTime - startTime
+      });
+
+      return {
+        success: false,
+        timestamp,
+        organisationId: options.organisationId,
+        smtpHost: 'brevo-api',
+        smtpPort: 443,
+        resolvedIp: 'api.brevo.com',
+        tlsEnabled: true,
+        error: `Brevo API Error: ${errorMessage}`,
+        latencyMs: endTime - startTime,
+        source: 'organisation'
+      };
+    }
   }
 
   private generateReminderEmailHtml(user: User, course: Course, assignment: Assignment, organisation: Organisation, daysUntilDue: number): string {
