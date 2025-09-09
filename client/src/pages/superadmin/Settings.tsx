@@ -54,6 +54,42 @@ export function SuperAdminSettings() {
     footerLinks: 'Privacy Policy | Terms of Service | Contact Support',
   });
 
+  // System email settings state
+  const [emailSettings, setEmailSettings] = useState({
+    smtpHost: '',
+    smtpPort: 587,
+    smtpUsername: '',
+    smtpPassword: '',
+    smtpSecure: false,
+    fromEmail: '',
+    fromName: '',
+  });
+
+  const [showTestEmailModal, setShowTestEmailModal] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+
+  // Email provider presets
+  const emailProviders = {
+    gmail: { host: 'smtp.gmail.com', port: 587, secure: false },
+    outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+    brevo: { host: 'smtp-relay.brevo.com', port: 587, secure: false },
+    sendgrid: { host: 'smtp.sendgrid.net', port: 587, secure: false },
+    mailgun: { host: 'smtp.mailgun.org', port: 587, secure: false },
+    amazonses: { host: 'email-smtp.us-east-1.amazonaws.com', port: 587, secure: false },
+  };
+
+  // Load system email settings
+  const { data: systemEmailData, isLoading: emailLoading } = useQuery({
+    queryKey: ['/api/system/email-settings'],
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (systemEmailData) {
+      setEmailSettings(systemEmailData);
+    }
+  }, [systemEmailData]);
+
   // Fetch existing templates
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['/api/certificate-templates'],
@@ -95,6 +131,97 @@ export function SuperAdminSettings() {
       isDefault: false
     };
     saveTemplateMutation.mutate(templateData);
+  };
+
+  // System email settings mutations
+  const saveEmailSettingsMutation = useMutation({
+    mutationFn: async (settings: typeof emailSettings) => {
+      const response = await apiRequest('PUT', '/api/system/email-settings', settings);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/system/email-settings'] });
+      toast({
+        title: "Success",
+        description: "System email settings saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save email settings",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const testEmailMutation = useMutation({
+    mutationFn: async (testEmail: string) => {
+      const response = await apiRequest('POST', '/api/system/test-email', { testEmail });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Test email sent successfully",
+      });
+      setShowTestEmailModal(false);
+      setTestEmailAddress('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send test email",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Email helper functions
+  const handleProviderChange = (provider: string) => {
+    if (provider && emailProviders[provider as keyof typeof emailProviders]) {
+      const preset = emailProviders[provider as keyof typeof emailProviders];
+      setEmailSettings(prev => ({
+        ...prev,
+        smtpHost: preset.host,
+        smtpPort: preset.port,
+        smtpSecure: preset.secure,
+      }));
+    }
+  };
+
+  const handleSaveEmailSettings = () => {
+    if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword || !emailSettings.fromEmail) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required email settings",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveEmailSettingsMutation.mutate(emailSettings);
+  };
+
+  const openTestEmailModal = () => {
+    setTestEmailAddress('');
+    setShowTestEmailModal(true);
+  };
+
+  const closeTestEmailModal = () => {
+    setShowTestEmailModal(false);
+    setTestEmailAddress('');
+  };
+
+  const sendTestEmailToAddress = () => {
+    if (!testEmailAddress) {
+      toast({
+        title: "Error",
+        description: "Please enter an email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    testEmailMutation.mutate(testEmailAddress);
   };
 
   // Delete template mutation
@@ -199,7 +326,7 @@ export function SuperAdminSettings() {
     return preview;
   };
 
-  const tabs = ["Certificate Templates", "Platform Options"];
+  const tabs = ["Certificate Templates", "Platform Options", "Email Settings"];
 
   return (
     <div>
@@ -571,6 +698,250 @@ export function SuperAdminSettings() {
                   <i className="fas fa-save"></i> Save Platform Settings
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Email Settings Tab */}
+          {activeTab === 2 && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">System Email Configuration</h3>
+                <div className="alert alert-info">
+                  <i className="fas fa-info-circle"></i>
+                  <div className="text-sm">
+                    These settings serve as fallback when organizations don't have their own email configuration.
+                  </div>
+                </div>
+              </div>
+
+              {emailLoading ? (
+                <div className="flex justify-center py-4">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Email Provider Selection */}
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-semibold">Email Provider</span>
+                    </label>
+                    <select 
+                      className="select select-bordered"
+                      onChange={(e) => handleProviderChange(e.target.value)}
+                      data-testid="select-email-provider"
+                    >
+                      <option value="">Select a provider to auto-configure</option>
+                      <option value="gmail">Gmail</option>
+                      <option value="outlook">Outlook/Hotmail</option>
+                      <option value="brevo">Brevo (Sendinblue)</option>
+                      <option value="sendgrid">SendGrid</option>
+                      <option value="mailgun">Mailgun</option>
+                      <option value="amazonses">Amazon SES</option>
+                    </select>
+                  </div>
+
+                  {/* SMTP Settings */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">SMTP Host *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="smtp.gmail.com"
+                        value={emailSettings.smtpHost}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpHost: e.target.value }))}
+                        data-testid="input-smtp-host"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">SMTP Port *</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        className="input input-bordered" 
+                        placeholder="587"
+                        value={emailSettings.smtpPort}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPort: parseInt(e.target.value) || 587 }))}
+                        data-testid="input-smtp-port"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">SMTP Username *</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="your-email@gmail.com"
+                        value={emailSettings.smtpUsername}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpUsername: e.target.value }))}
+                        data-testid="input-smtp-username"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">SMTP Password *</span>
+                      </label>
+                      <input 
+                        type="password" 
+                        className="input input-bordered" 
+                        placeholder="your-app-password"
+                        value={emailSettings.smtpPassword}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpPassword: e.target.value }))}
+                        data-testid="input-smtp-password"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">From Email *</span>
+                      </label>
+                      <input 
+                        type="email" 
+                        className="input input-bordered" 
+                        placeholder="system@yourplatform.com"
+                        value={emailSettings.fromEmail}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
+                        data-testid="input-from-email"
+                      />
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">From Name</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        className="input input-bordered" 
+                        placeholder="LMS Platform"
+                        value={emailSettings.fromName}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, fromName: e.target.value }))}
+                        data-testid="input-from-name"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Security Settings */}
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input 
+                        type="checkbox" 
+                        className="toggle"
+                        checked={emailSettings.smtpSecure}
+                        onChange={(e) => setEmailSettings(prev => ({ ...prev, smtpSecure: e.target.checked }))}
+                        data-testid="toggle-smtp-secure"
+                      />
+                      <span className="label-text">
+                        <strong>Use SSL/TLS Encryption</strong>
+                        <div className="text-sm text-base-content/60">
+                          Enable for secure connections (usually for port 465)
+                        </div>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 justify-between">
+                    <button 
+                      className="btn btn-outline"
+                      onClick={openTestEmailModal}
+                      disabled={!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword}
+                      data-testid="button-test-email"
+                    >
+                      <i className="fas fa-paper-plane"></i>
+                      Test Email
+                    </button>
+
+                    <button 
+                      className="btn btn-primary"
+                      onClick={handleSaveEmailSettings}
+                      disabled={saveEmailSettingsMutation.isPending}
+                      data-testid="button-save-email-settings"
+                    >
+                      <i className={`fas ${saveEmailSettingsMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
+                      {saveEmailSettingsMutation.isPending ? 'Saving...' : 'Save Email Settings'}
+                    </button>
+                  </div>
+
+                  {/* Help Section */}
+                  <div className="alert alert-warning">
+                    <i className="fas fa-exclamation-triangle"></i>
+                    <div>
+                      <div className="font-bold">Important Notes</div>
+                      <ul className="text-sm list-disc list-inside space-y-1">
+                        <li>These settings are used when organizations don't have their own email configuration</li>
+                        <li>For Gmail, use App Passwords instead of your regular password</li>
+                        <li>Test the configuration before saving to ensure emails work properly</li>
+                        <li>Organizations with custom email settings will use their own configuration</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Test Email Modal */}
+              {showTestEmailModal && (
+                <div className="modal modal-open">
+                  <div className="modal-box">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg">Send Test Email</h3>
+                      <button 
+                        className="btn btn-sm btn-circle btn-ghost"
+                        onClick={closeTestEmailModal}
+                        data-testid="button-close-test-email-modal"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600">
+                        Enter the email address where you want to send the test email to verify your system SMTP configuration.
+                      </p>
+
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text">Email Address *</span>
+                        </label>
+                        <input 
+                          type="email" 
+                          className="input input-bordered" 
+                          placeholder="test@example.com"
+                          value={testEmailAddress}
+                          onChange={(e) => setTestEmailAddress(e.target.value)}
+                          data-testid="input-test-email-address"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="flex gap-2 justify-end">
+                        <button 
+                          className="btn btn-outline"
+                          onClick={closeTestEmailModal}
+                          data-testid="button-cancel-test-email"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          className="btn btn-primary"
+                          onClick={sendTestEmailToAddress}
+                          disabled={testEmailMutation.isPending || !testEmailAddress}
+                          data-testid="button-send-test-email"
+                        >
+                          <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                          {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
