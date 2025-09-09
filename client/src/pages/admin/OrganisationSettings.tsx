@@ -101,6 +101,9 @@ export function AdminOrganisationSettings() {
     useSecure: true,
   });
 
+  const [showTestEmailModal, setShowTestEmailModal] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+
   const handleEditTemplate = (templateType: string) => {
     const defaultTemplate = getDefaultTemplate(templateType);
     setSelectedTemplate(templateType);
@@ -515,8 +518,8 @@ The {{organisationDisplayName}} Team`
     saveEmailSettingsMutation.mutate(emailSettings);
   };
 
-  const sendTestEmail = () => {
-    if (!user?.organisationId || !user?.email) return;
+  const openTestEmailModal = () => {
+    if (!user?.organisationId) return;
     
     if (!emailSettings.smtpHost || !emailSettings.smtpUsername || !emailSettings.smtpPassword || !emailSettings.fromEmail) {
       toast({
@@ -527,7 +530,28 @@ The {{organisationDisplayName}} Team`
       return;
     }
     
-    testEmailMutation.mutate(user.email);
+    // Pre-fill with user's email as default
+    setTestEmailAddress(user?.email || '');
+    setShowTestEmailModal(true);
+  };
+
+  const sendTestEmailToAddress = () => {
+    if (!testEmailAddress) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    testEmailMutation.mutate(testEmailAddress);
+    setShowTestEmailModal(false);
+  };
+
+  const closeTestEmailModal = () => {
+    setShowTestEmailModal(false);
+    setTestEmailAddress('');
   };
 
   // Build tabs array based on role and features
@@ -1001,7 +1025,7 @@ The {{organisationDisplayName}} Team`
                   <button 
                     className="btn btn-outline btn-sm"
                     data-testid="button-test-email"
-                    onClick={sendTestEmail}
+                    onClick={openTestEmailModal}
                     disabled={testEmailMutation.isPending}
                   >
                     <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
@@ -1404,6 +1428,68 @@ The {{organisationDisplayName}} Team`
                   <div className="text-sm">
                     When enabled, users can download their certificates from their Settings page. 
                     Admins can still control this permission individually for each user.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Test Email Modal */}
+          {showTestEmailModal && (
+            <div className="modal modal-open">
+              <div className="modal-box">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-lg">Send Test Email</h3>
+                  <button 
+                    className="btn btn-sm btn-circle btn-ghost"
+                    onClick={closeTestEmailModal}
+                    data-testid="button-close-test-email-modal"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Enter the email address where you want to send the test email to verify your SMTP configuration.
+                  </p>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Email Address *</span>
+                    </label>
+                    <input 
+                      type="email" 
+                      className="input input-bordered" 
+                      placeholder="test@example.com"
+                      value={testEmailAddress}
+                      onChange={(e) => setTestEmailAddress(e.target.value)}
+                      data-testid="input-test-email-address"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex gap-2 justify-end">
+                    <button 
+                      className="btn btn-outline"
+                      onClick={closeTestEmailModal}
+                      data-testid="button-cancel-test-email"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={sendTestEmailToAddress}
+                      disabled={testEmailMutation.isPending || !testEmailAddress}
+                      data-testid="button-send-test-email"
+                      style={{
+                        backgroundColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                        borderColor: organization?.useCustomColors ? organization?.primaryColor || '#3b82f6' : '#3b82f6',
+                      } as React.CSSProperties}
+                    >
+                      <i className={`fas ${testEmailMutation.isPending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i>
+                      {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                    </button>
                   </div>
                 </div>
               </div>
