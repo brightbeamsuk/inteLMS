@@ -233,10 +233,20 @@ export class BrevoClient {
    * Health check to verify API key and account access
    */
   async checkAccount(): Promise<BrevoResponse> {
+    // Debug: Show the exact key being used
+    console.log(`🔧 checkAccount DEBUG: Using key with length=${this.apiKey.length}, source=${this.keySource}, preview="${this.getMaskedKey()}"`);
+    console.log(`🔧 Request will use headers: api-key=${this.apiKey.substring(0, 8)}..., accept=application/json`);
+    
     const response = await this.makeRequest('/account', 'GET', undefined, 10000);
 
-    // Handle specific status codes with friendly messages
+    // Enhanced debugging for 401 errors
     if (response.httpStatus === 401 || response.httpStatus === 403) {
+      console.log(`🚨 BREVO 401/403 ERROR DEBUG:`);
+      console.log(`  Full key being sent: "${this.apiKey.substring(0, 12)}...${this.apiKey.substring(this.apiKey.length - 4)}"`);
+      console.log(`  Key length: ${this.apiKey.length}`);
+      console.log(`  Key source: ${this.keySource}`);
+      console.log(`  Response body:`, response.data);
+      
       return {
         ...response,
         message: 'Brevo rejected the API key. Generate a new one and paste it here.'
