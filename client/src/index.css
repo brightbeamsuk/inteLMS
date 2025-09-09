@@ -202,7 +202,28 @@
   color: var(--color-primary);
 }
 
-/* Toggles reset to DaisyUI defaults - no custom styling */
+/* Toggle styling with custom brand colors */
+.toggle:checked,
+.toggle-primary:checked {
+  background-color: var(--primary-color, #634396);
+  border-color: var(--primary-color, #634396);
+}
+
+.toggle,
+.toggle-primary {
+  background-color: white;
+  border-color: #d1d5db;
+}
+
+.toggle:checked::after,
+.toggle-primary:checked::after {
+  background-color: white;
+}
+
+.toggle::after,
+.toggle-primary::after {
+  background-color: #9ca3af;
+}
 
 /* Checkbox styling with custom brand colors */
 .checkbox:checked,
