@@ -10,6 +10,13 @@ interface AdminLayoutProps {
   children: React.ReactNode;
 }
 
+interface MenuItem {
+  path: string;
+  icon: string;
+  label: string;
+  requiresFeature?: string;
+}
+
 export function AdminLayout({ children }: AdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -103,7 +110,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     }
   };
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     { path: "/admin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/admin/users", icon: "fas fa-users", label: "Users" },
     { path: "/admin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
