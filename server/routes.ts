@@ -2710,14 +2710,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Test email address is required' });
       }
 
-      // Send test email via Brevo API
-      const result = await singleMailerService.sendEmailViaBrevoAPI({
+      // Send test email using configured email provider (Brevo API or SMTP)
+      const result = await singleMailerService.sendEmail({
         to: testEmail,
         subject: 'Test Email from LMS System',
-        htmlContent: `
+        html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Email Configuration Test</h2>
-            <p>This is a test email to verify your Brevo API configuration is working correctly.</p>
+            <p>This is a test email to verify your email configuration is working correctly.</p>
             <div style="background-color: #f0f9ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <h3 style="color: #0369a1; margin-top: 0;">Test Details:</h3>
               <ul style="margin: 0;">
@@ -2728,7 +2728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               </ul>
             </div>
             <p style="color: #666; font-size: 14px;">
-              If you received this email, your Brevo API configuration is working correctly and you can now send system emails for assignments, reminders, and completions.
+              If you received this email, your email configuration is working correctly and you can now send system emails for assignments, reminders, and completions.
             </p>
           </div>
         `,
@@ -2737,21 +2737,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: {
           userAgent: req.get('User-Agent'),
           ipAddress: req.ip,
-          userId: user.id,
-          testType: 'manual_test'
+          userId: user.id
         }
       });
       
       if (result.success) {
-        res.json({ success: true, message: 'Test email sent successfully via Brevo API' });
+        res.json({ success: true, message: 'Test email sent successfully' });
       } else {
-        res.status(500).json({ success: false, message: 'Failed to send test email. Please check your Brevo API key.' });
+        res.status(500).json({ success: false, message: 'Failed to send test email. Please check your email configuration.' });
       }
     } catch (error) {
       console.error('Error sending test email:', error);
       res.status(500).json({ 
         success: false, 
-        message: (error as any)?.message || 'Failed to send test email. Please check your Brevo API key configuration.' 
+        message: (error as any)?.message || 'Failed to send test email. Please check your email configuration.' 
       });
     }
   });
