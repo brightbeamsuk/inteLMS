@@ -17,6 +17,17 @@ interface MenuItem {
   requiresFeature?: string;
 }
 
+interface Organization {
+  id: string;
+  planId: string;
+  logoUrl?: string;
+  displayName: string;
+}
+
+interface OverdueData {
+  overdueCount: number;
+}
+
 export function AdminLayout({ children }: AdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -34,13 +45,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   });
 
   // Fetch organization data for the current admin user
-  const { data: organization } = useQuery({
+  const { data: organization } = useQuery<Organization>({
     queryKey: ['/api/organisations', user?.organisationId],
     enabled: !!user?.organisationId,
   });
 
   // Fetch overdue assignments count
-  const { data: overdueData } = useQuery({
+  const { data: overdueData } = useQuery<OverdueData>({
     queryKey: ['/api/admin/overdue-count', user?.organisationId],
     enabled: !!user?.organisationId,
     refetchInterval: 30000, // Refetch every 30 seconds
@@ -267,7 +278,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                           className={`w-full text-left ${location === item.path ? "active" : ""} relative`}
                           onClick={() => {
                             setDrawerOpen(false);
-                            handleFeatureClick(item.requiresFeature, item.path);
+                            handleFeatureClick(item.requiresFeature!, item.path);
                           }}
                           data-testid={`button-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                         >
@@ -287,7 +298,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                           <i className={item.icon}></i>
                           {item.label}
                           {/* Show overdue count indicator for Training Matrix */}
-                          {item.path === '/admin/training-matrix' && overdueData?.overdueCount > 0 && (
+                          {item.path === '/admin/training-matrix' && overdueData && overdueData.overdueCount > 0 && (
                             <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
                               <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                                 {overdueData.overdueCount}
