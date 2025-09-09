@@ -3302,7 +3302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Legacy email settings routes for backward compatibility
+  // Provider-agnostic system email settings
   app.put('/api/system/email-settings', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -3311,37 +3311,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied - superadmin only' });
       }
 
-      const {
-        smtpHost,
-        smtpPort,
-        smtpUsername,
-        smtpPassword,
-        smtpSecure,
-        fromEmail,
-        fromName
-      } = req.body;
+      const emailSettings = req.body;
 
-      // Validate required fields
-      if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
-        return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+      // Provider-agnostic validation
+      const provider = emailSettings.provider || 'sendgrid_api';
+      
+      // Common required fields for all providers
+      if (!emailSettings.fromEmail || !emailSettings.fromName) {
+        return res.status(400).json({ 
+          message: 'From email and from name are required for all email providers' 
+        });
       }
 
-      // Use new system SMTP settings
+      // Provider-specific validation
+      if (provider === 'smtp_generic') {
+        // SMTP validation
+        if (!emailSettings.smtpHost || !emailSettings.smtpUsername) {
+          return res.status(400).json({ 
+            message: 'SMTP host and username are required for SMTP configuration' 
+          });
+        }
+        if (!emailSettings.smtpPassword && !emailSettings.smtpPassword?.startsWith('••')) {
+          return res.status(400).json({ 
+            message: 'SMTP password is required' 
+          });
+        }
+      } else {
+        // API provider validation
+        if (!emailSettings.apiKey) {
+          return res.status(400).json({ 
+            message: 'API key is required for the selected email provider' 
+          });
+        }
+
+        // Provider-specific requirements
+        if (provider === 'mailjet_api' && !emailSettings.apiSecret) {
+          return res.status(400).json({ 
+            message: 'Mailjet requires both API key and API secret' 
+          });
+        }
+        if (provider === 'mailgun_api' && !emailSettings.apiDomain) {
+          return res.status(400).json({ 
+            message: 'Mailgun requires an API domain' 
+          });
+        }
+        if (provider === 'ses_api' && !emailSettings.apiRegion) {
+          return res.status(400).json({ 
+            message: 'Amazon SES requires an AWS region' 
+          });
+        }
+      }
+
+      // Prepare settings data for storage
       const settingsData = {
-        smtpHost: smtpHost.trim(),
-        smtpPort: parseInt(smtpPort) || 587,
-        smtpUsername: smtpUsername.trim(),
-        smtpPassword: smtpPassword,
-        smtpSecure: Boolean(smtpSecure),
-        fromEmail: fromEmail.trim().toLowerCase(),
-        fromName: fromName?.trim() || 'System',
-        description: 'Legacy System SMTP Configuration',
-        updatedBy: user.id
+        emailProvider: provider,
+        fromEmail: emailSettings.fromEmail.trim().toLowerCase(),
+        fromName: emailSettings.fromName.trim(),
+        replyTo: emailSettings.replyTo?.trim() || null,
+        description: emailSettings.description?.trim() || null,
+        // SMTP fields
+        smtpHost: provider === 'smtp_generic' ? emailSettings.smtpHost?.trim() : null,
+        smtpPort: provider === 'smtp_generic' ? (parseInt(emailSettings.smtpPort) || 587) : null,
+        smtpUsername: provider === 'smtp_generic' ? emailSettings.smtpUsername?.trim() : null,
+        smtpPassword: provider === 'smtp_generic' ? emailSettings.smtpPassword : null,
+        smtpSecure: provider === 'smtp_generic' ? Boolean(emailSettings.smtpSecure) : null,
+        // API fields
+        apiKey: provider !== 'smtp_generic' ? emailSettings.apiKey : null,
+        apiSecret: provider === 'mailjet_api' ? emailSettings.apiSecret : null,
+        apiBaseUrl: emailSettings.apiBaseUrl?.trim() || null,
+        apiDomain: provider === 'mailgun_api' ? emailSettings.apiDomain?.trim() : null,
+        apiRegion: provider === 'ses_api' ? emailSettings.apiRegion : null,
+        isActive: true,
+        updatedBy: user.id,
       };
 
-      await storage.createSystemSmtpSettings(settingsData);
-
-      res.json({ success: true, message: 'System email settings saved successfully' });
+      const savedSettings = await storage.upsertSystemEmailSettings(settingsData);
+      res.json(savedSettings);
     } catch (error) {
       console.error('Error updating system email settings:', error);
       res.status(500).json({ message: 'Failed to update system email settings' });
@@ -3357,25 +3402,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied - superadmin only' });
       }
 
-      const smtpHost = await storage.getPlatformSetting('system_smtp_host');
-      const smtpPort = await storage.getPlatformSetting('system_smtp_port');
-      const smtpUsername = await storage.getPlatformSetting('system_smtp_username');
-      const smtpPassword = await storage.getPlatformSetting('system_smtp_password');
-      const smtpSecure = await storage.getPlatformSetting('system_smtp_secure');
-      const fromEmail = await storage.getPlatformSetting('system_from_email');
-      const fromName = await storage.getPlatformSetting('system_from_name');
+      const settings = await storage.getSystemEmailSettings();
+      
+      if (!settings) {
+        // Return default settings if none exist
+        return res.json({
+          provider: 'sendgrid_api',
+          fromEmail: '',
+          fromName: '',
+          replyTo: '',
+          description: '',
+          // SMTP fields
+          smtpHost: '',
+          smtpPort: '587',
+          smtpUsername: '',
+          smtpPassword: '',
+          smtpSecure: true,
+          // API fields
+          apiKey: '',
+          apiSecret: '',
+          apiBaseUrl: '',
+          apiDomain: '',
+          apiRegion: '',
+        });
+      }
 
-      const settings = {
-        smtpHost: smtpHost?.value || '',
-        smtpPort: smtpPort?.value ? parseInt(smtpPort.value) : 587,
-        smtpUsername: smtpUsername?.value || '',
-        smtpPassword: smtpPassword?.value || '',
-        smtpSecure: smtpSecure?.value !== 'false',
-        fromEmail: fromEmail?.value || '',
-        fromName: fromName?.value || 'System',
+      // Return settings with masked sensitive fields
+      const responseData = {
+        provider: settings.emailProvider || 'sendgrid_api',
+        fromEmail: settings.fromEmail || '',
+        fromName: settings.fromName || '',
+        replyTo: settings.replyTo || '',
+        description: settings.description || '',
+        // SMTP fields
+        smtpHost: settings.smtpHost || '',
+        smtpPort: settings.smtpPort?.toString() || '587',
+        smtpUsername: settings.smtpUsername || '',
+        smtpPassword: settings.smtpPassword ? '••••••••' : '',
+        smtpSecure: settings.smtpSecure ?? true,
+        // API fields  
+        apiKey: settings.apiKey ? '••••••••' : '',
+        apiSecret: settings.apiSecret ? '••••••••' : '',
+        apiBaseUrl: settings.apiBaseUrl || '',
+        apiDomain: settings.apiDomain || '',
+        apiRegion: settings.apiRegion || '',
       };
 
-      res.json(settings);
+      res.json(responseData);
     } catch (error) {
       console.error('Error fetching system email settings:', error);
       res.status(500).json({ message: 'Failed to fetch system email settings' });
