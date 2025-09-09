@@ -2647,22 +2647,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         smtpPassword,
         smtpSecure,
         fromEmail,
-        fromName
+        fromName,
+        brevoApiKey,
+        useBrevoApi
       } = req.body;
 
-      // Validate required fields
-      if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
-        return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+      // Validate required fields based on delivery method
+      if (useBrevoApi) {
+        if (!brevoApiKey || !fromEmail) {
+          return res.status(400).json({ message: 'Brevo API key and from email are required for API delivery' });
+        }
+      } else {
+        if (!smtpHost || !smtpUsername || !smtpPassword || !fromEmail) {
+          return res.status(400).json({ message: 'SMTP host, username, password, and from email are required' });
+        }
       }
 
       const emailSettings = {
-        smtpHost,
+        smtpHost: smtpHost || null,
         smtpPort: smtpPort || 587,
-        smtpUsername,
-        smtpPassword,
+        smtpUsername: smtpUsername || null,
+        smtpPassword: smtpPassword || null,
         smtpSecure: smtpSecure !== false, // Default to true
         fromEmail,
         fromName: fromName || 'LMS System',
+        brevoApiKey: brevoApiKey || null,
+        useBrevoApi: useBrevoApi || false,
       };
 
       const updatedSettings = await storage.updateOrganisationSettings(organisationId, emailSettings);
