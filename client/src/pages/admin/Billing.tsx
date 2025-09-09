@@ -1,4 +1,49 @@
+import { useQuery } from "@tanstack/react-query";
+
+interface Plan {
+  id: string;
+  name: string;
+  description?: string;
+  pricePerUser: number;
+  status: 'active' | 'inactive' | 'archived';
+  features?: PlanFeature[];
+}
+
+interface PlanFeature {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  category?: string;
+  isDefault: boolean;
+}
+
 export function AdminBilling() {
+  const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
+    queryKey: ['/api/plans'],
+    queryFn: async () => {
+      const response = await fetch('/api/plans', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plans: ${response.statusText}`);
+      }
+      return response.json();
+    },
+  });
+
+  const { data: allPlanFeatures = [], isLoading: featuresLoading } = useQuery<PlanFeature[]>({
+    queryKey: ['/api/plan-features'],
+    queryFn: async () => {
+      const response = await fetch('/api/plan-features', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plan features: ${response.statusText}`);
+      }
+      return response.json();
+    },
+  });
+
+  // Mock current plan - in real implementation this would come from organization data
+  const currentPlanName = "Professional";
+
   return (
     <div>
       {/* Breadcrumbs */}
@@ -185,65 +230,117 @@ export function AdminBilling() {
         </div>
       </div>
 
-      {/* Plan Upgrade Options */}
+      {/* Available Plans */}
       <div className="mt-8">
-        <h3 className="text-xl font-bold mb-4">Upgrade Options</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="card bg-base-100 shadow-sm">
-            <div className="card-body">
-              <h4 className="card-title">Enterprise</h4>
-              <div className="text-2xl font-bold text-primary mb-2">£199/month</div>
-              <ul className="text-sm space-y-2 mb-4">
-                <li>✓ Up to 500 users</li>
-                <li>✓ Advanced analytics</li>
-                <li>✓ Custom branding</li>
-                <li>✓ API access</li>
-                <li>✓ Priority support</li>
-              </ul>
-              <div className="card-actions">
-                <button className="btn btn-primary btn-sm w-full" data-testid="button-upgrade-enterprise">
-                  Upgrade
-                </button>
+        <h3 className="text-xl font-bold mb-4">Available Plans</h3>
+        
+        {(plansLoading || featuresLoading) ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="card bg-base-100 shadow-sm">
+                <div className="card-body">
+                  <div className="skeleton h-6 w-32 mb-2"></div>
+                  <div className="skeleton h-8 w-24 mb-4"></div>
+                  <div className="space-y-2 mb-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="skeleton h-4 w-full"></div>
+                    ))}
+                  </div>
+                  <div className="skeleton h-8 w-full"></div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-
-          <div className="card bg-base-100 shadow-sm">
-            <div className="card-body">
-              <h4 className="card-title">Custom</h4>
-              <div className="text-2xl font-bold text-secondary mb-2">Contact us</div>
-              <ul className="text-sm space-y-2 mb-4">
-                <li>✓ Unlimited users</li>
-                <li>✓ Custom integrations</li>
-                <li>✓ Dedicated support</li>
-                <li>✓ SLA guarantee</li>
-                <li>✓ On-premise option</li>
-              </ul>
-              <div className="card-actions">
-                <button className="btn btn-secondary btn-sm w-full" data-testid="button-contact-custom">
-                  Contact Sales
-                </button>
-              </div>
-            </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {plans
+              .filter(plan => plan.status === 'active')
+              .map((plan) => {
+                const isCurrentPlan = plan.name === currentPlanName;
+                const planFeatureIds = plan.features?.map(f => f.id) || [];
+                
+                return (
+                  <div 
+                    key={plan.id} 
+                    className={`card bg-base-100 shadow-sm ${isCurrentPlan ? 'border-2 border-primary' : ''}`}
+                    data-testid={`plan-card-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+                  >
+                    <div className="card-body">
+                      {isCurrentPlan && (
+                        <div className="badge badge-primary mb-2" data-testid="badge-current-plan">
+                          Current Plan
+                        </div>
+                      )}
+                      <h4 className="card-title" data-testid={`text-plan-name-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                        {plan.name}
+                      </h4>
+                      <div className="text-2xl font-bold text-primary mb-2" data-testid={`text-plan-price-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                        £{plan.pricePerUser}<span className="text-base font-normal">/user/month</span>
+                      </div>
+                      {plan.description && (
+                        <p className="text-sm text-base-content/60 mb-4" data-testid={`text-plan-description-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                          {plan.description}
+                        </p>
+                      )}
+                      
+                      {/* All features with checkmarks only for included ones */}
+                      <div className="text-sm space-y-2 mb-4" data-testid={`features-list-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                        {allPlanFeatures.map((feature) => {
+                          const isIncluded = planFeatureIds.includes(feature.id);
+                          return (
+                            <div 
+                              key={feature.id} 
+                              className={`flex items-center gap-2 ${isIncluded ? 'text-base-content' : 'text-base-content/40'}`}
+                              data-testid={`feature-${feature.key}-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              {isIncluded ? (
+                                <i className="fas fa-check text-success" data-testid={`check-${feature.key}-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}></i>
+                              ) : (
+                                <i className="fas fa-times text-base-content/40" data-testid={`cross-${feature.key}-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}></i>
+                              )}
+                              <span className={isIncluded ? '' : 'line-through'}>
+                                {feature.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      <div className="card-actions">
+                        {isCurrentPlan ? (
+                          <button 
+                            className="btn btn-disabled btn-sm w-full" 
+                            data-testid={`button-current-plan-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            Current Plan
+                          </button>
+                        ) : (
+                          <button 
+                            className="btn btn-primary btn-sm w-full" 
+                            data-testid={`button-upgrade-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            Upgrade to {plan.name}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
-
-          <div className="card bg-base-100 shadow-sm border-2 border-primary">
-            <div className="card-body">
-              <div className="badge badge-primary mb-2">Current Plan</div>
-              <h4 className="card-title">Professional</h4>
-              <div className="text-2xl font-bold text-primary mb-2">£89/month</div>
-              <ul className="text-sm space-y-2 mb-4">
-                <li>✓ Up to 100 users</li>
-                <li>✓ Unlimited courses</li>
-                <li>✓ SCORM support</li>
-                <li>✓ Certificates</li>
-                <li>✓ Email support</li>
-              </ul>
-              <div className="card-actions">
-                <button className="btn btn-disabled btn-sm w-full" data-testid="button-current-plan">
-                  Current Plan
-                </button>
-              </div>
+        )}
+        
+        {/* Feature Legend */}
+        <div className="mt-6 p-4 bg-base-200 rounded-lg">
+          <h4 className="font-semibold mb-2" data-testid="text-feature-legend">Feature Legend:</h4>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <i className="fas fa-check text-success"></i>
+              <span>Included in plan</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <i className="fas fa-times text-base-content/40"></i>
+              <span className="text-base-content/60">Not included in plan</span>
             </div>
           </div>
         </div>
