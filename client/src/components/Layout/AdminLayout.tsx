@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { FeatureUpgradeModal } from "@/components/FeatureUpgradeModal";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface AdminLayoutProps {
