@@ -125,7 +125,7 @@ export function AdminBilling() {
     queryKey: ['/api/organisations', user?.organisationId],
     enabled: !!user?.organisationId,
     queryFn: async () => {
-      const response = await fetch(`/api/organisations/${user.organisationId}`, { credentials: 'include' });
+      const response = await fetch(`/api/organisations/${user?.organisationId}`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`Failed to fetch organisation: ${response.statusText}`);
       }

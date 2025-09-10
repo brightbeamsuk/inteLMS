@@ -114,7 +114,7 @@ async function getEffectiveEmailSettings(storage: any, orgId: string) {
   } catch (error) {
     return {
       valid: false,
-      errors: [error.message || 'Failed to retrieve email settings']
+      errors: [(error as Error).message || 'Failed to retrieve email settings']
     };
   }
 }
@@ -258,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stripeService = getStripeService();
       
       // Retrieve the checkout session from Stripe
-      const session = await stripeService.stripe.checkout.sessions.retrieve(sessionId, {
+      const session = await stripeService.getCheckoutSession(sessionId, {
         expand: ['subscription', 'customer']
       });
       
@@ -1183,25 +1183,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stripeService = getStripeService();
 
       // Create Stripe checkout session
-      const sessionData = await stripeService.createCheckoutSession({
-        plan,
-        userCount: userCount || 1,
-        organisation,
-        mode: 'subscription',
-        metadata: {
-          organisationId,
-          planId,
-          billingModel: plan.billingModel,
-          cadence: plan.cadence,
-          userCount: String(userCount || 1),
-          updateType: 'plan_change'
-        }
+      const sessionData = await stripeService.createTestCheckoutSession(plan, userCount || 1, organisation, 'subscription', {
+        organisationId,
+        planId,
+        billingModel: plan.billingModel,
+        cadence: plan.cadence,
+        userCount: String(userCount || 1),
+        updateType: 'plan_change'
       });
 
       res.json({
         success: true,
         checkoutUrl: sessionData.url,
-        sessionId: sessionData.id,
+        sessionId: sessionData.sessionId,
         planId,
         planName: plan.name,
         userCount,
@@ -1533,14 +1527,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const stripeService = getStripeService();
           
           // Create usage record for Stripe
-          const stripe = stripeService['stripe']; // Access private stripe instance
-          const usageRecord = await stripe.subscriptionItems.createUsageRecord(
+          const usageRecord = await stripeService.reportUsage(
             orgWithPlan.stripeSubscriptionId,
-            {
-              quantity: usageSync.activeUserCount,
-              timestamp: Math.floor(usageSync.lastSyncTime.getTime() / 1000),
-              action: 'set', // Set absolute quantity
-            }
+            usageSync.activeUserCount,
+            Math.floor(usageSync.lastSyncTime.getTime() / 1000)
           );
           
           stripeUsageUpdate = {
@@ -1820,10 +1810,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           // Update plan with new Stripe Price ID (Product ID should remain the same)
-          updatedPlan = await storage.updatePlan(id, {
+          const finalUpdatedPlan = await storage.updatePlan(id, {
             stripeProductId: productId,
             stripePriceId: priceId
           });
+          Object.assign(updatedPlan, finalUpdatedPlan);
           
           // TODO: Handle existing subscriptions based on priceChangePolicy
           // This will be implemented when we add subscription management
@@ -2649,7 +2640,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
     } catch (error) {
-      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignment.id}:`, error);
+      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignmentId}:`, error);
       res.status(500).json({ message: 'Failed to launch course', code: 'SERVER_ERROR' });
     }
   });
@@ -4073,7 +4064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let brevoClient;
         try {
           // Get platform settings for fallback
-          const platformSettings = await storage.getSystemSmtpSettings();
+          const platformSettings = await storage.getSystemEmailSettings();
           
           // Resolve best available key 
           brevoClient = BrevoClient.createWithKeyResolution(
@@ -4268,7 +4259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied. SuperAdmin role required.' });
       }
 
-      const settings = await storage.getSystemSmtpSettings();
+      const settings = await storage.getSystemEmailSettings();
       if (!settings) {
         return res.json(null);
       }
@@ -4333,7 +4324,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedBy: user.id
       };
 
-      const settings = await storage.createSystemSmtpSettings(settingsData);
+      const settings = await storage.createSystemEmailSettings(settingsData);
       
       // Return settings without password
       const { smtpPassword: _, ...safeSettings } = settings;
@@ -4377,7 +4368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      const settings = await storage.updateSystemSmtpSettings(updateData);
+      const settings = await storage.updateSystemEmailSettings(updateData);
       
       // Return settings without password
       const { smtpPassword: _, ...safeSettings } = settings;
@@ -4674,7 +4665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         } else {
           // API-based providers - test basic connectivity
-          const singleMailer = await SingleMailerService.getInstance();
+          const singleMailer = await singleMailerService.getInstance();
           
           // Create a minimal test to validate API key
           try {
