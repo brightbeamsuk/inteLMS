@@ -174,6 +174,19 @@ export function SuperAdminSupport() {
     });
   };
 
+  const handleSelectTicket = (ticket: SupportTicket) => {
+    setSelectedTicket(ticket);
+    // Mark ticket as read when viewed by SuperAdmin
+    if (!ticket.isRead) {
+      updateTicketMutation.mutate({
+        ticketId: ticket.id,
+        updates: { isRead: true }
+      });
+      // Also invalidate the unread count to update the badge
+      queryClient.invalidateQueries({ queryKey: ['/api/support/unread-count'] });
+    }
+  };
+
   const handleReopenTicket = () => {
     if (!selectedTicket) return;
     
@@ -313,7 +326,7 @@ export function SuperAdminSupport() {
                     className={`card card-compact border cursor-pointer transition-colors hover:bg-base-200 ${
                       selectedTicket?.id === ticket.id ? 'border-primary bg-base-200' : 'border-base-300'
                     } ${!ticket.isRead ? 'bg-warning/10 border-warning' : ''}`}
-                    onClick={() => setSelectedTicket(ticket)}
+                    onClick={() => handleSelectTicket(ticket)}
                     data-testid={`ticket-card-${ticket.id}`}
                   >
                     <div className="card-body p-3">
