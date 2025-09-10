@@ -1,0 +1,431 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+
+interface SupportTicket {
+  id: string;
+  title: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  category: 'technical' | 'billing' | 'account' | 'training' | 'feature_request' | 'bug_report' | 'general';
+  createdBy: string;
+  assignedTo?: string;
+  organisationId?: string;
+  isRead: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastResponseAt?: string;
+  resolvedAt?: string;
+}
+
+interface SupportTicketResponse {
+  id: string;
+  ticketId: string;
+  userId: string;
+  message: string;
+  isInternal: boolean;
+  createdAt: string;
+}
+
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+export function SuperAdminSupport() {
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [responseMessage, setResponseMessage] = useState('');
+  const [isInternal, setIsInternal] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Build query parameters for filtering
+  const queryParams = new URLSearchParams();
+  if (statusFilter) queryParams.append('status', statusFilter);
+  if (priorityFilter) queryParams.append('priority', priorityFilter);
+  if (categoryFilter) queryParams.append('category', categoryFilter);
+
+  // Fetch support tickets
+  const { data: tickets = [], isLoading } = useQuery<SupportTicket[]>({
+    queryKey: ['/api/support/tickets', queryParams.toString()],
+    queryFn: () => apiRequest('GET', `/api/support/tickets?${queryParams.toString()}`).then(res => res.json()),
+  });
+
+  // Fetch superadmin users for assignment
+  const { data: superAdmins = [] } = useQuery<User[]>({
+    queryKey: ['/api/users', 'superadmin'],
+    queryFn: () => apiRequest('GET', '/api/users?role=superadmin').then(res => res.json()),
+  });
+
+  // Fetch ticket details with responses
+  const { data: ticketDetails } = useQuery<SupportTicket & { responses: SupportTicketResponse[] }>({
+    queryKey: ['/api/support/tickets', selectedTicket?.id],
+    queryFn: () => apiRequest('GET', `/api/support/tickets/${selectedTicket?.id}`).then(res => res.json()),
+    enabled: !!selectedTicket,
+  });
+
+  // Update ticket mutation
+  const updateTicketMutation = useMutation({
+    mutationFn: (data: { ticketId: string; updates: any }) =>
+      apiRequest('PUT', `/api/support/tickets/${data.ticketId}`, data.updates).then(res => res.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      toast({ title: "Ticket updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update ticket", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Add response mutation
+  const addResponseMutation = useMutation({
+    mutationFn: (data: { ticketId: string; message: string; isInternal: boolean }) =>
+      apiRequest('POST', `/api/support/tickets/${data.ticketId}/responses`, {
+        message: data.message,
+        isInternal: data.isInternal,
+      }).then(res => res.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      setResponseMessage('');
+      setIsInternal(false);
+      toast({ title: "Response added successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to add response", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleUpdateTicket = (updates: any) => {
+    if (!selectedTicket) return;
+    updateTicketMutation.mutate({ ticketId: selectedTicket.id, updates });
+  };
+
+  const handleAddResponse = () => {
+    if (!selectedTicket || !responseMessage.trim()) return;
+    addResponseMutation.mutate({
+      ticketId: selectedTicket.id,
+      message: responseMessage,
+      isInternal,
+    });
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'urgent': return 'badge-error';
+      case 'high': return 'badge-warning';
+      case 'medium': return 'badge-info';
+      case 'low': return 'badge-success';
+      default: return 'badge-ghost';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'open': return 'badge-error';
+      case 'in_progress': return 'badge-warning';
+      case 'resolved': return 'badge-success';
+      case 'closed': return 'badge-ghost';
+      default: return 'badge-ghost';
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Support Center</h1>
+        <div className="badge badge-info">
+          {tickets.length} tickets
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Ticket List */}
+        <div className="lg:col-span-1">
+          <div className="card bg-base-100 shadow-lg">
+            <div className="card-body">
+              <h2 className="card-title mb-4">Support Tickets</h2>
+              
+              {/* Filters */}
+              <div className="space-y-2 mb-4">
+                <select 
+                  className="select select-bordered w-full select-sm"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  data-testid="filter-status"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+                
+                <select 
+                  className="select select-bordered w-full select-sm"
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  data-testid="filter-priority"
+                >
+                  <option value="">All Priorities</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+                
+                <select 
+                  className="select select-bordered w-full select-sm"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  data-testid="filter-category"
+                >
+                  <option value="">All Categories</option>
+                  <option value="technical">Technical</option>
+                  <option value="billing">Billing</option>
+                  <option value="account">Account</option>
+                  <option value="training">Training</option>
+                  <option value="feature_request">Feature Request</option>
+                  <option value="bug_report">Bug Report</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+
+              {/* Ticket List */}
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {tickets.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className={`card card-compact border cursor-pointer transition-colors hover:bg-base-200 ${
+                      selectedTicket?.id === ticket.id ? 'border-primary bg-base-200' : 'border-base-300'
+                    } ${!ticket.isRead ? 'bg-warning/10 border-warning' : ''}`}
+                    onClick={() => setSelectedTicket(ticket)}
+                    data-testid={`ticket-card-${ticket.id}`}
+                  >
+                    <div className="card-body p-3">
+                      <div className="flex justify-between items-start">
+                        <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                        {!ticket.isRead && (
+                          <div className="badge badge-warning badge-xs">NEW</div>
+                        )}
+                      </div>
+                      <div className="flex gap-1 flex-wrap">
+                        <div className={`badge badge-xs ${getStatusColor(ticket.status)}`}>
+                          {ticket.status}
+                        </div>
+                        <div className={`badge badge-xs ${getPriorityColor(ticket.priority)}`}>
+                          {ticket.priority}
+                        </div>
+                        <div className="badge badge-xs badge-outline">
+                          {ticket.category}
+                        </div>
+                      </div>
+                      <p className="text-xs text-base-content/70">
+                        {format(new Date(ticket.createdAt), 'MMM dd, yyyy HH:mm')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                
+                {tickets.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-base-content/60">No tickets found</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Ticket Details */}
+        <div className="lg:col-span-2">
+          {selectedTicket ? (
+            <div className="space-y-6">
+              {/* Ticket Header */}
+              <div className="card bg-base-100 shadow-lg">
+                <div className="card-body">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className="card-title text-xl" data-testid="ticket-title">{selectedTicket.title}</h2>
+                      <p className="text-sm text-base-content/70">
+                        Created {format(new Date(selectedTicket.createdAt), 'MMM dd, yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className={`badge ${getStatusColor(selectedTicket.status)}`}>
+                        {selectedTicket.status}
+                      </div>
+                      <div className={`badge ${getPriorityColor(selectedTicket.priority)}`}>
+                        {selectedTicket.priority}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-base-200 p-4 rounded-lg mb-4">
+                    <p className="whitespace-pre-wrap" data-testid="ticket-description">{selectedTicket.description}</p>
+                  </div>
+
+                  {/* Ticket Management */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Status</span>
+                      </label>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={selectedTicket.status}
+                        onChange={(e) => handleUpdateTicket({ status: e.target.value })}
+                        data-testid="update-status"
+                      >
+                        <option value="open">Open</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Priority</span>
+                      </label>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={selectedTicket.priority}
+                        onChange={(e) => handleUpdateTicket({ priority: e.target.value })}
+                        data-testid="update-priority"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Assign To</span>
+                      </label>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={selectedTicket.assignedTo || ''}
+                        onChange={(e) => handleUpdateTicket({ assignedTo: e.target.value || null })}
+                        data-testid="assign-ticket"
+                      >
+                        <option value="">Unassigned</option>
+                        {superAdmins.map((admin) => (
+                          <option key={admin.id} value={admin.id}>
+                            {admin.firstName} {admin.lastName} ({admin.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {!selectedTicket.isRead && (
+                    <button
+                      className="btn btn-outline btn-sm mt-4"
+                      onClick={() => handleUpdateTicket({ isRead: true })}
+                      data-testid="mark-read"
+                    >
+                      Mark as Read
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Responses */}
+              <div className="card bg-base-100 shadow-lg">
+                <div className="card-body">
+                  <h3 className="card-title">Conversation</h3>
+                  
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {ticketDetails?.responses?.map((response) => (
+                      <div
+                        key={response.id}
+                        className={`chat ${response.isInternal ? 'chat-start' : 'chat-end'}`}
+                        data-testid={`response-${response.id}`}
+                      >
+                        <div className="chat-header">
+                          {response.isInternal && (
+                            <span className="badge badge-warning badge-xs mr-2">Internal</span>
+                          )}
+                          {format(new Date(response.createdAt), 'MMM dd, HH:mm')}
+                        </div>
+                        <div className={`chat-bubble ${response.isInternal ? 'chat-bubble-warning' : 'chat-bubble-primary'}`}>
+                          {response.message}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Response */}
+                  <div className="mt-6 space-y-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Add Response</span>
+                      </label>
+                      <textarea
+                        className="textarea textarea-bordered"
+                        rows={4}
+                        value={responseMessage}
+                        onChange={(e) => setResponseMessage(e.target.value)}
+                        placeholder="Type your response..."
+                        data-testid="response-message"
+                      />
+                    </div>
+                    
+                    <div className="flex justify-between items-center">
+                      <label className="label cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={isInternal}
+                          onChange={(e) => setIsInternal(e.target.checked)}
+                          data-testid="internal-response"
+                        />
+                        <span className="label-text ml-2">Internal note (not visible to user)</span>
+                      </label>
+                      
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleAddResponse}
+                        disabled={!responseMessage.trim() || addResponseMutation.isPending}
+                        data-testid="send-response"
+                      >
+                        {addResponseMutation.isPending && <span className="loading loading-spinner loading-sm"></span>}
+                        Send Response
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="card bg-base-100 shadow-lg">
+              <div className="card-body text-center">
+                <h2 className="card-title justify-center">Select a Ticket</h2>
+                <p className="text-base-content/60">Choose a ticket from the list to view details and respond</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -2547,6 +2547,279 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===============================
+  // SUPPORT TICKET SYSTEM ROUTES
+  // ===============================
+
+  // Get support tickets (role-specific filtering)
+  app.get('/api/support/tickets', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { status, priority, category, limit, offset } = req.query;
+      const filters: any = {};
+
+      // Apply filters based on query params
+      if (status) filters.status = status;
+      if (priority) filters.priority = priority;
+      if (category) filters.category = category;
+      if (limit) filters.limit = parseInt(limit as string);
+      if (offset) filters.offset = parseInt(offset as string);
+
+      // Role-based access control
+      if (user.role === 'superadmin') {
+        // SuperAdmins see all tickets
+      } else if (user.role === 'admin') {
+        // Admins only see their organization's tickets
+        filters.organisationId = user.organisationId;
+      } else {
+        // Users only see tickets they created
+        filters.createdBy = user.id;
+      }
+
+      const tickets = await storage.getSupportTickets(filters);
+      res.json(tickets);
+    } catch (error) {
+      console.error('Error fetching support tickets:', error);
+      res.status(500).json({ message: 'Failed to fetch support tickets' });
+    }
+  });
+
+  // Get single support ticket with responses
+  app.get('/api/support/tickets/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { id } = req.params;
+      const ticket = await storage.getSupportTicket(id);
+
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+
+      // Role-based access control
+      if (user.role === 'superadmin') {
+        // SuperAdmins can access any ticket
+      } else if (user.role === 'admin') {
+        // Admins can only access their organization's tickets
+        if (ticket.organisationId !== user.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      } else {
+        // Users can only access tickets they created
+        if (ticket.createdBy !== user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Get responses for the ticket
+      const responses = await storage.getSupportTicketResponses(id);
+
+      res.json({ ...ticket, responses });
+    } catch (error) {
+      console.error('Error fetching support ticket:', error);
+      res.status(500).json({ message: 'Failed to fetch support ticket' });
+    }
+  });
+
+  // Create new support ticket
+  app.post('/api/support/tickets', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { title, description, priority, category } = req.body;
+
+      if (!title || !description) {
+        return res.status(400).json({ message: 'Title and description are required' });
+      }
+
+      const ticketData = {
+        title,
+        description,
+        priority: priority || 'medium',
+        category: category || 'general',
+        createdBy: user.id,
+        organisationId: user.role === 'superadmin' ? null : user.organisationId,
+      };
+
+      const ticket = await storage.createSupportTicket(ticketData);
+      res.status(201).json(ticket);
+    } catch (error) {
+      console.error('Error creating support ticket:', error);
+      res.status(500).json({ message: 'Failed to create support ticket' });
+    }
+  });
+
+  // Update support ticket (status, priority, assignment)
+  app.put('/api/support/tickets/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { id } = req.params;
+      const { status, priority, assignedTo, isRead } = req.body;
+
+      const ticket = await storage.getSupportTicket(id);
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+
+      // Role-based access control
+      if (user.role === 'superadmin') {
+        // SuperAdmins can update any ticket
+      } else if (user.role === 'admin') {
+        // Admins can only update their organization's tickets
+        if (ticket.organisationId !== user.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      } else {
+        // Users can only update their own tickets (limited fields)
+        if (ticket.createdBy !== user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      const updateData: any = {};
+      if (status) updateData.status = status;
+      if (priority) updateData.priority = priority;
+      if (isRead !== undefined) updateData.isRead = isRead;
+
+      // Only SuperAdmins can assign tickets
+      if (user.role === 'superadmin' && assignedTo !== undefined) {
+        updateData.assignedTo = assignedTo;
+      }
+
+      // Set resolvedAt when status is changed to resolved
+      if (status === 'resolved' && ticket.status !== 'resolved') {
+        updateData.resolvedAt = new Date();
+      }
+
+      const updatedTicket = await storage.updateSupportTicket(id, updateData);
+      res.json(updatedTicket);
+    } catch (error) {
+      console.error('Error updating support ticket:', error);
+      res.status(500).json({ message: 'Failed to update support ticket' });
+    }
+  });
+
+  // Add response to support ticket
+  app.post('/api/support/tickets/:id/responses', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { id } = req.params;
+      const { message, isInternal } = req.body;
+
+      if (!message) {
+        return res.status(400).json({ message: 'Message is required' });
+      }
+
+      const ticket = await storage.getSupportTicket(id);
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+
+      // Role-based access control
+      if (user.role === 'superadmin') {
+        // SuperAdmins can respond to any ticket
+      } else if (user.role === 'admin') {
+        // Admins can only respond to their organization's tickets
+        if (ticket.organisationId !== user.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      } else {
+        // Users can only respond to tickets they created
+        if (ticket.createdBy !== user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      const responseData = {
+        ticketId: id,
+        userId: user.id,
+        message,
+        isInternal: user.role === 'superadmin' ? (isInternal || false) : false,
+      };
+
+      const response = await storage.createSupportTicketResponse(responseData);
+
+      // Update ticket status to 'in_progress' if it was 'open'
+      if (ticket.status === 'open') {
+        await storage.updateSupportTicket(id, { status: 'in_progress' });
+      }
+
+      res.status(201).json(response);
+    } catch (error) {
+      console.error('Error creating support ticket response:', error);
+      res.status(500).json({ message: 'Failed to create response' });
+    }
+  });
+
+  // Get unread ticket count (for notifications)
+  app.get('/api/support/unread-count', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const filters: any = {};
+
+      // Role-based filtering
+      if (user.role === 'superadmin') {
+        // SuperAdmins see count of all unread tickets assigned to them or unassigned
+        filters.assignedTo = user.id;
+      } else if (user.role === 'admin') {
+        // Admins see count of unread tickets in their organization
+        filters.organisationId = user.organisationId;
+      } else {
+        // Users see count of unread responses to their tickets
+        filters.createdBy = user.id;
+      }
+
+      const count = await storage.getUnreadTicketCount(filters);
+      res.json({ count });
+    } catch (error) {
+      console.error('Error fetching unread ticket count:', error);
+      res.status(500).json({ message: 'Failed to fetch unread count' });
+    }
+  });
+
+  // Delete support ticket (SuperAdmin only)
+  app.delete('/api/support/tickets/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { id } = req.params;
+      await storage.deleteSupportTicket(id);
+      res.json({ message: 'Ticket deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting support ticket:', error);
+      res.status(500).json({ message: 'Failed to delete support ticket' });
+    }
+  });
+
+  // ===============================
+  // END SUPPORT TICKET ROUTES
+  // ===============================
+
   // SCORM Asset serving route - handles direct asset requests
   app.get('/api/scorm/*', requireAuth, async (req: any, res) => {
     try {
