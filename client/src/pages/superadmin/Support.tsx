@@ -236,15 +236,28 @@ export function SuperAdminSupport() {
   const handleConfirmReopen = () => {
     if (!selectedTicket) return;
     
-    updateTicketMutation.mutate({ 
-      ticketId: selectedTicket.id, 
-      updates: { status: 'open' } 
+    // Add automatic response when reopening
+    const autoResponseMessage = `This ticket has been reopened by our support team. We are reviewing your request and will provide an update soon.\n\nThank you for your patience!`;
+    
+    // First add the automatic response, then update the ticket
+    addResponseMutation.mutate({
+      ticketId: selectedTicket.id,
+      message: autoResponseMessage,
+      isInternal: false
+    }, {
+      onSuccess: () => {
+        // After response is added, update the ticket status
+        updateTicketMutation.mutate({ 
+          ticketId: selectedTicket.id, 
+          updates: { status: 'open' } 
+        });
+        setShowReopenModal(false);
+        // Clear selected ticket so user sees it moved back to active section
+        setSelectedTicket(null);
+        // Also invalidate all ticket queries to refresh the lists
+        queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      }
     });
-    setShowReopenModal(false);
-    // Clear selected ticket so user sees it moved back to active section
-    setSelectedTicket(null);
-    // Also invalidate all ticket queries to refresh the lists
-    queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
   };
 
   const getPriorityColor = (priority: string) => {
