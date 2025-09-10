@@ -2621,7 +2621,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get responses for the ticket
       const responses = await storage.getSupportTicketResponses(id);
 
-      res.json({ ...ticket, responses });
+      // Get ticket creator details for SuperAdmin view
+      let ticketCreator = null;
+      let ticketOrganisation = null;
+      
+      if (user.role === 'superadmin') {
+        // Fetch creator details
+        ticketCreator = await storage.getUser(ticket.createdBy);
+        
+        // Fetch organisation details if ticket has one
+        if (ticket.organisationId) {
+          ticketOrganisation = await storage.getOrganisation(ticket.organisationId);
+        }
+      }
+
+      res.json({ 
+        ...ticket, 
+        responses,
+        createdByUser: ticketCreator ? {
+          id: ticketCreator.id,
+          firstName: ticketCreator.firstName,
+          lastName: ticketCreator.lastName,
+          email: ticketCreator.email,
+          role: ticketCreator.role
+        } : null,
+        organisation: ticketOrganisation ? {
+          id: ticketOrganisation.id,
+          name: ticketOrganisation.name,
+          displayName: ticketOrganisation.displayName
+        } : null
+      });
     } catch (error) {
       console.error('Error fetching support ticket:', error);
       res.status(500).json({ message: 'Failed to fetch support ticket' });
