@@ -60,6 +60,7 @@ export function SuperAdminSupport() {
   const [viewMode, setViewMode] = useState<'active' | 'closed'>('active');
   const [responseMessage, setResponseMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -136,33 +137,36 @@ export function SuperAdminSupport() {
   const handleUpdateTicket = (updates: any) => {
     if (!selectedTicket) return;
     
-    // Show confirmation dialog when closing ticket
+    // Show confirmation modal when closing ticket
     if (updates.status === 'closed') {
-      const confirmed = window.confirm(
-        `Are you sure you want to close ticket #${selectedTicket.id.slice(-8)}?\n\nThis will mark the ticket as closed and send an automatic notification to the user.`
-      );
-      
-      if (!confirmed) return;
-      
-      // Add automatic response when closing
-      const autoResponseMessage = `This ticket has been marked as closed. If you need further assistance, please create a new support ticket.\n\nThank you for using our support system!`;
-      
-      // First add the automatic response, then update the ticket
-      addResponseMutation.mutate({
-        ticketId: selectedTicket.id,
-        message: autoResponseMessage,
-        isInternal: false
-      }, {
-        onSuccess: () => {
-          // After response is added, update the ticket status
-          updateTicketMutation.mutate({ ticketId: selectedTicket.id, updates });
-        }
-      });
-      
+      setShowCloseModal(true);
       return;
     }
     
     updateTicketMutation.mutate({ ticketId: selectedTicket.id, updates });
+  };
+
+  const handleConfirmClose = () => {
+    if (!selectedTicket) return;
+    
+    // Add automatic response when closing
+    const autoResponseMessage = `This ticket has been marked as closed. If you need further assistance, please create a new support ticket.\n\nThank you for using our support system!`;
+    
+    // First add the automatic response, then update the ticket
+    addResponseMutation.mutate({
+      ticketId: selectedTicket.id,
+      message: autoResponseMessage,
+      isInternal: false
+    }, {
+      onSuccess: () => {
+        // After response is added, update the ticket status
+        updateTicketMutation.mutate({ 
+          ticketId: selectedTicket.id, 
+          updates: { status: 'closed' }
+        });
+        setShowCloseModal(false);
+      }
+    });
   };
 
   const handleAddResponse = () => {
@@ -645,6 +649,55 @@ export function SuperAdminSupport() {
           )}
         </div>
       </div>
+
+      {/* Close Ticket Confirmation Modal */}
+      {showCloseModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">🎫 Close Support Ticket</h3>
+            <div className="py-4">
+              <p className="mb-4">
+                Are you sure you want to close ticket{' '}
+                <span className="font-mono font-semibold">
+                  #{selectedTicket?.id.slice(-8)}
+                </span>
+                ?
+              </p>
+              <div className="bg-info/10 border border-info/20 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-info">ℹ️</span>
+                  <span className="font-semibold text-info">What happens next:</span>
+                </div>
+                <ul className="text-sm space-y-1 ml-6">
+                  <li>• Ticket will be marked as closed</li>
+                  <li>• Automatic notification sent to the user</li>
+                  <li>• Closing message added to conversation</li>
+                </ul>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowCloseModal(false)}
+                data-testid="button-cancel-close"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-error ${addResponseMutation.isPending ? 'loading' : ''}`}
+                onClick={handleConfirmClose}
+                disabled={addResponseMutation.isPending}
+                data-testid="button-confirm-close"
+              >
+                {addResponseMutation.isPending ? 'Closing...' : 'Close Ticket'}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowCloseModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
     </div>
   );
 }
