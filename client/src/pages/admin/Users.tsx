@@ -53,7 +53,7 @@ export function AdminUsers() {
   const { user: currentUser } = useAuth();
 
   // License info query
-  const { data: licenseData } = useQuery({
+  const { data: licenseData } = useQuery<LicenseInfo>({
     queryKey: ['/api/admin/license-check'],
     enabled: !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin'),
     refetchInterval: 30000 // Refresh every 30 seconds
