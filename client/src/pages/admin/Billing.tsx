@@ -1,13 +1,21 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Plan {
   id: string;
   name: string;
   description?: string;
-  pricePerUser: number;
+  billingModel: 'metered_per_active_user' | 'per_seat' | 'flat_subscription';
+  cadence: 'monthly' | 'annual';
+  currency: string;
+  unitAmount: number;
+  minSeats?: number;
   status: 'active' | 'inactive' | 'archived';
   features?: PlanFeature[];
+  stripeProductId?: string;
+  stripePriceId?: string;
 }
 
 interface PlanFeature {
@@ -27,6 +35,11 @@ interface Organisation {
   contactEmail?: string;
   contactPhone?: string;
   status: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  billingStatus?: string;
+  activeUserCount?: number;
+  lastBillingSync?: string;
 }
 
 interface OrganisationStats {
@@ -41,16 +54,19 @@ interface OrganisationStats {
 export function AdminBilling() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   
-  const { data: currentUser } = useQuery({
-    queryKey: ['/api/auth/user'],
-  });
+  // Local state
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [userCount, setUserCount] = useState<number>(0);
+  const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
+  const [showDecreaseWarning, setShowDecreaseWarning] = useState(false);
 
   const { data: organisation, isLoading: orgLoading } = useQuery<Organisation>({
-    queryKey: ['/api/organisations', currentUser?.organisationId],
-    enabled: !!currentUser?.organisationId,
+    queryKey: ['/api/organisations', user?.organisationId],
+    enabled: !!user?.organisationId,
     queryFn: async () => {
-      const response = await fetch(`/api/organisations/${currentUser.organisationId}`, { credentials: 'include' });
+      const response = await fetch(`/api/organisations/${user.organisationId}`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`Failed to fetch organisation: ${response.statusText}`);
       }
@@ -95,16 +111,88 @@ export function AdminBilling() {
   const currentPlan = plans.find(plan => plan.id === organisation?.planId);
   const currentPlanName = currentPlan?.name || "No Plan";
 
+  // Helper function to format price
+  const formatPrice = (unitAmount: number, currency: string) => {
+    const amount = unitAmount / 100; // Convert from minor units
+    const symbol = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : '€';
+    return `${symbol}${amount.toFixed(2)}`;
+  };
+
+  // Helper function to get billing model display text
+  const getBillingModelText = (billingModel: string) => {
+    switch (billingModel) {
+      case 'metered_per_active_user': return 'Per Active User';
+      case 'per_seat': return 'Per Seat';
+      case 'flat_subscription': return 'Flat Rate';
+      default: return billingModel;
+    }
+  };
+
+  // Calculate current subscription cost
+  const getCurrentSubscriptionCost = () => {
+    if (!currentPlan || !organisation) return 0;
+    
+    switch (currentPlan.billingModel) {
+      case 'metered_per_active_user':
+        return (organisation.activeUserCount || 0) * (currentPlan.unitAmount / 100);
+      case 'per_seat':
+        return userCount * (currentPlan.unitAmount / 100);
+      case 'flat_subscription':
+        return currentPlan.unitAmount / 100;
+      default:
+        return currentPlan.unitAmount / 100;
+    }
+  };
+
+  // Handle user count change
+  const handleUserCountChange = (newCount: number) => {
+    const currentCount = getCurrentUserCount();
+    
+    if (newCount < currentCount) {
+      setShowDecreaseWarning(true);
+      return;
+    }
+    
+    setUserCount(newCount);
+  };
+
+  // Get current user count based on billing model
+  const getCurrentUserCount = () => {
+    if (!currentPlan || !organisation) return 0;
+    
+    switch (currentPlan.billingModel) {
+      case 'metered_per_active_user':
+        return organisation.activeUserCount || 0;
+      case 'per_seat':
+        return userCount || organisation.activeUserCount || 0;
+      case 'flat_subscription':
+        return organisationStats?.totalUsers || 0; // Show total for flat rate
+      default:
+        return 0;
+    }
+  };
+
+  // Initialize user count when plan data loads
+  useState(() => {
+    if (organisation && currentPlan) {
+      const currentCount = getCurrentUserCount();
+      setUserCount(currentCount);
+    }
+  });
+
   // Mutation to change plan
   const changePlanMutation = useMutation({
-    mutationFn: async (planId: string) => {
-      const response = await fetch(`/api/organisations/${currentUser?.organisationId}`, {
+    mutationFn: async ({ planId, userCount: newUserCount }: { planId: string; userCount?: number }) => {
+      const response = await fetch(`/api/organisations/${user?.organisationId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ 
+          planId,
+          ...(newUserCount && { activeUserCount: newUserCount })
+        }),
       });
       
       if (!response.ok) {
@@ -120,8 +208,11 @@ export function AdminBilling() {
         description: `Successfully changed to ${plans.find(p => p.id === updatedOrganisation.planId)?.name || 'new plan'}`,
       });
       
+      setShowPlanChangeModal(false);
+      setSelectedPlan(null);
+      
       // Refresh the organisation data
-      queryClient.invalidateQueries({ queryKey: ['/api/organisations', currentUser?.organisationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
     },
     onError: (error: Error) => {
       toast({
@@ -132,13 +223,78 @@ export function AdminBilling() {
     },
   });
 
+  // Mutation to update subscription (for existing plan user count changes)
+  const updateSubscriptionMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentPlan?.stripePriceId) {
+        throw new Error('No Stripe integration available for this plan');
+      }
+
+      const response = await fetch(`/api/subscriptions/update-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          planId: currentPlan.id,
+          userCount,
+          organisationId: organisation?.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to create checkout session');
+      }
+      
+      const data = await response.json();
+      
+      // Redirect to Stripe Checkout
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Checkout Error",
+        description: error.message || "Failed to create checkout session",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle plan selection and user count setup
+  const handleSelectPlan = (plan: Plan) => {
+    setSelectedPlan(plan);
+    
+    // Set initial user count based on plan requirements
+    const minCount = plan.minSeats || 1;
+    const currentCount = Math.max(getCurrentUserCount(), minCount);
+    setUserCount(currentCount);
+    
+    setShowPlanChangeModal(true);
+  };
+
+  // Handle plan change confirmation
+  const handleConfirmPlanChange = () => {
+    if (!selectedPlan) return;
+    
+    changePlanMutation.mutate({
+      planId: selectedPlan.id,
+      userCount: selectedPlan.billingModel !== 'flat_subscription' ? userCount : undefined
+    });
+  };
+
   return (
     <div>
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
           <li><a data-testid="link-admin">Admin</a></li>
-          <li className="font-semibold" data-testid="text-current-page">Billing</li>
+          <li className="font-semibold" data-testid="text-current-page">Billing & Subscription</li>
         </ul>
       </div>
 
@@ -149,13 +305,21 @@ export function AdminBilling() {
           <button className="btn btn-outline" data-testid="button-contact-sales">
             <i className="fas fa-phone"></i> Contact Sales
           </button>
-          <button className="btn btn-primary" data-testid="button-update-payment">
-            <i className="fas fa-credit-card"></i> Update Payment
-          </button>
+          {currentPlan && organisation?.stripeSubscriptionId && (
+            <button 
+              className={`btn btn-primary ${updateSubscriptionMutation.isPending ? 'loading' : ''}`}
+              onClick={() => updateSubscriptionMutation.mutate()}
+              disabled={updateSubscriptionMutation.isPending}
+              data-testid="button-update-subscription"
+            >
+              <i className="fas fa-credit-card"></i> 
+              {updateSubscriptionMutation.isPending ? 'Processing...' : 'Update Subscription'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Current Plan */}
+      {/* Current Subscription */}
       <div className="card bg-base-200 shadow-sm mb-6">
         <div className="card-body">
           {orgLoading ? (
@@ -177,30 +341,129 @@ export function AdminBilling() {
                 <h2 className="text-2xl font-bold mb-2" data-testid="text-plan-name">
                   {currentPlan?.name || "No Plan Assigned"}
                 </h2>
-                <p className="text-base-content/60 mb-4" data-testid="text-plan-description">
+                <p className="text-base-content/60 mb-2" data-testid="text-plan-description">
                   {currentPlan?.description || "No plan description available"}
                 </p>
+                {currentPlan && (
+                  <div className="mb-4">
+                    <div className="badge badge-info mr-2" data-testid="badge-billing-model">
+                      {getBillingModelText(currentPlan.billingModel)}
+                    </div>
+                    <div className="badge badge-secondary" data-testid="badge-cadence">
+                      {currentPlan.cadence}
+                    </div>
+                  </div>
+                )}
                 <div className="text-3xl font-bold text-primary" data-testid="text-plan-price">
                   {currentPlan ? (
-                    <>£{Number(currentPlan.pricePerUser || 0).toFixed(2)}<span className="text-base font-normal">/user/month</span></>
+                    <>
+                      {formatPrice(currentPlan.unitAmount, currentPlan.currency)}
+                      <span className="text-base font-normal">
+                        {currentPlan.billingModel === 'flat_subscription' 
+                          ? `/${currentPlan.cadence}` 
+                          : `/user/${currentPlan.cadence === 'annual' ? 'year' : 'month'}`
+                        }
+                      </span>
+                    </>
                   ) : (
                     <span className="text-lg">Contact support for pricing</span>
                   )}
                 </div>
+                {currentPlan && organisation && (
+                  <div className="mt-2 text-lg font-semibold text-secondary">
+                    Current Cost: {formatPrice(getCurrentSubscriptionCost() * 100, currentPlan.currency)}/{currentPlan.cadence === 'annual' ? 'year' : 'month'}
+                  </div>
+                )}
               </div>
               <div className="text-right">
-                <div className={`badge mb-2 ${organisation?.status === 'active' ? 'badge-success' : 'badge-warning'}`} data-testid="badge-plan-status">
-                  {organisation?.status === 'active' ? 'Active' : organisation?.status || 'Unknown'}
+                <div className={`badge mb-2 ${organisation?.billingStatus === 'active' ? 'badge-success' : 'badge-warning'}`} data-testid="badge-billing-status">
+                  {organisation?.billingStatus || organisation?.status || 'Unknown'}
                 </div>
                 <div className="text-sm text-base-content/60">
                   <div data-testid="text-organisation-name">{organisation?.displayName}</div>
-                  <div data-testid="text-billing-cycle">Monthly billing</div>
+                  <div data-testid="text-user-count">
+                    {getCurrentUserCount()} {currentPlan?.billingModel === 'metered_per_active_user' ? 'active' : ''} users
+                  </div>
+                  {organisation?.stripeSubscriptionId && (
+                    <div className="text-xs mt-1" data-testid="text-stripe-status">
+                      Stripe Active
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* User Management (only show if on a plan) */}
+      {currentPlan && (
+        <div className="card bg-base-200 shadow-sm mb-6">
+          <div className="card-body">
+            <h3 className="text-xl font-bold mb-4">User Management</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="label">
+                  <span className="label-text font-medium">
+                    {currentPlan.billingModel === 'metered_per_active_user' ? 'Active Users' : 
+                     currentPlan.billingModel === 'per_seat' ? 'Licensed Seats' : 
+                     'Total Users'}
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    className="input input-bordered flex-1"
+                    value={userCount}
+                    onChange={(e) => handleUserCountChange(parseInt(e.target.value) || 0)}
+                    min={currentPlan.minSeats || 1}
+                    disabled={currentPlan.billingModel === 'flat_subscription'}
+                    data-testid="input-user-count"
+                  />
+                  {userCount !== getCurrentUserCount() && currentPlan.billingModel !== 'flat_subscription' && (
+                    <button
+                      className={`btn btn-primary ${updateSubscriptionMutation.isPending ? 'loading' : ''}`}
+                      onClick={() => updateSubscriptionMutation.mutate()}
+                      disabled={updateSubscriptionMutation.isPending}
+                      data-testid="button-update-user-count"
+                    >
+                      Update
+                    </button>
+                  )}
+                </div>
+                <div className="label">
+                  <span className="label-text-alt">
+                    {currentPlan.billingModel === 'flat_subscription' 
+                      ? 'Unlimited users included'
+                      : `Minimum: ${currentPlan.minSeats || 1} users`
+                    }
+                  </span>
+                </div>
+              </div>
+              
+              <div>
+                <label className="label">
+                  <span className="label-text font-medium">Usage Overview</span>
+                </label>
+                <div className="stats stats-vertical lg:stats-horizontal">
+                  <div className="stat">
+                    <div className="stat-title">Active</div>
+                    <div className="stat-value text-sm">{organisationStats?.activeUsers || 0}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title">Total</div>
+                    <div className="stat-value text-sm">{organisationStats?.totalUsers || 0}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title">Admins</div>
+                    <div className="stat-value text-sm">{organisationStats?.adminUsers || 0}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Usage Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -228,15 +491,13 @@ export function AdminBilling() {
               <div className="stat-desc" data-testid="stat-users-total">
                 of {organisationStats?.totalUsers || 0} total users
               </div>
-              {organisationStats?.totalUsers ? (
+              {currentPlan?.billingModel === 'metered_per_active_user' && (
                 <div className="mt-2">
-                  <progress 
-                    className="progress progress-primary w-full" 
-                    value={organisationStats.activeUsers || 0} 
-                    max={organisationStats.totalUsers}
-                  ></progress>
+                  <div className="text-xs text-base-content/60">
+                    Billing basis: Active users only
+                  </div>
                 </div>
-              ) : null}
+              )}
             </div>
             
             <div className="stat bg-base-200 rounded-lg shadow-sm">
@@ -277,109 +538,6 @@ export function AdminBilling() {
         )}
       </div>
 
-      {/* Payment Method */}
-      <div className="card bg-base-200 shadow-sm mb-6">
-        <div className="card-body">
-          <h3 className="text-xl font-bold mb-4">Payment Method</h3>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-8 bg-primary text-primary-content rounded flex items-center justify-center">
-                <i className="fas fa-credit-card"></i>
-              </div>
-              <div>
-                <div className="font-semibold" data-testid="text-card-info">Visa ending in 4242</div>
-                <div className="text-sm text-base-content/60" data-testid="text-card-expiry">Expires 12/2025</div>
-              </div>
-            </div>
-            <button className="btn btn-outline btn-sm" data-testid="button-change-payment">
-              <i className="fas fa-edit"></i> Change
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Invoice History */}
-      <div className="card bg-base-200 shadow-sm">
-        <div className="card-body">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold">Invoice History</h3>
-            <button className="btn btn-outline btn-sm" data-testid="button-download-all">
-              <i className="fas fa-download"></i> Download All
-            </button>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="table table-zebra w-full">
-              <thead>
-                <tr>
-                  <th>Invoice</th>
-                  <th>Date</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr data-testid="row-invoice-1">
-                  <td data-testid="text-invoice-number-1">#INV-2024-002</td>
-                  <td data-testid="text-invoice-date-1">Feb 15, 2024</td>
-                  <td data-testid="text-invoice-amount-1">£89.00</td>
-                  <td>
-                    <div className="badge badge-success" data-testid="badge-invoice-status-1">Paid</div>
-                  </td>
-                  <td>
-                    <div className="flex gap-1">
-                      <button className="btn btn-sm btn-ghost" data-testid="button-view-invoice-1">
-                        <i className="fas fa-eye"></i>
-                      </button>
-                      <button className="btn btn-sm btn-ghost" data-testid="button-download-invoice-1">
-                        <i className="fas fa-download"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr data-testid="row-invoice-2">
-                  <td data-testid="text-invoice-number-2">#INV-2024-001</td>
-                  <td data-testid="text-invoice-date-2">Jan 15, 2024</td>
-                  <td data-testid="text-invoice-amount-2">£89.00</td>
-                  <td>
-                    <div className="badge badge-success" data-testid="badge-invoice-status-2">Paid</div>
-                  </td>
-                  <td>
-                    <div className="flex gap-1">
-                      <button className="btn btn-sm btn-ghost" data-testid="button-view-invoice-2">
-                        <i className="fas fa-eye"></i>
-                      </button>
-                      <button className="btn btn-sm btn-ghost" data-testid="button-download-invoice-2">
-                        <i className="fas fa-download"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr data-testid="row-invoice-3">
-                  <td data-testid="text-invoice-number-3">#INV-2023-012</td>
-                  <td data-testid="text-invoice-date-3">Dec 15, 2023</td>
-                  <td data-testid="text-invoice-amount-3">£89.00</td>
-                  <td>
-                    <div className="badge badge-success" data-testid="badge-invoice-status-3">Paid</div>
-                  </td>
-                  <td>
-                    <div className="flex gap-1">
-                      <button className="btn btn-sm btn-ghost" data-testid="button-view-invoice-3">
-                        <i className="fas fa-eye"></i>
-                      </button>
-                      <button className="btn btn-sm btn-ghost" data-testid="button-download-invoice-3">
-                        <i className="fas fa-download"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
       {/* Available Plans */}
       <div className="mt-8">
         <h3 className="text-xl font-bold mb-4">Available Plans</h3>
@@ -406,7 +564,7 @@ export function AdminBilling() {
             {plans
               .filter(plan => plan.status === 'active')
               .map((plan) => {
-                const isCurrentPlan = plan.name === currentPlanName;
+                const isCurrentPlan = plan.id === organisation?.planId;
                 const planFeatureIds = plan.features?.map(f => f.id) || [];
                 
                 return (
@@ -424,9 +582,26 @@ export function AdminBilling() {
                       <h4 className="card-title" data-testid={`text-plan-name-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
                         {plan.name}
                       </h4>
-                      <div className="text-2xl font-bold text-primary mb-2" data-testid={`text-plan-price-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                        £{Number(plan.pricePerUser || 0).toFixed(2)}<span className="text-base font-normal">/user/month</span>
+                      
+                      <div className="mb-2">
+                        <div className="badge badge-info mr-2">
+                          {getBillingModelText(plan.billingModel)}
+                        </div>
+                        <div className="badge badge-secondary">
+                          {plan.cadence}
+                        </div>
                       </div>
+                      
+                      <div className="text-2xl font-bold text-primary mb-2" data-testid={`text-plan-price-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                        {formatPrice(plan.unitAmount, plan.currency)}
+                        <span className="text-base font-normal">
+                          {plan.billingModel === 'flat_subscription' 
+                            ? `/${plan.cadence}` 
+                            : `/user/${plan.cadence === 'annual' ? 'year' : 'month'}`
+                          }
+                        </span>
+                      </div>
+                      
                       {plan.description && (
                         <p className="text-sm text-base-content/60 mb-4" data-testid={`text-plan-description-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
                           {plan.description}
@@ -475,12 +650,11 @@ export function AdminBilling() {
                           </button>
                         ) : (
                           <button 
-                            className={`btn btn-primary btn-sm w-full ${changePlanMutation.isPending ? 'loading' : ''}`}
-                            onClick={() => changePlanMutation.mutate(plan.id)}
-                            disabled={changePlanMutation.isPending}
+                            className="btn btn-primary btn-sm w-full"
+                            onClick={() => handleSelectPlan(plan)}
                             data-testid={`button-upgrade-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
-                            {changePlanMutation.isPending ? 'Changing...' : `Change to ${plan.name}`}
+                            Select Plan
                           </button>
                         )}
                       </div>
@@ -490,22 +664,116 @@ export function AdminBilling() {
               })}
           </div>
         )}
-        
-        {/* Feature Legend */}
-        <div className="mt-6 p-4 bg-base-200 rounded-lg">
-          <h4 className="font-semibold mb-2" data-testid="text-feature-legend">Feature Legend:</h4>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <i className="fas fa-check text-success"></i>
-              <span>Included in plan</span>
+      </div>
+
+      {/* Plan Change Modal */}
+      {showPlanChangeModal && selectedPlan && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4">Change to {selectedPlan.name}</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-base-200 p-4 rounded-lg">
+                <h4 className="font-semibold mb-2">Plan Details</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Billing Model:</span>
+                    <div>{getBillingModelText(selectedPlan.billingModel)}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Price:</span>
+                    <div>{formatPrice(selectedPlan.unitAmount, selectedPlan.currency)}/{selectedPlan.billingModel === 'flat_subscription' ? selectedPlan.cadence : `user/${selectedPlan.cadence === 'annual' ? 'year' : 'month'}`}</div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedPlan.billingModel !== 'flat_subscription' && (
+                <div className="bg-base-200 p-4 rounded-lg">
+                  <h4 className="font-semibold mb-2">User Count</h4>
+                  <div className="flex items-center gap-4">
+                    <label className="label">
+                      <span className="label-text">Number of {selectedPlan.billingModel === 'metered_per_active_user' ? 'active users' : 'seats'}:</span>
+                    </label>
+                    <input
+                      type="number"
+                      className="input input-bordered w-24"
+                      value={userCount}
+                      onChange={(e) => setUserCount(parseInt(e.target.value) || 0)}
+                      min={selectedPlan.minSeats || 1}
+                      data-testid="input-modal-user-count"
+                    />
+                  </div>
+                  <div className="text-sm text-base-content/60 mt-2">
+                    Monthly cost: {formatPrice((selectedPlan.unitAmount * userCount), selectedPlan.currency)}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <i className="fas fa-times text-base-content/40"></i>
-              <span className="text-base-content/60">Not included in plan</span>
+
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setShowPlanChangeModal(false);
+                  setSelectedPlan(null);
+                }}
+                data-testid="button-cancel-plan-change"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`btn btn-primary ${changePlanMutation.isPending ? 'loading' : ''}`}
+                onClick={handleConfirmPlanChange}
+                disabled={changePlanMutation.isPending}
+                data-testid="button-confirm-plan-change"
+              >
+                {changePlanMutation.isPending ? 'Changing...' : 'Confirm Change'}
+              </button>
             </div>
           </div>
+          <div className="modal-backdrop" onClick={() => {
+            setShowPlanChangeModal(false);
+            setSelectedPlan(null);
+          }}></div>
         </div>
-      </div>
+      )}
+
+      {/* Decrease Warning Modal */}
+      {showDecreaseWarning && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4 text-warning">
+              <i className="fas fa-exclamation-triangle mr-2"></i>
+              Cannot Decrease Users
+            </h3>
+            <p className="mb-4">
+              You are not able to decrease the users within your account. Please contact support for assistance with reducing your subscription.
+            </p>
+            <div className="modal-action">
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowDecreaseWarning(false)}
+                data-testid="button-close-decrease-warning"
+              >
+                Understood
+              </button>
+              <button
+                className="btn btn-outline"
+                onClick={() => {
+                  setShowDecreaseWarning(false);
+                  // You could add contact support functionality here
+                }}
+                data-testid="button-contact-support"
+              >
+                Contact Support
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowDecreaseWarning(false)}></div>
+        </div>
+      )}
     </div>
   );
 }
