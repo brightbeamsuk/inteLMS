@@ -750,6 +750,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Check license availability for user activation/creation
+  app.get('/api/admin/license-check', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get organization and subscription info
+      const organisation = await storage.getOrganisation(user.organisationId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organization not found' });
+      }
+
+      // Count active users in the organization
+      const allUsers = await storage.getUsersByOrganisation(user.organisationId);
+      const activeUsers = allUsers.filter(u => u.status === 'active');
+      const currentActiveCount = activeUsers.length;
+
+      // Default limits (for organizations without subscription)
+      let maxActiveUsers = 10; // Default free tier limit
+      let hasActiveSubscription = false;
+
+      // If organization has a Stripe subscription, check the limits
+      if (organisation.stripeSubscriptionId) {
+        try {
+          const stripe = new (await import('stripe')).default(process.env.STRIPE_SECRET_KEY!, {
+            apiVersion: '2023-10-16',
+          });
+
+          // Get subscription details from Stripe
+          const subscription = await stripe.subscriptions.retrieve(organisation.stripeSubscriptionId, {
+            expand: ['items.data.price.product']
+          });
+
+          if (subscription.status === 'active' || subscription.status === 'trialing') {
+            hasActiveSubscription = true;
+            
+            // Check if it's a per-seat subscription
+            const subscriptionItem = subscription.items.data[0];
+            if (subscriptionItem?.price?.product && typeof subscriptionItem.price.product === 'object') {
+              const productMetadata = subscriptionItem.price.product.metadata;
+              
+              // Look for seat limits in product metadata or subscription quantity
+              if (productMetadata?.seat_limit) {
+                maxActiveUsers = parseInt(productMetadata.seat_limit, 10);
+              } else if (subscriptionItem.quantity) {
+                maxActiveUsers = subscriptionItem.quantity;
+              } else {
+                // For unlimited plans or flat subscriptions
+                maxActiveUsers = 1000; // High limit for unlimited plans
+              }
+            }
+          }
+        } catch (stripeError) {
+          console.error('Error fetching Stripe subscription:', stripeError);
+          // Continue with default limits if Stripe fails
+        }
+      }
+
+      const availableLicenses = maxActiveUsers - currentActiveCount;
+      const isAtLimit = availableLicenses <= 0;
+
+      res.json({
+        currentActiveUsers: currentActiveCount,
+        maxActiveUsers,
+        availableLicenses: Math.max(0, availableLicenses),
+        isAtLimit,
+        hasActiveSubscription,
+        organisationName: organisation.displayName || organisation.name
+      });
+    } catch (error) {
+      console.error('Error checking license availability:', error);
+      res.status(500).json({ message: 'Failed to check license availability' });
+    }
+  });
+
   // User certificates endpoint
   app.get('/api/user/certificates', requireAuth, async (req: any, res) => {
     try {
