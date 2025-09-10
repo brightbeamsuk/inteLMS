@@ -255,7 +255,19 @@ export function AdminBilling() {
       // Redirect to Stripe Checkout
       if (data.checkoutUrl) {
         console.log('Redirecting to checkout URL:', data.checkoutUrl);
-        window.location.href = data.checkoutUrl;
+        
+        // Try window.open first (more reliable for external URLs)
+        const stripeWindow = window.open(data.checkoutUrl, '_blank');
+        
+        // Check if popup was blocked
+        if (!stripeWindow || stripeWindow.closed || typeof stripeWindow.closed === 'undefined') {
+          console.warn('Popup blocked, trying window.location.href');
+          window.location.href = data.checkoutUrl;
+        } else {
+          console.log('Opened Stripe checkout in new window');
+          // Focus the new window
+          stripeWindow.focus();
+        }
       } else {
         console.error('No checkout URL in response:', data);
         throw new Error('No checkout URL returned');
