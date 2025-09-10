@@ -225,6 +225,7 @@ export function SuperAdminPlans() {
   };
 
   const handleEditPlan = (plan: Plan) => {
+    // Edit plan with null safety checks
     setSelectedPlan(plan);
     setPlanFormData({
       name: plan.name,
@@ -232,7 +233,7 @@ export function SuperAdminPlans() {
       billingModel: plan.billingModel,
       cadence: plan.cadence,
       currency: plan.currency,
-      unitAmount: plan.unitAmount.toString(),
+      unitAmount: plan.unitAmount?.toString() || "",
       taxBehavior: plan.taxBehavior || "exclusive",
       trialDays: plan.trialDays?.toString() || "",
       minSeats: plan.minSeats?.toString() || "",
