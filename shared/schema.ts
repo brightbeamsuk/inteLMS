@@ -125,6 +125,8 @@ export const users = pgTable("users", {
   bio: text("bio"),
   allowCertificateDownload: boolean("allow_certificate_download").default(false),
   lastActive: timestamp("last_active"),
+  // Stripe fields for individual billing (PAYG or per-user mapping)
+  stripeCustomerId: varchar("stripe_customer_id"), // Individual Stripe Customer ID for PAYG users
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -149,6 +151,7 @@ export const organisations = pgTable("organisations", {
   planId: varchar("plan_id"), // Reference to the plan this organisation is subscribed to
   stripeCustomerId: varchar("stripe_customer_id"), // Stripe Customer ID
   stripeSubscriptionId: varchar("stripe_subscription_id"), // Current Stripe Subscription ID
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id"), // Stripe Subscription Item ID for the plan line
   billingStatus: billingStatusEnum("billing_status"), // Current billing status
   activeUserCount: integer("active_user_count").default(0), // For tracking usage
   lastBillingSync: timestamp("last_billing_sync"), // Last time usage was synced to Stripe

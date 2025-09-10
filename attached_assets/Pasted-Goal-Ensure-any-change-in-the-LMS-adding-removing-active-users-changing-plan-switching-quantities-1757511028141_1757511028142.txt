@@ -1,0 +1,90 @@
+Goal
+Ensure any change in the LMS (adding/removing active users, changing plan, switching quantities) updates the correct Stripe subscription — and that Stripe webhooks can always be traced back to the right organisation/user.
+
+1) Persist Stripe IDs in our DB
+
+Add these fields and populate them whenever we create/read from Stripe:
+
+Organisation: stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id (for the plan line), plan_id
+
+User (for PAYG or optional per-user mapping): stripe_customer_id (individual)
+
+2) Stamp identifying metadata on Stripe objects
+
+Whenever we create or update these Stripe objects, include metadata:
+
+Customer: { org_id: "<orgId>", org_name: "<name>" }
+
+Subscription: { org_id, plan_id }
+
+Subscription Item: { org_id, plan_id }
+
+Invoice / Invoice Line Items: { org_id, plan_id }
+
+Checkout Session: metadata = { org_id, plan_id, initiator: "lms" }
+
+This way, every Stripe event carries org_id back to us.
+
+3) Always update by ID, not by search
+
+For per-seat plans: call Subscription Item Update with the saved stripe_subscription_item_id and new quantity:
+
+stripe.subscriptionItems.update( subItemId, { quantity, proration_behavior: "create_prorations" } )
+
+For metered per-active-user plans: send Usage Records against the saved stripe_subscription_item_id:
+
+stripe.subscriptionItems.createUsageRecord( subItemId, { action: "set", quantity, timestamp: now } )
+
+For plan changes: update the Subscription Item price:
+
+stripe.subscriptionItems.update( subItemId, { price: NEW_PRICE_ID, proration_behavior: "create_prorations" } )
+
+4) LMS → Stripe update endpoints
+
+Add backend endpoints that only accept internal calls (auth required) and take orgId:
+
+POST /billing/org/:orgId/seats → body: { quantity }
+
+Loads org, gets stripe_subscription_item_id, updates quantity.
+
+POST /billing/org/:orgId/usage → body: { activeUsers, at? }
+
+Sends usage record for metered items.
+
+POST /billing/org/:orgId/plan → body: { planId }
+
+Looks up plan’s stripe_price_id, swaps the subscription item price.
+
+Use idempotency keys (e.g., billing:<orgId>:<action>:<timestamp>) on each Stripe call.
+
+5) Keep everything in sync from Stripe → LMS (webhooks)
+
+Implement a verified webhook handler that reads event.data.object.metadata.org_id:
+
+checkout.session.completed → attach customer/subscription to org; store subscription_item ID.
+
+customer.subscription.updated → update billing_status, current_period_end. If Stripe changed price/qty, mirror it.
+
+invoice.paid / invoice.payment_failed → mark org active / past_due.
+
+Log each event (type, org_id, subscription id) for audit.
+
+6) Guardrails & diagnostics
+
+If an org has no stripe_subscription_id or stripe_subscription_item_id, block update calls with a clear 422: “Subscription not initialised for this organisation.”
+
+Add a “Test subscription update” button in Superadmin → Subscription Manager:
+
+Shows: current customer_id, subscription_id, subscription_item_id, plan/price, quantity/usage.
+
+Run a dry-run: Upcoming Invoice preview via stripe.invoices.retrieveUpcoming({ customer, subscription }) and display line items.
+
+7) Acceptance criteria
+
+Changing seats/active users in the LMS updates the correct Stripe subscription item (verified by IDs).
+
+Metered usage posts to the right item and appears on the upcoming invoice.
+
+Webhooks always map back to an org_id via metadata; our DB and Stripe stay in sync.
+
+Plan changes in the LMS switch the Stripe price on the same subscription (with proration), tied to the same org.
