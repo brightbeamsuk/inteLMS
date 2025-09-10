@@ -258,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stripeService = getStripeService();
       
       // Retrieve the checkout session from Stripe
-      const session = await stripeService.getCheckoutSession(sessionId, {
+      const session = await stripeService['stripe'].checkout.sessions.retrieve(sessionId, {
         expand: ['subscription', 'customer']
       });
       
@@ -1183,14 +1183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stripeService = getStripeService();
 
       // Create Stripe checkout session
-      const sessionData = await stripeService.createTestCheckoutSession(plan, userCount || 1, organisation, 'subscription', {
-        organisationId,
-        planId,
-        billingModel: plan.billingModel,
-        cadence: plan.cadence,
-        userCount: String(userCount || 1),
-        updateType: 'plan_change'
-      });
+      const sessionData = await stripeService.createSubscriptionUpdateCheckoutSession(
+        plan,
+        organisation,
+        userCount || 1
+      );
 
       res.json({
         success: true,
