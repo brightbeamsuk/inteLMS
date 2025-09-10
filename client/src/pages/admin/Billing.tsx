@@ -250,10 +250,14 @@ export function AdminBilling() {
       
       const data = await response.json();
       
+      console.log('Received response from /api/subscriptions/update-checkout:', data);
+      
       // Redirect to Stripe Checkout
       if (data.checkoutUrl) {
+        console.log('Redirecting to checkout URL:', data.checkoutUrl);
         window.location.href = data.checkoutUrl;
       } else {
+        console.error('No checkout URL in response:', data);
         throw new Error('No checkout URL returned');
       }
     },

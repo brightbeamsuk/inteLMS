@@ -333,6 +333,13 @@ export class StripeService {
       console.log('Creating Stripe checkout session with data:', JSON.stringify(sessionData, null, 2));
       const session = await this.stripe.checkout.sessions.create(sessionData);
       
+      console.log('Stripe session created successfully:', {
+        id: session.id,
+        url: session.url,
+        mode: session.mode,
+        payment_status: session.payment_status
+      });
+      
       if (!session.url) {
         throw new Error('Checkout session created but no URL returned');
       }
