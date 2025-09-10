@@ -222,10 +222,11 @@ export class StripeService {
         success_url: `https://stripe.com/docs/testing/`,
         cancel_url: `https://stripe.com/docs/testing/`,
         metadata: {
-          organisationId,
-          planId: plan.id,
-          billingModel: plan.billingModel,
+          org_id: organisationId,
+          plan_id: plan.id,
+          billing_model: plan.billingModel,
           cadence: plan.cadence,
+          initiator: 'lms',
           test: 'true', // Mark as test
         },
       };
@@ -331,12 +332,13 @@ export class StripeService {
         success_url: `${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 'http://localhost:5000'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
         cancel_url: `${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 'http://localhost:5000'}/admin/billing?canceled=true`,
         metadata: {
-          organisationId: organisation.id,
-          planId: plan.id,
-          billingModel: plan.billingModel,
+          org_id: organisation.id,
+          plan_id: plan.id,
+          billing_model: plan.billingModel,
           cadence: plan.cadence,
-          userCount: userCount.toString(),
-          updateType: 'subscription_update',
+          user_count: userCount.toString(),
+          initiator: 'lms',
+          update_type: 'subscription_update',
         },
         customer_email: organisation.contactEmail || undefined,
       };
@@ -426,6 +428,124 @@ export class StripeService {
     } catch (error) {
       console.error('Error retrieving checkout session:', error);
       throw new Error(`Failed to retrieve checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create a Stripe customer with proper metadata
+   */
+  async createCustomer(organisation: any): Promise<string> {
+    try {
+      const customer = await this.stripe.customers.create({
+        name: organisation.displayName || organisation.name,
+        email: organisation.contactEmail,
+        phone: organisation.contactPhone,
+        metadata: {
+          org_id: organisation.id,
+          org_name: organisation.name,
+          initiator: 'lms',
+        },
+      });
+      
+      return customer.id;
+    } catch (error) {
+      console.error('Error creating Stripe customer:', error);
+      throw new Error(`Failed to create Stripe customer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Update subscription item quantity with idempotency
+   */
+  async updateSubscriptionItemQuantity(
+    subscriptionItemId: string,
+    quantity: number,
+    orgId: string,
+    idempotencyKey?: string
+  ): Promise<Stripe.SubscriptionItem> {
+    try {
+      const options: Stripe.SubscriptionItemUpdateParams = {
+        quantity,
+        proration_behavior: 'create_prorations',
+        metadata: {
+          org_id: orgId,
+          updated_by: 'lms',
+          update_type: 'quantity_change',
+        },
+      };
+
+      const requestOptions: Stripe.RequestOptions = {};
+      if (idempotencyKey) {
+        requestOptions.idempotencyKey = idempotencyKey;
+      }
+
+      return await this.stripe.subscriptionItems.update(subscriptionItemId, options, requestOptions);
+    } catch (error) {
+      console.error('Error updating subscription item quantity:', error);
+      throw new Error(`Failed to update subscription item quantity: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create usage record for metered billing
+   */
+  async createUsageRecord(
+    subscriptionItemId: string,
+    quantity: number,
+    orgId: string,
+    timestamp?: number,
+    idempotencyKey?: string
+  ): Promise<Stripe.UsageRecord> {
+    try {
+      const options: Stripe.UsageRecordCreateParams = {
+        action: 'set',
+        quantity,
+        timestamp: timestamp || Math.floor(Date.now() / 1000),
+      };
+
+      const requestOptions: Stripe.RequestOptions = {};
+      if (idempotencyKey) {
+        requestOptions.idempotencyKey = idempotencyKey;
+      }
+
+      return await this.stripe.subscriptionItems.createUsageRecord(subscriptionItemId, options, requestOptions);
+    } catch (error) {
+      console.error('Error creating usage record:', error);
+      throw new Error(`Failed to create usage record: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Update subscription item price (plan change)
+   */
+  async updateSubscriptionItemPrice(
+    subscriptionItemId: string,
+    newPriceId: string,
+    orgId: string,
+    planId: string,
+    idempotencyKey?: string
+  ): Promise<Stripe.SubscriptionItem> {
+    try {
+      const options: Stripe.SubscriptionItemUpdateParams = {
+        price: newPriceId,
+        proration_behavior: 'create_prorations',
+        metadata: {
+          org_id: orgId,
+          plan_id: planId,
+          updated_by: 'lms',
+          update_type: 'plan_change',
+        },
+      };
+
+      const requestOptions: Stripe.RequestOptions = {};
+      if (idempotencyKey) {
+        requestOptions.idempotencyKey = idempotencyKey;
+      }
+
+      return await this.stripe.subscriptionItems.update(subscriptionItemId, options, requestOptions);
+    } catch (error) {
+      console.error('Error updating subscription item price:', error);
+      throw new Error(`Failed to update subscription item price: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }
