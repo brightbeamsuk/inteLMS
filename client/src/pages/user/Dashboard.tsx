@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, AreaChart, Area } from "recharts";
 
 // SCORM 2004 (3rd Ed.) attempt state interface
 interface AttemptState {
@@ -61,6 +63,18 @@ interface Certificate {
 interface UserStats {
   completedCourses: number;
   averageScore: number;
+}
+
+interface UserProgress {
+  totalAssigned: number;
+  completed: number;
+  inProgress: number;
+  notStarted: number;
+  passRate: number;
+  averageScore: number;
+  totalCompletions: number;
+  passedCompletions: number;
+  failedCompletions: number;
 }
 
 // Course Results Modal Component
@@ -533,6 +547,14 @@ export function UserDashboard() {
     queryKey: ['/api/user/stats'],
   });
 
+  const { data: userProgress, isLoading: progressLoading } = useQuery<UserProgress>({
+    queryKey: ['/api/user/progress'],
+  });
+
+  const { data: analyticsData = [], isLoading: analyticsLoading } = useQuery({
+    queryKey: ['/api/user/analytics/completions'],
+  });
+
   const { data: certificates = [], isLoading: certificatesLoading } = useQuery<Certificate[]>({
     queryKey: ['/api/user/certificates'],
   });
@@ -617,28 +639,322 @@ export function UserDashboard() {
           </h1>
           <p className="text-base-content/60" data-testid="text-welcome-subtitle">Continue your learning journey</p>
         </div>
-        <div className="stats shadow">
-          <div className="stat place-items-center">
-            <div className="stat-title">Completed</div>
-            <div className="stat-value stat-completions" data-testid="stat-completed-count">
-              {statsLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="stat bg-base-200 rounded-lg shadow-sm">
+            <div className="stat-figure text-primary">
+              <i className="fas fa-graduation-cap text-2xl"></i>
+            </div>
+            <div className="stat-title">Total Assigned</div>
+            <div className="stat-value text-primary" data-testid="stat-total-assigned">
+              {progressLoading ? (
                 <span className="loading loading-spinner loading-sm"></span>
               ) : (
-                userStats?.completedCourses || 0
+                userProgress?.totalAssigned || 0
               )}
             </div>
             <div className="stat-desc">courses</div>
           </div>
-          <div className="stat place-items-center">
-            <div className="stat-title">Avg Score</div>
-            <div className="stat-value stat-performance" data-testid="stat-avg-score">
-              {statsLoading ? (
+          
+          <div className="stat bg-base-200 rounded-lg shadow-sm">
+            <div className="stat-figure text-success">
+              <i className="fas fa-check-circle text-2xl"></i>
+            </div>
+            <div className="stat-title">Completed</div>
+            <div className="stat-value text-success" data-testid="stat-completed-count">
+              {progressLoading ? (
                 <span className="loading loading-spinner loading-sm"></span>
               ) : (
-                `${userStats?.averageScore || 0}%`
+                userProgress?.completed || 0
               )}
             </div>
-            <div className="stat-desc">{userStats?.completedCourses > 0 ? 'all completed' : 'no completions yet'}</div>
+            <div className="stat-desc">finished courses</div>
+          </div>
+          
+          <div className="stat bg-base-200 rounded-lg shadow-sm">
+            <div className="stat-figure text-info">
+              <i className="fas fa-play-circle text-2xl"></i>
+            </div>
+            <div className="stat-title">In Progress</div>
+            <div className="stat-value text-info" data-testid="stat-in-progress">
+              {progressLoading ? (
+                <span className="loading loading-spinner loading-sm"></span>
+              ) : (
+                userProgress?.inProgress || 0
+              )}
+            </div>
+            <div className="stat-desc">active courses</div>
+          </div>
+          
+          <div className="stat bg-base-200 rounded-lg shadow-sm">
+            <div className="stat-figure text-secondary">
+              <i className="fas fa-percentage text-2xl"></i>
+            </div>
+            <div className="stat-title">Success Rate</div>
+            <div className="stat-value text-secondary" data-testid="stat-pass-rate">
+              {progressLoading ? (
+                <span className="loading loading-spinner loading-sm"></span>
+              ) : (
+                `${userProgress?.passRate || 0}%`
+              )}
+            </div>
+            <div className="stat-desc">completion rate</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts and Analytics */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+        {/* Completion Trends Chart */}
+        <div className="card bg-base-200 shadow-sm xl:col-span-2">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-chart-line text-primary"></i>
+              My Learning Progress
+            </h3>
+            <div className="h-80 bg-base-100 rounded p-4">
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : analyticsData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">📚</div>
+                    <p className="text-sm text-base-content/60">Start completing courses to see your progress here</p>
+                  </div>
+                </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    successful: {
+                      label: "Passed",
+                      color: "hsl(142, 76%, 36%)",
+                    },
+                    failed: {
+                      label: "Failed", 
+                      color: "hsl(0, 84%, 60%)",
+                    },
+                  }}
+                >
+                  <AreaChart data={analyticsData}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis 
+                      dataKey="monthName" 
+                      tick={{ fontSize: 11, fill: 'currentColor' }}
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis tick={{ fontSize: 11, fill: 'currentColor' }} />
+                    <ChartTooltip 
+                      content={<ChartTooltipContent />} 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--base-100))',
+                        border: '1px solid hsl(var(--base-300))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Area 
+                      type="monotone" 
+                      dataKey="successful" 
+                      stackId="1" 
+                      stroke="var(--color-successful)" 
+                      fill="var(--color-successful)" 
+                      fillOpacity={0.7}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="failed" 
+                      stackId="1" 
+                      stroke="var(--color-failed)" 
+                      fill="var(--color-failed)" 
+                      fillOpacity={0.7}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Course Progress Pie Chart */}
+        <div className="card bg-base-200 shadow-sm">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-chart-pie text-secondary"></i>
+              Course Status
+            </h3>
+            <div className="h-80 bg-base-100 rounded p-4">
+              {progressLoading || !userProgress ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full">
+                  {userProgress.totalAssigned > 0 ? (
+                    <>
+                      <ChartContainer
+                        config={{
+                          completed: {
+                            label: "Completed",
+                            color: "hsl(142, 76%, 36%)",
+                          },
+                          inProgress: {
+                            label: "In Progress", 
+                            color: "hsl(217, 91%, 60%)",
+                          },
+                          notStarted: {
+                            label: "Not Started",
+                            color: "hsl(45, 93%, 47%)",
+                          },
+                        }}
+                        className="h-48 w-full"
+                      >
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Completed', value: userProgress.completed, fill: 'hsl(142, 76%, 36%)' },
+                              { name: 'In Progress', value: userProgress.inProgress, fill: 'hsl(217, 91%, 60%)' },
+                              { name: 'Not Started', value: userProgress.notStarted, fill: 'hsl(45, 93%, 47%)' }
+                            ].filter(item => item.value > 0)}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={40}
+                            outerRadius={80}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                          </Pie>
+                          <ChartTooltip 
+                            content={<ChartTooltipContent />} 
+                            contentStyle={{
+                              backgroundColor: 'hsl(var(--base-100))',
+                              border: '1px solid hsl(var(--base-300))',
+                              borderRadius: '8px'
+                            }}
+                          />
+                        </PieChart>
+                      </ChartContainer>
+                      <div className="text-center mt-4">
+                        <div className="text-2xl font-bold text-success">
+                          {Math.round((userProgress.completed / userProgress.totalAssigned) * 100)}%
+                        </div>
+                        <div className="text-sm text-base-content/60">
+                          Overall Progress
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center">
+                      <div className="text-4xl mb-2">🎯</div>
+                      <p className="text-sm text-base-content/60">No courses assigned yet</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Performance Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Average Score Display */}
+        <div className="card bg-base-200 shadow-sm">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-trophy text-warning"></i>
+              Performance Overview
+            </h3>
+            <div className="h-64 bg-base-100 rounded p-4">
+              {progressLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : userProgress?.totalCompletions > 0 ? (
+                <div className="flex flex-col items-center justify-center h-full space-y-6">
+                  <div className="text-center">
+                    <div className="text-5xl font-bold text-primary mb-2" data-testid="stat-avg-score">
+                      {userProgress.averageScore}%
+                    </div>
+                    <div className="text-lg text-base-content/80">Average Score</div>
+                  </div>
+                  
+                  <div className="stats stats-vertical lg:stats-horizontal shadow">
+                    <div className="stat place-items-center">
+                      <div className="stat-title">Passed</div>
+                      <div className="stat-value text-success text-lg">{userProgress.passedCompletions}</div>
+                      <div className="stat-desc">courses</div>
+                    </div>
+                    <div className="stat place-items-center">
+                      <div className="stat-title">Failed</div>
+                      <div className="stat-value text-error text-lg">{userProgress.failedCompletions}</div>
+                      <div className="stat-desc">attempts</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">🏆</div>
+                    <p className="text-sm text-base-content/60">Complete courses to see your performance metrics</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Certificates */}
+        <div className="card bg-base-200 shadow-sm">
+          <div className="card-body">
+            <h3 className="card-title">
+              <i className="fas fa-certificate text-warning"></i>
+              My Certificates
+            </h3>
+            <div className="h-64 bg-base-100 rounded p-4" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+              {certificatesLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : certificates.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <div className="text-4xl mb-2">🥇</div>
+                    <p className="text-sm text-base-content/60">Earn certificates by completing courses</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {certificates.map((cert, index) => (
+                    <div key={cert.id} className="flex justify-between items-center p-3 bg-base-300 rounded hover:bg-base-200 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-warning text-warning-content rounded-full flex items-center justify-center">
+                          <i className="fas fa-certificate text-sm"></i>
+                        </div>
+                        <div>
+                          <div className="font-semibold" data-testid={`text-cert-course-${index + 1}`}>
+                            {cert.courseTitle || 'Course Certificate'}
+                          </div>
+                          <div className="text-sm text-base-content/60" data-testid={`text-cert-date-${index + 1}`}>
+                            Issued: {new Date(cert.issuedAt).toLocaleDateString('en-GB')}
+                          </div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={(e) => handleDashboardCertificateDownload(e, cert.id)}
+                        className="btn btn-xs btn-outline"
+                        data-testid={`button-download-cert-${index + 1}`}
+                      >
+                        <i className="fas fa-download text-xs"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
