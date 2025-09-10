@@ -957,6 +957,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stripe Plans Testing and Diagnostics API (SuperAdmin only)
+  
+  // Plan Price Test - validates Stripe Product and Price alignment
+  app.post('/api/plans/:id/stripe-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { id } = req.params;
+      const plan = await storage.getPlan(id);
+      
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      const validation = await stripeService.validatePlanStripeConfig(plan);
+      
+      res.json(validation);
+    } catch (error) {
+      console.error('Error testing plan Stripe config:', error);
+      res.status(500).json({ 
+        message: 'Failed to test plan Stripe configuration',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Stripe Connection Test - validates API key and connectivity
+  app.post('/api/stripe/connection-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      const connectionTest = await stripeService.testConnection();
+      
+      res.json(connectionTest);
+    } catch (error) {
+      console.error('Error testing Stripe connection:', error);
+      res.status(500).json({
+        success: false,
+        timestamp: new Date().toISOString(),
+        details: {
+          apiKeyValid: false,
+          error: error instanceof Error ? error.message : 'Failed to initialize Stripe service'
+        }
+      });
+    }
+  });
+
+  // Plan Checkout Test - creates test checkout session
+  app.post('/api/plans/:id/checkout-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { id } = req.params;
+      const { organisationId = 'test-org-' + Date.now() } = req.body;
+      
+      const plan = await storage.getPlan(id);
+      
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!plan.stripePriceId) {
+        return res.status(422).json({ 
+          message: 'Plan must have a Stripe Price ID to create checkout session',
+          suggestion: 'Sync the plan to Stripe first'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      const checkout = await stripeService.createTestCheckoutSession(plan, organisationId);
+      
+      res.json({
+        success: true,
+        checkoutUrl: checkout.url,
+        sessionId: checkout.sessionId,
+        planId: plan.id,
+        planName: plan.name,
+        testOrganisationId: organisationId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error creating test checkout session:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to create test checkout session',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Sync Plan to Stripe - manual sync endpoint
+  app.post('/api/plans/:id/stripe-sync', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { id } = req.params;
+      const plan = await storage.getPlan(id);
+      
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!plan.unitAmount || !plan.billingModel) {
+        return res.status(422).json({ 
+          message: 'Plan must have unit amount and billing model configured to sync with Stripe' 
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      const { productId, priceId } = await stripeService.syncPlanToStripe(plan);
+      
+      // Update plan with Stripe IDs
+      const updatedPlan = await storage.updatePlan(id, {
+        stripeProductId: productId,
+        stripePriceId: priceId
+      });
+      
+      res.json({
+        success: true,
+        plan: updatedPlan,
+        stripe: {
+          productId,
+          priceId
+        },
+        message: 'Plan successfully synced to Stripe',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error syncing plan to Stripe:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to sync plan to Stripe',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Plan Management API (SuperAdmin only for write operations, Admin can read)
   // Get all plans
   app.get('/api/plans', requireAuth, async (req: any, res) => {
@@ -1069,8 +1234,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: user.id
       });
 
-      // TODO: Create Stripe Product and Price here
-      // We'll implement this in the next step
+      // Sync to Stripe if we have valid billing settings
+      try {
+        if (finalUnitAmount && billingModel) {
+          const { getStripeService } = await import('./services/StripeService.js');
+          const stripeService = getStripeService();
+          
+          const { productId, priceId } = await stripeService.syncPlanToStripe({
+            ...newPlan,
+            unitAmount: finalUnitAmount,
+            billingModel,
+            cadence,
+            currency,
+            taxBehavior,
+            trialDays,
+            minSeats,
+            priceChangePolicy
+          });
+          
+          // Update plan with Stripe IDs
+          const updatedPlanWithStripe = await storage.updatePlan(newPlan.id, {
+            stripeProductId: productId,
+            stripePriceId: priceId
+          });
+          
+          res.status(201).json(updatedPlanWithStripe);
+          return;
+        }
+      } catch (stripeError) {
+        console.error('Error syncing plan to Stripe:', stripeError);
+        // Continue without Stripe sync if it fails - plan was already created
+      }
 
       // Set plan features if provided
       if (featureIds && featureIds.length > 0) {
@@ -1157,8 +1351,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status
       });
 
-      // TODO: If billing settings changed, create new Stripe Price
-      // and handle existing subscriptions based on priceChangePolicy
+      // If billing settings changed, create new Stripe Price
+      if (billingSettingsChanged && finalUnitAmount && billingModel) {
+        try {
+          const { getStripeService } = await import('./services/StripeService.js');
+          const stripeService = getStripeService();
+          
+          const { productId, priceId } = await stripeService.syncPlanToStripe({
+            ...updatedPlan,
+            unitAmount: finalUnitAmount,
+            billingModel,
+            cadence: cadence || existingPlan.cadence,
+            currency: currency || existingPlan.currency,
+            taxBehavior: taxBehavior || existingPlan.taxBehavior,
+            trialDays: trialDays !== undefined ? trialDays : existingPlan.trialDays,
+            minSeats: minSeats !== undefined ? minSeats : existingPlan.minSeats,
+            priceChangePolicy: priceChangePolicy || existingPlan.priceChangePolicy
+          });
+          
+          // Update plan with new Stripe Price ID (Product ID should remain the same)
+          updatedPlan = await storage.updatePlan(id, {
+            stripeProductId: productId,
+            stripePriceId: priceId
+          });
+          
+          // TODO: Handle existing subscriptions based on priceChangePolicy
+          // This will be implemented when we add subscription management
+          console.log(`Plan ${id} price updated. New Stripe Price ID: ${priceId}. Price change policy: ${updatedPlan.priceChangePolicy}`);
+          
+        } catch (stripeError) {
+          console.error('Error updating Stripe price for plan:', stripeError);
+          // Continue without Stripe sync if it fails - plan was already updated
+        }
+      }
 
       // Update plan features if provided
       if (featureIds !== undefined) {
