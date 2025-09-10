@@ -186,6 +186,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   }
 
+  // Helper function to check license availability
+  async function checkLicenseCapacity(userId: string, additionalActiveUsers: number = 1): Promise<{ canProceed: boolean; error?: string }> {
+    try {
+      const user = await storage.getUser(userId);
+      if (!user?.organisationId) {
+        return { canProceed: false, error: 'User not associated with an organization' };
+      }
+
+      // Get organization and subscription info
+      const organisation = await storage.getOrganisation(user.organisationId);
+      if (!organisation) {
+        return { canProceed: false, error: 'Organization not found' };
+      }
+
+      // Count active users in the organization
+      const allUsers = await storage.getUsersByOrganisation(user.organisationId);
+      const activeUsers = allUsers.filter(u => u.status === 'active');
+      const currentActiveCount = activeUsers.length;
+
+      // Default limits (for organizations without subscription)
+      let maxActiveUsers = 10; // Default free tier limit
+
+      // If organization has a Stripe subscription, check the limits
+      if (organisation.stripeSubscriptionId) {
+        try {
+          const Stripe = (await import('stripe')).default;
+          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+            apiVersion: '2025-08-27.basil',
+          });
+
+          // Get subscription details from Stripe
+          const subscription = await stripe.subscriptions.retrieve(organisation.stripeSubscriptionId, {
+            expand: ['items.data.price.product']
+          });
+
+          if (subscription.status === 'active' || subscription.status === 'trialing') {
+            // Check if it's a per-seat subscription
+            const subscriptionItem = subscription.items.data[0];
+            if (subscriptionItem?.price?.product && typeof subscriptionItem.price.product === 'object' && !subscriptionItem.price.product.deleted) {
+              const productMetadata = subscriptionItem.price.product.metadata;
+              
+              // Look for seat limits in product metadata or subscription quantity
+              if (productMetadata?.seat_limit) {
+                maxActiveUsers = parseInt(productMetadata.seat_limit, 10);
+              } else if (subscriptionItem.quantity) {
+                maxActiveUsers = subscriptionItem.quantity;
+              } else {
+                // For unlimited plans or flat subscriptions
+                maxActiveUsers = 1000; // High limit for unlimited plans
+              }
+            }
+          }
+        } catch (stripeError) {
+          console.error('Error fetching Stripe subscription in license check:', stripeError);
+          // Continue with default limits if Stripe fails
+        }
+      }
+
+      const availableLicenses = maxActiveUsers - currentActiveCount;
+      const canProceed = availableLicenses >= additionalActiveUsers;
+
+      if (!canProceed) {
+        return { 
+          canProceed: false, 
+          error: `License limit exceeded. You have ${currentActiveCount} active users out of ${maxActiveUsers} allowed. Need ${additionalActiveUsers} more licenses.` 
+        };
+      }
+
+      return { canProceed: true };
+    } catch (error) {
+      console.error('Error checking license capacity:', error);
+      return { canProceed: false, error: 'Failed to check license capacity' };
+    }
+  }
+
   // Helper function to get user ID from session claims
   function getUserIdFromSession(req: any): string | null {
     // For Replit Auth (production)
@@ -6034,6 +6109,27 @@ This test was initiated by ${user.email}.
         }
       }
 
+      // Check license capacity if activating users
+      if (action === 'status' && value === 'active') {
+        const usersToActivate = [];
+        for (const userId of userIds) {
+          const targetUser = await storage.getUser(userId);
+          if (targetUser && targetUser.status !== 'active') {
+            usersToActivate.push(userId);
+          }
+        }
+        
+        if (usersToActivate.length > 0) {
+          const licenseCheck = await checkLicenseCapacity(currentUser.id, usersToActivate.length);
+          if (!licenseCheck.canProceed) {
+            return res.status(403).json({ 
+              message: licenseCheck.error,
+              code: 'LICENSE_LIMIT_EXCEEDED'
+            });
+          }
+        }
+      }
+
       const updatedUsers = [];
       
       for (const userId of userIds) {
@@ -6086,6 +6182,17 @@ This test was initiated by ${user.email}.
         validatedData.organisationId = user.organisationId;
       }
 
+      // Check license capacity if creating an active user
+      if (validatedData.status === 'active') {
+        const licenseCheck = await checkLicenseCapacity(user.id, 1);
+        if (!licenseCheck.canProceed) {
+          return res.status(403).json({ 
+            message: licenseCheck.error,
+            code: 'LICENSE_LIMIT_EXCEEDED'
+          });
+        }
+      }
+
       const newUser = await storage.createUser(validatedData);
       res.status(201).json(newUser);
     } catch (error) {
@@ -6124,6 +6231,17 @@ This test was initiated by ${user.email}.
         ...req.body,
         updatedAt: new Date(),
       };
+
+      // Check license capacity if activating a user
+      if (updateData.status === 'active' && targetUser.status !== 'active') {
+        const licenseCheck = await checkLicenseCapacity(currentUser.id, 1);
+        if (!licenseCheck.canProceed) {
+          return res.status(403).json({ 
+            message: licenseCheck.error,
+            code: 'LICENSE_LIMIT_EXCEEDED'
+          });
+        }
+      }
 
       const updatedUser = await storage.updateUser(id, updateData);
       if (!updatedUser) {
