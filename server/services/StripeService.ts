@@ -286,9 +286,7 @@ export class StripeService {
       }
 
       // Create line item based on billing model
-      const lineItem: any = {
-        price: plan.stripePriceId,
-      };
+      let lineItem: any;
       
       // For per_seat billing, we need to create a custom line item with the total amount
       // since the current Stripe price is configured as metered (usage-based)
@@ -314,10 +312,16 @@ export class StripeService {
           quantity: Math.max(userCount, plan.minSeats || 1)
         };
       } else if (plan.billingModel === 'flat_subscription') {
-        lineItem.quantity = 1;
+        lineItem = {
+          price: plan.stripePriceId,
+          quantity: 1
+        };
       } else {
-        // For other billing models, fall back to the existing price
+        // For other billing models, fall back to the existing price without quantity
         console.log('Using default price without quantity for non-per-seat billing');
+        lineItem = {
+          price: plan.stripePriceId
+        };
       }
 
       const sessionData: Stripe.Checkout.SessionCreateParams = {
