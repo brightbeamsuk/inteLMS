@@ -328,8 +328,8 @@ export class StripeService {
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [lineItem],
-        success_url: `${process.env.VITE_FRONTEND_URL || 'http://localhost:5000'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
-        cancel_url: `${process.env.VITE_FRONTEND_URL || 'http://localhost:5000'}/admin/billing?canceled=true`,
+        success_url: `${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 'http://localhost:5000'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 'http://localhost:5000'}/admin/billing?canceled=true`,
         metadata: {
           organisationId: organisation.id,
           planId: plan.id,
