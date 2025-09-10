@@ -295,10 +295,9 @@ export class StripeService {
         lineItem.quantity = Math.max(userCount, plan.minSeats || 1);
       } else if (plan.billingModel === 'flat_subscription') {
         lineItem.quantity = 1;
-      } else if (plan.billingModel === 'metered_per_active_user') {
-        // For metered billing, set the initial quantity to show expected usage
-        lineItem.quantity = Math.max(userCount, 1);
       }
+      // For metered_per_active_user, Stripe does not allow quantity to be specified
+      // The quantity is determined by actual usage reporting
 
       const sessionData: Stripe.Checkout.SessionCreateParams = {
         mode: 'subscription',
