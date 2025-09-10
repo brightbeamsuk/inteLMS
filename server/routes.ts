@@ -2751,6 +2751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const responseData = {
         ticketId: id,
         userId: user.id,
+        createdBy: user.id,
         message,
         isInternal: user.role === 'superadmin' ? (isInternal || false) : false,
       };

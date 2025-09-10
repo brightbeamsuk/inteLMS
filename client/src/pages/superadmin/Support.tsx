@@ -43,6 +43,7 @@ export function SuperAdminSupport() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'active' | 'closed'>('active');
   const [responseMessage, setResponseMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
   const { toast } = useToast();
@@ -50,7 +51,11 @@ export function SuperAdminSupport() {
 
   // Build query parameters for filtering
   const queryParams = new URLSearchParams();
-  if (statusFilter) queryParams.append('status', statusFilter);
+  if (viewMode === 'closed') {
+    queryParams.append('status', 'closed');
+  } else if (statusFilter && statusFilter !== 'closed') {
+    queryParams.append('status', statusFilter);
+  }
   if (priorityFilter) queryParams.append('priority', priorityFilter);
   if (categoryFilter) queryParams.append('category', categoryFilter);
 
@@ -79,6 +84,7 @@ export function SuperAdminSupport() {
       apiRequest('PUT', `/api/support/tickets/${data.ticketId}`, data.updates).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
       toast({ title: "Ticket updated successfully" });
     },
     onError: (error: any) => {
@@ -95,6 +101,7 @@ export function SuperAdminSupport() {
       }).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
       setResponseMessage('');
       setIsInternal(false);
       toast({ title: "Response added successfully" });
@@ -106,6 +113,33 @@ export function SuperAdminSupport() {
 
   const handleUpdateTicket = (updates: any) => {
     if (!selectedTicket) return;
+    
+    // Show confirmation dialog when closing ticket
+    if (updates.status === 'closed') {
+      const confirmed = window.confirm(
+        `Are you sure you want to close ticket #${selectedTicket.id.slice(-8)}?\n\nThis will mark the ticket as closed and send an automatic notification to the user.`
+      );
+      
+      if (!confirmed) return;
+      
+      // Add automatic response when closing
+      const autoResponseMessage = `This ticket has been marked as closed. If you need further assistance, please create a new support ticket.\n\nThank you for using our support system!`;
+      
+      // First add the automatic response, then update the ticket
+      addResponseMutation.mutate({
+        ticketId: selectedTicket.id,
+        message: autoResponseMessage,
+        isInternal: false
+      }, {
+        onSuccess: () => {
+          // After response is added, update the ticket status
+          updateTicketMutation.mutate({ ticketId: selectedTicket.id, updates });
+        }
+      });
+      
+      return;
+    }
+    
     updateTicketMutation.mutate({ ticketId: selectedTicket.id, updates });
   };
 
@@ -116,6 +150,21 @@ export function SuperAdminSupport() {
       message: responseMessage,
       isInternal,
     });
+  };
+
+  const handleReopenTicket = () => {
+    if (!selectedTicket) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to reopen ticket #${selectedTicket.id.slice(-8)}?\n\nThis will change the status from closed to open.`
+    );
+    
+    if (confirmed) {
+      updateTicketMutation.mutate({ 
+        ticketId: selectedTicket.id, 
+        updates: { status: 'open' } 
+      });
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -162,20 +211,47 @@ export function SuperAdminSupport() {
             <div className="card-body">
               <h2 className="card-title mb-4">Support Tickets</h2>
               
+              {/* View Mode Tabs */}
+              <div className="tabs tabs-boxed mb-4">
+                <a 
+                  className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('active');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-active-tickets"
+                >
+                  Active Tickets
+                </a>
+                <a 
+                  className={`tab ${viewMode === 'closed' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('closed');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-closed-tickets"
+                >
+                  Closed Tickets
+                </a>
+              </div>
+              
               {/* Filters */}
               <div className="space-y-2 mb-4">
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  data-testid="filter-status"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
-                </select>
+                {viewMode === 'active' && (
+                  <select 
+                    className="select select-bordered w-full select-sm"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    data-testid="filter-status"
+                  >
+                    <option value="">All Active Statuses</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                )}
                 
                 <select 
                   className="select select-bordered w-full select-sm"
@@ -336,6 +412,19 @@ export function SuperAdminSupport() {
                       </select>
                     </div>
                   </div>
+
+                  {/* Reopen Button for Closed Tickets */}
+                  {selectedTicket.status === 'closed' && (
+                    <div className="mt-4">
+                      <button
+                        className="btn btn-outline btn-success btn-sm"
+                        onClick={handleReopenTicket}
+                        data-testid="reopen-ticket"
+                      >
+                        🔄 Reopen Ticket
+                      </button>
+                    </div>
+                  )}
 
                   {!selectedTicket.isRead && (
                     <button
