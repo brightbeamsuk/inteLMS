@@ -62,7 +62,9 @@ export function AdminBilling() {
   const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
   const [showDecreaseWarning, setShowDecreaseWarning] = useState(false);
 
-  // Handle success/cancel from Stripe checkout
+  // Verify Stripe payment and handle success/cancel from checkout
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const success = urlParams.get('success');
@@ -70,16 +72,43 @@ export function AdminBilling() {
     const sessionId = urlParams.get('session_id');
     
     if (success === 'true' && sessionId) {
-      toast({
-        title: "Payment Successful!",
-        description: "Your subscription has been updated. Changes may take a few minutes to reflect.",
+      // Verify the payment with Stripe before updating UI
+      setIsVerifyingPayment(true);
+      
+      fetch(`/api/subscriptions/verify/${sessionId}`, {
+        credentials: 'include'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          toast({
+            title: "Payment Successful!",
+            description: "Your subscription has been updated successfully.",
+          });
+          
+          // Refresh the organisation data to show updated billing
+          queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+        } else {
+          toast({
+            title: "Payment Verification Failed",
+            description: data.message || "Unable to verify your payment. Please contact support if this persists.",
+            variant: "destructive",
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Payment verification error:', error);
+        toast({
+          title: "Payment Verification Error",
+          description: "Unable to verify your payment status. Please contact support.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        setIsVerifyingPayment(false);
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
       });
-      
-      // Refresh the organisation data
-      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
-      
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (canceled === 'true') {
       toast({
         title: "Payment Canceled",
@@ -363,6 +392,29 @@ export function AdminBilling() {
       userCount: selectedPlan.billingModel !== 'flat_subscription' ? userCount : undefined
     });
   };
+
+  // Show loading overlay during payment verification
+  if (isVerifyingPayment) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" data-testid="payment-verification-loading">
+          <div className="bg-base-100 p-8 rounded-lg shadow-lg text-center">
+            <div className="loading loading-spinner loading-lg text-primary mb-4"></div>
+            <h3 className="text-lg font-semibold mb-2">Verifying Payment</h3>
+            <p className="text-base-content/60">Please wait while we confirm your payment with Stripe...</p>
+          </div>
+        </div>
+        
+        {/* Show the page content behind the overlay */}
+        <div className="opacity-30">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-bold">Billing & Subscription</h1>
+          </div>
+          <div className="text-base-content/60">Verifying payment...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

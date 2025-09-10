@@ -246,6 +246,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const scormPreviewService = new ScormPreviewService();
 
   // Stripe Webhook Handler (for processing successful payments)
+  // Verify Stripe payment/subscription status
+  app.get('/api/subscriptions/verify/:sessionId', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    try {
+      const { sessionId } = req.params;
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      // Retrieve the checkout session from Stripe
+      const session = await stripeService.stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['subscription', 'customer']
+      });
+      
+      if (session.payment_status === 'paid' && session.subscription) {
+        // Payment successful - update our database
+        const metadata = session.metadata;
+        if (metadata?.organisationId) {
+          await storage.updateOrganisationBilling(metadata.organisationId, {
+            stripeSubscriptionId: session.subscription as string,
+            stripeCustomerId: session.customer as string,
+            billingStatus: 'active',
+            activeUserCount: parseInt(metadata.userCount || '1'),
+            lastBillingSync: new Date(),
+          });
+          
+          // Get updated organisation data
+          const updatedOrg = await storage.getOrganisation(metadata.organisationId);
+          
+          res.json({
+            success: true,
+            message: 'Subscription updated successfully',
+            organisation: updatedOrg,
+            session: {
+              id: session.id,
+              payment_status: session.payment_status,
+              subscription_id: session.subscription
+            }
+          });
+        } else {
+          res.status(400).json({ success: false, message: 'Missing organization metadata' });
+        }
+      } else {
+        res.json({
+          success: false,
+          message: 'Payment not completed or subscription not created',
+          session: {
+            id: session.id,
+            payment_status: session.payment_status,
+            subscription_id: session.subscription
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Error verifying Stripe session:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to verify payment status',
+        error: error.message 
+      });
+    }
+  });
+
   // Stripe Webhook Endpoint (ready for configuration)
   app.post('/api/webhooks/stripe', (req, res) => {
     // Simple webhook endpoint - can be enhanced later with proper signature verification
