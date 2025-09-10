@@ -248,7 +248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stripe Webhook Handler (for processing successful payments)
   // Verify Stripe payment/subscription status
   app.get('/api/subscriptions/verify/:sessionId', async (req, res) => {
-    if (!req.isAuthenticated()) {
+    if (!req.session?.user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
