@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -61,6 +61,36 @@ export function AdminBilling() {
   const [userCount, setUserCount] = useState<number>(0);
   const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
   const [showDecreaseWarning, setShowDecreaseWarning] = useState(false);
+
+  // Handle success/cancel from Stripe checkout
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    const canceled = urlParams.get('canceled');
+    const sessionId = urlParams.get('session_id');
+    
+    if (success === 'true' && sessionId) {
+      toast({
+        title: "Payment Successful!",
+        description: "Your subscription has been updated. Changes may take a few minutes to reflect.",
+      });
+      
+      // Refresh the organisation data
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+      
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (canceled === 'true') {
+      toast({
+        title: "Payment Canceled",
+        description: "Your subscription update was canceled. No changes were made.",
+        variant: "destructive",
+      });
+      
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [toast, queryClient, user?.organisationId]);
 
   const { data: organisation, isLoading: orgLoading } = useQuery<Organisation>({
     queryKey: ['/api/organisations', user?.organisationId],

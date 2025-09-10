@@ -245,6 +245,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize SCORM preview service
   const scormPreviewService = new ScormPreviewService();
 
+  // Stripe Webhook Handler (for processing successful payments)
+  app.post('/api/webhooks/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.warn('Stripe webhook secret not configured - webhook processing disabled');
+      return res.status(200).json({received: true, note: 'webhook secret not configured'});
+    }
+
+    let event;
+    try {
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      // Verify webhook signature
+      event = stripeService.stripe.webhooks.constructEvent(req.body, sig as string, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err: any) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the event
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          const session = event.data.object;
+          console.log('Checkout session completed:', session.id);
+          
+          // Extract metadata
+          const metadata = session.metadata;
+          if (metadata && metadata.organisationId && metadata.planId) {
+            // Update organization subscription
+            await storage.updateOrganisationBilling(metadata.organisationId, {
+              stripeSubscriptionId: session.subscription as string,
+              stripeCustomerId: session.customer as string,
+              billingStatus: 'active',
+              activeUserCount: parseInt(metadata.userCount || '1'),
+              lastBillingSync: new Date(),
+            });
+            
+            console.log(`✅ Updated organisation ${metadata.organisationId} subscription via webhook`);
+          }
+          break;
+        
+        default:
+          console.log(`Unhandled webhook event: ${event.type}`);
+      }
+      
+      res.json({received: true});
+    } catch (error) {
+      console.error('Error processing webhook:', error);
+      res.status(500).json({error: 'Webhook processing failed'});
+    }
+  });
+
   // Auth routes
   app.post('/api/login', async (req: any, res) => {
     try {
