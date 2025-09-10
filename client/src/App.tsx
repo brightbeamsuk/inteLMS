@@ -27,6 +27,7 @@ import { SuperAdminSettings } from "@/pages/superadmin/Settings";
 import { SuperAdminProfile } from "@/pages/superadmin/Profile";
 import { SuperAdminPlans } from "@/pages/superadmin/Plans";
 import { SuperAdminSubscriptionManager } from "@/pages/superadmin/SubscriptionManager";
+import { SuperAdminSupport } from "@/pages/superadmin/Support";
 
 // Admin pages
 import { AdminDashboard } from "@/pages/admin/Dashboard";
@@ -38,12 +39,14 @@ import { AdminProfile } from "@/pages/admin/Profile";
 import { AdminTrainingMatrix } from "@/pages/admin/TrainingMatrix";
 import AdminCertificates from "@/pages/admin/Certificates";
 import AuditLog from "@/pages/admin/AuditLog";
+import { AdminSupport } from "@/pages/admin/Support";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
 import { UserCourses } from "@/pages/user/Courses";
 import { UserSettings } from "@/pages/user/Settings";
 import { UserProfile } from "@/pages/user/Profile";
+import { UserSupport } from "@/pages/user/Support";
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -186,6 +189,14 @@ function Router() {
           </SuperAdminLayout>
         </ProtectedRoute>
       </Route>
+      
+      <Route path="/superadmin/support">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminSupport />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
 
       {/* Admin routes */}
       <Route path="/admin">
@@ -259,6 +270,14 @@ function Router() {
           </AdminLayout>
         </ProtectedRoute>
       </Route>
+      
+      <Route path="/admin/support">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminSupport />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
 
       {/* User routes */}
       <Route path="/user">
@@ -289,6 +308,14 @@ function Router() {
         <ProtectedRoute requiredRole="user">
           <UserLayout>
             <UserProfile />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/user/support">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserSupport />
           </UserLayout>
         </ProtectedRoute>
       </Route>
