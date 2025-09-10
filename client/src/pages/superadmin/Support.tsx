@@ -68,16 +68,30 @@ export function SuperAdminSupport() {
   const queryParams = new URLSearchParams();
   if (viewMode === 'closed') {
     queryParams.append('status', 'closed');
-  } else if (statusFilter && statusFilter !== 'closed') {
-    queryParams.append('status', statusFilter);
+  } else {
+    // For active view, add specific status filter if selected, otherwise exclude closed
+    if (statusFilter) {
+      queryParams.append('status', statusFilter);
+    }
+    // Note: we'll filter out closed tickets on frontend for active view
   }
   if (priorityFilter) queryParams.append('priority', priorityFilter);
   if (categoryFilter) queryParams.append('category', categoryFilter);
 
   // Fetch support tickets
-  const { data: tickets = [], isLoading } = useQuery<SupportTicket[]>({
+  const { data: allTickets = [], isLoading } = useQuery<SupportTicket[]>({
     queryKey: ['/api/support/tickets', queryParams.toString()],
     queryFn: () => apiRequest('GET', `/api/support/tickets?${queryParams.toString()}`).then(res => res.json()),
+  });
+
+  // Filter tickets based on view mode
+  const tickets = allTickets.filter(ticket => {
+    if (viewMode === 'closed') {
+      return ticket.status === 'closed';
+    } else {
+      // Active view: exclude closed tickets
+      return ticket.status !== 'closed';
+    }
   });
 
   // Fetch superadmin users for assignment
