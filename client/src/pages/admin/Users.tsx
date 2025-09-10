@@ -129,6 +129,8 @@ export function AdminUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
       toast({
         title: "Success",
         description: "User status updated successfully",
@@ -241,6 +243,8 @@ export function AdminUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
       setShowBulkActionsModal(false);
       setSelectedUserIds([]);
       setBulkAction("");
