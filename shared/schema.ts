@@ -554,7 +554,8 @@ export const supportTickets = pgTable("support_tickets", {
 export const supportTicketResponses = pgTable("support_ticket_responses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   ticketId: varchar("ticket_id").notNull(),
-  userId: varchar("user_id").notNull(), // Who wrote this response
+  createdBy: varchar("created_by").notNull(), // Who wrote this response (legacy field)
+  userId: varchar("user_id").notNull(), // Who wrote this response  
   message: text("message").notNull(),
   isInternal: boolean("is_internal").default(false), // Internal agent notes
   attachments: jsonb("attachments"), // Array of file attachments
