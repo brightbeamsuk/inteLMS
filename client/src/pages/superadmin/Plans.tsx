@@ -630,6 +630,58 @@ export function SuperAdminPlans() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Billing Model *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.billingModel}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, billingModel: e.target.value as any }))}
+                    required
+                    data-testid="select-plan-billing-model"
+                  >
+                    <option value="per_seat">Per Seat</option>
+                    <option value="metered_per_active_user">Metered Per Active User</option>
+                    <option value="flat_subscription">Flat Subscription</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Cadence *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.cadence}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, cadence: e.target.value as any }))}
+                    required
+                    data-testid="select-plan-cadence"
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Currency *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.currency}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, currency: e.target.value }))}
+                    required
+                    data-testid="select-plan-currency"
+                  >
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="form-control">
                 <label className="label">
                   <span className="label-text">Status</span>
@@ -754,6 +806,58 @@ export function SuperAdminPlans() {
                   placeholder="Optional description for this plan"
                   data-testid="input-edit-plan-description"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Billing Model *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.billingModel}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, billingModel: e.target.value as any }))}
+                    required
+                    data-testid="select-edit-plan-billing-model"
+                  >
+                    <option value="per_seat">Per Seat</option>
+                    <option value="metered_per_active_user">Metered Per Active User</option>
+                    <option value="flat_subscription">Flat Subscription</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Cadence *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.cadence}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, cadence: e.target.value as any }))}
+                    required
+                    data-testid="select-edit-plan-cadence"
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Currency *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={planFormData.currency}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, currency: e.target.value }))}
+                    required
+                    data-testid="select-edit-plan-currency"
+                  >
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="form-control">
