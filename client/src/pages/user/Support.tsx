@@ -19,6 +19,7 @@ interface SupportTicket {
   updatedAt: string;
   lastResponseAt?: string;
   resolvedAt?: string;
+  ticketNumber?: string;
 }
 
 interface SupportTicketResponse {
@@ -33,8 +34,12 @@ interface SupportTicketResponse {
 export function UserSupport() {
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'active' | 'closed'>('active');
   const [responseMessage, setResponseMessage] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [newTicket, setNewTicket] = useState({
     title: '',
     description: '',
@@ -46,12 +51,44 @@ export function UserSupport() {
 
   // Build query parameters for filtering
   const queryParams = new URLSearchParams();
-  if (statusFilter) queryParams.append('status', statusFilter);
+  if (viewMode === 'closed') {
+    queryParams.append('status', 'closed');
+  } else {
+    // For active view, add specific status filter if selected, otherwise exclude closed
+    if (statusFilter) {
+      queryParams.append('status', statusFilter);
+    }
+    // Note: we'll filter out closed tickets on frontend for active view
+  }
+  if (priorityFilter) queryParams.append('priority', priorityFilter);
+  if (categoryFilter) queryParams.append('category', categoryFilter);
+  if (searchQuery) queryParams.append('search', searchQuery);
 
   // Fetch support tickets
-  const { data: tickets = [], isLoading } = useQuery<SupportTicket[]>({
+  const { data: allTickets = [], isLoading } = useQuery<SupportTicket[]>({
     queryKey: ['/api/support/tickets', queryParams.toString()],
     queryFn: () => apiRequest('GET', `/api/support/tickets?${queryParams.toString()}`).then(res => res.json()),
+  });
+
+  // Filter tickets based on view mode and search
+  const tickets = allTickets.filter(ticket => {
+    // Filter by view mode
+    if (viewMode === 'active' && ticket.status === 'closed') {
+      return false;
+    }
+    if (viewMode === 'closed' && ticket.status !== 'closed') {
+      return false;
+    }
+    
+    // Filter by search query (ticket number or title)
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesTicketNumber = ticket.ticketNumber?.toLowerCase().includes(searchLower);
+      const matchesTitle = ticket.title.toLowerCase().includes(searchLower);
+      return matchesTicketNumber || matchesTitle;
+    }
+    
+    return true;
   });
 
   // Fetch ticket details with responses
@@ -286,75 +323,213 @@ export function UserSupport() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Ticket List */}
         <div className="lg:col-span-1">
-          <div className="card bg-base-100 shadow-lg">
-            <div className="card-body">
-              <h2 className="card-title mb-4">Your Support Requests</h2>
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="fas fa-list text-xl text-accent"></i>
+                <h2 className="card-title text-xl">My Support Requests</h2>
+              </div>
               
-              {/* Status Filter */}
-              <div className="mb-4">
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  data-testid="filter-status"
+              {/* View Mode Tabs */}
+              <div className="tabs tabs-bordered mb-6">
+                <a 
+                  className={`tab tab-lg ${viewMode === 'active' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('active');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-active-tickets"
                 >
-                  <option value="">All Requests</option>
-                  <option value="open">Open</option>
-                  <option value="in_progress">Being Reviewed</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
-                </select>
+                  <i className="fas fa-clock mr-2"></i>
+                  Active
+                </a>
+                <a 
+                  className={`tab tab-lg ${viewMode === 'closed' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('closed');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-closed-tickets"
+                >
+                  <i className="fas fa-check-circle mr-2"></i>
+                  Resolved
+                </a>
+              </div>
+              
+              {/* Search Bar */}
+              <div className="form-control mb-4">
+                <div className="input-group">
+                  <span className="bg-base-200">
+                    <i className="fas fa-search text-base-content/60"></i>
+                  </span>
+                  <input
+                    type="text"
+                    className="input input-bordered flex-1"
+                    placeholder="Search your tickets..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="search-tickets"
+                  />
+                </div>
+              </div>
+              
+              {/* Filters */}
+              <div className="space-y-3 mb-6">
+                {viewMode === 'active' && (
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">
+                        <i className="fas fa-filter mr-2"></i>Status Filter
+                      </span>
+                    </label>
+                    <select 
+                      className="select select-bordered w-full"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      data-testid="filter-status"
+                    >
+                      <option value="">All Active</option>
+                      <option value="open">🔴 Open</option>
+                      <option value="in_progress">🟡 Being Reviewed</option>
+                      <option value="resolved">🟢 Resolved</option>
+                    </select>
+                  </div>
+                )}
+                
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-exclamation-triangle mr-2"></i>Priority Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    data-testid="filter-priority"
+                  >
+                    <option value="">All Priorities</option>
+                    <option value="urgent">🔥 Very urgent</option>
+                    <option value="high">⚠️ Important</option>
+                    <option value="medium">📋 Normal</option>
+                    <option value="low">📝 Not urgent</option>
+                  </select>
+                </div>
+                
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-tags mr-2"></i>Category Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    data-testid="filter-category"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="technical">🔧 Technical</option>
+                    <option value="billing">💳 Billing</option>
+                    <option value="account">👤 Account</option>
+                    <option value="training">📚 Training</option>
+                    <option value="feature_request">💡 Feature Request</option>
+                    <option value="bug_report">🐛 Bug Report</option>
+                    <option value="general">💬 General</option>
+                  </select>
+                </div>
               </div>
 
               {/* Ticket List */}
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-96 overflow-y-auto">
                 {tickets.map((ticket) => (
                   <div
                     key={ticket.id}
-                    className={`card card-compact border cursor-pointer transition-colors hover:bg-base-200 ${
-                      selectedTicket?.id === ticket.id ? 'border-primary bg-base-200' : 'border-base-300'
+                    className={`card card-compact cursor-pointer transition-all duration-200 hover:shadow-md ${
+                      selectedTicket?.id === ticket.id 
+                        ? 'bg-accent/10 border-accent shadow-md border-2' 
+                        : 'bg-base-100 border border-base-300 hover:border-accent/50'
                     }`}
                     onClick={() => setSelectedTicket(ticket)}
                     data-testid={`ticket-card-${ticket.id}`}
                   >
-                    <div className="card-body p-3">
-                      <div className="flex justify-between items-start">
-                        <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
-                        {ticket.assignedTo && (
-                          <div className="badge badge-primary badge-xs">ASSIGNED</div>
-                        )}
+                    <div className="card-body p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          {ticket.ticketNumber && (
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-mono text-accent font-bold bg-accent/10 px-2 py-1 rounded">
+                                {ticket.ticketNumber}
+                              </span>
+                              {ticket.assignedTo && (
+                                <div className="badge badge-primary badge-sm gap-1">
+                                  <i className="fas fa-user-check text-xs"></i>
+                                  ASSIGNED
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <h3 className="font-semibold text-base leading-tight">{ticket.title}</h3>
+                        </div>
                       </div>
-                      <div className="flex gap-1 flex-wrap">
-                        <div className={`badge badge-xs ${getStatusColor(ticket.status)}`}>
+                      
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className={`badge ${getStatusColor(ticket.status)} badge-sm gap-1`}>
+                          <i className="fas fa-circle text-xs"></i>
                           {getStatusText(ticket.status)}
                         </div>
-                        <div className={`badge badge-xs ${getPriorityColor(ticket.priority)}`}>
+                        <div className={`badge ${getPriorityColor(ticket.priority)} badge-sm gap-1`}>
+                          <i className="fas fa-flag text-xs"></i>
                           {ticket.priority}
                         </div>
+                        <div className="badge badge-outline badge-sm gap-1">
+                          <i className="fas fa-tag text-xs"></i>
+                          {ticket.category.replace('_', ' ')}
+                        </div>
                       </div>
-                      <p className="text-xs text-base-content/70">
-                        {format(new Date(ticket.createdAt), 'MMM dd, yyyy HH:mm')}
-                      </p>
+                      
+                      <div className="flex items-center justify-between text-xs text-base-content/60">
+                        <span className="flex items-center gap-1">
+                          <i className="fas fa-clock"></i>
+                          {format(new Date(ticket.createdAt), 'MMM dd, yyyy HH:mm')}
+                        </span>
+                        {selectedTicket?.id === ticket.id && (
+                          <i className="fas fa-chevron-right text-accent"></i>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
                 
                 {tickets.length === 0 && (
-                  <div className="text-center py-8">
-                    <div className="text-center mb-4">
-                      <div className="text-4xl mb-2">💬</div>
-                      <p className="text-base-content/60">No support requests yet</p>
-                      <p className="text-sm text-base-content/50 mt-1">Need help? We're here for you!</p>
+                  <div className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 bg-base-200 rounded-full flex items-center justify-center">
+                        <i className="fas fa-comments text-2xl text-base-content/40"></i>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-base-content/60 font-medium mb-1">
+                          {viewMode === 'active' ? 'No active support requests' : 'No resolved tickets'}
+                        </p>
+                        <p className="text-sm text-base-content/40">
+                          {viewMode === 'active' ? 'Need help? We\'re here for you!' : 'Previously resolved tickets will appear here'}
+                        </p>
+                      </div>
+                      {viewMode === 'active' && (
+                        <button
+                          className="btn btn-primary btn-sm gap-2"
+                          onClick={() => setShowCreateForm(true)}
+                        >
+                          <i className="fas fa-plus"></i>
+                          Contact Support
+                        </button>
+                      )}
                     </div>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setShowCreateForm(true)}
-                    >
-                      Contact Support
-                    </button>
                   </div>
                 )}
               </div>
