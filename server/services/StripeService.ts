@@ -302,8 +302,8 @@ export class StripeService {
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [lineItem],
-        success_url: `${process.env.VITE_FRONTEND_URL || 'https://stripe.com/docs/testing/'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
-        cancel_url: `${process.env.VITE_FRONTEND_URL || 'https://stripe.com/docs/testing/'}/admin/billing?canceled=true`,
+        success_url: `${process.env.VITE_FRONTEND_URL || 'http://localhost:5000'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${process.env.VITE_FRONTEND_URL || 'http://localhost:5000'}/admin/billing?canceled=true`,
         metadata: {
           organisationId: organisation.id,
           planId: plan.id,
@@ -330,6 +330,7 @@ export class StripeService {
         };
       }
 
+      console.log('Creating Stripe checkout session with data:', JSON.stringify(sessionData, null, 2));
       const session = await this.stripe.checkout.sessions.create(sessionData);
       
       if (!session.url) {
