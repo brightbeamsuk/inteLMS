@@ -224,7 +224,7 @@ export function SuperAdminPlans() {
     // Convert string values to proper types for API
     const createData = {
       name: planFormData.name,
-      description: planFormData.description || null,
+      description: planFormData.description || "",
       billingModel: planFormData.billingModel,
       cadence: planFormData.cadence,
       currency: planFormData.currency,
@@ -266,7 +266,7 @@ export function SuperAdminPlans() {
       const updateData = {
         id: selectedPlan.id,
         name: planFormData.name,
-        description: planFormData.description || null,
+        description: planFormData.description || "",
         billingModel: planFormData.billingModel,
         cadence: planFormData.cadence,
         currency: planFormData.currency,
