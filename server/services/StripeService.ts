@@ -214,8 +214,8 @@ export class StripeService {
             quantity: this.getQuantityForPlan(plan),
           },
         ],
-        success_url: `${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.FRONTEND_URL}/billing/cancel`,
+        success_url: `https://stripe.com/docs/testing/`,
+        cancel_url: `https://stripe.com/docs/testing/`,
         metadata: {
           organisationId,
           planId: plan.id,
