@@ -1073,7 +1073,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await getCurrentUser(req);
       
-      if (!user || user.role !== 'admin') {
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
         return res.status(403).json({ message: 'Access denied - admin only' });
       }
 

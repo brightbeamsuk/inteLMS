@@ -197,9 +197,10 @@ export interface IStorage {
   getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
     adminUsers: number;
+    totalUsers: number;
     coursesAssigned: number;
-    coursesCompleted: number;
-    complianceRate: number;
+    completedCourses: number;
+    averageScore: number;
   }>;
   getCourseAnalytics(courseId: string): Promise<{
     courseId: string;
@@ -903,23 +904,28 @@ export class DatabaseStorage implements IStorage {
   async getOrganisationStats(organisationId: string): Promise<{
     activeUsers: number;
     adminUsers: number;
+    totalUsers: number;
     coursesAssigned: number;
-    coursesCompleted: number;
-    complianceRate: number;
+    completedCourses: number;
+    averageScore: number;
   }> {
-    const [userCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.status, 'active')));
-    const [adminCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.role, 'admin'), eq(users.status, 'active')));
+    const [activeUserCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.status, 'active')));
+    const [totalUserCount] = await db.select({ count: count() }).from(users).where(eq(users.organisationId, organisationId));
+    const [adminCount] = await db.select({ count: count() }).from(users).where(and(eq(users.organisationId, organisationId), eq(users.role, 'admin')));
     const [assignmentCount] = await db.select({ count: count() }).from(assignments).where(eq(assignments.organisationId, organisationId));
     const [completionCount] = await db.select({ count: count() }).from(completions).where(eq(completions.organisationId, organisationId));
     
-    const complianceRate = assignmentCount.count > 0 ? Math.round((completionCount.count / assignmentCount.count) * 100) : 0;
+    // Get average score
+    const [scoreResult] = await db.select({ avg: avg(completions.finalScore) }).from(completions).where(eq(completions.organisationId, organisationId));
+    const averageScore = scoreResult.avg ? parseFloat(scoreResult.avg.toString()) : 0;
 
     return {
-      activeUsers: userCount.count,
+      activeUsers: activeUserCount.count,
+      totalUsers: totalUserCount.count,
       adminUsers: adminCount.count,
       coursesAssigned: assignmentCount.count,
-      coursesCompleted: completionCount.count,
-      complianceRate,
+      completedCourses: completionCount.count,
+      averageScore: Math.round(averageScore * 100) / 100, // Round to 2 decimal places
     };
   }
 
