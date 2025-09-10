@@ -7353,6 +7353,22 @@ This test was initiated by ${user.email}.
         return res.status(400).json({ message: 'Users array is required' });
       }
 
+      // Count how many active users will be created (default to active if not specified)
+      const activeUsersToCreate = usersData.filter(userData => 
+        !userData.status || userData.status === 'active'
+      ).length;
+      
+      // Check license capacity if creating active users
+      if (activeUsersToCreate > 0) {
+        const licenseCheck = await checkLicenseCapacity(user.id, activeUsersToCreate);
+        if (!licenseCheck.canProceed) {
+          return res.status(403).json({ 
+            message: licenseCheck.error,
+            code: 'LICENSE_LIMIT_EXCEEDED'
+          });
+        }
+      }
+
       let created = 0;
       let failed = 0;
       const errors: string[] = [];
