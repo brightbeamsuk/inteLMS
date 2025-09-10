@@ -2792,6 +2792,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateSupportTicket(id, { status: 'in_progress' });
       }
 
+      // If a SuperAdmin/Admin responds to a ticket, mark it as unread for the ticket creator to trigger notifications
+      if (user.role === 'superadmin' || (user.role === 'admin' && ticket.createdBy !== user.id)) {
+        await storage.updateSupportTicket(id, { isRead: false });
+      }
+
       res.status(201).json(response);
     } catch (error) {
       console.error('Error creating support ticket response:', error);
