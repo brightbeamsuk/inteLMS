@@ -26,6 +26,7 @@ import { SuperAdminCourses } from "@/pages/superadmin/Courses";
 import { SuperAdminSettings } from "@/pages/superadmin/Settings";
 import { SuperAdminProfile } from "@/pages/superadmin/Profile";
 import { SuperAdminPlans } from "@/pages/superadmin/Plans";
+import { SuperAdminSubscriptionManager } from "@/pages/superadmin/SubscriptionManager";
 
 // Admin pages
 import { AdminDashboard } from "@/pages/admin/Dashboard";
@@ -174,6 +175,14 @@ function Router() {
         <ProtectedRoute requiredRole="superadmin">
           <SuperAdminLayout>
             <SuperAdminPlans />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/superadmin/subscriptions">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <SuperAdminSubscriptionManager />
           </SuperAdminLayout>
         </ProtectedRoute>
       </Route>
