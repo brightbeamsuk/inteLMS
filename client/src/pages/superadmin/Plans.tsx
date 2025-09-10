@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit3, Trash2, Settings, Check, X } from "lucide-react";
+import { Plus, Edit3, Trash2, Settings, Check, X, RefreshCw, CheckCircle } from "lucide-react";
 
 interface Plan {
   id: string;
@@ -99,12 +99,16 @@ export function SuperAdminPlans() {
 
   const createPlanMutation = useMutation({
     mutationFn: async (planData: typeof planFormData) => {
-      return apiRequest('POST', '/api/plans', planData);
+      const response = await apiRequest('POST', '/api/plans', planData);
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      const hasBillingConfig = data.unitAmount && data.billingModel;
       toast({
         title: "Success",
-        description: "Plan created successfully",
+        description: hasBillingConfig 
+          ? "Plan created and synced to Stripe successfully!"
+          : "Plan created successfully. Add billing details and sync to Stripe.",
       });
       setShowCreatePlanModal(false);
       setPlanFormData({
@@ -214,6 +218,27 @@ export function SuperAdminPlans() {
       toast({
         title: "Error",
         description: error.message || "Failed to create plan feature",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const syncPlanToStripeMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const response = await apiRequest('POST', `/api/plans/${planId}/stripe-sync`);
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Success",
+        description: `Plan synced to Stripe! Product: ${data.stripe?.productId}, Price: ${data.stripe?.priceId}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plans'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Sync Failed",
+        description: error.message || "Failed to sync plan to Stripe",
         variant: "destructive",
       });
     },
@@ -450,6 +475,29 @@ export function SuperAdminPlans() {
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
+                              {!plan.stripeProductId || !plan.stripePriceId ? (
+                                <button
+                                  className={`btn btn-sm btn-ghost btn-primary ${syncPlanToStripeMutation.isPending ? 'loading' : ''}`}
+                                  onClick={() => syncPlanToStripeMutation.mutate(plan.id)}
+                                  title="Sync to Stripe"
+                                  disabled={syncPlanToStripeMutation.isPending}
+                                  data-testid={`button-sync-plan-${plan.id}`}
+                                >
+                                  {!syncPlanToStripeMutation.isPending && (
+                                    <RefreshCw className="w-4 h-4" />
+                                  )}
+                                </button>
+                              ) : (
+                                <div className="tooltip" data-tip="Already synced to Stripe">
+                                  <button
+                                    className="btn btn-sm btn-ghost btn-success"
+                                    disabled
+                                    title="Synced to Stripe"
+                                  >
+                                    <CheckCircle className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
                               <button
                                 className="btn btn-sm btn-ghost text-error hover:bg-error/10"
                                 onClick={() => handleDeletePlan(plan)}
