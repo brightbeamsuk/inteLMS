@@ -205,15 +205,20 @@ export class StripeService {
         throw new Error('Plan must have a Stripe Price ID to create checkout session');
       }
 
+      // Create line item - don't include quantity for metered plans
+      const lineItem: any = {
+        price: plan.stripePriceId,
+      };
+      
+      // Only add quantity for non-metered plans
+      if (plan.billingModel !== 'metered_per_active_user') {
+        lineItem.quantity = this.getQuantityForPlan(plan);
+      }
+
       const sessionData: Stripe.Checkout.SessionCreateParams = {
         mode: 'subscription',
         payment_method_types: ['card'],
-        line_items: [
-          {
-            price: plan.stripePriceId,
-            quantity: this.getQuantityForPlan(plan),
-          },
-        ],
+        line_items: [lineItem],
         success_url: `https://stripe.com/docs/testing/`,
         cancel_url: `https://stripe.com/docs/testing/`,
         metadata: {
