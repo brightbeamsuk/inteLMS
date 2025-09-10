@@ -8,7 +8,18 @@ interface Plan {
   id: string;
   name: string;
   description?: string;
-  pricePerUser: number;
+  billingModel: 'metered_per_active_user' | 'per_seat' | 'flat_subscription';
+  cadence: 'monthly' | 'annual';
+  currency: string;
+  unitAmount: number;
+  taxBehavior?: 'inclusive' | 'exclusive';
+  trialDays?: number;
+  minSeats?: number;
+  stripeProductId?: string;
+  stripePriceId?: string;
+  isActive: boolean;
+  priceChangePolicy?: 'prorate_immediately' | 'at_period_end' | 'manual';
+  pricePerUser?: string; // Legacy field for backward compatibility
   status: 'active' | 'inactive' | 'archived';
   createdBy: string;
   createdAt: string;
@@ -44,8 +55,15 @@ export function SuperAdminPlans() {
   const [planFormData, setPlanFormData] = useState({
     name: "",
     description: "",
-    pricePerUser: "",
-    status: "active" as const,
+    billingModel: "per_seat" as 'metered_per_active_user' | 'per_seat' | 'flat_subscription',
+    cadence: "monthly" as 'monthly' | 'annual',
+    currency: "GBP",
+    unitAmount: "",
+    taxBehavior: "exclusive" as 'inclusive' | 'exclusive',
+    trialDays: "",
+    minSeats: "",
+    priceChangePolicy: "prorate_immediately" as 'prorate_immediately' | 'at_period_end' | 'manual',
+    status: "active" as 'active' | 'inactive' | 'archived',
     featureIds: [] as string[],
   });
 
@@ -92,7 +110,14 @@ export function SuperAdminPlans() {
       setPlanFormData({
         name: "",
         description: "",
-        pricePerUser: "",
+        billingModel: "per_seat",
+        cadence: "monthly",
+        currency: "GBP",
+        unitAmount: "",
+        taxBehavior: "exclusive",
+        trialDays: "",
+        minSeats: "",
+        priceChangePolicy: "prorate_immediately",
         status: "active",
         featureIds: [],
       });
@@ -121,7 +146,14 @@ export function SuperAdminPlans() {
       setPlanFormData({
         name: "",
         description: "",
-        pricePerUser: "",
+        billingModel: "per_seat",
+        cadence: "monthly",
+        currency: "GBP",
+        unitAmount: "",
+        taxBehavior: "exclusive",
+        trialDays: "",
+        minSeats: "",
+        priceChangePolicy: "prorate_immediately",
         status: "active",
         featureIds: [],
       });
@@ -197,7 +229,14 @@ export function SuperAdminPlans() {
     setPlanFormData({
       name: plan.name,
       description: plan.description || "",
-      pricePerUser: plan.pricePerUser.toString(),
+      billingModel: plan.billingModel,
+      cadence: plan.cadence,
+      currency: plan.currency,
+      unitAmount: plan.unitAmount.toString(),
+      taxBehavior: plan.taxBehavior || "exclusive",
+      trialDays: plan.trialDays?.toString() || "",
+      minSeats: plan.minSeats?.toString() || "",
+      priceChangePolicy: plan.priceChangePolicy || "prorate_immediately",
       status: plan.status,
       featureIds: plan.features?.map(f => f.id) || [],
     });
@@ -249,12 +288,14 @@ export function SuperAdminPlans() {
     }
   };
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (unitAmount: number, currency: string) => {
+    // Convert from minor units (e.g., 2000 = £20.00)
+    const amount = unitAmount / 100;
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
-      currency: 'GBP',
+      currency: currency,
       minimumFractionDigits: 2,
-    }).format(price);
+    }).format(amount);
   };
 
   const groupedFeatures = planFeatures.reduce((acc, feature) => {
@@ -353,7 +394,7 @@ export function SuperAdminPlans() {
                           </td>
                           <td>
                             <div className="font-mono font-medium text-primary">
-                              {formatPrice(plan.pricePerUser)}/month
+                              {formatPrice(plan.unitAmount, plan.currency)}/{plan.cadence === 'annual' ? 'year' : 'month'}
                             </div>
                           </td>
                           <td>{getStatusBadge(plan.status)}</td>
@@ -478,17 +519,21 @@ export function SuperAdminPlans() {
                 
                 <div className="form-control">
                   <label className="label">
-                    <span className="label-text">Price per User (Monthly) *</span>
+                    <span className="label-text">Unit Amount (in minor units) *</span>
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     className="input input-bordered"
-                    value={planFormData.pricePerUser}
-                    onChange={(e) => setPlanFormData(prev => ({ ...prev, pricePerUser: e.target.value }))}
+                    value={planFormData.unitAmount}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, unitAmount: e.target.value }))}
                     required
-                    data-testid="input-plan-price"
+                    placeholder="e.g., 2000 for £20.00"
+                    data-testid="input-plan-unit-amount"
                   />
+                  <label className="label">
+                    <span className="label-text-alt">Enter amount in minor units (e.g., 2000 = £20.00)</span>
+                  </label>
                 </div>
               </div>
 
@@ -600,17 +645,21 @@ export function SuperAdminPlans() {
                 
                 <div className="form-control">
                   <label className="label">
-                    <span className="label-text">Price per User (Monthly) *</span>
+                    <span className="label-text">Unit Amount (in minor units) *</span>
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     className="input input-bordered"
-                    value={planFormData.pricePerUser}
-                    onChange={(e) => setPlanFormData(prev => ({ ...prev, pricePerUser: e.target.value }))}
+                    value={planFormData.unitAmount}
+                    onChange={(e) => setPlanFormData(prev => ({ ...prev, unitAmount: e.target.value }))}
                     required
-                    data-testid="input-edit-plan-price"
+                    placeholder="e.g., 2000 for £20.00"
+                    data-testid="input-edit-plan-unit-amount"
                   />
+                  <label className="label">
+                    <span className="label-text-alt">Enter amount in minor units (e.g., 2000 = £20.00)</span>
+                  </label>
                 </div>
               </div>
 
@@ -684,7 +733,14 @@ export function SuperAdminPlans() {
                     setPlanFormData({
                       name: "",
                       description: "",
-                      pricePerUser: "",
+                      billingModel: "per_seat",
+                      cadence: "monthly",
+                      currency: "GBP",
+                      unitAmount: "",
+                      taxBehavior: "exclusive",
+                      trialDays: "",
+                      minSeats: "",
+                      priceChangePolicy: "prorate_immediately",
                       status: "active",
                       featureIds: [],
                     });
@@ -710,7 +766,14 @@ export function SuperAdminPlans() {
             setPlanFormData({
               name: "",
               description: "",
-              pricePerUser: "",
+              billingModel: "per_seat",
+              cadence: "monthly",
+              currency: "GBP",
+              unitAmount: "",
+              taxBehavior: "exclusive",
+              trialDays: "",
+              minSeats: "",
+              priceChangePolicy: "prorate_immediately",
               status: "active",
               featureIds: [],
             });
