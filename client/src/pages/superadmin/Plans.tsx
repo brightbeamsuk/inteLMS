@@ -221,7 +221,22 @@ export function SuperAdminPlans() {
 
   const handleCreatePlan = (e: React.FormEvent) => {
     e.preventDefault();
-    createPlanMutation.mutate(planFormData);
+    // Convert string values to proper types for API
+    const createData = {
+      name: planFormData.name,
+      description: planFormData.description || null,
+      billingModel: planFormData.billingModel,
+      cadence: planFormData.cadence,
+      currency: planFormData.currency,
+      unitAmount: planFormData.unitAmount ? parseInt(planFormData.unitAmount) : 0,
+      taxBehavior: planFormData.taxBehavior,
+      trialDays: planFormData.trialDays ? parseInt(planFormData.trialDays) : null,
+      minSeats: planFormData.minSeats ? parseInt(planFormData.minSeats) : null,
+      priceChangePolicy: planFormData.priceChangePolicy,
+      status: planFormData.status,
+      featureIds: planFormData.featureIds,
+    };
+    createPlanMutation.mutate(createData);
   };
 
   const handleEditPlan = (plan: Plan) => {
@@ -247,7 +262,23 @@ export function SuperAdminPlans() {
   const handleUpdatePlan = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedPlan) {
-      updatePlanMutation.mutate({ id: selectedPlan.id, ...planFormData });
+      // Convert string values to proper types for API
+      const updateData = {
+        id: selectedPlan.id,
+        name: planFormData.name,
+        description: planFormData.description || null,
+        billingModel: planFormData.billingModel,
+        cadence: planFormData.cadence,
+        currency: planFormData.currency,
+        unitAmount: planFormData.unitAmount ? parseInt(planFormData.unitAmount) : 0,
+        taxBehavior: planFormData.taxBehavior,
+        trialDays: planFormData.trialDays ? parseInt(planFormData.trialDays) : null,
+        minSeats: planFormData.minSeats ? parseInt(planFormData.minSeats) : null,
+        priceChangePolicy: planFormData.priceChangePolicy,
+        status: planFormData.status,
+        featureIds: planFormData.featureIds,
+      };
+      updatePlanMutation.mutate(updateData);
     }
   };
 
