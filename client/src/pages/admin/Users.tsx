@@ -31,6 +31,10 @@ export function AdminUsers() {
   const [showAssignCoursesModal, setShowAssignCoursesModal] = useState(false);
   const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [csvPreview, setCsvPreview] = useState<any[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [showBulkActionsModal, setShowBulkActionsModal] = useState(false);
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkActionValue, setBulkActionValue] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -452,6 +456,56 @@ export function AdminUsers() {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedUserIds.length > 0 && (
+        <div className="bg-base-300 p-4 rounded-lg mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="font-semibold" data-testid="text-selected-count">
+              {selectedUserIds.length} user(s) selected
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setSelectedUserIds([])}
+              data-testid="button-clear-selection"
+            >
+              Clear Selection
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setBulkAction("status");
+                setShowBulkActionsModal(true);
+              }}
+              data-testid="button-bulk-change-status"
+            >
+              <i className="fas fa-user-check"></i> Change Status
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setBulkAction("certificates");
+                setShowBulkActionsModal(true);
+              }}
+              data-testid="button-bulk-certificates"
+            >
+              <i className="fas fa-certificate"></i> Allow Certificates
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setBulkAction("archive");
+                setShowBulkActionsModal(true);
+              }}
+              data-testid="button-bulk-archive"
+            >
+              <i className="fas fa-archive"></i> Archive
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Users Table */}
       <div className="card bg-base-200 shadow-sm">
         <div className="card-body">
@@ -459,6 +513,23 @@ export function AdminUsers() {
             <table className="table table-zebra w-full">
               <thead>
                 <tr>
+                  <th>
+                    <label>
+                      <input 
+                        type="checkbox" 
+                        className="checkbox"
+                        checked={users.length > 0 && selectedUserIds.length === users.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedUserIds(users.map(user => user.id));
+                          } else {
+                            setSelectedUserIds([]);
+                          }
+                        }}
+                        data-testid="checkbox-select-all-users"
+                      />
+                    </label>
+                  </th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>Job Title</th>
@@ -471,19 +542,36 @@ export function AdminUsers() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="text-center">
+                    <td colSpan={8} className="text-center">
                       <span className="loading loading-spinner loading-md"></span>
                     </td>
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center text-base-content/60">
+                    <td colSpan={8} className="text-center text-base-content/60">
                       No users found. Add your first user to get started.
                     </td>
                   </tr>
                 ) : (
                   users.map((user) => (
                     <tr key={user.id} data-testid={`row-user-${user.id}`}>
+                      <td>
+                        <label>
+                          <input 
+                            type="checkbox" 
+                            className="checkbox"
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUserIds([...selectedUserIds, user.id]);
+                              } else {
+                                setSelectedUserIds(selectedUserIds.filter(id => id !== user.id));
+                              }
+                            }}
+                            data-testid={`checkbox-user-${user.id}`}
+                          />
+                        </label>
+                      </td>
                       <td>
                         <div className="flex items-center gap-3">
                           <div className="avatar">
