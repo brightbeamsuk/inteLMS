@@ -258,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stripeService = getStripeService();
       
       // Retrieve the checkout session from Stripe
-      const session = await stripeService['stripe'].checkout.sessions.retrieve(sessionId, {
+      const session = await stripeService.getCheckoutSession(sessionId, {
         expand: ['subscription', 'customer']
       });
       

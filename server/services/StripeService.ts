@@ -416,6 +416,18 @@ export class StripeService {
       };
     }
   }
+
+  /**
+   * Retrieve a checkout session from Stripe
+   */
+  async getCheckoutSession(sessionId: string, options?: Stripe.Checkout.SessionRetrieveParams): Promise<Stripe.Checkout.Session> {
+    try {
+      return await this.stripe.checkout.sessions.retrieve(sessionId, options);
+    } catch (error) {
+      console.error('Error retrieving checkout session:', error);
+      throw new Error(`Failed to retrieve checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 }
 
 // Singleton instance
