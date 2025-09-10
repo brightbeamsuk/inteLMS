@@ -290,28 +290,34 @@ export class StripeService {
         price: plan.stripePriceId,
       };
       
-      // First, check if the Stripe price is metered by fetching its details
-      let stripePrice;
-      try {
-        stripePrice = await this.stripe.prices.retrieve(plan.stripePriceId);
-      } catch (error) {
-        console.warn('Could not retrieve Stripe price details, falling back to billing model logic');
-      }
-      
-      // Set quantity based on actual Stripe price configuration, not just our billing model
-      if (stripePrice && stripePrice.recurring && stripePrice.recurring.usage_type === 'metered') {
-        // For metered Stripe prices, never set quantity - Stripe handles this via usage records
-        console.log('Detected metered Stripe price, not setting quantity');
-        // Don't set quantity for metered prices
-      } else if (plan.billingModel === 'per_seat') {
-        // For fixed per-seat pricing, set the quantity
-        lineItem.quantity = Math.max(userCount, plan.minSeats || 1);
-        console.log(`Setting quantity for per_seat billing: ${lineItem.quantity}`);
+      // For per_seat billing, we need to create a custom line item with the total amount
+      // since the current Stripe price is configured as metered (usage-based)
+      if (plan.billingModel === 'per_seat') {
+        // Calculate the total amount for the seats
+        const totalAmount = Math.max(userCount, plan.minSeats || 1) * plan.unitAmount;
+        
+        console.log(`Creating per-seat checkout with ${userCount} seats at ${plan.unitAmount} each = ${totalAmount} total`);
+        
+        // Create a price_data object to specify the exact amount and quantity
+        lineItem = {
+          price_data: {
+            currency: plan.currency.toLowerCase(),
+            product_data: {
+              name: `${plan.name} - ${userCount} seats`,
+              description: `${plan.description || plan.name} subscription for ${userCount} users`
+            },
+            unit_amount: plan.unitAmount,
+            recurring: {
+              interval: plan.cadence === 'annual' ? 'year' : 'month'
+            }
+          },
+          quantity: Math.max(userCount, plan.minSeats || 1)
+        };
       } else if (plan.billingModel === 'flat_subscription') {
         lineItem.quantity = 1;
       } else {
-        // Default case - try not to set quantity to avoid Stripe errors
-        console.log('Using default behavior, not setting quantity');
+        // For other billing models, fall back to the existing price
+        console.log('Using default price without quantity for non-per-seat billing');
       }
 
       const sessionData: Stripe.Checkout.SessionCreateParams = {
