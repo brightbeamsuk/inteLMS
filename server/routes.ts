@@ -1068,6 +1068,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Subscription Update Checkout - creates checkout session for updating existing subscription
+  app.post('/api/subscriptions/update-checkout', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin only' });
+      }
+
+      const { planId, userCount, organisationId } = req.body;
+      
+      if (!planId) {
+        return res.status(400).json({ message: 'Plan ID is required' });
+      }
+
+      // Verify user can only update their own organization
+      if (user.role === 'admin' && user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied - can only update own organization' });
+      }
+
+      const plan = await storage.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!plan.stripePriceId) {
+        return res.status(422).json({ 
+          message: 'Plan must have a Stripe Price ID to create checkout session',
+          suggestion: 'Contact support to enable Stripe integration for this plan'
+        });
+      }
+
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      // For subscription updates, we create a checkout session that will update existing subscription
+      const checkout = await stripeService.createSubscriptionUpdateCheckoutSession(
+        plan, 
+        organisation, 
+        userCount || 1
+      );
+      
+      res.json({
+        success: true,
+        checkoutUrl: checkout.url,
+        sessionId: checkout.sessionId,
+        planId: plan.id,
+        planName: plan.name,
+        userCount: userCount || 1,
+        organisationId: organisation.id,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error creating subscription update checkout session:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to create subscription update checkout session',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Sync Plan to Stripe - manual sync endpoint
   app.post('/api/plans/:id/stripe-sync', requireAuth, async (req: any, res) => {
     try {

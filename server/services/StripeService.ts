@@ -273,6 +273,80 @@ export class StripeService {
   }
 
   /**
+   * Create a checkout session for updating an existing subscription
+   */
+  async createSubscriptionUpdateCheckoutSession(
+    plan: Plan, 
+    organisation: any, 
+    userCount: number
+  ): Promise<{ url: string; sessionId: string }> {
+    try {
+      if (!plan.stripePriceId) {
+        throw new Error('Plan must have a Stripe Price ID to create checkout session');
+      }
+
+      // Create line item based on billing model
+      const lineItem: any = {
+        price: plan.stripePriceId,
+      };
+      
+      // Set quantity based on billing model
+      if (plan.billingModel === 'per_seat') {
+        lineItem.quantity = Math.max(userCount, plan.minSeats || 1);
+      } else if (plan.billingModel === 'flat_subscription') {
+        lineItem.quantity = 1;
+      }
+      // For metered_per_active_user, no quantity needed
+
+      const sessionData: Stripe.Checkout.SessionCreateParams = {
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [lineItem],
+        success_url: `${process.env.VITE_FRONTEND_URL || 'https://stripe.com/docs/testing/'}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${process.env.VITE_FRONTEND_URL || 'https://stripe.com/docs/testing/'}/admin/billing?canceled=true`,
+        metadata: {
+          organisationId: organisation.id,
+          planId: plan.id,
+          billingModel: plan.billingModel,
+          cadence: plan.cadence,
+          userCount: userCount.toString(),
+          updateType: 'subscription_update',
+        },
+        customer_email: organisation.contactEmail || undefined,
+      };
+
+      // If the organisation already has a Stripe customer, use it
+      if (organisation.stripeCustomerId) {
+        sessionData.customer = organisation.stripeCustomerId;
+      }
+
+      // If updating an existing subscription, reference it
+      if (organisation.stripeSubscriptionId) {
+        sessionData.subscription_data = {
+          metadata: {
+            originalSubscriptionId: organisation.stripeSubscriptionId,
+            updateType: 'user_count_change',
+          },
+        };
+      }
+
+      const session = await this.stripe.checkout.sessions.create(sessionData);
+      
+      if (!session.url) {
+        throw new Error('Checkout session created but no URL returned');
+      }
+
+      return {
+        url: session.url,
+        sessionId: session.id,
+      };
+    } catch (error) {
+      console.error('Error creating subscription update checkout session:', error);
+      throw new Error(`Failed to create subscription update checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Test Stripe connectivity and API key validity
    */
   async testConnection(): Promise<{
