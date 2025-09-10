@@ -52,6 +52,13 @@ export function AdminUsers() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
 
+  // License info query
+  const { data: licenseData } = useQuery({
+    queryKey: ['/api/admin/license-check'],
+    enabled: !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin'),
+    refetchInterval: 30000 // Refresh every 30 seconds
+  });
+
   // Form states
   const [formData, setFormData] = useState({
     email: "",
@@ -555,6 +562,89 @@ export function AdminUsers() {
           </button>
         </div>
       </div>
+
+      {/* License Usage Display */}
+      {licenseData && (
+        <div className="bg-base-200 shadow-sm rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <i className="fas fa-users text-primary text-xl"></i>
+                <div>
+                  <h3 className="font-semibold text-base" data-testid="text-license-title">
+                    Active License Usage
+                  </h3>
+                  <p className="text-sm text-base-content/70" data-testid="text-license-organization">
+                    {licenseData.organisationName}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-primary" data-testid="text-current-active">
+                  {licenseData.currentActiveUsers}
+                </div>
+                <div className="text-xs text-base-content/60">Active Users</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold" data-testid="text-max-users">
+                  {licenseData.maxActiveUsers}
+                </div>
+                <div className="text-xs text-base-content/60">Total Licenses</div>
+              </div>
+              <div className="text-center">
+                <div 
+                  className={`text-2xl font-bold ${
+                    licenseData.availableLicenses <= 0 
+                      ? 'text-error' 
+                      : licenseData.availableLicenses <= 2 
+                        ? 'text-warning' 
+                        : 'text-success'
+                  }`}
+                  data-testid="text-available-licenses"
+                >
+                  {licenseData.availableLicenses}
+                </div>
+                <div className="text-xs text-base-content/60">Available</div>
+              </div>
+              {!licenseData.hasActiveSubscription && (
+                <div className="badge badge-warning">
+                  <i className="fas fa-exclamation-triangle mr-1"></i>
+                  Free Tier
+                </div>
+              )}
+              {licenseData.isAtLimit && (
+                <div className="badge badge-error">
+                  <i className="fas fa-ban mr-1"></i>
+                  At Limit
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Progress bar */}
+          <div className="w-full bg-base-300 rounded-full h-2 mt-3">
+            <div 
+              className={`h-2 rounded-full transition-all duration-300 ${
+                licenseData.currentActiveUsers >= licenseData.maxActiveUsers 
+                  ? 'bg-error' 
+                  : licenseData.currentActiveUsers / licenseData.maxActiveUsers > 0.8 
+                    ? 'bg-warning' 
+                    : 'bg-success'
+              }`}
+              style={{ 
+                width: `${Math.min(100, (licenseData.currentActiveUsers / licenseData.maxActiveUsers) * 100)}%` 
+              }}
+            ></div>
+          </div>
+          
+          <div className="flex justify-between text-xs text-base-content/60 mt-1">
+            <span>0</span>
+            <span>{licenseData.maxActiveUsers} max licenses</span>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Actions Bar */}
       {selectedUserIds.length > 0 && (
