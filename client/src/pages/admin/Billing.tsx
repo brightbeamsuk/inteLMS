@@ -128,13 +128,29 @@ export function AdminBilling() {
     }
   };
 
-  // Calculate current subscription cost
+  // Calculate current subscription cost (what they're actually paying now)
   const getCurrentSubscriptionCost = () => {
     if (!currentPlan || !organisation) return 0;
     
+    const currentUserCount = getCurrentUserCount();
+    
     switch (currentPlan.billingModel) {
       case 'metered_per_active_user':
-        return (organisation.activeUserCount || 0) * (currentPlan.unitAmount / 100);
+      case 'per_seat':
+        return currentUserCount * (currentPlan.unitAmount / 100);
+      case 'flat_subscription':
+        return currentPlan.unitAmount / 100;
+      default:
+        return currentPlan.unitAmount / 100;
+    }
+  };
+
+  // Calculate updated subscription cost (based on selected user count)
+  const getUpdatedSubscriptionCost = () => {
+    if (!currentPlan) return 0;
+    
+    switch (currentPlan.billingModel) {
+      case 'metered_per_active_user':
       case 'per_seat':
         return userCount * (currentPlan.unitAmount / 100);
       case 'flat_subscription':
@@ -400,8 +416,15 @@ export function AdminBilling() {
                   )}
                 </div>
                 {currentPlan && organisation && (
-                  <div className="mt-2 text-lg font-semibold text-secondary">
-                    Current Cost: {formatPrice(getCurrentSubscriptionCost() * 100, currentPlan.currency)}/{currentPlan.cadence === 'annual' ? 'year' : 'month'}
+                  <div className="mt-2 space-y-1">
+                    <div className="text-lg font-semibold text-secondary">
+                      Current Cost: {formatPrice(getCurrentSubscriptionCost() * 100, currentPlan.currency)}/{currentPlan.cadence === 'annual' ? 'year' : 'month'}
+                    </div>
+                    {userCount > getCurrentUserCount() && currentPlan.billingModel !== 'flat_subscription' && (
+                      <div className="text-lg font-semibold text-primary">
+                        Updated Cost: {formatPrice(getUpdatedSubscriptionCost() * 100, currentPlan.currency)}/{currentPlan.cadence === 'annual' ? 'year' : 'month'}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
