@@ -61,6 +61,7 @@ export function SuperAdminSupport() {
   const [responseMessage, setResponseMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -227,18 +228,21 @@ export function SuperAdminSupport() {
   };
 
   const handleReopenTicket = () => {
+    setShowReopenModal(true);
+  };
+
+  const handleConfirmReopen = () => {
     if (!selectedTicket) return;
     
-    const confirmed = window.confirm(
-      `Are you sure you want to reopen ticket #${selectedTicket.id.slice(-8)}?\n\nThis will change the status from closed to open.`
-    );
-    
-    if (confirmed) {
-      updateTicketMutation.mutate({ 
-        ticketId: selectedTicket.id, 
-        updates: { status: 'open' } 
-      });
-    }
+    updateTicketMutation.mutate({ 
+      ticketId: selectedTicket.id, 
+      updates: { status: 'open' } 
+    });
+    setShowReopenModal(false);
+    // Clear selected ticket so user sees it moved back to active section
+    setSelectedTicket(null);
+    // Also invalidate all ticket queries to refresh the lists
+    queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
   };
 
   const getPriorityColor = (priority: string) => {
@@ -713,6 +717,55 @@ export function SuperAdminSupport() {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => setShowCloseModal(false)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Reopen Ticket Confirmation Modal */}
+      {showReopenModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">🔄 Reopen Support Ticket</h3>
+            <div className="py-4">
+              <p className="mb-4">
+                Are you sure you want to reopen ticket{' '}
+                <span className="font-mono font-semibold">
+                  #{selectedTicket?.id.slice(-8)}
+                </span>
+                ?
+              </p>
+              <div className="bg-success/10 border border-success/20 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-success">✅</span>
+                  <span className="font-semibold text-success">What happens next:</span>
+                </div>
+                <ul className="text-sm space-y-1 ml-6">
+                  <li>• Ticket status will change from closed to open</li>
+                  <li>• Ticket will appear in Active tickets section</li>
+                  <li>• User can add new responses to continue conversation</li>
+                </ul>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowReopenModal(false)}
+                data-testid="button-cancel-reopen"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-success ${updateTicketMutation.isPending ? 'loading' : ''}`}
+                onClick={handleConfirmReopen}
+                disabled={updateTicketMutation.isPending}
+                data-testid="button-confirm-reopen"
+              >
+                {updateTicketMutation.isPending ? 'Reopening...' : 'Reopen Ticket'}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowReopenModal(false)}>close</button>
           </form>
         </dialog>
       )}
