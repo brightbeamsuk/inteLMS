@@ -62,6 +62,7 @@ export function SuperAdminSupport() {
   const [isInternal, setIsInternal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -78,6 +79,7 @@ export function SuperAdminSupport() {
   }
   if (priorityFilter) queryParams.append('priority', priorityFilter);
   if (categoryFilter) queryParams.append('category', categoryFilter);
+  if (searchQuery.trim()) queryParams.append('search', searchQuery.trim());
 
   // Fetch support tickets
   const { data: allTickets = [], isLoading } = useQuery<SupportTicket[]>({
@@ -315,6 +317,18 @@ export function SuperAdminSupport() {
                 </a>
               </div>
               
+              {/* Search Bar */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  className="input input-bordered w-full input-sm"
+                  placeholder="Search by ticket number or title..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  data-testid="search-tickets"
+                />
+              </div>
+
               {/* Filters */}
               <div className="space-y-2 mb-4">
                 {viewMode === 'active' && (
@@ -374,7 +388,10 @@ export function SuperAdminSupport() {
                   >
                     <div className="card-body p-3">
                       <div className="flex justify-between items-start">
-                        <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                        <div>
+                          <div className="text-xs font-mono text-primary font-bold mb-1">{ticket.ticketNumber}</div>
+                          <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                        </div>
                         {!ticket.isRead && (
                           <div className="badge badge-warning badge-xs">NEW</div>
                         )}
@@ -416,6 +433,7 @@ export function SuperAdminSupport() {
                 <div className="card-body">
                   <div className="flex justify-between items-start mb-4">
                     <div>
+                      <div className="text-sm font-mono text-primary font-bold mb-2">{selectedTicket.ticketNumber}</div>
                       <h2 className="card-title text-xl" data-testid="ticket-title">{selectedTicket.title}</h2>
                       <p className="text-sm text-base-content/70">
                         Created {format(new Date(selectedTicket.createdAt), 'MMM dd, yyyy HH:mm')}

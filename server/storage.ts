@@ -68,7 +68,7 @@ import {
   type InsertSupportTicketResponse,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, count, sql, like, or, isNull, avg } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -280,6 +280,7 @@ export interface IStorage {
     status?: string;
     priority?: string;
     category?: string;
+    search?: string; // Search by ticket number or title
     limit?: number;
     offset?: number;
   }): Promise<SupportTicket[]>;
@@ -1387,6 +1388,7 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     priority?: string;
     category?: string;
+    search?: string; // Search by ticket number or title
     limit?: number;
     offset?: number;
   } = {}): Promise<SupportTicket[]> {
@@ -1397,6 +1399,7 @@ export class DatabaseStorage implements IStorage {
       status,
       priority,
       category,
+      search,
       limit = 50,
       offset = 0
     } = filters;
@@ -1421,6 +1424,14 @@ export class DatabaseStorage implements IStorage {
     }
     if (category) {
       conditions.push(eq(supportTickets.category, category));
+    }
+    if (search) {
+      conditions.push(
+        or(
+          ilike(supportTickets.ticketNumber, `%${search}%`),
+          ilike(supportTickets.title, `%${search}%`)
+        )
+      );
     }
 
     if (conditions.length > 0) {

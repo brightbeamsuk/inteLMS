@@ -531,6 +531,7 @@ export const emailLogs = pgTable("email_logs", {
 // Support tickets table
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketNumber: varchar("ticket_number", { length: 20 }).notNull().unique(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description").notNull(),
   status: ticketStatusEnum("status").default('open').notNull(),

@@ -52,6 +52,7 @@ export function AdminSupport() {
   const [viewMode, setViewMode] = useState<'active' | 'closed'>('active');
   const [responseMessage, setResponseMessage] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [newTicket, setNewTicket] = useState({
     title: '',
     description: '',
@@ -74,6 +75,7 @@ export function AdminSupport() {
   }
   if (priorityFilter) queryParams.append('priority', priorityFilter);
   if (categoryFilter) queryParams.append('category', categoryFilter);
+  if (searchQuery.trim()) queryParams.append('search', searchQuery.trim());
 
   // Fetch support tickets
   const { data: allTickets = [], isLoading } = useQuery<SupportTicket[]>({
@@ -437,7 +439,10 @@ export function AdminSupport() {
                   >
                     <div className="card-body p-3">
                       <div className="flex justify-between items-start">
-                        <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                        <div>
+                          <div className="text-xs font-mono text-primary font-bold mb-1">{ticket.ticketNumber}</div>
+                          <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                        </div>
                         {ticket.assignedTo && (
                           <div className="badge badge-primary badge-xs">ASSIGNED</div>
                         )}
@@ -485,6 +490,7 @@ export function AdminSupport() {
                 <div className="card-body">
                   <div className="flex justify-between items-start mb-4">
                     <div>
+                      <div className="text-sm font-mono text-primary font-bold mb-2">{selectedTicket.ticketNumber}</div>
                       <h2 className="card-title text-xl" data-testid="ticket-title">{selectedTicket.title}</h2>
                       <p className="text-sm text-base-content/70">
                         Created {format(new Date(selectedTicket.createdAt), 'MMM dd, yyyy HH:mm')}

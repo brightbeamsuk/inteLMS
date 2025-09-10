@@ -2559,13 +2559,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      const { status, priority, category, limit, offset } = req.query;
+      const { status, priority, category, search, limit, offset } = req.query;
       const filters: any = {};
 
       // Apply filters based on query params
       if (status) filters.status = status;
       if (priority) filters.priority = priority;
       if (category) filters.category = category;
+      if (search) filters.search = search as string;
       if (limit) filters.limit = parseInt(limit as string);
       if (offset) filters.offset = parseInt(offset as string);
 
@@ -2671,7 +2672,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Title and description are required' });
       }
 
+      // Generate unique ticket number
+      const ticketCount = await storage.getSupportTickets({ limit: 1 });
+      const totalTickets = await storage.getSupportTickets({});
+      const ticketNumber = `TKT-${String(totalTickets.length + 1).padStart(6, '0')}`;
+
       const ticketData = {
+        ticketNumber,
         title,
         description,
         priority: priority || 'medium',
