@@ -49,6 +49,7 @@ export function AdminSupport() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'active' | 'closed'>('active');
   const [responseMessage, setResponseMessage] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTicket, setNewTicket] = useState({
@@ -62,7 +63,11 @@ export function AdminSupport() {
 
   // Build query parameters for filtering
   const queryParams = new URLSearchParams();
-  if (statusFilter) queryParams.append('status', statusFilter);
+  if (viewMode === 'closed') {
+    queryParams.append('status', 'closed');
+  } else if (statusFilter && statusFilter !== 'closed') {
+    queryParams.append('status', statusFilter);
+  }
   if (priorityFilter) queryParams.append('priority', priorityFilter);
   if (categoryFilter) queryParams.append('category', categoryFilter);
 
@@ -333,20 +338,47 @@ export function AdminSupport() {
             <div className="card-body">
               <h2 className="card-title mb-4">Your Tickets</h2>
               
+              {/* View Mode Tabs */}
+              <div className="tabs tabs-boxed mb-4">
+                <a 
+                  className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('active');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-active-tickets"
+                >
+                  Active Tickets
+                </a>
+                <a 
+                  className={`tab ${viewMode === 'closed' ? 'tab-active' : ''}`}
+                  onClick={() => {
+                    setViewMode('closed');
+                    setStatusFilter('');
+                    setSelectedTicket(null);
+                  }}
+                  data-testid="tab-closed-tickets"
+                >
+                  Closed Tickets
+                </a>
+              </div>
+              
               {/* Filters */}
               <div className="space-y-2 mb-4">
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  data-testid="filter-status"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
-                </select>
+                {viewMode === 'active' && (
+                  <select 
+                    className="select select-bordered w-full select-sm"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    data-testid="filter-status"
+                  >
+                    <option value="">All Active Statuses</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                )}
                 
                 <select 
                   className="select select-bordered w-full select-sm"

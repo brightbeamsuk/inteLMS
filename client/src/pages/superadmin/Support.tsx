@@ -165,6 +165,10 @@ export function SuperAdminSupport() {
           updates: { status: 'closed' }
         });
         setShowCloseModal(false);
+        // Clear selected ticket so user sees it moved to closed section
+        setSelectedTicket(null);
+        // Also invalidate all ticket queries to refresh the lists
+        queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
       }
     });
   };
