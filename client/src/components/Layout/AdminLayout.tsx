@@ -60,6 +60,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  // Fetch support unread ticket count
+  const { data: supportUnreadData } = useQuery<{ count: number }>({
+    queryKey: ['/api/support/unread-count'],
+    enabled: !!user,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
   // Fetch plan features to check access
   const { data: planFeatures = [], isLoading: planFeaturesLoading } = useQuery({
     queryKey: ['/api/plan-features/mappings', organization?.planId],
@@ -147,6 +154,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       requiresFeature: "training_matrix"
     },
     { path: "/admin/certificates", icon: "fas fa-certificate", label: "Certificates" },
+    { path: "/admin/support", icon: "fas fa-headset", label: "Support" },
     { path: "/admin/billing", icon: "fas fa-credit-card", label: "Billing" },
     { 
       path: "/admin/audit-log", 
@@ -308,6 +316,14 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                             <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
                               <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                                 {overdueData.overdueCount}
+                              </div>
+                            </div>
+                          )}
+                          {/* Show unread ticket count indicator for Support */}
+                          {item.path === '/admin/support' && supportUnreadData && supportUnreadData.count > 0 && (
+                            <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                                {supportUnreadData.count}
                               </div>
                             </div>
                           )}

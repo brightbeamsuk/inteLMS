@@ -62,9 +62,17 @@ export function UserLayout({ children }: UserLayoutProps) {
     '--accent-color': organization.accentColor || '#3b82f6',
   } : {};
 
+  // Fetch support unread ticket count
+  const { data: supportUnreadData } = useQuery<{ count: number }>({
+    queryKey: ['/api/support/unread-count'],
+    enabled: !!user,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
   const menuItems = [
     { path: "/user", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/user/courses", icon: "fas fa-graduation-cap", label: "My Courses" },
+    { path: "/user/support", icon: "fas fa-headset", label: "Support" },
     { path: "/user/settings", icon: "fas fa-cog", label: "Settings" },
   ];
 
@@ -206,6 +214,14 @@ export function UserLayout({ children }: UserLayoutProps) {
                   >
                     <i className={item.icon}></i>
                     {item.label}
+                    {/* Show unread ticket count indicator for Support */}
+                    {item.path === '/user/support' && supportUnreadData && supportUnreadData.count > 0 && (
+                      <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                        <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                          {supportUnreadData.count}
+                        </div>
+                      </div>
+                    )}
                   </Link>
                 </li>
               ))}

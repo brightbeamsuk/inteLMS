@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface SuperAdminLayoutProps {
@@ -12,6 +13,13 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Fetch support unread ticket count
+  const { data: supportUnreadData } = useQuery<{ count: number }>({
+    queryKey: ['/api/support/unread-count'],
+    enabled: !!user,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
   const menuItems = [
     { path: "/superadmin", icon: "fas fa-tachometer-alt", label: "Dashboard" },
     { path: "/superadmin/organisations", icon: "fas fa-building", label: "Organisations" },
@@ -20,6 +28,7 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     { path: "/superadmin/subscriptions", icon: "fas fa-chart-line", label: "Subscriptions" },
     { path: "/superadmin/course-builder", icon: "fas fa-hammer", label: "Course Builder" },
     { path: "/superadmin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
+    { path: "/superadmin/support", icon: "fas fa-headset", label: "Support" },
     { path: "/superadmin/settings", icon: "fas fa-cog", label: "Settings" },
   ];
 
@@ -127,6 +136,14 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                 >
                   <i className={item.icon}></i>
                   {item.label}
+                  {/* Show unread ticket count indicator for Support */}
+                  {item.path === '/superadmin/support' && supportUnreadData && supportUnreadData.count > 0 && (
+                    <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                      <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                        {supportUnreadData.count}
+                      </div>
+                    </div>
+                  )}
                 </Link>
               </li>
             ))}
