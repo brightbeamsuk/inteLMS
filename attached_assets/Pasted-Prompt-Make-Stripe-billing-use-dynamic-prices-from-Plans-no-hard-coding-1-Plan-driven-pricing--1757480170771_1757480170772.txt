@@ -1,0 +1,262 @@
+Prompt: Make Stripe billing use dynamic prices from “Plans” (no hard-coding)
+1) Plan-driven pricing model (source of truth)
+
+Add/ensure a plans table managed by Superadmin → Plans page with these fields:
+
+id, name, description
+
+Billing settings
+
+billing_model: metered_per_active_user | per_seat | flat_subscription
+
+cadence: monthly | annual
+
+currency: ISO (default GBP)
+
+unit_amount (integer in minor units, e.g. 2000 = £20.00)
+
+tax_behavior: inclusive | exclusive
+
+trial_days (int, optional)
+
+min_seats (int, optional)
+
+Stripe links (managed by system)
+
+stripe_product_id
+
+stripe_price_id (current active price)
+
+Flags
+
+is_active: bool
+
+price_change_policy: prorate_immediately | at_period_end | manual
+
+Superadmin can edit unit_amount, currency, cadence, billing_model any time. When changed, the system creates a new Stripe Price and updates stripe_price_id (never edits old Stripe Prices).
+
+2) Stripe catalog sync (one-way from Plans → Stripe)
+
+When a plan is created/updated:
+
+If no stripe_product_id, create Product in Stripe (name = plan name).
+
+Create a new Stripe Price with:
+
+unit_amount from plan (minor units)
+
+currency
+
+recurring.interval from cadence
+
+recurring.usage_type:
+
+metered if billing_model = metered_per_active_user
+
+licensed otherwise
+
+Save returned price.id into plans.stripe_price_id.
+
+Keep old Stripe Prices intact for historic subs (“price immutability”).
+
+3) Org subscription uses selected plan
+
+Org Admin → Billing:
+
+Show a dropdown of active plans (from plans).
+
+When an org selects a plan:
+
+Store org.plan_id.
+
+If no stripe_customer_id, create one.
+
+Create Stripe Checkout Session (mode=subscription) using that plan’s stripe_price_id.
+
+Quantity rules:
+
+metered_per_active_user: no quantity (Stripe usage records).
+
+per_seat: quantity = max(min_seats, active_user_count) (or admin input, but we auto-sync later).
+
+flat_subscription: quantity = 1.
+
+Apply trial_days if present, and tax behaviour per plan.
+
+On checkout.session.completed, store stripe_subscription_id, set billing status.
+
+4) Usage & quantity sync driven by plan
+
+Nightly (and on key events), recalc active_user_count:
+
+If metered_per_active_user: send Stripe Usage Records against the subscription item’s price.
+
+If per_seat: update subscription quantity to current active users (respect min_seats, honour price_change_policy).
+
+If flat_subscription: no action.
+
+5) Plan changes after an org has subscribed
+
+When Superadmin changes a plan (e.g., price or cadence):
+
+Create new Stripe Price and update plans.stripe_price_id.
+
+Decide how existing orgs on that plan should move:
+
+If price_change_policy = prorate_immediately:
+
+Update each subscription’s item to the new price now (Stripe prorates).
+
+If at_period_end:
+
+Schedule price change at current_period_end.
+
+If manual:
+
+Flag in Subscription Manager → Actions needed with a “Move to new price” button per org.
+
+Always log these actions.
+
+If an org switches to a different plan entirely, treat it like changing the subscription’s price (prorate or at period end per policy).
+
+6) PAYG course purchases remain plan-independent
+
+PAYG still uses the course → Stripe Price mapping (from your PAYG map).
+
+Not impacted by Plans; leave as is.
+
+7) Superadmin → Subscription Manager page
+
+Tabs:
+
+Plans
+
+CRUD plans with fields above.
+
+“Sync to Stripe” runs the Product/Price creation logic and displays current stripe_product_id / stripe_price_id.
+
+When unit_amount, currency, or cadence change, show a warning: “This creates a new Stripe Price; old subscriptions are unaffected until moved.”
+
+Organisations
+
+List: Org, Current Plan, billing_model, Status, Active Users, Quantity (if per_seat), Next invoice date, Subscription link.
+
+Actions per org: “Move to latest plan price (prorate now / at period end)” depending on policy.
+
+Webhooks
+
+As before: show processed Stripe events and statuses.
+
+Invoices & Payments
+
+List platform-wide invoices/payments with links to Stripe.
+
+Settings
+
+Stripe keys + mode (test/live), default tax behavior, default price change policy.
+
+8) Test buttons & diagnostics (must-have)
+
+Plan Price Test: For a selected plan, call Stripe to:
+
+Verify stripe_product_id & stripe_price_id exist and match plan values (amount/currency/interval/usage_type).
+
+Return a diagnostic JSON:
+
+{
+  planId, planName,
+  expected: { unit_amount, currency, cadence, usage_type },
+  stripe:   { product_id, price_id, unit_amount, currency, interval, usage_type },
+  status: "match" | "mismatch",
+  mismatches: [...]
+}
+
+
+Org Subscription Test: For an org on a plan:
+
+Fetch the subscription item’s price.id from Stripe and confirm it equals the plan’s stripe_price_id (or the “previous price id” if policy = at_period_end).
+
+If per_seat: confirm quantity equals our active_user_count (or show intended update).
+
+If metered: confirm last usage submission timestamp and total for current period.
+
+Checkout Test: Create a test Checkout Session for a dummy org against selected plan, return URL + status.
+
+9) Webhooks (unchanged core, but plan-aware)
+
+customer.subscription.updated: if Stripe price on the sub item changed due to plan update, reflect it to org’s current stripe_price_id (and log “moved to latest price”).
+
+invoice.paid/failed: set org billing status.
+
+checkout.session.completed: attach sub to org + set plan_id (from session metadata).
+
+10) Validation & safety rails
+
+When saving a plan:
+
+Require name, billing_model, cadence, currency, unit_amount.
+
+Auto-convert £ to minor units (ints).
+
+Prevent saving if unit_amount <= 0.
+
+Stripe price immutability:
+
+Never edit existing Prices; always create a new Price on change, store id on plan.
+
+Quantity sanity:
+
+For per_seat, enforce quantity >= min_seats.
+
+Prevent an empty/invalid plan being selected at org:
+
+If plan inactive or missing stripe_price_id, block Start Subscription with a 422 and human message.
+
+11) “Start subscription” flow wiring
+
+Checkout session metadata:
+
+Include org_id, plan_id, billing_model, cadence.
+
+On webhook:
+
+Validate signature.
+
+Link the subscription to org_id; set org.plan_id; set billing_status.
+
+For metered: store subscription_item_id so you can post usage records reliably.
+
+For per_seat: immediately reconcile quantity after completion (in case active users changed during checkout).
+
+12) Acceptance criteria
+
+Superadmin can create/edit plans; prices in Stripe update automatically by creating a new Price and storing its ID.
+
+Org selecting any plan always uses that plan’s current stripe_price_id (no hard-coded numbers).
+
+Changing a plan’s price creates a new Stripe Price and:
+
+Either migrates existing subs per price_change_policy or lists them for manual migration.
+
+billing_model behaviour is correct:
+
+metered_per_active_user: no quantity; usage posted; invoices reflect usage × plan unit_amount.
+
+per_seat: quantity tracks active user count (with min_seats & proration rules).
+
+flat_subscription: quantity=1.
+
+Diagnostics clearly show plan↔Stripe alignment and subscription price/quantity status.
+
+Tiny copy (optional) for the Plans UI
+
+Billing model help
+
+Metered per active user: Pay only for users who used the platform during the period.
+
+Per seat: Pay for a fixed number of seats (we auto-sync to your active users).
+
+Flat subscription: One fixed fee per org.
+
+Price updates
+“Changing price/currency/cadence creates a new Stripe Price. Existing subscribers won’t change until migrated (per your price change policy).”

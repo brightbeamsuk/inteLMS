@@ -53,6 +53,21 @@ export const scormAttemptStatusEnum = pgEnum('scorm_attempt_status', ['not_start
 // Plan status enum
 export const planStatusEnum = pgEnum('plan_status', ['active', 'inactive', 'archived']);
 
+// Billing model enum for plans
+export const billingModelEnum = pgEnum('billing_model', ['metered_per_active_user', 'per_seat', 'flat_subscription']);
+
+// Billing cadence enum
+export const billingCadenceEnum = pgEnum('billing_cadence', ['monthly', 'annual']);
+
+// Tax behavior enum
+export const taxBehaviorEnum = pgEnum('tax_behavior', ['inclusive', 'exclusive']);
+
+// Price change policy enum
+export const priceChangePolicyEnum = pgEnum('price_change_policy', ['prorate_immediately', 'at_period_end', 'manual']);
+
+// Billing status enum for organizations
+export const billingStatusEnum = pgEnum('billing_status', ['active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'trialing', 'paused']);
+
 // Email provider enum
 export const emailProviderEnum = pgEnum('email_provider', [
   'smtp_generic',
@@ -120,7 +135,15 @@ export const organisations = pgTable("organisations", {
   contactPhone: varchar("contact_phone"),
   address: text("address"),
   status: organisationStatusEnum("status").notNull().default('active'),
+  
+  // Plan and billing fields
   planId: varchar("plan_id"), // Reference to the plan this organisation is subscribed to
+  stripeCustomerId: varchar("stripe_customer_id"), // Stripe Customer ID
+  stripeSubscriptionId: varchar("stripe_subscription_id"), // Current Stripe Subscription ID
+  billingStatus: billingStatusEnum("billing_status"), // Current billing status
+  activeUserCount: integer("active_user_count").default(0), // For tracking usage
+  lastBillingSync: timestamp("last_billing_sync"), // Last time usage was synced to Stripe
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -347,8 +370,29 @@ export const plans = pgTable("plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(), // e.g., "Enterprise", "Premium", "Basic"
   description: text("description"),
-  pricePerUser: decimal("price_per_user", { precision: 10, scale: 2 }).notNull(), // Monthly price per user
-  status: planStatusEnum("status").notNull().default('active'),
+  
+  // Billing settings
+  billingModel: billingModelEnum("billing_model").notNull(), // metered_per_active_user | per_seat | flat_subscription
+  cadence: billingCadenceEnum("cadence").notNull().default('monthly'), // monthly | annual
+  currency: varchar("currency", { length: 3 }).notNull().default('GBP'), // ISO currency code
+  unitAmount: integer("unit_amount").notNull(), // Price in minor units (e.g. 2000 = £20.00)
+  taxBehavior: taxBehaviorEnum("tax_behavior").notNull().default('exclusive'), // inclusive | exclusive
+  trialDays: integer("trial_days"), // Optional trial period in days
+  minSeats: integer("min_seats"), // Minimum seats for per_seat billing
+  
+  // Stripe integration
+  stripeProductId: varchar("stripe_product_id"), // Stripe Product ID
+  stripePriceId: varchar("stripe_price_id"), // Current active Stripe Price ID
+  
+  // Flags and settings
+  isActive: boolean("is_active").notNull().default(true),
+  priceChangePolicy: priceChangePolicyEnum("price_change_policy").notNull().default('prorate_immediately'),
+  
+  // Legacy field for backward compatibility - remove when migration is complete
+  pricePerUser: decimal("price_per_user", { precision: 10, scale: 2 }),
+  status: planStatusEnum("status").notNull().default('active'), // Keep for compatibility
+  
+  // Metadata
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
