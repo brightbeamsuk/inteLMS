@@ -88,6 +88,21 @@ export interface IStorage {
   updateOrganisation(id: string, organisation: Partial<InsertOrganisation>): Promise<Organisation>;
   deleteOrganisation(id: string): Promise<void>;
   getAllOrganisations(): Promise<Organisation[]>;
+  
+  // Organisation billing operations
+  getOrganisationWithPlan(id: string): Promise<(Organisation & { plan: Plan | null }) | undefined>;
+  updateOrganisationBilling(id: string, billing: {
+    planId?: string;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    billingStatus?: string;
+    activeUserCount?: number;
+    lastBillingSync?: Date;
+  }): Promise<Organisation>;
+  syncOrganisationUsage(id: string): Promise<{
+    activeUserCount: number;
+    lastSyncTime: Date;
+  }>;
 
   // Course operations
   getCourse(id: string): Promise<Course | undefined>;
@@ -368,6 +383,78 @@ export class DatabaseStorage implements IStorage {
 
   async getAllOrganisations(): Promise<Organisation[]> {
     return await db.select().from(organisations).orderBy(asc(organisations.name));
+  }
+
+  // Organisation billing operations
+  async getOrganisationWithPlan(id: string): Promise<(Organisation & { plan: Plan | null }) | undefined> {
+    const [result] = await db
+      .select({
+        organisation: organisations,
+        plan: plans,
+      })
+      .from(organisations)
+      .leftJoin(plans, eq(organisations.planId, plans.id))
+      .where(eq(organisations.id, id));
+
+    if (!result) return undefined;
+
+    return {
+      ...result.organisation,
+      plan: result.plan,
+    };
+  }
+
+  async updateOrganisationBilling(id: string, billing: {
+    planId?: string;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    billingStatus?: string;
+    activeUserCount?: number;
+    lastBillingSync?: Date;
+  }): Promise<Organisation> {
+    const [organisation] = await db
+      .update(organisations)
+      .set({ 
+        ...billing, 
+        updatedAt: new Date() 
+      })
+      .where(eq(organisations.id, id))
+      .returning();
+    return organisation;
+  }
+
+  async syncOrganisationUsage(id: string): Promise<{
+    activeUserCount: number;
+    lastSyncTime: Date;
+  }> {
+    // Count active users in this organisation
+    const [activeUserResult] = await db
+      .select({ count: count() })
+      .from(users)
+      .where(
+        and(
+          eq(users.organisationId, id),
+          eq(users.status, 'active')
+        )
+      );
+
+    const activeUserCount = activeUserResult?.count || 0;
+    const lastSyncTime = new Date();
+
+    // Update the organisation with the current active user count
+    await db
+      .update(organisations)
+      .set({ 
+        activeUserCount,
+        lastBillingSync: lastSyncTime,
+        updatedAt: lastSyncTime
+      })
+      .where(eq(organisations.id, id));
+
+    return {
+      activeUserCount,
+      lastSyncTime,
+    };
   }
 
   // Course operations

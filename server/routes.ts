@@ -1122,6 +1122,225 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Organization Billing API (SuperAdmin only, Admin can read own organization)
+  
+  // Get organization billing status with plan details
+  app.get('/api/organisations/:id/billing', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { id } = req.params;
+      
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      // SuperAdmin can view any organization, Admin can only view their own
+      if (user.role !== 'superadmin' && user.organisationId !== id) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const orgWithPlan = await storage.getOrganisationWithPlan(id);
+      
+      if (!orgWithPlan) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      res.json({
+        organisationId: orgWithPlan.id,
+        organisationName: orgWithPlan.name,
+        plan: orgWithPlan.plan,
+        billing: {
+          stripeCustomerId: orgWithPlan.stripeCustomerId,
+          stripeSubscriptionId: orgWithPlan.stripeSubscriptionId,
+          billingStatus: orgWithPlan.billingStatus,
+          activeUserCount: orgWithPlan.activeUserCount,
+          lastBillingSync: orgWithPlan.lastBillingSync,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching organization billing:', error);
+      res.status(500).json({ message: 'Failed to fetch organization billing' });
+    }
+  });
+
+  // Subscribe organization to a plan
+  app.post('/api/organisations/:id/subscribe', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { id } = req.params;
+      const { planId, stripeCustomerId, stripeSubscriptionId } = req.body;
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      if (!planId) {
+        return res.status(400).json({ message: 'Plan ID is required' });
+      }
+
+      // Validate the plan exists
+      const plan = await storage.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      // Validate the organization exists
+      const organisation = await storage.getOrganisation(id);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      // Update organization billing
+      const updatedOrg = await storage.updateOrganisationBilling(id, {
+        planId,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        billingStatus: 'active',
+        lastBillingSync: new Date(),
+      });
+
+      // Sync usage count
+      const usageSync = await storage.syncOrganisationUsage(id);
+
+      res.json({
+        success: true,
+        organisation: updatedOrg,
+        usage: usageSync,
+        message: 'Organisation successfully subscribed to plan',
+      });
+    } catch (error) {
+      console.error('Error subscribing organization to plan:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to subscribe organization to plan',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Update organization subscription
+  app.patch('/api/organisations/:id/subscription', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { id } = req.params;
+      const { 
+        planId, 
+        stripeCustomerId, 
+        stripeSubscriptionId, 
+        billingStatus 
+      } = req.body;
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      // Validate the organization exists
+      const organisation = await storage.getOrganisation(id);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      // If changing plan, validate the new plan exists
+      if (planId) {
+        const plan = await storage.getPlan(planId);
+        if (!plan) {
+          return res.status(404).json({ message: 'Plan not found' });
+        }
+      }
+
+      // Update organization billing
+      const updateData: any = {};
+      if (planId !== undefined) updateData.planId = planId;
+      if (stripeCustomerId !== undefined) updateData.stripeCustomerId = stripeCustomerId;
+      if (stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = stripeSubscriptionId;
+      if (billingStatus !== undefined) updateData.billingStatus = billingStatus;
+      updateData.lastBillingSync = new Date();
+
+      const updatedOrg = await storage.updateOrganisationBilling(id, updateData);
+
+      res.json({
+        success: true,
+        organisation: updatedOrg,
+        message: 'Organisation subscription updated successfully',
+      });
+    } catch (error) {
+      console.error('Error updating organization subscription:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to update organization subscription',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Sync organization usage (for metered billing)
+  app.post('/api/organisations/:id/sync-usage', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { id } = req.params;
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      // Validate the organization exists
+      const orgWithPlan = await storage.getOrganisationWithPlan(id);
+      if (!orgWithPlan) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      // Sync usage count
+      const usageSync = await storage.syncOrganisationUsage(id);
+
+      // If organization has metered billing and Stripe subscription, update usage records
+      let stripeUsageUpdate = null;
+      if (orgWithPlan.plan?.billingModel === 'metered_per_active_user' && 
+          orgWithPlan.stripeSubscriptionId && 
+          orgWithPlan.plan.stripePriceId) {
+        try {
+          const { getStripeService } = await import('./services/StripeService.js');
+          const stripeService = getStripeService();
+          
+          // Create usage record for Stripe
+          const stripe = stripeService['stripe']; // Access private stripe instance
+          const usageRecord = await stripe.subscriptionItems.createUsageRecord(
+            orgWithPlan.stripeSubscriptionId,
+            {
+              quantity: usageSync.activeUserCount,
+              timestamp: Math.floor(usageSync.lastSyncTime.getTime() / 1000),
+              action: 'set', // Set absolute quantity
+            }
+          );
+          
+          stripeUsageUpdate = {
+            stripeUsageRecordId: usageRecord.id,
+            quantity: usageRecord.quantity,
+            timestamp: new Date(usageRecord.timestamp * 1000),
+          };
+        } catch (stripeError) {
+          console.error('Error updating Stripe usage:', stripeError);
+          // Continue without Stripe update - local sync was successful
+        }
+      }
+
+      res.json({
+        success: true,
+        organisationId: id,
+        usage: usageSync,
+        stripeUsage: stripeUsageUpdate,
+        billingModel: orgWithPlan.plan?.billingModel,
+        message: 'Usage synchronized successfully',
+      });
+    } catch (error) {
+      console.error('Error syncing organization usage:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to sync organization usage',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Plan Management API (SuperAdmin only for write operations, Admin can read)
   // Get all plans
   app.get('/api/plans', requireAuth, async (req: any, res) => {
