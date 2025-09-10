@@ -289,25 +289,54 @@ export function SuperAdminSupport() {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Support Center</h1>
-        <div className="badge badge-info">
-          {tickets.length} tickets
+    <div>
+      {/* Breadcrumbs */}
+      <div className="text-sm breadcrumbs mb-6">
+        <ul>
+          <li><a data-testid="link-superadmin">SuperAdmin</a></li>
+          <li className="font-semibold" data-testid="text-current-page">Support Center</li>
+        </ul>
+      </div>
+
+      {/* Dashboard Header */}
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex items-center gap-4">
+          <div className="avatar">
+            <div className="w-12 h-12 rounded bg-primary text-primary-content flex items-center justify-center">
+              <i className="fas fa-headset text-xl"></i>
+            </div>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">Support Center</h1>
+            <p className="text-base-content/60" data-testid="text-page-subtitle">Manage support tickets across all organizations</p>
+          </div>
+        </div>
+        <div className="stats shadow">
+          <div className="stat">
+            <div className="stat-figure">
+              <i className="fas fa-ticket-alt text-2xl text-primary"></i>
+            </div>
+            <div className="stat-title">Total Tickets</div>
+            <div className="stat-value text-primary" data-testid="stat-total-tickets">{tickets.length}</div>
+            <div className="stat-desc">Across all organizations</div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Ticket List */}
         <div className="lg:col-span-1">
-          <div className="card bg-base-100 shadow-lg">
-            <div className="card-body">
-              <h2 className="card-title mb-4">Support Tickets</h2>
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="fas fa-list text-xl text-primary"></i>
+                <h2 className="card-title text-xl">Support Tickets</h2>
+              </div>
               
               {/* View Mode Tabs */}
-              <div className="tabs tabs-boxed mb-4">
+              <div className="tabs tabs-bordered mb-6">
                 <a 
-                  className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+                  className={`tab tab-lg ${viewMode === 'active' ? 'tab-active' : ''}`}
                   onClick={() => {
                     setViewMode('active');
                     setStatusFilter('');
@@ -315,10 +344,11 @@ export function SuperAdminSupport() {
                   }}
                   data-testid="tab-active-tickets"
                 >
-                  Active Tickets
+                  <i className="fas fa-exclamation-circle mr-2"></i>
+                  Active
                 </a>
                 <a 
-                  className={`tab ${viewMode === 'closed' ? 'tab-active' : ''}`}
+                  className={`tab tab-lg ${viewMode === 'closed' ? 'tab-active' : ''}`}
                   onClick={() => {
                     setViewMode('closed');
                     setStatusFilter('');
@@ -326,110 +356,163 @@ export function SuperAdminSupport() {
                   }}
                   data-testid="tab-closed-tickets"
                 >
-                  Closed Tickets
+                  <i className="fas fa-check-circle mr-2"></i>
+                  Closed
                 </a>
               </div>
               
               {/* Search Bar */}
-              <div className="mb-4">
-                <input
-                  type="text"
-                  className="input input-bordered w-full input-sm"
-                  placeholder="Search by ticket number or title..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  data-testid="search-tickets"
-                />
+              <div className="form-control mb-4">
+                <div className="input-group">
+                  <span className="bg-base-200">
+                    <i className="fas fa-search text-base-content/60"></i>
+                  </span>
+                  <input
+                    type="text"
+                    className="input input-bordered flex-1"
+                    placeholder="Search by ticket number or title..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="search-tickets"
+                  />
+                </div>
               </div>
 
               {/* Filters */}
-              <div className="space-y-2 mb-4">
+              <div className="space-y-3 mb-6">
                 {viewMode === 'active' && (
-                  <select 
-                    className="select select-bordered w-full select-sm"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    data-testid="filter-status"
-                  >
-                    <option value="">All Active Statuses</option>
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                  </select>
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">
+                        <i className="fas fa-filter mr-2"></i>Status Filter
+                      </span>
+                    </label>
+                    <select 
+                      className="select select-bordered w-full"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      data-testid="filter-status"
+                    >
+                      <option value="">All Active Statuses</option>
+                      <option value="open">🔴 Open</option>
+                      <option value="in_progress">🟡 In Progress</option>
+                      <option value="resolved">🟢 Resolved</option>
+                    </select>
+                  </div>
                 )}
                 
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                  data-testid="filter-priority"
-                >
-                  <option value="">All Priorities</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-exclamation-triangle mr-2"></i>Priority Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    data-testid="filter-priority"
+                  >
+                    <option value="">All Priorities</option>
+                    <option value="urgent">🔥 Urgent</option>
+                    <option value="high">⚠️ High</option>
+                    <option value="medium">📋 Medium</option>
+                    <option value="low">📝 Low</option>
+                  </select>
+                </div>
                 
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  data-testid="filter-category"
-                >
-                  <option value="">All Categories</option>
-                  <option value="technical">Technical</option>
-                  <option value="billing">Billing</option>
-                  <option value="account">Account</option>
-                  <option value="training">Training</option>
-                  <option value="feature_request">Feature Request</option>
-                  <option value="bug_report">Bug Report</option>
-                  <option value="general">General</option>
-                </select>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-tags mr-2"></i>Category Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    data-testid="filter-category"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="technical">🔧 Technical</option>
+                    <option value="billing">💳 Billing</option>
+                    <option value="account">👤 Account</option>
+                    <option value="training">📚 Training</option>
+                    <option value="feature_request">💡 Feature Request</option>
+                    <option value="bug_report">🐛 Bug Report</option>
+                    <option value="general">💬 General</option>
+                  </select>
+                </div>
               </div>
 
               {/* Ticket List */}
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-96 overflow-y-auto">
                 {tickets.map((ticket) => (
                   <div
                     key={ticket.id}
-                    className={`card card-compact border cursor-pointer transition-colors hover:bg-base-200 ${
-                      selectedTicket?.id === ticket.id ? 'border-primary bg-base-200' : 'border-base-300'
-                    } ${!ticket.isRead ? 'bg-warning/10 border-warning' : ''}`}
+                    className={`card card-compact cursor-pointer transition-all duration-200 hover:shadow-md ${
+                      selectedTicket?.id === ticket.id 
+                        ? 'bg-primary/10 border-primary shadow-md border-2' 
+                        : 'bg-base-100 border border-base-300 hover:border-primary/50'
+                    } ${!ticket.isRead ? 'ring-2 ring-warning/50' : ''}`}
                     onClick={() => handleSelectTicket(ticket)}
                     data-testid={`ticket-card-${ticket.id}`}
                   >
-                    <div className="card-body p-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-xs font-mono text-primary font-bold mb-1">{ticket.ticketNumber}</div>
-                          <h3 className="card-title text-sm font-medium truncate">{ticket.title}</h3>
+                    <div className="card-body p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-primary font-bold bg-primary/10 px-2 py-1 rounded">
+                              {ticket.ticketNumber}
+                            </span>
+                            {!ticket.isRead && (
+                              <div className="badge badge-warning badge-sm gap-1">
+                                <i className="fas fa-exclamation-circle text-xs"></i>
+                                NEW
+                              </div>
+                            )}
+                          </div>
+                          <h3 className="font-semibold text-base leading-tight">{ticket.title}</h3>
                         </div>
-                        {!ticket.isRead && (
-                          <div className="badge badge-warning badge-xs">NEW</div>
-                        )}
                       </div>
-                      <div className="flex gap-1 flex-wrap">
-                        <div className={`badge badge-xs ${getStatusColor(ticket.status)}`}>
-                          {ticket.status}
+                      
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className={`badge ${getStatusColor(ticket.status)} badge-sm gap-1`}>
+                          <i className="fas fa-circle text-xs"></i>
+                          {ticket.status.replace('_', ' ')}
                         </div>
-                        <div className={`badge badge-xs ${getPriorityColor(ticket.priority)}`}>
+                        <div className={`badge ${getPriorityColor(ticket.priority)} badge-sm gap-1`}>
+                          <i className="fas fa-flag text-xs"></i>
                           {ticket.priority}
                         </div>
-                        <div className="badge badge-xs badge-outline">
-                          {ticket.category}
+                        <div className="badge badge-outline badge-sm gap-1">
+                          <i className="fas fa-tag text-xs"></i>
+                          {ticket.category.replace('_', ' ')}
                         </div>
                       </div>
-                      <p className="text-xs text-base-content/70">
-                        {format(new Date(ticket.createdAt), 'MMM dd, yyyy HH:mm')}
-                      </p>
+                      
+                      <div className="flex items-center justify-between text-xs text-base-content/60">
+                        <span className="flex items-center gap-1">
+                          <i className="fas fa-clock"></i>
+                          {format(new Date(ticket.createdAt), 'MMM dd, yyyy HH:mm')}
+                        </span>
+                        {selectedTicket?.id === ticket.id && (
+                          <i className="fas fa-chevron-right text-primary"></i>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
                 
                 {tickets.length === 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-base-content/60">No tickets found</p>
+                  <div className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 bg-base-200 rounded-full flex items-center justify-center">
+                        <i className="fas fa-inbox text-2xl text-base-content/40"></i>
+                      </div>
+                      <p className="text-base-content/60 font-medium">No tickets found</p>
+                      <p className="text-sm text-base-content/40">Tickets will appear here when created</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -442,15 +525,34 @@ export function SuperAdminSupport() {
           {selectedTicket ? (
             <div className="space-y-6">
               {/* Ticket Header */}
-              <div className="card bg-base-100 shadow-lg">
-                <div className="card-body">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <div className="text-sm font-mono text-primary font-bold mb-2">{selectedTicket.ticketNumber}</div>
-                      <h2 className="card-title text-xl" data-testid="ticket-title">{selectedTicket.title}</h2>
-                      <p className="text-sm text-base-content/70">
-                        Created {format(new Date(selectedTicket.createdAt), 'MMM dd, yyyy HH:mm')}
-                      </p>
+              <div className="card bg-base-100 shadow-xl">
+                <div className="card-body p-6">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-sm font-mono text-primary font-bold bg-primary/10 px-3 py-1 rounded-full">
+                          {selectedTicket.ticketNumber}
+                        </span>
+                        <div className={`badge ${getStatusColor(selectedTicket.status)} badge-lg gap-2`}>
+                          <i className="fas fa-circle text-xs"></i>
+                          {selectedTicket.status.replace('_', ' ').toUpperCase()}
+                        </div>
+                        <div className={`badge ${getPriorityColor(selectedTicket.priority)} badge-lg gap-2`}>
+                          <i className="fas fa-flag text-xs"></i>
+                          {selectedTicket.priority.toUpperCase()}
+                        </div>
+                      </div>
+                      <h2 className="text-2xl font-bold mb-2" data-testid="ticket-title">{selectedTicket.title}</h2>
+                      <div className="flex items-center gap-4 text-sm text-base-content/60">
+                        <span className="flex items-center gap-1">
+                          <i className="fas fa-calendar-alt"></i>
+                          Created {format(new Date(selectedTicket.createdAt), 'MMM dd, yyyy HH:mm')}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <i className="fas fa-tag"></i>
+                          {selectedTicket.category.replace('_', ' ')}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <div className={`badge ${getStatusColor(selectedTicket.status)}`}>
