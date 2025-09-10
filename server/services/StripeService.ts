@@ -290,13 +290,28 @@ export class StripeService {
         price: plan.stripePriceId,
       };
       
-      // Set quantity based on billing model
-      if (plan.billingModel === 'per_seat' || plan.billingModel === 'metered_per_active_user') {
-        // For both per_seat and metered_per_active_user, show the user count as quantity
-        // This gives users the expected checkout experience showing user count and total price
+      // First, check if the Stripe price is metered by fetching its details
+      let stripePrice;
+      try {
+        stripePrice = await this.stripe.prices.retrieve(plan.stripePriceId);
+      } catch (error) {
+        console.warn('Could not retrieve Stripe price details, falling back to billing model logic');
+      }
+      
+      // Set quantity based on actual Stripe price configuration, not just our billing model
+      if (stripePrice && stripePrice.recurring && stripePrice.recurring.usage_type === 'metered') {
+        // For metered Stripe prices, never set quantity - Stripe handles this via usage records
+        console.log('Detected metered Stripe price, not setting quantity');
+        // Don't set quantity for metered prices
+      } else if (plan.billingModel === 'per_seat') {
+        // For fixed per-seat pricing, set the quantity
         lineItem.quantity = Math.max(userCount, plan.minSeats || 1);
+        console.log(`Setting quantity for per_seat billing: ${lineItem.quantity}`);
       } else if (plan.billingModel === 'flat_subscription') {
         lineItem.quantity = 1;
+      } else {
+        // Default case - try not to set quantity to avoid Stripe errors
+        console.log('Using default behavior, not setting quantity');
       }
 
       const sessionData: Stripe.Checkout.SessionCreateParams = {
