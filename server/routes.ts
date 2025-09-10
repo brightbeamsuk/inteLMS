@@ -759,6 +759,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get organization and subscription info
+      if (!user.organisationId) {
+        return res.status(400).json({ message: 'User not associated with an organization' });
+      }
+
       const organisation = await storage.getOrganisation(user.organisationId);
       if (!organisation) {
         return res.status(404).json({ message: 'Organization not found' });
@@ -776,8 +780,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If organization has a Stripe subscription, check the limits
       if (organisation.stripeSubscriptionId) {
         try {
-          const stripe = new (await import('stripe')).default(process.env.STRIPE_SECRET_KEY!, {
-            apiVersion: '2023-10-16',
+          const Stripe = (await import('stripe')).default;
+          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+            apiVersion: '2025-08-27.basil',
           });
 
           // Get subscription details from Stripe
@@ -790,7 +795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Check if it's a per-seat subscription
             const subscriptionItem = subscription.items.data[0];
-            if (subscriptionItem?.price?.product && typeof subscriptionItem.price.product === 'object') {
+            if (subscriptionItem?.price?.product && typeof subscriptionItem.price.product === 'object' && !subscriptionItem.price.product.deleted) {
               const productMetadata = subscriptionItem.price.product.metadata;
               
               // Look for seat limits in product metadata or subscription quantity
