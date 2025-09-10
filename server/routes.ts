@@ -1068,6 +1068,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Plan Change API - creates Stripe checkout session for plan changes
+  app.post('/api/subscriptions/change-plan-checkout', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Only admins can change plans' });
+      }
+
+      const { planId, userCount, organisationId } = req.body;
+      
+      console.log('Plan change checkout request:', {
+        userId: user.id,
+        userRole: user.role,
+        userOrgId: user.organisationId,
+        requestOrgId: organisationId,
+        planId,
+        userCount
+      });
+
+      // Security check: admins can only modify their own organization
+      if (user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Cannot modify other organizations' });
+      }
+
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      const plan = await storage.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!plan.stripePriceId) {
+        return res.status(400).json({ message: 'Plan does not have Stripe integration configured' });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Create Stripe checkout session
+      const sessionData = await stripeService.createCheckoutSession({
+        plan,
+        userCount: userCount || 1,
+        organisation,
+        mode: 'subscription',
+        metadata: {
+          organisationId,
+          planId,
+          billingModel: plan.billingModel,
+          cadence: plan.cadence,
+          userCount: String(userCount || 1),
+          updateType: 'plan_change'
+        }
+      });
+
+      res.json({
+        success: true,
+        checkoutUrl: sessionData.url,
+        sessionId: sessionData.id,
+        planId,
+        planName: plan.name,
+        userCount,
+        organisationId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('Error creating plan change checkout:', error);
+      res.status(500).json({ 
+        message: 'Failed to create checkout session', 
+        error: error.message 
+      });
+    }
+  });
+
   // Subscription Update Checkout - creates checkout session for updating existing subscription
   app.post('/api/subscriptions/update-checkout', requireAuth, async (req: any, res) => {
     try {
