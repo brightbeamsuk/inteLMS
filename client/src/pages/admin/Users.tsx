@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { LicenseLimitModal } from "@/components/LicenseLimitModal";
 
 interface User {
   id: string;
@@ -16,6 +17,15 @@ interface User {
   jobTitle?: string;
   department?: string;
   allowCertificateDownload: boolean;
+}
+
+interface LicenseInfo {
+  currentActiveUsers: number;
+  maxActiveUsers: number;
+  availableLicenses: number;
+  isAtLimit: boolean;
+  hasActiveSubscription: boolean;
+  organisationName: string;
 }
 
 export function AdminUsers() {
@@ -35,6 +45,9 @@ export function AdminUsers() {
   const [showBulkActionsModal, setShowBulkActionsModal] = useState(false);
   const [bulkAction, setBulkAction] = useState("");
   const [bulkActionValue, setBulkActionValue] = useState("");
+  const [showLicenseLimitModal, setShowLicenseLimitModal] = useState(false);
+  const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
+  const [pendingAction, setPendingAction] = useState<() => void>(() => {});
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -313,7 +326,7 @@ export function AdminUsers() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email || !formData.firstName || !formData.lastName) {
       toast({
@@ -323,6 +336,16 @@ export function AdminUsers() {
       });
       return;
     }
+
+    // Check license availability if creating an active user
+    if (formData.status === 'active') {
+      const hasAvailableLicense = await checkLicenseAvailability(1);
+      if (!hasAvailableLicense) {
+        setPendingAction(() => () => createUserMutation.mutate(formData));
+        return;
+      }
+    }
+
     createUserMutation.mutate(formData);
   };
 
@@ -337,8 +360,42 @@ export function AdminUsers() {
 
   const [generatedPassword] = useState(generatePassword());
 
-  const handleToggleUserStatus = (user: User) => {
+  // License check function
+  const checkLicenseAvailability = async (additionalUsersNeeded: number = 1): Promise<boolean> => {
+    try {
+      const response = await apiRequest('GET', '/api/admin/license-check');
+      const licenseData: LicenseInfo = await response.json();
+      
+      if (licenseData.availableLicenses < additionalUsersNeeded) {
+        setLicenseInfo(licenseData);
+        setShowLicenseLimitModal(true);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking license availability:', error);
+      toast({
+        title: "Error",
+        description: "Failed to check license availability",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
+  const handleToggleUserStatus = async (user: User) => {
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    
+    // Check license availability if activating a user
+    if (newStatus === 'active') {
+      const hasAvailableLicense = await checkLicenseAvailability(1);
+      if (!hasAvailableLicense) {
+        setPendingAction(() => () => updateUserStatusMutation.mutate({ userId: user.id, status: newStatus }));
+        return;
+      }
+    }
+
     updateUserStatusMutation.mutate({ userId: user.id, status: newStatus });
   };
 
@@ -416,11 +473,11 @@ export function AdminUsers() {
     reader.readAsText(file);
   };
 
-  const handleImportCsv = () => {
+  const handleImportCsv = async () => {
     if (!csvFile) return;
     
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = e.target?.result as string;
       const lines = text.split('\n');
       const headers = lines[0].split(',').map(h => h.trim());
@@ -449,6 +506,17 @@ export function AdminUsers() {
           variant: "destructive",
         });
         return;
+      }
+
+      // Count how many active users will be imported (default to active)
+      const activeUsersToImport = users.filter(user => !user.status || user.status === 'active').length;
+      
+      if (activeUsersToImport > 0) {
+        const hasAvailableLicense = await checkLicenseAvailability(activeUsersToImport);
+        if (!hasAvailableLicense) {
+          setPendingAction(() => () => importUsersMutation.mutate(users));
+          return;
+        }
       }
       
       importUsersMutation.mutate(users);
@@ -506,7 +574,23 @@ export function AdminUsers() {
           <div className="flex items-center gap-2">
             <button
               className="btn btn-outline btn-sm"
-              onClick={() => {
+              onClick={async () => {
+                // Check if we're potentially activating users
+                const inactiveSelectedUsers = users.filter(u => 
+                  selectedUserIds.includes(u.id) && u.status !== 'active'
+                ).length;
+
+                if (inactiveSelectedUsers > 0) {
+                  const hasAvailableLicense = await checkLicenseAvailability(inactiveSelectedUsers);
+                  if (!hasAvailableLicense) {
+                    setPendingAction(() => () => {
+                      setBulkAction("status");
+                      setShowBulkActionsModal(true);
+                    });
+                    return;
+                  }
+                }
+
                 setBulkAction("status");
                 setShowBulkActionsModal(true);
               }}
@@ -1659,6 +1743,23 @@ export function AdminUsers() {
             }}>close</button>
           </form>
         </dialog>
+      )}
+
+      {/* License Limit Modal */}
+      {licenseInfo && (
+        <LicenseLimitModal
+          isOpen={showLicenseLimitModal}
+          onClose={() => {
+            setShowLicenseLimitModal(false);
+            setLicenseInfo(null);
+            setPendingAction(() => {});
+          }}
+          currentActiveUsers={licenseInfo.currentActiveUsers}
+          maxActiveUsers={licenseInfo.maxActiveUsers}
+          organisationName={licenseInfo.organisationName}
+          hasActiveSubscription={licenseInfo.hasActiveSubscription}
+          additionalUsersNeeded={Math.max(1, licenseInfo.currentActiveUsers - licenseInfo.maxActiveUsers + 1)}
+        />
       )}
     </div>
   );
