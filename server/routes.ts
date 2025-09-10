@@ -651,6 +651,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User analytics endpoint - completion trends over time
+  app.get('/api/user/analytics/completions', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role === 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get user's completions over the last 12 months
+      const completions = await storage.getCompletionsByUser(user.id);
+      
+      // Group completions by month
+      const monthlyData = {};
+      const currentDate = new Date();
+      
+      // Initialize last 12 months with zero values
+      for (let i = 11; i >= 0; i--) {
+        const monthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+        const monthName = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        
+        monthlyData[monthKey] = {
+          monthName,
+          successful: 0,
+          failed: 0,
+          total: 0
+        };
+      }
+      
+      // Populate with actual completion data
+      completions.forEach(completion => {
+        if (completion.completedAt) {
+          const completionDate = new Date(completion.completedAt);
+          const monthKey = `${completionDate.getFullYear()}-${String(completionDate.getMonth() + 1).padStart(2, '0')}`;
+          
+          if (monthlyData[monthKey]) {
+            monthlyData[monthKey].total++;
+            if (completion.passed) {
+              monthlyData[monthKey].successful++;
+            } else {
+              monthlyData[monthKey].failed++;
+            }
+          }
+        }
+      });
+
+      const analyticsData = Object.values(monthlyData);
+      res.json(analyticsData);
+    } catch (error) {
+      console.error('Error fetching user analytics:', error);
+      res.status(500).json({ message: 'Failed to fetch user analytics' });
+    }
+  });
+
+  // User progress overview endpoint
+  app.get('/api/user/progress', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role === 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const assignments = await storage.getAssignmentsByUser(user.id);
+      const completions = await storage.getCompletionsByUser(user.id);
+      
+      // Calculate various progress metrics
+      const totalAssigned = assignments.length;
+      const completed = assignments.filter(a => a.status === 'completed').length;
+      const inProgress = assignments.filter(a => a.status === 'in_progress').length;
+      const notStarted = assignments.filter(a => a.status === 'assigned').length;
+      
+      // Calculate average scores and pass rate
+      const passedCompletions = completions.filter(c => c.passed);
+      const failedCompletions = completions.filter(c => c.passed === false);
+      const passRate = completions.length > 0 ? Math.round((passedCompletions.length / completions.length) * 100) : 0;
+      
+      // Get scores for chart data
+      const scoresWithValues = completions.filter(c => c.score !== null && c.score !== undefined);
+      const averageScore = scoresWithValues.length > 0 
+        ? Math.round(scoresWithValues.reduce((sum, c) => sum + (Number(c.score) || 0), 0) / scoresWithValues.length)
+        : 0;
+
+      res.json({
+        totalAssigned,
+        completed,
+        inProgress,
+        notStarted,
+        passRate,
+        averageScore,
+        totalCompletions: completions.length,
+        passedCompletions: passedCompletions.length,
+        failedCompletions: failedCompletions.length
+      });
+    } catch (error) {
+      console.error('Error fetching user progress:', error);
+      res.status(500).json({ message: 'Failed to fetch user progress' });
+    }
+  });
+
   // User certificates endpoint
   app.get('/api/user/certificates', requireAuth, async (req: any, res) => {
     try {
