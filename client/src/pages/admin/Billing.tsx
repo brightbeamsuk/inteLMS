@@ -239,7 +239,7 @@ export function AdminBilling() {
         body: JSON.stringify({
           planId: currentPlan.id,
           userCount,
-          organisationId: organisation?.id
+          organisationId: user?.organisationId
         }),
       });
       

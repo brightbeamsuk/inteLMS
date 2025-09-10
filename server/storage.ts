@@ -916,7 +916,7 @@ export class DatabaseStorage implements IStorage {
     const [completionCount] = await db.select({ count: count() }).from(completions).where(eq(completions.organisationId, organisationId));
     
     // Get average score
-    const [scoreResult] = await db.select({ avg: avg(completions.finalScore) }).from(completions).where(eq(completions.organisationId, organisationId));
+    const [scoreResult] = await db.select({ avg: sql<number>`avg(${completions.score})` }).from(completions).where(eq(completions.organisationId, organisationId));
     const averageScore = scoreResult.avg ? parseFloat(scoreResult.avg.toString()) : 0;
 
     return {
