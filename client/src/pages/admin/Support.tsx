@@ -153,16 +153,33 @@ export function AdminSupport() {
     });
   };
 
+  // Silent update mutation (no toast)
+  const silentUpdateMutation = useMutation({
+    mutationFn: (data: { ticketId: string; updates: any }) =>
+      apiRequest('PUT', `/api/support/tickets/${data.ticketId}`, data.updates).then(res => res.json()),
+    onSuccess: (updatedTicket) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/unread-count'] });
+      // Update the selected ticket to sync the UI
+      if (selectedTicket && updatedTicket) {
+        setSelectedTicket(updatedTicket);
+      }
+      // No toast message for silent updates
+    },
+    onError: () => {
+      // Silent error handling - no toast
+    },
+  });
+
   const handleSelectTicket = (ticket: SupportTicket) => {
     setSelectedTicket(ticket);
-    // Mark ticket as read when viewed by admin
+    // Mark ticket as read when viewed by admin (silently)
     if (!ticket.isRead) {
-      updateTicketMutation.mutate({
+      silentUpdateMutation.mutate({
         ticketId: ticket.id,
         updates: { isRead: true }
       });
-      // Also invalidate the unread count to update the badge
-      queryClient.invalidateQueries({ queryKey: ['/api/support/unread-count'] });
     }
   };
 
