@@ -1007,7 +1007,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create a new plan
+  // Create a new plan with billing model
   app.post('/api/plans', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -1016,19 +1016,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const { name, description, pricePerUser, featureIds } = req.body;
+      const {
+        name,
+        description,
+        billingModel,
+        cadence = 'monthly',
+        currency = 'GBP',
+        unitAmount,
+        taxBehavior = 'exclusive',
+        trialDays,
+        minSeats,
+        priceChangePolicy = 'prorate_immediately',
+        featureIds,
+        // Legacy support
+        pricePerUser
+      } = req.body;
       
-      if (!name || !pricePerUser) {
-        return res.status(400).json({ message: 'Name and price per user are required' });
+      // Validation
+      if (!name) {
+        return res.status(400).json({ message: 'Plan name is required' });
+      }
+      
+      if (!billingModel || !['metered_per_active_user', 'per_seat', 'flat_subscription'].includes(billingModel)) {
+        return res.status(400).json({ message: 'Valid billing model is required (metered_per_active_user, per_seat, flat_subscription)' });
+      }
+      
+      if (!unitAmount || unitAmount <= 0) {
+        return res.status(400).json({ message: 'Unit amount must be greater than 0 (in minor units, e.g., 2000 = £20.00)' });
+      }
+
+      // Convert price from major units to minor units if pricePerUser is provided for backward compatibility
+      let finalUnitAmount = unitAmount;
+      if (pricePerUser && !unitAmount) {
+        finalUnitAmount = Math.round(parseFloat(pricePerUser) * 100); // Convert £20.00 to 2000 pence
       }
 
       const newPlan = await storage.createPlan({
         name,
         description: description || null,
-        pricePerUser: String(parseFloat(pricePerUser)),
+        billingModel,
+        cadence,
+        currency,
+        unitAmount: finalUnitAmount,
+        taxBehavior,
+        trialDays,
+        minSeats,
+        isActive: true,
+        priceChangePolicy,
+        // Legacy field for backward compatibility
+        pricePerUser: pricePerUser ? String(parseFloat(pricePerUser)) : null,
         status: 'active',
         createdBy: user.id
       });
+
+      // TODO: Create Stripe Product and Price here
+      // We'll implement this in the next step
 
       // Set plan features if provided
       if (featureIds && featureIds.length > 0) {
@@ -1052,14 +1094,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const { name, description, pricePerUser, status, featureIds } = req.body;
+      const {
+        name,
+        description,
+        billingModel,
+        cadence,
+        currency,
+        unitAmount,
+        taxBehavior,
+        trialDays,
+        minSeats,
+        isActive,
+        priceChangePolicy,
+        status,
+        featureIds,
+        // Legacy support
+        pricePerUser
+      } = req.body;
       
+      // Get the existing plan to check for billing changes
+      const existingPlan = await storage.getPlan(id);
+      if (!existingPlan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      // Validation for billing model if provided
+      if (billingModel && !['metered_per_active_user', 'per_seat', 'flat_subscription'].includes(billingModel)) {
+        return res.status(400).json({ message: 'Valid billing model is required (metered_per_active_user, per_seat, flat_subscription)' });
+      }
+      
+      if (unitAmount !== undefined && unitAmount <= 0) {
+        return res.status(400).json({ message: 'Unit amount must be greater than 0 (in minor units)' });
+      }
+
+      // Convert price from major units to minor units if pricePerUser is provided for backward compatibility
+      let finalUnitAmount = unitAmount;
+      if (pricePerUser && !unitAmount) {
+        finalUnitAmount = Math.round(parseFloat(pricePerUser) * 100);
+      }
+
+      // Check if billing settings changed (will require new Stripe Price)
+      const billingSettingsChanged = 
+        (unitAmount !== undefined && unitAmount !== existingPlan.unitAmount) ||
+        (currency && currency !== existingPlan.currency) ||
+        (cadence && cadence !== existingPlan.cadence) ||
+        (billingModel && billingModel !== existingPlan.billingModel);
+
       const updatedPlan = await storage.updatePlan(id, {
         name,
         description,
+        billingModel,
+        cadence,
+        currency,
+        unitAmount: finalUnitAmount,
+        taxBehavior,
+        trialDays,
+        minSeats,
+        isActive,
+        priceChangePolicy,
+        // Legacy field
         pricePerUser: pricePerUser ? String(parseFloat(pricePerUser)) : undefined,
         status
       });
+
+      // TODO: If billing settings changed, create new Stripe Price
+      // and handle existing subscriptions based on priceChangePolicy
 
       // Update plan features if provided
       if (featureIds !== undefined) {
