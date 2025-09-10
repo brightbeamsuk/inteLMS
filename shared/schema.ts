@@ -68,6 +68,15 @@ export const priceChangePolicyEnum = pgEnum('price_change_policy', ['prorate_imm
 // Billing status enum for organizations
 export const billingStatusEnum = pgEnum('billing_status', ['active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'trialing', 'paused']);
 
+// Support ticket status enum
+export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'resolved', 'closed']);
+
+// Support ticket priority enum
+export const ticketPriorityEnum = pgEnum('ticket_priority', ['low', 'medium', 'high', 'urgent']);
+
+// Support ticket category enum
+export const ticketCategoryEnum = pgEnum('ticket_category', ['technical', 'billing', 'account', 'training', 'feature_request', 'bug_report', 'general']);
+
 // Email provider enum
 export const emailProviderEnum = pgEnum('email_provider', [
   'smtp_generic',
@@ -519,6 +528,39 @@ export const emailLogs = pgTable("email_logs", {
   fallbackUsed: boolean("fallback_used").default(false),
 });
 
+// Support tickets table
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  status: ticketStatusEnum("status").default('open').notNull(),
+  priority: ticketPriorityEnum("priority").default('medium').notNull(),
+  category: ticketCategoryEnum("category").default('general').notNull(),
+  
+  // User relationships
+  createdBy: varchar("created_by").notNull(), // User ID who created
+  assignedTo: varchar("assigned_to"), // SuperAdmin user ID who is handling
+  organisationId: varchar("organisation_id"), // null for SuperAdmin tickets
+  
+  // Tracking
+  isRead: boolean("is_read").default(false), // Has assigned agent read it?
+  lastResponseAt: timestamp("last_response_at"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Support ticket responses table (conversation)
+export const supportTicketResponses = pgTable("support_ticket_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull(),
+  userId: varchar("user_id").notNull(), // Who wrote this response
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").default(false), // Internal agent notes
+  attachments: jsonb("attachments"), // Array of file attachments
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   organisation: one(organisations, {
@@ -727,6 +769,33 @@ export const emailLogsRelations = relations(emailLogs, ({ one }) => ({
   }),
 }));
 
+export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [supportTickets.createdBy],
+    references: [users.id],
+  }),
+  assignedToUser: one(users, {
+    fields: [supportTickets.assignedTo],
+    references: [users.id],
+  }),
+  organisation: one(organisations, {
+    fields: [supportTickets.organisationId],
+    references: [organisations.id],
+  }),
+  responses: many(supportTicketResponses),
+}));
+
+export const supportTicketResponsesRelations = relations(supportTicketResponses, ({ one }) => ({
+  ticket: one(supportTickets, {
+    fields: [supportTicketResponses.ticketId],
+    references: [supportTickets.id],
+  }),
+  user: one(users, {
+    fields: [supportTicketResponses.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -830,6 +899,17 @@ export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({
   timestamp: true,
 });
 
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSupportTicketResponseSchema = createInsertSchema(supportTicketResponses).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Course folder insert schemas
 export const insertCourseFolderSchema = createInsertSchema(courseFolders).omit({
   id: true,
@@ -906,3 +986,10 @@ export type SystemEmailSettings = typeof systemEmailSettings.$inferSelect;
 
 export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
 export type EmailLog = typeof emailLogs.$inferSelect;
+
+// Support ticket types
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+export type InsertSupportTicketResponse = z.infer<typeof insertSupportTicketResponseSchema>;
+export type SupportTicketResponse = typeof supportTicketResponses.$inferSelect;
