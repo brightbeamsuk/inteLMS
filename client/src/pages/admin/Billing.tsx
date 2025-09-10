@@ -446,7 +446,15 @@ export function AdminBilling() {
                     className="input input-bordered flex-1"
                     value={userCount}
                     onChange={(e) => handleUserCountChange(parseInt(e.target.value) || 0)}
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      // Prevent arrow keys from changing value
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
                     min={currentPlan.minSeats || 1}
+                    step={1}
                     disabled={currentPlan.billingModel === 'flat_subscription'}
                     data-testid="input-user-count"
                   />
@@ -729,7 +737,15 @@ export function AdminBilling() {
                       className="input input-bordered w-24"
                       value={userCount}
                       onChange={(e) => setUserCount(parseInt(e.target.value) || 0)}
+                      onWheel={(e) => e.preventDefault()}
+                      onKeyDown={(e) => {
+                        // Prevent arrow keys from changing value
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                        }
+                      }}
                       min={selectedPlan.minSeats || 1}
+                      step={1}
                       data-testid="input-modal-user-count"
                     />
                   </div>
