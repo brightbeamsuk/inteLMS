@@ -1079,12 +1079,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { planId, userCount, organisationId } = req.body;
       
+      // Debug logging
+      console.log('Subscription update request:', {
+        userId: user.id,
+        userRole: user.role,
+        userOrgId: user.organisationId,
+        requestOrgId: organisationId,
+        planId,
+        userCount
+      });
+      
       if (!planId) {
         return res.status(400).json({ message: 'Plan ID is required' });
       }
 
-      // Verify user can only update their own organization
-      if (user.role === 'admin' && user.organisationId !== organisationId) {
+      // Use user's organisation ID if not provided in request
+      const targetOrgId = organisationId || user.organisationId;
+      
+      // Verify user can only update their own organization (for admins)
+      if (user.role === 'admin' && user.organisationId !== targetOrgId) {
+        console.log('Organisation ID mismatch:', { userOrgId: user.organisationId, requestOrgId: targetOrgId });
         return res.status(403).json({ message: 'Access denied - can only update own organization' });
       }
 
@@ -1100,7 +1114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const organisation = await storage.getOrganisation(organisationId);
+      const organisation = await storage.getOrganisation(targetOrgId);
       if (!organisation) {
         return res.status(404).json({ message: 'Organisation not found' });
       }
