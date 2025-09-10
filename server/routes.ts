@@ -1753,6 +1753,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // Subscription Diagnostics API for SuperAdmin
+  // GET /api/subscription-diagnostics/:orgId - detailed subscription info with Stripe IDs
+  app.get('/api/subscription-diagnostics/:orgId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { orgId } = req.params;
+
+      // Load organisation with plan details
+      const organisation = await storage.getOrganisationWithPlan(orgId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      let stripeData = null;
+      if (organisation.stripeCustomerId && organisation.stripeSubscriptionId) {
+        const { getStripeService } = await import('./services/StripeService.js');
+        const stripeService = getStripeService();
+
+        try {
+          // Fetch subscription details from Stripe
+          const subscription = await stripeService['stripe'].subscriptions.retrieve(
+            organisation.stripeSubscriptionId,
+            { expand: ['items', 'customer'] }
+          );
+
+          stripeData = {
+            customer: {
+              id: subscription.customer.id,
+              email: subscription.customer.email,
+              name: subscription.customer.name,
+            },
+            subscription: {
+              id: subscription.id,
+              status: subscription.status,
+              current_period_start: subscription.current_period_start,
+              current_period_end: subscription.current_period_end,
+              cancel_at_period_end: subscription.cancel_at_period_end,
+            },
+            items: subscription.items.data.map(item => ({
+              id: item.id,
+              price_id: item.price.id,
+              product_id: item.price.product,
+              quantity: item.quantity,
+              unit_amount: item.price.unit_amount,
+              currency: item.price.currency,
+              interval: item.price.recurring?.interval,
+              usage_type: item.price.recurring?.usage_type,
+            }))
+          };
+        } catch (error) {
+          console.error('Error fetching Stripe data:', error);
+          stripeData = { error: 'Failed to fetch Stripe data' };
+        }
+      }
+
+      res.json({
+        organisation: {
+          id: organisation.id,
+          name: organisation.name,
+          planId: organisation.planId,
+          stripeCustomerId: organisation.stripeCustomerId,
+          stripeSubscriptionId: organisation.stripeSubscriptionId,
+          stripeSubscriptionItemId: organisation.stripeSubscriptionItemId,
+          billingStatus: organisation.billingStatus,
+          activeUserCount: organisation.activeUserCount,
+          lastBillingSync: organisation.lastBillingSync,
+        },
+        plan: organisation.plan,
+        stripeData
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching subscription diagnostics:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch subscription diagnostics', 
+        error: error.message 
+      });
+    }
+  });
+
+  // POST /api/subscription-preview/:orgId - get upcoming invoice preview
+  app.post('/api/subscription-preview/:orgId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      const { orgId } = req.params;
+
+      const organisation = await storage.getOrganisation(orgId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      if (!organisation.stripeCustomerId || !organisation.stripeSubscriptionId) {
+        return res.status(422).json({ 
+          message: 'Organisation does not have Stripe customer or subscription',
+          suggestion: 'Complete subscription setup first'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      try {
+        // Get upcoming invoice preview
+        const upcomingInvoice = await stripeService['stripe'].invoices.retrieveUpcoming({
+          customer: organisation.stripeCustomerId,
+          subscription: organisation.stripeSubscriptionId,
+        });
+
+        const invoiceData = {
+          id: upcomingInvoice.id,
+          amount_due: upcomingInvoice.amount_due,
+          amount_paid: upcomingInvoice.amount_paid,
+          amount_remaining: upcomingInvoice.amount_remaining,
+          currency: upcomingInvoice.currency,
+          period_start: upcomingInvoice.period_start,
+          period_end: upcomingInvoice.period_end,
+          status: upcomingInvoice.status,
+          line_items: upcomingInvoice.lines.data.map(line => ({
+            id: line.id,
+            description: line.description,
+            amount: line.amount,
+            currency: line.currency,
+            quantity: line.quantity,
+            unit_amount: line.unit_amount,
+            price_id: line.price?.id,
+            product: line.price?.product,
+            period: {
+              start: line.period.start,
+              end: line.period.end
+            },
+            metadata: line.metadata
+          }))
+        };
+
+        res.json({
+          success: true,
+          invoice: invoiceData,
+          message: 'Upcoming invoice preview retrieved successfully'
+        });
+
+      } catch (error: any) {
+        console.error('Error retrieving upcoming invoice:', error);
+        res.status(500).json({ 
+          success: false,
+          message: 'Failed to retrieve upcoming invoice', 
+          error: error.message 
+        });
+      }
+
+    } catch (error: any) {
+      console.error('Error in subscription preview:', error);
+      res.status(500).json({ 
+        message: 'Failed to generate subscription preview', 
+        error: error.message 
+      });
+    }
+  });
+
   // Organization Billing API (SuperAdmin only, Admin can read own organization)
   
   // Get organization billing status with plan details

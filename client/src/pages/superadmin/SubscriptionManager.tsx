@@ -24,6 +24,7 @@ interface Organisation {
   planId?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  stripeSubscriptionItemId?: string;
   billingStatus?: string;
   activeUserCount?: number;
   lastBillingSync?: string;
@@ -45,8 +46,12 @@ interface Plan {
 export function SuperAdminSubscriptionManager() {
   const [showSubscribeModal, setShowSubscribeModal] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [showInvoicePreviewModal, setShowInvoicePreviewModal] = useState(false);
   const [selectedOrganisation, setSelectedOrganisation] = useState<Organisation | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
+  const [invoicePreviewData, setInvoicePreviewData] = useState<any>(null);
   const [subscribeFormData, setSubscribeFormData] = useState({
     planId: "",
     stripeCustomerId: "",
@@ -224,6 +229,49 @@ export function SuperAdminSubscriptionManager() {
     setSelectedPlan(plan);
     setShowTestModal(true);
   };
+
+  // Fetch subscription diagnostics
+  const diagnosticsMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      const response = await fetch(`/api/subscription-diagnostics/${orgId}`, { 
+        credentials: 'include' 
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch diagnostics: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      setDiagnosticsData(data);
+      setShowDiagnosticsModal(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch subscription diagnostics",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Fetch invoice preview
+  const invoicePreviewMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      const response = await apiRequest('POST', `/api/subscription-preview/${orgId}`);
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      setInvoicePreviewData(data);
+      setShowInvoicePreviewModal(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch invoice preview",
+        variant: "destructive",
+      });
+    },
+  });
 
   const getBillingStatusBadge = (status?: string) => {
     switch (status) {
@@ -413,6 +461,28 @@ export function SuperAdminSubscriptionManager() {
                             >
                               <RefreshCw className="w-4 h-4" />
                             </button>
+                            {org.stripeCustomerId && (
+                              <>
+                                <button
+                                  className={`btn btn-sm btn-ghost ${diagnosticsMutation.isPending ? 'loading' : ''}`}
+                                  onClick={() => diagnosticsMutation.mutate(org.id)}
+                                  title="View Diagnostics"
+                                  disabled={diagnosticsMutation.isPending}
+                                  data-testid={`button-diagnostics-${org.id}`}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  className={`btn btn-sm btn-ghost ${invoicePreviewMutation.isPending ? 'loading' : ''}`}
+                                  onClick={() => invoicePreviewMutation.mutate(org.id)}
+                                  title="Invoice Preview"
+                                  disabled={invoicePreviewMutation.isPending}
+                                  data-testid={`button-invoice-${org.id}`}
+                                >
+                                  <TestTube className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -625,6 +695,211 @@ export function SuperAdminSubscriptionManager() {
             </div>
           </div>
           <div className="modal-backdrop" onClick={() => setShowTestModal(false)}></div>
+        </div>
+      )}
+
+      {/* Subscription Diagnostics Modal */}
+      {showDiagnosticsModal && diagnosticsData && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4">
+              Subscription Diagnostics: {diagnosticsData.organisation?.name}
+            </h3>
+            
+            <div className="space-y-6">
+              {/* Database Info */}
+              <div className="card bg-base-200">
+                <div className="card-body">
+                  <h4 className="card-title text-base">Database Information</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <strong>Plan ID:</strong> {diagnosticsData.organisation?.planId || 'Not set'}
+                    </div>
+                    <div>
+                      <strong>Active Users:</strong> {diagnosticsData.organisation?.activeUserCount || 0}
+                    </div>
+                    <div>
+                      <strong>Billing Status:</strong> {diagnosticsData.organisation?.billingStatus || 'Not set'}
+                    </div>
+                    <div>
+                      <strong>Last Sync:</strong> {diagnosticsData.organisation?.lastBillingSync ? 
+                        new Date(diagnosticsData.organisation.lastBillingSync).toLocaleString() : 'Never'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stripe IDs */}
+              <div className="card bg-base-200">
+                <div className="card-body">
+                  <h4 className="card-title text-base">Stripe IDs</h4>
+                  <div className="space-y-2 text-sm font-mono">
+                    <div>
+                      <strong>Customer ID:</strong> {diagnosticsData.organisation?.stripeCustomerId || 'Not set'}
+                    </div>
+                    <div>
+                      <strong>Subscription ID:</strong> {diagnosticsData.organisation?.stripeSubscriptionId || 'Not set'}
+                    </div>
+                    <div>
+                      <strong>Subscription Item ID:</strong> {diagnosticsData.organisation?.stripeSubscriptionItemId || 'Not set'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stripe Data */}
+              {diagnosticsData.stripeData && !diagnosticsData.stripeData.error && (
+                <div className="card bg-base-200">
+                  <div className="card-body">
+                    <h4 className="card-title text-base">Live Stripe Data</h4>
+                    <div className="space-y-4">
+                      {/* Customer */}
+                      <div>
+                        <h5 className="font-semibold">Customer</h5>
+                        <div className="text-sm space-y-1">
+                          <div><strong>ID:</strong> {diagnosticsData.stripeData.customer?.id}</div>
+                          <div><strong>Email:</strong> {diagnosticsData.stripeData.customer?.email}</div>
+                          <div><strong>Name:</strong> {diagnosticsData.stripeData.customer?.name}</div>
+                        </div>
+                      </div>
+
+                      {/* Subscription */}
+                      <div>
+                        <h5 className="font-semibold">Subscription</h5>
+                        <div className="text-sm space-y-1">
+                          <div><strong>ID:</strong> {diagnosticsData.stripeData.subscription?.id}</div>
+                          <div><strong>Status:</strong> {diagnosticsData.stripeData.subscription?.status}</div>
+                          <div><strong>Current Period:</strong> {
+                            diagnosticsData.stripeData.subscription?.current_period_start ? 
+                            `${new Date(diagnosticsData.stripeData.subscription.current_period_start * 1000).toLocaleDateString()} - ${new Date(diagnosticsData.stripeData.subscription.current_period_end * 1000).toLocaleDateString()}` : 'Not set'
+                          }</div>
+                        </div>
+                      </div>
+
+                      {/* Subscription Items */}
+                      <div>
+                        <h5 className="font-semibold">Subscription Items</h5>
+                        {diagnosticsData.stripeData.items?.map((item: any, index: number) => (
+                          <div key={item.id} className="bg-base-100 p-3 rounded text-sm space-y-1">
+                            <div><strong>Item ID:</strong> {item.id}</div>
+                            <div><strong>Price ID:</strong> {item.price_id}</div>
+                            <div><strong>Quantity:</strong> {item.quantity}</div>
+                            <div><strong>Unit Amount:</strong> {item.unit_amount / 100} {item.currency?.toUpperCase()}</div>
+                            <div><strong>Billing:</strong> {item.usage_type} / {item.interval}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowDiagnosticsModal(false)}
+                data-testid="button-close-diagnostics"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowDiagnosticsModal(false)}></div>
+        </div>
+      )}
+
+      {/* Invoice Preview Modal */}
+      {showInvoicePreviewModal && invoicePreviewData && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-4xl">
+            <h3 className="font-bold text-lg mb-4">
+              Upcoming Invoice Preview
+            </h3>
+            
+            {invoicePreviewData.success ? (
+              <div className="space-y-4">
+                <div className="alert alert-info">
+                  <div>
+                    <h4 className="font-bold">Dry Run Preview</h4>
+                    <p>This shows what the upcoming invoice will look like based on current subscription.</p>
+                  </div>
+                </div>
+
+                <div className="card bg-base-200">
+                  <div className="card-body">
+                    <h4 className="card-title text-base">Invoice Summary</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <strong>Amount Due:</strong> {(invoicePreviewData.invoice?.amount_due || 0) / 100} {invoicePreviewData.invoice?.currency?.toUpperCase()}
+                      </div>
+                      <div>
+                        <strong>Currency:</strong> {invoicePreviewData.invoice?.currency?.toUpperCase()}
+                      </div>
+                      <div>
+                        <strong>Period:</strong> {
+                          invoicePreviewData.invoice?.period_start ? 
+                          `${new Date(invoicePreviewData.invoice.period_start * 1000).toLocaleDateString()} - ${new Date(invoicePreviewData.invoice.period_end * 1000).toLocaleDateString()}` : 'Not set'
+                        }
+                      </div>
+                      <div>
+                        <strong>Status:</strong> {invoicePreviewData.invoice?.status}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card bg-base-200">
+                  <div className="card-body">
+                    <h4 className="card-title text-base">Line Items</h4>
+                    <div className="space-y-2">
+                      {invoicePreviewData.invoice?.line_items?.map((item: any, index: number) => (
+                        <div key={item.id || index} className="bg-base-100 p-3 rounded text-sm">
+                          <div className="flex justify-between items-start">
+                            <div className="space-y-1">
+                              <div><strong>Description:</strong> {item.description}</div>
+                              <div><strong>Quantity:</strong> {item.quantity}</div>
+                              <div><strong>Price ID:</strong> {item.price_id}</div>
+                              <div><strong>Period:</strong> {
+                                item.period?.start ? 
+                                `${new Date(item.period.start * 1000).toLocaleDateString()} - ${new Date(item.period.end * 1000).toLocaleDateString()}` : 'Not set'
+                              }</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold">
+                                {(item.amount || 0) / 100} {item.currency?.toUpperCase()}
+                              </div>
+                              <div className="text-xs text-base-content/60">
+                                {(item.unit_amount || 0) / 100} × {item.quantity}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="alert alert-error">
+                <div>
+                  <h4 className="font-bold">Error</h4>
+                  <p>{invoicePreviewData.message || 'Failed to retrieve invoice preview'}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowInvoicePreviewModal(false)}
+                data-testid="button-close-invoice-preview"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowInvoicePreviewModal(false)}></div>
         </div>
       )}
     </div>
