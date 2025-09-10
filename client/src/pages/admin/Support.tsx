@@ -19,6 +19,7 @@ interface SupportTicket {
   updatedAt: string;
   lastResponseAt?: string;
   resolvedAt?: string;
+  ticketNumber?: string;
 }
 
 interface SupportTicketResponse {
@@ -377,14 +378,17 @@ export function AdminSupport() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Ticket List */}
         <div className="lg:col-span-1">
-          <div className="card bg-base-100 shadow-lg">
-            <div className="card-body">
-              <h2 className="card-title mb-4">Your Tickets</h2>
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="fas fa-list text-xl text-secondary"></i>
+                <h2 className="card-title text-xl">Your Support Tickets</h2>
+              </div>
               
               {/* View Mode Tabs */}
-              <div className="tabs tabs-boxed mb-4">
+              <div className="tabs tabs-bordered mb-6">
                 <a 
-                  className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+                  className={`tab tab-lg ${viewMode === 'active' ? 'tab-active' : ''}`}
                   onClick={() => {
                     setViewMode('active');
                     setStatusFilter('');
@@ -392,10 +396,11 @@ export function AdminSupport() {
                   }}
                   data-testid="tab-active-tickets"
                 >
-                  Active Tickets
+                  <i className="fas fa-exclamation-circle mr-2"></i>
+                  Active
                 </a>
                 <a 
-                  className={`tab ${viewMode === 'closed' ? 'tab-active' : ''}`}
+                  className={`tab tab-lg ${viewMode === 'closed' ? 'tab-active' : ''}`}
                   onClick={() => {
                     setViewMode('closed');
                     setStatusFilter('');
@@ -403,54 +408,93 @@ export function AdminSupport() {
                   }}
                   data-testid="tab-closed-tickets"
                 >
-                  Closed Tickets
+                  <i className="fas fa-check-circle mr-2"></i>
+                  Closed
                 </a>
               </div>
               
+              {/* Search Bar */}
+              <div className="form-control mb-4">
+                <div className="input-group">
+                  <span className="bg-base-200">
+                    <i className="fas fa-search text-base-content/60"></i>
+                  </span>
+                  <input
+                    type="text"
+                    className="input input-bordered flex-1"
+                    placeholder="Search by ticket number or title..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="search-tickets"
+                  />
+                </div>
+              </div>
+              
               {/* Filters */}
-              <div className="space-y-2 mb-4">
+              <div className="space-y-3 mb-6">
                 {viewMode === 'active' && (
-                  <select 
-                    className="select select-bordered w-full select-sm"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    data-testid="filter-status"
-                  >
-                    <option value="">All Active Statuses</option>
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                  </select>
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">
+                        <i className="fas fa-filter mr-2"></i>Status Filter
+                      </span>
+                    </label>
+                    <select 
+                      className="select select-bordered w-full"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      data-testid="filter-status"
+                    >
+                      <option value="">All Active Statuses</option>
+                      <option value="open">🔴 Open</option>
+                      <option value="in_progress">🟡 In Progress</option>
+                      <option value="resolved">🟢 Resolved</option>
+                    </select>
+                  </div>
                 )}
                 
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                  data-testid="filter-priority"
-                >
-                  <option value="">All Priorities</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-exclamation-triangle mr-2"></i>Priority Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    data-testid="filter-priority"
+                  >
+                    <option value="">All Priorities</option>
+                    <option value="urgent">🔥 Urgent</option>
+                    <option value="high">⚠️ High</option>
+                    <option value="medium">📋 Medium</option>
+                    <option value="low">📝 Low</option>
+                  </select>
+                </div>
                 
-                <select 
-                  className="select select-bordered w-full select-sm"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  data-testid="filter-category"
-                >
-                  <option value="">All Categories</option>
-                  <option value="technical">Technical</option>
-                  <option value="billing">Billing</option>
-                  <option value="account">Account</option>
-                  <option value="training">Training</option>
-                  <option value="feature_request">Feature Request</option>
-                  <option value="bug_report">Bug Report</option>
-                  <option value="general">General</option>
-                </select>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">
+                      <i className="fas fa-tags mr-2"></i>Category Filter
+                    </span>
+                  </label>
+                  <select 
+                    className="select select-bordered w-full"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    data-testid="filter-category"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="technical">🔧 Technical</option>
+                    <option value="billing">💳 Billing</option>
+                    <option value="account">👤 Account</option>
+                    <option value="training">📚 Training</option>
+                    <option value="feature_request">💡 Feature Request</option>
+                    <option value="bug_report">🐛 Bug Report</option>
+                    <option value="general">💬 General</option>
+                  </select>
+                </div>
               </div>
 
               {/* Ticket List */}
