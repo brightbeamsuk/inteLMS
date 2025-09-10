@@ -83,7 +83,8 @@ export function SuperAdminSubscriptionManager() {
   // Subscribe organization to plan
   const subscribeOrgMutation = useMutation({
     mutationFn: async ({ orgId, ...data }: { orgId: string } & typeof subscribeFormData) => {
-      return apiRequest('POST', `/api/organisations/${orgId}/subscribe`, data);
+      const response = await apiRequest('POST', `/api/organisations/${orgId}/subscribe`, data);
+      return response.json();
     },
     onSuccess: () => {
       toast({
@@ -107,7 +108,8 @@ export function SuperAdminSubscriptionManager() {
   // Sync organization usage
   const syncUsageMutation = useMutation({
     mutationFn: async (orgId: string) => {
-      return apiRequest('POST', `/api/organisations/${orgId}/sync-usage`);
+      const response = await apiRequest('POST', `/api/organisations/${orgId}/sync-usage`);
+      return response.json();
     },
     onSuccess: (data: any) => {
       toast({
@@ -128,7 +130,8 @@ export function SuperAdminSubscriptionManager() {
   // Test Stripe connection
   const testStripeMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('POST', '/api/stripe/connection-test');
+      const response = await apiRequest('POST', '/api/stripe/connection-test');
+      return response.json();
     },
     onSuccess: (data: any) => {
       toast({
@@ -151,7 +154,8 @@ export function SuperAdminSubscriptionManager() {
   // Test plan validation
   const testPlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      return apiRequest('POST', `/api/plans/${planId}/stripe-test`);
+      const response = await apiRequest('POST', `/api/plans/${planId}/stripe-test`);
+      return response.json();
     },
     onSuccess: (data: any) => {
       const isValid = data.status === 'match';
@@ -175,7 +179,8 @@ export function SuperAdminSubscriptionManager() {
   // Create test checkout session
   const testCheckoutMutation = useMutation({
     mutationFn: async (planId: string) => {
-      return apiRequest('POST', `/api/plans/${planId}/checkout-test`);
+      const response = await apiRequest('POST', `/api/plans/${planId}/checkout-test`);
+      return response.json();
     },
     onSuccess: (data: any) => {
       if (data.checkoutUrl) {
