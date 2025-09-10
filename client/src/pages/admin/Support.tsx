@@ -30,6 +30,20 @@ interface SupportTicketResponse {
   createdAt: string;
 }
 
+interface TicketCreator {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+}
+
+interface TicketOrganisation {
+  id: string;
+  name: string;
+  displayName: string;
+}
+
 export function AdminSupport() {
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -59,7 +73,11 @@ export function AdminSupport() {
   });
 
   // Fetch ticket details with responses
-  const { data: ticketDetails } = useQuery<SupportTicket & { responses: SupportTicketResponse[] }>({
+  const { data: ticketDetails } = useQuery<SupportTicket & { 
+    responses: SupportTicketResponse[];
+    createdByUser?: TicketCreator;
+    organisation?: TicketOrganisation;
+  }>({
     queryKey: ['/api/support/tickets', selectedTicket?.id],
     queryFn: () => apiRequest('GET', `/api/support/tickets/${selectedTicket?.id}`).then(res => res.json()),
     enabled: !!selectedTicket,
@@ -85,8 +103,13 @@ export function AdminSupport() {
   const updateTicketMutation = useMutation({
     mutationFn: (data: { ticketId: string; updates: any }) =>
       apiRequest('PUT', `/api/support/tickets/${data.ticketId}`, data.updates).then(res => res.json()),
-    onSuccess: () => {
+    onSuccess: (updatedTicket) => {
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
+      // Update the selected ticket to sync the UI
+      if (selectedTicket && updatedTicket) {
+        setSelectedTicket(updatedTicket);
+      }
       toast({ title: "Ticket updated successfully" });
     },
     onError: (error: any) => {
@@ -103,6 +126,7 @@ export function AdminSupport() {
       }).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
       setResponseMessage('');
       toast({ title: "Response added successfully" });
     },
@@ -446,20 +470,40 @@ export function AdminSupport() {
                   <h3 className="card-title">Conversation</h3>
                   
                   <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {ticketDetails?.responses?.filter(response => !response.isInternal).map((response) => (
-                      <div
-                        key={response.id}
-                        className="chat chat-end"
-                        data-testid={`response-${response.id}`}
-                      >
-                        <div className="chat-header">
-                          {format(new Date(response.createdAt), 'MMM dd, HH:mm')}
+                    {ticketDetails?.responses?.filter(response => !response.isInternal).map((response) => {
+                      // Determine if this is from support (superadmin/admin) or customer
+                      const isFromSupport = response.userId !== selectedTicket?.createdBy;
+                      const senderRole = isFromSupport ? 'Support Team' : 'You';
+                      
+                      return (
+                        <div
+                          key={response.id}
+                          className={`chat ${isFromSupport ? 'chat-start' : 'chat-end'}`}
+                          data-testid={`response-${response.id}`}
+                        >
+                          <div className="chat-image avatar">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                              isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content'
+                            }`}>
+                              {isFromSupport ? '🛠️' : '👤'}
+                            </div>
+                          </div>
+                          <div className="chat-header text-xs opacity-70">
+                            <span className={`font-semibold ${
+                              isFromSupport ? 'text-info' : 'text-primary'
+                            }`}>
+                              {senderRole}
+                            </span>
+                            <time className="ml-2">{format(new Date(response.createdAt), 'MMM dd, HH:mm')}</time>
+                          </div>
+                          <div className={`chat-bubble max-w-md ${
+                            isFromSupport ? 'chat-bubble-info' : 'chat-bubble-primary'
+                          }`}>
+                            {response.message}
+                          </div>
                         </div>
-                        <div className="chat-bubble chat-bubble-primary">
-                          {response.message}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     
                     {(!ticketDetails?.responses || ticketDetails.responses.filter(r => !r.isInternal).length === 0) && (
                       <div className="text-center py-4">
