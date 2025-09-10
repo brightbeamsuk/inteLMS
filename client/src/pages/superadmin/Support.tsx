@@ -82,9 +82,13 @@ export function SuperAdminSupport() {
   const updateTicketMutation = useMutation({
     mutationFn: (data: { ticketId: string; updates: any }) =>
       apiRequest('PUT', `/api/support/tickets/${data.ticketId}`, data.updates).then(res => res.json()),
-    onSuccess: () => {
+    onSuccess: (updatedTicket) => {
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets', selectedTicket?.id] });
+      // Update the selected ticket to sync the UI
+      if (selectedTicket && updatedTicket) {
+        setSelectedTicket(updatedTicket);
+      }
       toast({ title: "Ticket updated successfully" });
     },
     onError: (error: any) => {
@@ -444,23 +448,46 @@ export function SuperAdminSupport() {
                   <h3 className="card-title">Conversation</h3>
                   
                   <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {ticketDetails?.responses?.map((response) => (
-                      <div
-                        key={response.id}
-                        className={`chat ${response.isInternal ? 'chat-start' : 'chat-end'}`}
-                        data-testid={`response-${response.id}`}
-                      >
-                        <div className="chat-header">
-                          {response.isInternal && (
-                            <span className="badge badge-warning badge-xs mr-2">Internal</span>
-                          )}
-                          {format(new Date(response.createdAt), 'MMM dd, HH:mm')}
+                    {ticketDetails?.responses?.map((response) => {
+                      // Determine if this is from support (superadmin/admin) or customer
+                      const isFromSupport = response.isInternal || (response.userId !== selectedTicket?.createdBy);
+                      const senderRole = response.isInternal ? 'Support (Internal)' : (isFromSupport ? 'Support Team' : 'Customer');
+                      
+                      return (
+                        <div
+                          key={response.id}
+                          className={`chat ${isFromSupport ? 'chat-start' : 'chat-end'}`}
+                          data-testid={`response-${response.id}`}
+                        >
+                          <div className="chat-image avatar">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                              response.isInternal ? 'bg-warning text-warning-content' : 
+                              (isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content')
+                            }`}>
+                              {response.isInternal ? '🔒' : (isFromSupport ? '🛠️' : '👤')}
+                            </div>
+                          </div>
+                          <div className="chat-header text-xs opacity-70">
+                            <span className={`font-semibold ${
+                              response.isInternal ? 'text-warning' : 
+                              (isFromSupport ? 'text-info' : 'text-primary')
+                            }`}>
+                              {senderRole}
+                            </span>
+                            {response.isInternal && (
+                              <span className="badge badge-warning badge-xs ml-2">Internal</span>
+                            )}
+                            <time className="ml-2">{format(new Date(response.createdAt), 'MMM dd, HH:mm')}</time>
+                          </div>
+                          <div className={`chat-bubble max-w-md ${
+                            response.isInternal ? 'chat-bubble-warning' : 
+                            (isFromSupport ? 'chat-bubble-info' : 'chat-bubble-primary')
+                          }`}>
+                            {response.message}
+                          </div>
                         </div>
-                        <div className={`chat-bubble ${response.isInternal ? 'chat-bubble-warning' : 'chat-bubble-primary'}`}>
-                          {response.message}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Add Response */}
