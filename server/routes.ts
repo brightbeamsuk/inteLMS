@@ -1344,6 +1344,213 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Internal Billing Management API Endpoints
+  // POST /billing/org/:orgId/seats → body: { quantity }
+  app.post('/api/billing/org/:orgId/seats', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin only' });
+      }
+
+      const { orgId } = req.params;
+      const { quantity } = req.body;
+
+      if (!quantity || quantity < 1) {
+        return res.status(400).json({ message: 'Valid quantity is required' });
+      }
+
+      // Load organisation
+      const organisation = await storage.getOrganisation(orgId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      if (!organisation.stripeSubscriptionItemId) {
+        return res.status(422).json({ 
+          message: 'Subscription not initialised for this organisation',
+          suggestion: 'Complete initial subscription setup first'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Generate idempotency key
+      const idempotencyKey = `billing:${orgId}:seats:${Date.now()}`;
+
+      // Update subscription item quantity
+      const subscriptionItem = await stripeService.updateSubscriptionItemQuantity(
+        organisation.stripeSubscriptionItemId,
+        quantity,
+        orgId,
+        idempotencyKey
+      );
+
+      // Update our database
+      await storage.updateOrganisation(orgId, { activeUserCount: quantity });
+
+      res.json({
+        success: true,
+        quantity,
+        subscriptionItemId: subscriptionItem.id,
+        message: `Successfully updated seats to ${quantity}`
+      });
+
+    } catch (error: any) {
+      console.error('Error updating seats:', error);
+      res.status(500).json({ 
+        message: 'Failed to update seats', 
+        error: error.message 
+      });
+    }
+  });
+
+  // POST /billing/org/:orgId/usage → body: { activeUsers, at? }
+  app.post('/api/billing/org/:orgId/usage', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin only' });
+      }
+
+      const { orgId } = req.params;
+      const { activeUsers, at } = req.body;
+
+      if (!activeUsers || activeUsers < 0) {
+        return res.status(400).json({ message: 'Valid activeUsers count is required' });
+      }
+
+      // Load organisation
+      const organisation = await storage.getOrganisation(orgId);
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      if (!organisation.stripeSubscriptionItemId) {
+        return res.status(422).json({ 
+          message: 'Subscription not initialised for this organisation',
+          suggestion: 'Complete initial subscription setup first'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Generate idempotency key
+      const timestamp = at ? new Date(at).getTime() / 1000 : Date.now() / 1000;
+      const idempotencyKey = `billing:${orgId}:usage:${Math.floor(timestamp)}`;
+
+      // Create usage record
+      const usageRecord = await stripeService.createUsageRecord(
+        organisation.stripeSubscriptionItemId,
+        activeUsers,
+        orgId,
+        Math.floor(timestamp),
+        idempotencyKey
+      );
+
+      // Update our database
+      await storage.updateOrganisation(orgId, { 
+        activeUserCount: activeUsers,
+        lastBillingSync: new Date()
+      });
+
+      res.json({
+        success: true,
+        activeUsers,
+        timestamp: Math.floor(timestamp),
+        usageRecordId: usageRecord.id,
+        message: `Successfully recorded usage: ${activeUsers} active users`
+      });
+
+    } catch (error: any) {
+      console.error('Error recording usage:', error);
+      res.status(500).json({ 
+        message: 'Failed to record usage', 
+        error: error.message 
+      });
+    }
+  });
+
+  // POST /billing/org/:orgId/plan → body: { planId }
+  app.post('/api/billing/org/:orgId/plan', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin only' });
+      }
+
+      const { orgId } = req.params;
+      const { planId } = req.body;
+
+      if (!planId) {
+        return res.status(400).json({ message: 'Plan ID is required' });
+      }
+
+      // Load organisation and new plan
+      const [organisation, newPlan] = await Promise.all([
+        storage.getOrganisation(orgId),
+        storage.getPlan(planId)
+      ]);
+
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      if (!newPlan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!organisation.stripeSubscriptionItemId) {
+        return res.status(422).json({ 
+          message: 'Subscription not initialised for this organisation',
+          suggestion: 'Complete initial subscription setup first'
+        });
+      }
+
+      if (!newPlan.stripePriceId) {
+        return res.status(422).json({ 
+          message: 'Plan does not have Stripe integration configured',
+          suggestion: 'Contact support to enable Stripe for this plan'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Generate idempotency key
+      const idempotencyKey = `billing:${orgId}:plan:${Date.now()}`;
+
+      // Update subscription item price
+      const subscriptionItem = await stripeService.updateSubscriptionItemPrice(
+        organisation.stripeSubscriptionItemId,
+        newPlan.stripePriceId,
+        orgId,
+        planId,
+        idempotencyKey
+      );
+
+      // Update our database
+      await storage.updateOrganisation(orgId, { planId });
+
+      res.json({
+        success: true,
+        planId,
+        planName: newPlan.name,
+        subscriptionItemId: subscriptionItem.id,
+        message: `Successfully changed plan to ${newPlan.name}`
+      });
+
+    } catch (error: any) {
+      console.error('Error changing plan:', error);
+      res.status(500).json({ 
+        message: 'Failed to change plan', 
+        error: error.message 
+      });
+    }
+  });
+
   // Organization Billing API (SuperAdmin only, Admin can read own organization)
   
   // Get organization billing status with plan details
