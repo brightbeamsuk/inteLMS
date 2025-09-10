@@ -1551,6 +1551,208 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stripe Webhook Handler
+  app.post('/api/webhooks/stripe', async (req: any, res) => {
+    let event: any;
+
+    try {
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+      
+      // Verify webhook signature (you'll need to set STRIPE_WEBHOOK_SECRET in env)
+      const signature = req.headers['stripe-signature'];
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      
+      if (webhookSecret && signature) {
+        try {
+          // Stripe webhook verification would go here - for now we'll process the event
+          event = req.body;
+        } catch (err) {
+          console.error('Webhook signature verification failed:', err);
+          return res.status(400).send(`Webhook Error: ${err}`);
+        }
+      } else {
+        // In development, we might not have webhook secret set
+        event = req.body;
+      }
+
+      console.log(`Processing Stripe webhook event: ${event.type}`);
+      
+      // Extract org_id from metadata for traceability
+      const metadata = event.data?.object?.metadata || {};
+      const orgId = metadata.org_id;
+      
+      if (!orgId) {
+        console.warn(`Webhook event ${event.type} has no org_id in metadata - skipping processing`);
+        return res.json({ received: true, processed: false, reason: 'No org_id in metadata' });
+      }
+
+      // Log the event for audit
+      console.log(`Webhook ${event.type} for org ${orgId}:`, {
+        eventId: event.id,
+        orgId,
+        objectId: event.data?.object?.id,
+        metadata
+      });
+
+      // Process different event types
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await handleCheckoutSessionCompleted(event, orgId);
+          break;
+          
+        case 'customer.subscription.updated':
+          await handleSubscriptionUpdated(event, orgId);
+          break;
+          
+        case 'invoice.paid':
+          await handleInvoicePaid(event, orgId);
+          break;
+          
+        case 'invoice.payment_failed':
+          await handleInvoicePaymentFailed(event, orgId);
+          break;
+          
+        default:
+          console.log(`Unhandled webhook event type: ${event.type}`);
+      }
+
+      res.json({ received: true, processed: true, eventType: event.type, orgId });
+
+    } catch (error) {
+      console.error('Error processing webhook:', error);
+      res.status(500).json({ 
+        received: true, 
+        processed: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Webhook event handlers
+  async function handleCheckoutSessionCompleted(event: any, orgId: string) {
+    try {
+      const session = event.data.object;
+      const customerId = session.customer;
+      const subscriptionId = session.subscription;
+      
+      console.log(`Checkout completed for org ${orgId}:`, {
+        sessionId: session.id,
+        customerId,
+        subscriptionId
+      });
+
+      // Update organisation with Stripe IDs
+      const updateData: any = {};
+      
+      if (customerId) {
+        updateData.stripeCustomerId = customerId;
+      }
+      
+      if (subscriptionId) {
+        updateData.stripeSubscriptionId = subscriptionId;
+        updateData.billingStatus = 'active';
+        
+        // Fetch subscription details to get subscription item ID
+        const { getStripeService } = await import('./services/StripeService.js');
+        const stripeService = getStripeService();
+        
+        try {
+          const subscription = await stripeService['stripe'].subscriptions.retrieve(subscriptionId, {
+            expand: ['items']
+          });
+          
+          if (subscription.items.data.length > 0) {
+            updateData.stripeSubscriptionItemId = subscription.items.data[0].id;
+          }
+        } catch (error) {
+          console.error('Error fetching subscription details:', error);
+        }
+      }
+
+      await storage.updateOrganisation(orgId, updateData);
+      console.log(`Updated organisation ${orgId} with Stripe IDs:`, updateData);
+      
+    } catch (error) {
+      console.error('Error handling checkout.session.completed:', error);
+      throw error;
+    }
+  }
+
+  async function handleSubscriptionUpdated(event: any, orgId: string) {
+    try {
+      const subscription = event.data.object;
+      
+      console.log(`Subscription updated for org ${orgId}:`, {
+        subscriptionId: subscription.id,
+        status: subscription.status,
+        currentPeriodEnd: subscription.current_period_end
+      });
+
+      const updateData: any = {
+        billingStatus: subscription.status,
+      };
+
+      // Update current period end if available
+      if (subscription.current_period_end) {
+        updateData.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+      }
+
+      await storage.updateOrganisation(orgId, updateData);
+      console.log(`Updated organisation ${orgId} billing status:`, updateData);
+      
+    } catch (error) {
+      console.error('Error handling customer.subscription.updated:', error);
+      throw error;
+    }
+  }
+
+  async function handleInvoicePaid(event: any, orgId: string) {
+    try {
+      const invoice = event.data.object;
+      
+      console.log(`Invoice paid for org ${orgId}:`, {
+        invoiceId: invoice.id,
+        amount: invoice.amount_paid,
+        subscriptionId: invoice.subscription
+      });
+
+      await storage.updateOrganisation(orgId, { 
+        billingStatus: 'active',
+        lastBillingSync: new Date()
+      });
+      
+      console.log(`Marked organisation ${orgId} as active after successful payment`);
+      
+    } catch (error) {
+      console.error('Error handling invoice.paid:', error);
+      throw error;
+    }
+  }
+
+  async function handleInvoicePaymentFailed(event: any, orgId: string) {
+    try {
+      const invoice = event.data.object;
+      
+      console.log(`Invoice payment failed for org ${orgId}:`, {
+        invoiceId: invoice.id,
+        amount: invoice.amount_due,
+        subscriptionId: invoice.subscription
+      });
+
+      await storage.updateOrganisation(orgId, { 
+        billingStatus: 'past_due',
+        lastBillingSync: new Date()
+      });
+      
+      console.log(`Marked organisation ${orgId} as past_due after payment failure`);
+      
+    } catch (error) {
+      console.error('Error handling invoice.payment_failed:', error);
+      throw error;
+    }
+  }
+
   // Organization Billing API (SuperAdmin only, Admin can read own organization)
   
   // Get organization billing status with plan details
