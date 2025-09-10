@@ -233,18 +233,45 @@ export function AdminSupport() {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Support Center</h1>
+    <div>
+      {/* Breadcrumbs */}
+      <div className="text-sm breadcrumbs mb-6">
+        <ul>
+          <li><a data-testid="link-admin">Admin</a></li>
+          <li className="font-semibold" data-testid="text-current-page">Support Center</li>
+        </ul>
+      </div>
+
+      {/* Dashboard Header */}
+      <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
-          <div className="badge badge-info">
-            {tickets.length} tickets
+          <div className="avatar">
+            <div className="w-12 h-12 rounded bg-secondary text-secondary-content flex items-center justify-center">
+              <i className="fas fa-life-ring text-xl"></i>
+            </div>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">Support Center</h1>
+            <p className="text-base-content/60" data-testid="text-page-subtitle">Get help and manage your support tickets</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <div className="stats shadow">
+            <div className="stat">
+              <div className="stat-figure">
+                <i className="fas fa-ticket-alt text-xl text-secondary"></i>
+              </div>
+              <div className="stat-title">My Tickets</div>
+              <div className="stat-value text-secondary" data-testid="stat-my-tickets">{tickets.length}</div>
+              <div className="stat-desc">Total requests</div>
+            </div>
           </div>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary gap-2"
             onClick={() => setShowCreateForm(true)}
             data-testid="create-ticket-btn"
           >
+            <i className="fas fa-plus"></i>
             Create New Ticket
           </button>
         </div>

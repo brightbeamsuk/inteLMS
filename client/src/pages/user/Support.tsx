@@ -146,21 +146,45 @@ export function UserSupport() {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Support Center</h1>
-          <p className="text-base-content/70">Get help when you need it</p>
-        </div>
+    <div>
+      {/* Breadcrumbs */}
+      <div className="text-sm breadcrumbs mb-6">
+        <ul>
+          <li><a data-testid="link-user">My Dashboard</a></li>
+          <li className="font-semibold" data-testid="text-current-page">Support Center</li>
+        </ul>
+      </div>
+
+      {/* Dashboard Header */}
+      <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
-          <div className="badge badge-info">
-            {tickets.length} tickets
+          <div className="avatar">
+            <div className="w-12 h-12 rounded bg-accent text-accent-content flex items-center justify-center">
+              <i className="fas fa-question-circle text-xl"></i>
+            </div>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">Support Center</h1>
+            <p className="text-base-content/60" data-testid="text-page-subtitle">Get help when you need it</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <div className="stats shadow">
+            <div className="stat">
+              <div className="stat-figure">
+                <i className="fas fa-envelope text-xl text-accent"></i>
+              </div>
+              <div className="stat-title">My Tickets</div>
+              <div className="stat-value text-accent" data-testid="stat-my-tickets">{tickets.length}</div>
+              <div className="stat-desc">Support requests</div>
+            </div>
           </div>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary gap-2"
             onClick={() => setShowCreateForm(true)}
             data-testid="create-ticket-btn"
           >
+            <i className="fas fa-plus"></i>
             Get Help
           </button>
         </div>
