@@ -164,7 +164,7 @@ export function AdminBilling() {
       case 'metered_per_active_user':
         return organisation.activeUserCount || 0;
       case 'per_seat':
-        return userCount || organisation.activeUserCount || 0;
+        return organisation.activeUserCount || 0;
       case 'flat_subscription':
         return organisationStats?.totalUsers || 0; // Show total for flat rate
       default:
@@ -180,44 +180,58 @@ export function AdminBilling() {
     }
   });
 
-  // Mutation to change plan
+  // Mutation to change plan - redirects to Stripe checkout instead of immediate update
   const changePlanMutation = useMutation({
     mutationFn: async ({ planId, userCount: newUserCount }: { planId: string; userCount?: number }) => {
-      const response = await fetch(`/api/organisations/${user?.organisationId}`, {
-        method: 'PUT',
+      // Instead of updating immediately, create Stripe checkout for plan change
+      const response = await fetch(`/api/subscriptions/change-plan-checkout`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           planId,
-          ...(newUserCount && { activeUserCount: newUserCount })
+          userCount: newUserCount,
+          organisationId: user?.organisationId
         }),
       });
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Failed to update plan: ${response.statusText}`);
+        throw new Error(errorData.message || 'Failed to create checkout session');
       }
       
-      return response.json();
-    },
-    onSuccess: (updatedOrganisation) => {
-      toast({
-        title: "Plan Updated",
-        description: `Successfully changed to ${plans.find(p => p.id === updatedOrganisation.planId)?.name || 'new plan'}`,
-      });
+      const data = await response.json();
       
+      // Redirect to Stripe Checkout
+      if (data.checkoutUrl) {
+        const stripeWindow = window.open(data.checkoutUrl, '_blank');
+        
+        if (!stripeWindow || stripeWindow.closed || typeof stripeWindow.closed === 'undefined') {
+          window.location.href = data.checkoutUrl;
+        } else {
+          stripeWindow.focus();
+        }
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+      
+      return data;
+    },
+    onSuccess: () => {
       setShowPlanChangeModal(false);
       setSelectedPlan(null);
       
-      // Refresh the organisation data
-      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+      toast({
+        title: "Redirecting to Checkout",
+        description: "Complete payment to activate your new plan",
+      });
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to update plan",
+        description: error.message || "Failed to create checkout session",
         variant: "destructive",
       });
     },
@@ -436,7 +450,7 @@ export function AdminBilling() {
                     disabled={currentPlan.billingModel === 'flat_subscription'}
                     data-testid="input-user-count"
                   />
-                  {userCount !== getCurrentUserCount() && currentPlan.billingModel !== 'flat_subscription' && (
+                  {userCount > getCurrentUserCount() && currentPlan.billingModel !== 'flat_subscription' && (
                     <button
                       className={`btn btn-primary ${updateSubscriptionMutation.isPending ? 'loading' : ''}`}
                       onClick={() => updateSubscriptionMutation.mutate()}
