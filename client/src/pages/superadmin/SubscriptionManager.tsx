@@ -367,7 +367,7 @@ export function SuperAdminSubscriptionManager() {
                                 {formatPrice(plan.unitAmount, plan.currency)}/{plan.cadence === 'annual' ? 'year' : 'month'}
                               </div>
                               <div className="text-xs text-base-content/40 capitalize">
-                                {plan.billingModel.replace(/_/g, ' ')}
+                                {plan.billingModel?.replace(/_/g, ' ') || 'No billing model'}
                               </div>
                             </div>
                           ) : (
@@ -443,7 +443,7 @@ export function SuperAdminSubscriptionManager() {
                       {formatPrice(plan.unitAmount, plan.currency)}/{plan.cadence === 'annual' ? 'year' : 'month'}
                     </p>
                     <div className="text-xs text-base-content/40 capitalize mb-2">
-                      {plan.billingModel.replace(/_/g, ' ')}
+                      {plan.billingModel?.replace(/_/g, ' ') || 'No billing model'}
                     </div>
                     
                     <div className="flex items-center gap-2 text-xs">
