@@ -19,6 +19,8 @@ import {
   emailTemplates,
   systemEmailSettings,
   emailLogs,
+  supportTickets,
+  supportTicketResponses,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -60,6 +62,10 @@ import {
   type InsertSystemEmailSettings,
   type EmailLog,
   type InsertEmailLog,
+  type SupportTicket,
+  type InsertSupportTicket,
+  type SupportTicketResponse,
+  type InsertSupportTicketResponse,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg } from "drizzle-orm";
@@ -263,6 +269,28 @@ export interface IStorage {
     offset?: number;
   }): Promise<EmailLog[]>;
   getEmailLogById(id: string): Promise<EmailLog | undefined>;
+
+  // Support ticket operations
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTickets(filters?: {
+    organisationId?: string;
+    createdBy?: string;
+    assignedTo?: string;
+    status?: string;
+    priority?: string;
+    category?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, ticket: Partial<InsertSupportTicket>): Promise<SupportTicket>;
+  deleteSupportTicket(id: string): Promise<void>;
+  getUnreadTicketCount(filters?: { organisationId?: string; assignedTo?: string }): Promise<number>;
+
+  // Support ticket response operations
+  createSupportTicketResponse(response: InsertSupportTicketResponse): Promise<SupportTicketResponse>;
+  getSupportTicketResponses(ticketId: string): Promise<SupportTicketResponse[]>;
+  deleteSupportTicketResponse(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1339,6 +1367,128 @@ export class DatabaseStorage implements IStorage {
   async getEmailLogById(id: string): Promise<EmailLog | undefined> {
     const [log] = await db.select().from(emailLogs).where(eq(emailLogs.id, id));
     return log;
+  }
+
+  // Support ticket operations
+  async createSupportTicket(ticketData: InsertSupportTicket): Promise<SupportTicket> {
+    const [ticket] = await db.insert(supportTickets).values(ticketData).returning();
+    return ticket;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return ticket;
+  }
+
+  async getSupportTickets(filters: {
+    organisationId?: string;
+    createdBy?: string;
+    assignedTo?: string;
+    status?: string;
+    priority?: string;
+    category?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<SupportTicket[]> {
+    const {
+      organisationId,
+      createdBy,
+      assignedTo,
+      status,
+      priority,
+      category,
+      limit = 50,
+      offset = 0
+    } = filters;
+
+    let query = db.select().from(supportTickets);
+
+    const conditions: any[] = [];
+    if (organisationId) {
+      conditions.push(eq(supportTickets.organisationId, organisationId));
+    }
+    if (createdBy) {
+      conditions.push(eq(supportTickets.createdBy, createdBy));
+    }
+    if (assignedTo) {
+      conditions.push(eq(supportTickets.assignedTo, assignedTo));
+    }
+    if (status) {
+      conditions.push(eq(supportTickets.status, status));
+    }
+    if (priority) {
+      conditions.push(eq(supportTickets.priority, priority));
+    }
+    if (category) {
+      conditions.push(eq(supportTickets.category, category));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    return await query
+      .orderBy(desc(supportTickets.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async updateSupportTicket(id: string, ticketData: Partial<InsertSupportTicket>): Promise<SupportTicket> {
+    const [ticket] = await db
+      .update(supportTickets)
+      .set({ ...ticketData, updatedAt: new Date() })
+      .where(eq(supportTickets.id, id))
+      .returning();
+    return ticket;
+  }
+
+  async deleteSupportTicket(id: string): Promise<void> {
+    await db.delete(supportTickets).where(eq(supportTickets.id, id));
+  }
+
+  async getUnreadTicketCount(filters: { organisationId?: string; assignedTo?: string } = {}): Promise<number> {
+    const { organisationId, assignedTo } = filters;
+
+    let query = db.select({ count: count() }).from(supportTickets);
+
+    const conditions: any[] = [eq(supportTickets.isRead, false)];
+    if (organisationId) {
+      conditions.push(eq(supportTickets.organisationId, organisationId));
+    }
+    if (assignedTo) {
+      conditions.push(eq(supportTickets.assignedTo, assignedTo));
+    }
+
+    const [result] = await query.where(and(...conditions));
+    return result.count;
+  }
+
+  // Support ticket response operations
+  async createSupportTicketResponse(responseData: InsertSupportTicketResponse): Promise<SupportTicketResponse> {
+    const [response] = await db.insert(supportTicketResponses).values(responseData).returning();
+    
+    // Update the ticket's lastResponseAt timestamp
+    await db
+      .update(supportTickets)
+      .set({ 
+        lastResponseAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(supportTickets.id, responseData.ticketId));
+    
+    return response;
+  }
+
+  async getSupportTicketResponses(ticketId: string): Promise<SupportTicketResponse[]> {
+    return await db
+      .select()
+      .from(supportTicketResponses)
+      .where(eq(supportTicketResponses.ticketId, ticketId))
+      .orderBy(asc(supportTicketResponses.createdAt));
+  }
+
+  async deleteSupportTicketResponse(id: string): Promise<void> {
+    await db.delete(supportTicketResponses).where(eq(supportTicketResponses.id, id));
   }
 }
 
