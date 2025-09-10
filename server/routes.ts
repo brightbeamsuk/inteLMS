@@ -5066,6 +5066,75 @@ This test was initiated by ${user.email}.
     }
   });
 
+  // Bulk update users
+  app.patch('/api/users/bulk', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      const { userIds, action, value } = req.body;
+
+      if (!currentUser) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Only SuperAdmin and Admin can perform bulk operations
+      if (currentUser.role !== 'superadmin' && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ message: 'User IDs array is required' });
+      }
+
+      if (!action) {
+        return res.status(400).json({ message: 'Action is required' });
+      }
+
+      // Admin can only update users in their own organisation
+      if (currentUser.role === 'admin') {
+        for (const userId of userIds) {
+          const targetUser = await storage.getUser(userId);
+          if (!targetUser || targetUser.organisationId !== currentUser.organisationId) {
+            return res.status(403).json({ message: 'Access denied - cannot modify users outside your organisation' });
+          }
+        }
+      }
+
+      const updatedUsers = [];
+      
+      for (const userId of userIds) {
+        try {
+          let updatedUser;
+          
+          switch (action) {
+            case 'status':
+              updatedUser = await storage.updateUser(userId, { status: value });
+              break;
+            case 'certificates':
+              updatedUser = await storage.updateUser(userId, { allowCertificateDownload: value });
+              break;
+            default:
+              return res.status(400).json({ message: 'Invalid action' });
+          }
+          
+          if (updatedUser) {
+            updatedUsers.push(updatedUser);
+          }
+        } catch (error) {
+          console.error(`Error updating user ${userId}:`, error);
+          // Continue with other users even if one fails
+        }
+      }
+
+      res.json({ 
+        message: `Successfully updated ${updatedUsers.length} out of ${userIds.length} users`,
+        updatedUsers 
+      });
+    } catch (error) {
+      console.error("Error performing bulk user update:", error);
+      res.status(500).json({ message: 'Failed to perform bulk update' });
+    }
+  });
+
   app.post('/api/users', requireAuth, async (req: any, res) => {
     try {
       const userId = req.session.user?.id;

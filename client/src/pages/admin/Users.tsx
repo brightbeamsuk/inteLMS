@@ -231,6 +231,34 @@ export function AdminUsers() {
     },
   });
 
+  const bulkUpdateUsersMutation = useMutation({
+    mutationFn: async ({ userIds, action, value }: { userIds: string[]; action: string; value: any }) => {
+      return await apiRequest('PATCH', '/api/users/bulk', {
+        userIds,
+        action,
+        value
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setShowBulkActionsModal(false);
+      setSelectedUserIds([]);
+      setBulkAction("");
+      setBulkActionValue("");
+      toast({
+        title: "Success",
+        description: "Users updated successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update users",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       email: "",
@@ -1515,6 +1543,115 @@ export function AdminUsers() {
             <button onClick={() => {
               setShowEditModal(false);
               resetEditForm();
+            }}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {/* Bulk Actions Modal */}
+      {showBulkActionsModal && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="text-bulk-action-title">
+              Bulk Action: {selectedUserIds.length} user(s) selected
+            </h3>
+            
+            {bulkAction === "status" && (
+              <div className="space-y-4">
+                <p>Change status for selected users:</p>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">New Status</span>
+                  </label>
+                  <select 
+                    className="select select-bordered"
+                    value={bulkActionValue}
+                    onChange={(e) => setBulkActionValue(e.target.value)}
+                    data-testid="select-bulk-status"
+                  >
+                    <option value="">Select status...</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            
+            {bulkAction === "certificates" && (
+              <div className="space-y-4">
+                <p>Allow certificate downloads for selected users:</p>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Certificate Download Permission</span>
+                  </label>
+                  <select 
+                    className="select select-bordered"
+                    value={bulkActionValue}
+                    onChange={(e) => setBulkActionValue(e.target.value)}
+                    data-testid="select-bulk-certificates"
+                  >
+                    <option value="">Select permission...</option>
+                    <option value="true">Allow Downloads</option>
+                    <option value="false">Deny Downloads</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            
+            {bulkAction === "archive" && (
+              <div className="space-y-4">
+                <div className="alert alert-warning">
+                  <i className="fas fa-exclamation-triangle"></i>
+                  <div>
+                    <h4 className="font-bold">Archive Users</h4>
+                    <div className="text-sm">This will set all selected users to inactive status.</div>
+                  </div>
+                </div>
+                <p>Are you sure you want to archive {selectedUserIds.length} user(s)?</p>
+              </div>
+            )}
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowBulkActionsModal(false);
+                  setBulkAction("");
+                  setBulkActionValue("");
+                }}
+                data-testid="button-bulk-cancel"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-primary ${bulkUpdateUsersMutation.isPending ? 'loading' : ''}`}
+                onClick={() => {
+                  if (bulkAction === "archive") {
+                    bulkUpdateUsersMutation.mutate({
+                      userIds: selectedUserIds,
+                      action: "status",
+                      value: "inactive"
+                    });
+                  } else if (bulkActionValue) {
+                    bulkUpdateUsersMutation.mutate({
+                      userIds: selectedUserIds,
+                      action: bulkAction,
+                      value: bulkAction === "certificates" ? bulkActionValue === "true" : bulkActionValue
+                    });
+                  }
+                }}
+                disabled={bulkUpdateUsersMutation.isPending || (!bulkActionValue && bulkAction !== "archive")}
+                data-testid="button-bulk-confirm"
+              >
+                {bulkUpdateUsersMutation.isPending ? 'Processing...' : 'Apply Changes'}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => {
+              setShowBulkActionsModal(false);
+              setBulkAction("");
+              setBulkActionValue("");
             }}>close</button>
           </form>
         </dialog>
