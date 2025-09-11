@@ -51,6 +51,17 @@ interface OrganisationStats {
   averageScore: number;
 }
 
+interface LicenseInfo {
+  currentActiveUsers: number;
+  maxActiveUsers: number;
+  availableLicenses: number;
+  isAtLimit: boolean;
+  hasActiveSubscription: boolean;
+  organisationName: string;
+  totalActiveUsers: number;
+  adminUsers: number;
+}
+
 export function AdminBilling() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -166,6 +177,13 @@ export function AdminBilling() {
     },
   });
 
+  // License info query
+  const { data: licenseData } = useQuery<LicenseInfo>({
+    queryKey: ['/api/admin/license-check'],
+    enabled: !!user && (user.role === 'admin' || user.role === 'superadmin'),
+    refetchInterval: 30000 // Refresh every 30 seconds
+  });
+
   // Find the current plan based on organization's planId
   const currentPlan = plans.find(plan => plan.id === organisation?.planId);
   const currentPlanName = currentPlan?.name || "No Plan";
@@ -232,14 +250,17 @@ export function AdminBilling() {
   };
 
   // Get current user count based on billing model
+  // For per_seat plans, this should return purchased licenses, not current active users
   const getCurrentUserCount = () => {
-    if (!currentPlan || !organisation) return 0;
+    if (!currentPlan || !organisation || !licenseData) return 0;
     
     switch (currentPlan.billingModel) {
       case 'metered_per_active_user':
-        return organisation.activeUserCount || 0;
+        // For metered plans, show allocated licenses (current non-admin active users)
+        return licenseData.currentActiveUsers || 0;
       case 'per_seat':
-        return organisation.activeUserCount || 0;
+        // For per-seat plans, show purchased licenses (maxActiveUsers from Stripe subscription)
+        return licenseData.maxActiveUsers || 0;
       case 'flat_subscription':
         return organisationStats?.totalUsers || 0; // Show total for flat rate
       default:
@@ -248,12 +269,12 @@ export function AdminBilling() {
   };
 
   // Initialize user count when plan data loads
-  useState(() => {
-    if (organisation && currentPlan) {
+  useEffect(() => {
+    if (organisation && currentPlan && licenseData) {
       const currentCount = getCurrentUserCount();
       setUserCount(currentCount);
     }
-  });
+  }, [organisation, currentPlan, licenseData]);
 
   // Mutation to change plan - redirects to Stripe checkout instead of immediate update
   const changePlanMutation = useMutation({
@@ -586,20 +607,28 @@ export function AdminBilling() {
               
               <div>
                 <label className="label">
-                  <span className="label-text font-medium">Usage Overview</span>
+                  <span className="label-text font-medium">License Overview</span>
                 </label>
                 <div className="stats stats-vertical lg:stats-horizontal">
                   <div className="stat">
-                    <div className="stat-title">Active</div>
-                    <div className="stat-value text-sm">{organisationStats?.activeUsers || 0}</div>
+                    <div className="stat-title">Purchased</div>
+                    <div className="stat-value text-sm">{licenseData?.maxActiveUsers || 0}</div>
+                    <div className="stat-desc">licenses</div>
                   </div>
                   <div className="stat">
-                    <div className="stat-title">Total</div>
-                    <div className="stat-value text-sm">{organisationStats?.totalUsers || 0}</div>
+                    <div className="stat-title">Allocated</div>
+                    <div className="stat-value text-sm">{licenseData?.currentActiveUsers || 0}</div>
+                    <div className="stat-desc">non-admin users</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title">Available</div>
+                    <div className="stat-value text-sm">{licenseData?.availableLicenses || 0}</div>
+                    <div className="stat-desc">remaining</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Admins</div>
-                    <div className="stat-value text-sm">{organisationStats?.adminUsers || 0}</div>
+                    <div className="stat-value text-sm">{licenseData?.adminUsers || 0}</div>
+                    <div className="stat-desc">not counted</div>
                   </div>
                 </div>
               </div>

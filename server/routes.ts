@@ -200,10 +200,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return { canProceed: false, error: 'Organization not found' };
       }
 
-      // Count active users in the organization
+      // Count active users in the organization, EXCLUDING admin users from license count
       const allUsers = await storage.getUsersByOrganisation(user.organisationId);
-      const activeUsers = allUsers.filter(u => u.status === 'active');
-      const currentActiveCount = activeUsers.length;
+      const activeNonAdminUsers = allUsers.filter(u => u.status === 'active' && u.role !== 'admin' && u.role !== 'superadmin');
+      const currentActiveCount = activeNonAdminUsers.length;
 
       // Default limits (for organizations without subscription)
       let maxActiveUsers = 10; // Default free tier limit
@@ -250,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!canProceed) {
         return { 
           canProceed: false, 
-          error: `License limit exceeded. You have ${currentActiveCount} active users out of ${maxActiveUsers} allowed. Need ${additionalActiveUsers} more licenses.` 
+          error: `License limit exceeded. You have ${currentActiveCount} active non-admin users out of ${maxActiveUsers} licenses. Need ${additionalActiveUsers} more licenses. (Admin users don't count toward license limits)` 
         };
       }
 
@@ -843,10 +843,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Organization not found' });
       }
 
-      // Count active users in the organization
+      // Count active users in the organization, EXCLUDING admin users from license count
       const allUsers = await storage.getUsersByOrganisation(user.organisationId);
       const activeUsers = allUsers.filter(u => u.status === 'active');
-      const currentActiveCount = activeUsers.length;
+      const activeNonAdminUsers = activeUsers.filter(u => u.role !== 'admin' && u.role !== 'superadmin');
+      const currentActiveCount = activeNonAdminUsers.length;
 
       // Default limits (for organizations without subscription)
       let maxActiveUsers = 10; // Default free tier limit
@@ -894,12 +895,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAtLimit = availableLicenses <= 0;
 
       res.json({
-        currentActiveUsers: currentActiveCount,
-        maxActiveUsers,
+        currentActiveUsers: currentActiveCount, // Non-admin users only
+        maxActiveUsers, // Purchased licenses
         availableLicenses: Math.max(0, availableLicenses),
         isAtLimit,
         hasActiveSubscription,
-        organisationName: organisation.displayName || organisation.name
+        organisationName: organisation.displayName || organisation.name,
+        // Additional info for clarity
+        totalActiveUsers: activeUsers.length,
+        adminUsers: activeUsers.filter(u => u.role === 'admin' || u.role === 'superadmin').length
       });
     } catch (error) {
       console.error('Error checking license availability:', error);
