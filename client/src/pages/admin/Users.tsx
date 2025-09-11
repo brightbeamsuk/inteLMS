@@ -107,6 +107,7 @@ export function AdminUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       setShowCreateModal(false);
       resetForm();
       toast({
@@ -151,6 +152,7 @@ export function AdminUsers() {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       toast({
         title: "Success",
         description: "User status updated successfully",
@@ -171,6 +173,7 @@ export function AdminUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       setShowDeleteModal(false);
       setSelectedUser(null);
       setDeleteConfirmText("");
@@ -200,6 +203,7 @@ export function AdminUsers() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       setShowImportModal(false);
       setCsvFile(null);
       setCsvPreview([]);
@@ -265,6 +269,7 @@ export function AdminUsers() {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/organisations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       setShowBulkActionsModal(false);
       setSelectedUserIds([]);
       setBulkAction("");
