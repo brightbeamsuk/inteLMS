@@ -390,6 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : session.customer?.id;
             
           await storage.updateOrganisationBilling(metadata.org_id, {
+            planId: metadata.plan_id, // Fix: Include plan ID update
             stripeSubscriptionId: subscriptionId,
             stripeCustomerId: customerId,
             billingStatus: 'active',
@@ -1945,14 +1946,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const session = event.data.object;
       const customerId = session.customer;
       const subscriptionId = session.subscription;
+      const metadata = session.metadata || {};
       
       console.log(`Checkout completed for org ${orgId}:`, {
         sessionId: session.id,
         customerId,
-        subscriptionId
+        subscriptionId,
+        metadata
       });
 
-      // Update organisation with Stripe IDs
+      // Update organisation with Stripe IDs and plan info
       const updateData: any = {};
       
       if (customerId) {
@@ -1962,7 +1965,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (subscriptionId) {
         updateData.stripeSubscriptionId = subscriptionId;
         updateData.billingStatus = 'active';
-        
+      }
+      
+      // Update plan ID and user count from metadata
+      if (metadata.plan_id) {
+        updateData.planId = metadata.plan_id;
+      }
+      
+      if (metadata.user_count) {
+        updateData.activeUserCount = parseInt(metadata.user_count);
+      }
+
+      if (subscriptionId) {
         // Fetch subscription details to get subscription item ID
         const { getStripeService } = await import('./services/StripeService.js');
         const stripeService = getStripeService();
