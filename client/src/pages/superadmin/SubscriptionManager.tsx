@@ -499,6 +499,7 @@ export function SuperAdminSubscriptionManager() {
       <div className="card bg-base-100 shadow-xl">
         <div className="card-body">
           <h2 className="card-title">Plan Testing & Diagnostics</h2>
+          <p className="text-sm text-base-content/60 mb-4">Plans sorted by cost (lowest to highest)</p>
           
           {plansLoading ? (
             <div className="flex justify-center py-8">
@@ -510,7 +511,7 @@ export function SuperAdminSubscriptionManager() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {plans.map((plan) => (
+              {[...plans].sort((a, b) => a.unitAmount - b.unitAmount).map((plan) => (
                 <div key={plan.id} className="card bg-base-200 shadow-lg" data-testid={`card-plan-${plan.id}`}>
                   <div className="card-body">
                     <h3 className="card-title text-base">{plan.name}</h3>
@@ -578,7 +579,7 @@ export function SuperAdminSubscriptionManager() {
                   data-testid="select-plan"
                 >
                   <option value="">Select a plan</option>
-                  {plans.filter(p => p.isActive).map((plan) => (
+                  {[...plans].filter(p => p.isActive).sort((a, b) => a.unitAmount - b.unitAmount).map((plan) => (
                     <option key={plan.id} value={plan.id}>
                       {plan.name} - {formatPrice(plan.unitAmount, plan.currency)}/{plan.cadence === 'annual' ? 'year' : 'month'}
                     </option>

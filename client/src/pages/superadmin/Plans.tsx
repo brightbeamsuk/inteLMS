@@ -431,7 +431,7 @@ export function SuperAdminPlans() {
                       <tr>
                         <th>Plan Name</th>
                         <th>Description</th>
-                        <th>Price per User</th>
+                        <th>Price per User <small className="text-xs opacity-60">(sorted low→high)</small></th>
                         <th>Status</th>
                         <th>Features</th>
                         <th>Created</th>
@@ -439,7 +439,7 @@ export function SuperAdminPlans() {
                       </tr>
                     </thead>
                     <tbody>
-                      {plans.map((plan) => (
+                      {[...plans].sort((a, b) => a.unitAmount - b.unitAmount).map((plan) => (
                         <tr key={plan.id} data-testid={`row-plan-${plan.id}`}>
                           <td>
                             <div className="font-medium">{plan.name}</div>

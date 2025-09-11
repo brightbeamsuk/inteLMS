@@ -184,9 +184,27 @@ export function AdminBilling() {
     refetchInterval: 30000 // Refresh every 30 seconds
   });
 
+  // Sort plans by cost (unitAmount) ascending - lowest to highest cost
+  const sortedPlans = [...plans].sort((a, b) => a.unitAmount - b.unitAmount);
+  
   // Find the current plan based on organization's planId
   const currentPlan = plans.find(plan => plan.id === organisation?.planId);
   const currentPlanName = currentPlan?.name || "No Plan";
+  
+  // Helper function to determine if target plan is an upgrade or downgrade
+  const isUpgrade = (targetPlan: Plan) => {
+    if (!currentPlan) return true; // No current plan means any plan is an "upgrade"
+    return targetPlan.unitAmount > currentPlan.unitAmount;
+  };
+  
+  // Helper function to handle downgrade attempts
+  const handleDowngradeAttempt = () => {
+    toast({
+      title: "Plan Downgrade Restricted",
+      description: "Cannot downgrade plan. Contact support for more information.",
+      variant: "destructive",
+    });
+  };
 
   // Helper function to format price
   const formatPrice = (unitAmount: number, currency: string) => {
@@ -711,6 +729,7 @@ export function AdminBilling() {
       {/* Available Plans */}
       <div className="mt-8">
         <h3 className="text-xl font-bold mb-4">Available Plans</h3>
+        <p className="text-sm text-base-content/60 mb-4">Plans are sorted by cost from lowest to highest.</p>
         
         {(plansLoading || featuresLoading) ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -731,10 +750,11 @@ export function AdminBilling() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {plans
+            {sortedPlans
               .filter(plan => plan.status === 'active')
               .map((plan) => {
                 const isCurrentPlan = plan.id === organisation?.planId;
+                const isUpgradeOption = isUpgrade(plan);
                 const planFeatureIds = plan.features?.map(f => f.id) || [];
                 
                 return (
@@ -747,6 +767,16 @@ export function AdminBilling() {
                       {isCurrentPlan && (
                         <div className="badge badge-primary mb-2" data-testid="badge-current-plan">
                           Current Plan
+                        </div>
+                      )}
+                      {!isCurrentPlan && !isUpgradeOption && (
+                        <div className="badge badge-warning mb-2" data-testid="badge-downgrade-plan">
+                          Lower Cost Plan
+                        </div>
+                      )}
+                      {!isCurrentPlan && isUpgradeOption && (
+                        <div className="badge badge-success mb-2" data-testid="badge-upgrade-plan">
+                          Higher Value Plan
                         </div>
                       )}
                       <h4 className="card-title" data-testid={`text-plan-name-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -816,15 +846,26 @@ export function AdminBilling() {
                             className="btn btn-disabled btn-sm w-full" 
                             data-testid={`button-current-plan-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
+                            <i className="fas fa-check mr-2"></i>
                             Current Plan
                           </button>
-                        ) : (
+                        ) : isUpgradeOption ? (
                           <button 
                             className="btn btn-primary btn-sm w-full"
                             onClick={() => handleSelectPlan(plan)}
                             data-testid={`button-upgrade-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
-                            Select Plan
+                            <i className="fas fa-arrow-up mr-2"></i>
+                            Upgrade Plan
+                          </button>
+                        ) : (
+                          <button 
+                            className="btn btn-sm w-full btn-disabled bg-base-300 text-base-content/40 cursor-not-allowed"
+                            onClick={handleDowngradeAttempt}
+                            data-testid={`button-downgrade-disabled-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            <i className="fas fa-ban mr-2"></i>
+                            Cannot Downgrade
                           </button>
                         )}
                       </div>
