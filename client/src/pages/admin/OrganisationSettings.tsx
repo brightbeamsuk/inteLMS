@@ -58,6 +58,19 @@ export function AdminOrganisationSettings() {
     },
   });
 
+  // Fetch admin users
+  const { data: adminUsers = [], isLoading: adminUsersLoading, refetch: refetchAdminUsers } = useQuery({
+    queryKey: ['/api/admin/admin-users', user?.organisationId],
+    enabled: !!user?.organisationId && (user?.role === 'admin' || user?.role === 'superadmin'),
+  });
+
+  // Fetch regular users (for promoting to admin)
+  const { data: regularUsers = [] } = useQuery({
+    queryKey: ['/api/users'],
+    enabled: !!user?.organisationId && (user?.role === 'admin' || user?.role === 'superadmin'),
+    select: (data: any[]) => data.filter(u => u.role === 'user' && u.organisationId === user?.organisationId),
+  });
+
   const [brandingData, setBrandingData] = useState({
     logoUrl: "",
     displayName: "",
@@ -113,6 +126,11 @@ export function AdminOrganisationSettings() {
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [testResult, setTestResult] = useState<any>(null);
   const [showTestResultModal, setShowTestResultModal] = useState(false);
+
+  // Admin Management states
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [selectedUserToPromote, setSelectedUserToPromote] = useState<string>('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
 
   const handleEditTemplate = (templateType: string) => {
     const defaultTemplate = getDefaultTemplate(templateType);
@@ -638,6 +656,55 @@ The {{organisationDisplayName}} Team`
     }
   });
 
+  // Promote user to admin mutation
+  const promoteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest('POST', `/api/admin/promote-user/${userId}`, {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "User promoted to admin successfully",
+        variant: "default",
+      });
+      refetchAdminUsers();
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setShowAddAdminModal(false);
+      setSelectedUserToPromote('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to promote user to admin",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Demote admin user mutation
+  const demoteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest('POST', `/api/admin/demote-user/${userId}`, {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Admin privileges removed successfully",
+        variant: "default",
+      });
+      refetchAdminUsers();
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove admin privileges",
+        variant: "destructive",
+      });
+    },
+  });
 
   const saveEmailSettings = () => {
     if (!user?.organisationId) return;
@@ -730,6 +797,11 @@ The {{organisationDisplayName}} Team`
     
     if (hasEmailTemplatesAccess) {
       baseTabs.push("Email Settings");
+    }
+    
+    // Add Admin Management tab for admins and superadmins
+    if (user?.role === 'admin' || user?.role === 'superadmin') {
+      baseTabs.push("Admin Management");
     }
     
     baseTabs.push("Privacy");
@@ -1672,6 +1744,135 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
+          {/* Admin Management Tab */}
+          {(user?.role === 'admin' || user?.role === 'superadmin') && activeTab === tabs.indexOf("Admin Management") && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Administrator Management</h3>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => setShowAddAdminModal(true)}
+                  data-testid="button-add-admin"
+                >
+                  <i className="fas fa-user-plus mr-2"></i>
+                  Add Administrator
+                </button>
+              </div>
+
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <div>
+                  <div className="font-bold">Administrator Access</div>
+                  <div className="text-sm">
+                    Administrators can manage users, courses, and organization settings. 
+                    They have full access to the admin panel for this organization.
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Admin Users */}
+              <div className="card bg-base-100 border">
+                <div className="card-body">
+                  <h4 className="card-title">Current Administrators</h4>
+                  
+                  {adminUsersLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <span className="loading loading-spinner loading-lg"></span>
+                    </div>
+                  ) : adminUsers.length === 0 ? (
+                    <div className="text-center py-8 text-base-content/60">
+                      <i className="fas fa-users-cog text-4xl mb-4"></i>
+                      <p>No administrators found</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="table w-full">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Last Active</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adminUsers.map((adminUser: any) => (
+                            <tr key={adminUser.id} data-testid={`admin-user-${adminUser.id}`}>
+                              <td>
+                                <div className="flex items-center space-x-3">
+                                  <div className="avatar">
+                                    <div className="mask mask-squircle w-12 h-12">
+                                      {adminUser.profileImageUrl ? (
+                                        <img src={adminUser.profileImageUrl} alt="Avatar" />
+                                      ) : (
+                                        <div className="bg-primary text-primary-content flex items-center justify-center text-lg font-bold">
+                                          {adminUser.firstName?.charAt(0)}{adminUser.lastName?.charAt(0)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-bold">{adminUser.firstName} {adminUser.lastName}</div>
+                                    <div className="text-sm opacity-50">{adminUser.jobTitle}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="text-sm">{adminUser.email}</span>
+                                {adminUser.id === user?.id && (
+                                  <div className="badge badge-sm badge-primary ml-2">You</div>
+                                )}
+                              </td>
+                              <td>
+                                <div className="badge badge-outline">
+                                  {adminUser.role === 'superadmin' ? 'Super Admin' : 'Administrator'}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="text-sm">
+                                  {adminUser.lastActive 
+                                    ? new Date(adminUser.lastActive).toLocaleDateString() 
+                                    : 'Never'
+                                  }
+                                </span>
+                              </td>
+                              <td>
+                                {adminUser.id !== user?.id && adminUser.role !== 'superadmin' && (
+                                  <button 
+                                    className="btn btn-sm btn-error btn-outline"
+                                    onClick={() => demoteUserMutation.mutate(adminUser.id)}
+                                    disabled={demoteUserMutation.isPending}
+                                    data-testid={`button-demote-${adminUser.id}`}
+                                  >
+                                    {demoteUserMutation.isPending ? (
+                                      <span className="loading loading-spinner loading-sm"></span>
+                                    ) : (
+                                      <>
+                                        <i className="fas fa-user-minus mr-1"></i>
+                                        Remove Admin
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                                {adminUser.id === user?.id && (
+                                  <span className="text-sm text-base-content/60">Current User</span>
+                                )}
+                                {adminUser.role === 'superadmin' && adminUser.id !== user?.id && (
+                                  <span className="text-sm text-base-content/60">Super Admin</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Privacy Tab */}
           {activeTab === tabs.indexOf("Privacy") && (
             <div className="space-y-6">
@@ -1708,6 +1909,116 @@ The {{organisationDisplayName}} Team`
                     When enabled, users can download their certificates from their Settings page. 
                     Admins can still control this permission individually for each user.
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Administrator Modal */}
+          {showAddAdminModal && (
+            <div className="modal modal-open">
+              <div className="modal-box max-w-2xl">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-lg">Add Administrator</h3>
+                  <button 
+                    className="btn btn-sm btn-circle btn-ghost"
+                    onClick={() => {
+                      setShowAddAdminModal(false);
+                      setSelectedUserToPromote('');
+                    }}
+                    data-testid="button-close-add-admin"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-sm text-base-content/70">
+                    Select a user from your organization to promote to administrator role. 
+                    Administrators will have full access to manage users, courses, and organization settings.
+                  </p>
+
+                  {regularUsers.length === 0 ? (
+                    <div className="alert alert-warning">
+                      <i className="fas fa-exclamation-triangle"></i>
+                      <div>
+                        <div className="font-bold">No users available</div>
+                        <div className="text-sm">
+                          All eligible users in your organization are already administrators or there are no users to promote.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text">Select User to Promote</span>
+                        </label>
+                        <select 
+                          className="select select-bordered w-full"
+                          value={selectedUserToPromote}
+                          onChange={(e) => setSelectedUserToPromote(e.target.value)}
+                          data-testid="select-user-to-promote"
+                        >
+                          <option value="">Choose a user...</option>
+                          {regularUsers.map((user: any) => (
+                            <option key={user.id} value={user.id}>
+                              {user.firstName} {user.lastName} ({user.email})
+                              {user.jobTitle ? ` - ${user.jobTitle}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {selectedUserToPromote && (
+                        <div className="alert alert-info">
+                          <i className="fas fa-info-circle"></i>
+                          <div>
+                            <div className="font-bold">Promote to Administrator</div>
+                            <div className="text-sm">
+                              This user will gain full administrative access including user management, 
+                              course management, and organization settings. This action can be reversed later.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="modal-action">
+                  <button 
+                    className="btn btn-ghost" 
+                    onClick={() => {
+                      setShowAddAdminModal(false);
+                      setSelectedUserToPromote('');
+                    }}
+                    data-testid="button-cancel-add-admin"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => {
+                      if (selectedUserToPromote) {
+                        promoteUserMutation.mutate(selectedUserToPromote);
+                      }
+                    }}
+                    disabled={!selectedUserToPromote || promoteUserMutation.isPending}
+                    data-testid="button-confirm-promote"
+                  >
+                    {promoteUserMutation.isPending ? (
+                      <>
+                        <span className="loading loading-spinner loading-sm mr-2"></span>
+                        Promoting...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-user-shield mr-2"></i>
+                        Promote to Admin
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

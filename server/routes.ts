@@ -52,6 +52,46 @@ async function getOrgById(storage: any, id: string) {
   throw new Error('No getOrgById implementation found in storage');
 }
 
+// RBAC Security Helper - Checks if current user can modify target user
+async function canUserModifyTarget(currentUser: any, targetUser: any): Promise<{ canModify: boolean; error?: string }> {
+  // Superadmin can modify anyone except other superadmins
+  if (currentUser.role === 'superadmin') {
+    // Superadmin cannot modify other superadmins (prevents privilege escalation)
+    if (targetUser.role === 'superadmin' && targetUser.id !== currentUser.id) {
+      return { canModify: false, error: 'Cannot modify other SuperAdmin accounts' };
+    }
+    return { canModify: true };
+  }
+  
+  // Admin can only modify regular users in their organization
+  if (currentUser.role === 'admin') {
+    // Cannot modify users outside their organization
+    if (targetUser.organisationId !== currentUser.organisationId) {
+      return { canModify: false, error: 'Access denied - cannot modify users outside your organization' };
+    }
+    
+    // Cannot modify admin or superadmin users (privilege escalation protection)
+    if (targetUser.role === 'admin' || targetUser.role === 'superadmin') {
+      return { canModify: false, error: 'Access denied - cannot modify administrator accounts' };
+    }
+    
+    // Cannot modify themselves through regular user endpoints (use profile endpoints)
+    if (targetUser.id === currentUser.id) {
+      return { canModify: false, error: 'Cannot modify your own account through user management' };
+    }
+    
+    // Can only modify regular users
+    if (targetUser.role === 'user') {
+      return { canModify: true };
+    }
+    
+    return { canModify: false, error: 'Access denied - invalid target user role' };
+  }
+  
+  // Regular users cannot modify anyone
+  return { canModify: false, error: 'Access denied - insufficient privileges' };
+}
+
 // Effective email settings resolver
 async function getEffectiveEmailSettings(storage: any, orgId: string) {
   try {
@@ -5984,8 +6024,11 @@ This test was initiated by ${user.email}.
         const { role, organisationId, status, search } = req.query;
         users = await storage.getUsersWithFilters({ role, organisationId, status, search });
       } else if (user.role === 'admin' && user.organisationId) {
-        // Admin can only see users from their organisation
-        users = await storage.getUsersByOrganisation(user.organisationId);
+        // Admin can only see regular users (role = 'user') from their organisation, filtering out admin/superadmin accounts
+        users = await storage.getUsersWithFilters({ 
+          organisationId: user.organisationId,
+          role: 'user'
+        });
       } else {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -6013,17 +6056,32 @@ This test was initiated by ${user.email}.
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Admin can only update users in their own organisation
-      if (currentUser.role === 'admin') {
-        const targetUser = await storage.getUser(id);
-        if (!targetUser || targetUser.organisationId !== currentUser.organisationId) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
+      // Get target user and validate modification permissions
+      const targetUser = await storage.getUser(id);
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Use RBAC helper to check modification permissions
+      const permission = await canUserModifyTarget(currentUser, targetUser);
+      if (!permission.canModify) {
+        return res.status(403).json({ message: permission.error });
       }
 
       // Validate status
       if (!['active', 'inactive'].includes(status)) {
         return res.status(400).json({ message: 'Invalid status. Must be active or inactive.' });
+      }
+
+      // Check license capacity if activating user  
+      if (status === 'active' && targetUser.status !== 'active') {
+        const licenseCheck = await checkLicenseCapacity(currentUser.id, 1);
+        if (!licenseCheck.canProceed) {
+          return res.status(403).json({ 
+            message: licenseCheck.error,
+            code: 'LICENSE_LIMIT_EXCEEDED'
+          });
+        }
       }
 
       const updatedUser = await storage.updateUser(id, { status });
@@ -6055,21 +6113,10 @@ This test was initiated by ${user.email}.
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Admin can only delete users in their own organisation
-      if (currentUser.role === 'admin') {
-        if (targetUser.organisationId !== currentUser.organisationId) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
-      }
-
-      // Prevent deleting yourself
-      if (targetUser.id === currentUser.id) {
-        return res.status(400).json({ message: 'Cannot delete your own account' });
-      }
-
-      // Prevent deleting other SuperAdmins unless you're a SuperAdmin
-      if (targetUser.role === 'superadmin' && currentUser.role !== 'superadmin') {
-        return res.status(403).json({ message: 'Cannot delete SuperAdmin accounts' });
+      // Use RBAC helper to check modification permissions (includes self-deletion protection)
+      const permission = await canUserModifyTarget(currentUser, targetUser);
+      if (!permission.canModify) {
+        return res.status(403).json({ message: permission.error });
       }
 
       await storage.deleteUser(id);
@@ -6103,14 +6150,20 @@ This test was initiated by ${user.email}.
         return res.status(400).json({ message: 'Action is required' });
       }
 
-      // Admin can only update users in their own organisation
-      if (currentUser.role === 'admin') {
-        for (const userId of userIds) {
-          const targetUser = await storage.getUser(userId);
-          if (!targetUser || targetUser.organisationId !== currentUser.organisationId) {
-            return res.status(403).json({ message: 'Access denied - cannot modify users outside your organisation' });
-          }
+      // Use RBAC helper to validate all target users before processing any
+      const targetUsers = [];
+      for (const userId of userIds) {
+        const targetUser = await storage.getUser(userId);
+        if (!targetUser) {
+          return res.status(404).json({ message: `User not found: ${userId}` });
         }
+        
+        const permission = await canUserModifyTarget(currentUser, targetUser);
+        if (!permission.canModify) {
+          return res.status(403).json({ message: `${permission.error}: ${targetUser.email}` });
+        }
+        
+        targetUsers.push(targetUser);
       }
 
       // Check license capacity if activating users
@@ -6223,18 +6276,22 @@ This test was initiated by ${user.email}.
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // If admin, can only update users in their organisation
-      if (currentUser.role === 'admin') {
-        if (targetUser.organisationId !== currentUser.organisationId) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
+      // Use RBAC helper to check modification permissions
+      const permission = await canUserModifyTarget(currentUser, targetUser);
+      if (!permission.canModify) {
+        return res.status(403).json({ message: permission.error });
       }
 
-      // Prepare update data
+      // Prepare update data - remove any role changes for security
       const updateData: any = {
         ...req.body,
         updatedAt: new Date(),
       };
+      
+      // Prevent role modification through this endpoint (use dedicated promote/demote endpoints)
+      if ('role' in updateData) {
+        delete updateData.role;
+      }
 
       // Check license capacity if activating a user
       if (updateData.status === 'active' && targetUser.status !== 'active') {
@@ -6308,6 +6365,120 @@ This test was initiated by ${user.email}.
     } catch (error) {
       console.error('Error creating assignment:', error);
       res.status(500).json({ message: 'Failed to create assignment' });
+    }
+  });
+
+  // Get admin users for organization
+  app.get('/api/admin/admin-users/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const currentUserId = req.session.user?.id;
+      const currentUser = await storage.getUser(currentUserId);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const organisationId = req.params.organisationId;
+      
+      // Admin can only view admin users for their own organization
+      if (currentUser.role === 'admin' && currentUser.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get all admin and superadmin users for the organization
+      const adminUsers = await storage.getUsersWithFilters({
+        organisationId,
+        role: ['admin', 'superadmin']
+      });
+
+      res.json(adminUsers);
+    } catch (error) {
+      console.error('Error fetching admin users:', error);
+      res.status(500).json({ message: 'Failed to fetch admin users' });
+    }
+  });
+
+  // Promote user to admin
+  app.post('/api/admin/promote-user/:userId', requireAuth, async (req: any, res) => {
+    try {
+      const currentUserId = req.session.user?.id;
+      const currentUser = await storage.getUser(currentUserId);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { userId } = req.params;
+      const targetUser = await storage.getUser(userId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Admin can only promote users within their organization
+      if (currentUser.role === 'admin') {
+        if (targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Cannot promote superadmins or existing admins
+      if (targetUser.role === 'superadmin' || targetUser.role === 'admin') {
+        return res.status(400).json({ message: 'User is already an administrator' });
+      }
+
+      const updatedUser = await storage.updateUser(userId, { role: 'admin' });
+      res.json({ message: 'User promoted to admin successfully', user: updatedUser });
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      res.status(500).json({ message: 'Failed to promote user to admin' });
+    }
+  });
+
+  // Remove admin privileges (demote to user)
+  app.post('/api/admin/demote-user/:userId', requireAuth, async (req: any, res) => {
+    try {
+      const currentUserId = req.session.user?.id;
+      const currentUser = await storage.getUser(currentUserId);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { userId } = req.params;
+      const targetUser = await storage.getUser(userId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Admin can only demote users within their organization
+      if (currentUser.role === 'admin') {
+        if (targetUser.organisationId !== currentUser.organisationId) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Cannot demote yourself
+      if (targetUser.id === currentUser.id) {
+        return res.status(400).json({ message: 'Cannot remove your own admin privileges' });
+      }
+
+      // Cannot demote superadmins unless you are a superadmin
+      if (targetUser.role === 'superadmin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Cannot demote superadmin users' });
+      }
+
+      // Cannot demote if not an admin
+      if (targetUser.role !== 'admin' && targetUser.role !== 'superadmin') {
+        return res.status(400).json({ message: 'User is not an administrator' });
+      }
+
+      const updatedUser = await storage.updateUser(userId, { role: 'user' });
+      res.json({ message: 'Admin privileges removed successfully', user: updatedUser });
+    } catch (error) {
+      console.error('Error demoting admin user:', error);
+      res.status(500).json({ message: 'Failed to remove admin privileges' });
     }
   });
 

@@ -116,7 +116,7 @@ export function AdminDashboard() {
         <div className="flex gap-2">
           <Link href="/admin/users">
             <button className="btn btn-primary" data-testid="button-add-user">
-              <i className="fas fa-user-plus"></i> Add User
+              <i className="fas fa-user-plus"></i> Add Team Member
             </button>
           </Link>
           <Link href="/admin/courses">

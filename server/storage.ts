@@ -81,7 +81,7 @@ export interface IStorage {
   getUsersByOrganisation(organisationId: string): Promise<User[]>;
   getAllUsers(): Promise<User[]>;
   getUsersWithFilters(filters: {
-    role?: string;
+    role?: string | string[];
     organisationId?: string;
     status?: string;
     search?: string;
@@ -351,7 +351,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUsersWithFilters(filters: {
-    role?: string;
+    role?: string | string[];
     organisationId?: string;
     status?: string;
     search?: string;
@@ -359,7 +359,13 @@ export class DatabaseStorage implements IStorage {
     let query = db.select().from(users);
 
     const conditions = [];
-    if (filters.role) conditions.push(eq(users.role, filters.role as any));
+    if (filters.role) {
+      if (Array.isArray(filters.role)) {
+        conditions.push(or(...filters.role.map(role => eq(users.role, role as any))));
+      } else {
+        conditions.push(eq(users.role, filters.role as any));
+      }
+    }
     if (filters.organisationId) conditions.push(eq(users.organisationId, filters.organisationId));
     if (filters.status) conditions.push(eq(users.status, filters.status as any));
     if (filters.search) {

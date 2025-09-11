@@ -544,7 +544,12 @@ export function AdminUsers() {
 
       {/* Page Header */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Manage Users</h1>
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="text-page-title">Manage Users</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1" data-testid="text-page-description">
+            Manage regular user accounts in your organization
+          </p>
+        </div>
         <div className="flex gap-2">
           <button 
             className="btn btn-outline"

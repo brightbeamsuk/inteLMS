@@ -198,8 +198,8 @@ export function AdminBilling() {
   // Helper function to get billing model display text
   const getBillingModelText = (billingModel: string) => {
     switch (billingModel) {
-      case 'metered_per_active_user': return 'Per Active User';
-      case 'per_seat': return 'Per Seat';
+      case 'metered_per_active_user': return 'Per Licensed User';
+      case 'per_seat': return 'Per Licensed Seat';
       case 'flat_subscription': return 'Flat Rate';
       default: return billingModel;
     }
@@ -510,7 +510,7 @@ export function AdminBilling() {
                       <span className="text-base font-normal">
                         {currentPlan.billingModel === 'flat_subscription' 
                           ? `/${currentPlan.cadence}` 
-                          : `/user/${currentPlan.cadence === 'annual' ? 'year' : 'month'}`
+                          : `/licensed user/${currentPlan.cadence === 'annual' ? 'year' : 'month'}`
                         }
                       </span>
                     </>
@@ -538,7 +538,7 @@ export function AdminBilling() {
                 <div className="text-sm text-base-content/60">
                   <div data-testid="text-organisation-name">{organisation?.displayName}</div>
                   <div data-testid="text-user-count">
-                    {getCurrentUserCount()} {currentPlan?.billingModel === 'metered_per_active_user' ? 'active' : ''} users
+                    {getCurrentUserCount()} {currentPlan?.billingModel === 'metered_per_active_user' ? 'active' : 'licensed'} users
                   </div>
                   {organisation?.stripeSubscriptionId && (
                     <div className="text-xs mt-1" data-testid="text-stripe-status">
@@ -561,8 +561,8 @@ export function AdminBilling() {
               <div>
                 <label className="label">
                   <span className="label-text font-medium">
-                    {currentPlan.billingModel === 'metered_per_active_user' ? 'Active Users' : 
-                     currentPlan.billingModel === 'per_seat' ? 'Licensed Seats' : 
+                    {currentPlan.billingModel === 'metered_per_active_user' ? 'Licensed Regular Users' : 
+                     currentPlan.billingModel === 'per_seat' ? 'Licensed User Seats' : 
                      'Total Users'}
                   </span>
                 </label>
@@ -598,8 +598,8 @@ export function AdminBilling() {
                 <div className="label">
                   <span className="label-text-alt">
                     {currentPlan.billingModel === 'flat_subscription' 
-                      ? 'Unlimited users included'
-                      : `Minimum: ${currentPlan.minSeats || 1} users`
+                      ? 'Unlimited users included (admins managed separately)'
+                      : `Minimum: ${currentPlan.minSeats || 1} licensed users (admin users excluded)`
                     }
                   </span>
                 </div>
@@ -607,29 +607,27 @@ export function AdminBilling() {
               
               <div>
                 <label className="label">
-                  <span className="label-text font-medium">License Overview</span>
+                  <span className="label-text font-medium">Licensed User Overview</span>
                 </label>
                 <div className="stats stats-vertical lg:stats-horizontal">
                   <div className="stat">
                     <div className="stat-title">Purchased</div>
                     <div className="stat-value text-sm">{licenseData?.maxActiveUsers || 0}</div>
-                    <div className="stat-desc">licenses</div>
+                    <div className="stat-desc">user licenses</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Allocated</div>
                     <div className="stat-value text-sm">{licenseData?.currentActiveUsers || 0}</div>
-                    <div className="stat-desc">non-admin users</div>
+                    <div className="stat-desc">regular users</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Available</div>
                     <div className="stat-value text-sm">{licenseData?.availableLicenses || 0}</div>
                     <div className="stat-desc">remaining</div>
                   </div>
-                  <div className="stat">
-                    <div className="stat-title">Admins</div>
-                    <div className="stat-value text-sm">{licenseData?.adminUsers || 0}</div>
-                    <div className="stat-desc">not counted</div>
-                  </div>
+                </div>
+                <div className="mt-2 text-xs text-base-content/60">
+                  Note: Admin users are managed separately and don't require licenses
                 </div>
               </div>
             </div>
@@ -656,7 +654,7 @@ export function AdminBilling() {
               <div className="stat-figure text-primary">
                 <i className="fas fa-users text-2xl"></i>
               </div>
-              <div className="stat-title">Active Users</div>
+              <div className="stat-title">Licensed Active Users</div>
               <div className="stat-value text-primary" data-testid="stat-users-count">
                 {organisationStats?.activeUsers || 0}
               </div>
@@ -666,7 +664,7 @@ export function AdminBilling() {
               {currentPlan?.billingModel === 'metered_per_active_user' && (
                 <div className="mt-2">
                   <div className="text-xs text-base-content/60">
-                    Billing basis: Active users only
+                    Billing basis: Licensed users only (admins excluded)
                   </div>
                 </div>
               )}
