@@ -1075,30 +1075,6 @@ The {{organisationDisplayName}} Team`
                         </div>
                       </div>
 
-                      <div className="flex gap-4 items-center justify-center p-4 bg-base-100 rounded border">
-                        <div className="text-center">
-                          <button 
-                            className="btn btn-sm" 
-                            style={{ backgroundColor: brandingData.primaryColor, borderColor: brandingData.primaryColor, color: 'white' }}
-                          >
-                            Primary Button
-                          </button>
-                          <div className="text-xs text-base-content/60 mt-1">Normal</div>
-                        </div>
-                        <div className="text-center">
-                          <button 
-                            className="btn btn-sm" 
-                            style={{ 
-                              backgroundColor: `color-mix(in srgb, ${brandingData.primaryColor} 85%, black)`, 
-                              borderColor: `color-mix(in srgb, ${brandingData.primaryColor} 85%, black)`, 
-                              color: 'white' 
-                            }}
-                          >
-                            Primary Button
-                          </button>
-                          <div className="text-xs text-base-content/60 mt-1">Hover</div>
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
