@@ -5618,20 +5618,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (connectionOnly) {
-        // Test connection only via Single Mailer Service
-        const connectionResult = await singleMailerService.healthCheck(undefined);
-        res.json({
-          success: connectionResult.success,
-          details: connectionResult
-        });
-      } else {
-        // Send test email via Single Mailer Service (SMTP-only)
-        const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
-          userAgent: req.get('User-Agent'),
-          ipAddress: req.ip
-        });
+        // Test connection using appropriate service based on provider
+        const settings = await storage.getSystemEmailSettings();
+        const provider = settings?.emailProvider || 'sendgrid_api';
         
-        res.json(result);
+        if (provider === 'smtp_generic') {
+          const connectionResult = await singleMailerService.healthCheck(undefined);
+          res.json({
+            success: connectionResult.success,
+            details: connectionResult
+          });
+        } else {
+          // API-based provider - use mailerService
+          const connectionResult = await mailerService.healthCheck(undefined);
+          res.json({
+            success: connectionResult.success,
+            details: connectionResult
+          });
+        }
+      } else {
+        // Send test email using appropriate service based on provider
+        const settings = await storage.getSystemEmailSettings();
+        const provider = settings?.emailProvider || 'sendgrid_api';
+        
+        if (provider === 'smtp_generic') {
+          const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
+            userAgent: req.get('User-Agent'),
+            ipAddress: req.ip
+          });
+          res.json(result);
+        } else {
+          // API-based provider - use mailerService for proper API handling
+          const result = await mailerService.send({
+            orgId: undefined,
+            to: testEmail,
+            subject: `✅ API Test Email - ${new Date().toLocaleString()}`,
+            html: `
+              <h2>✅ API Email Configuration Test</h2>
+              <p>This test email was sent via <strong>${provider.replace('_', ' ').toUpperCase()}</strong> to verify your API configuration.</p>
+              <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #0066cc; margin: 15px 0;">
+                <strong>✅ API Integration Active</strong><br>
+                Provider: ${provider.replace('_', ' ').toUpperCase()}<br>
+                Test Timestamp: ${new Date().toISOString()}
+              </div>
+              <p>If you received this email, your API configuration is working correctly.</p>
+            `,
+            templateType: 'system_test'
+          });
+          
+          res.json({
+            success: result.success,
+            timestamp: new Date().toISOString(),
+            provider: provider,
+            message: result.success 
+              ? `Test email sent successfully via ${provider.replace('_', ' ').toUpperCase()}` 
+              : result.error?.short || 'Failed to send test email',
+            details: result
+          });
+        }
       }
     } catch (error) {
       console.error('Error testing system SMTP:', error);
