@@ -1981,16 +1981,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { getStripeService } = await import('./services/StripeService.js');
         const stripeService = getStripeService();
         
-        try {
-          const subscription = await stripeService['stripe'].subscriptions.retrieve(subscriptionId, {
-            expand: ['items']
+        const subscription = await stripeService['stripe'].subscriptions
+          .retrieve(subscriptionId, { expand: ['items'] })
+          .catch(err => {
+            console.error('Error fetching subscription details:', err);
+            return null;
           });
-          
-          if (subscription.items.data.length > 0) {
-            updateData.stripeSubscriptionItemId = subscription.items.data[0].id;
-          }
-        } catch (error) {
-          console.error('Error fetching subscription details:', error);
+        
+        if (subscription?.items?.data && subscription.items.data.length > 0) {
+          updateData.stripeSubscriptionItemId = subscription.items.data[0].id;
         }
       }
 
@@ -4751,9 +4750,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return cleaned || undefined;
       };
 
-      const processedApiKey = cleanSensitiveField(apiKey, existingSettings?.apiKey);
-      const processedApiSecret = cleanSensitiveField(apiSecret, existingSettings?.apiSecret);
-      const processedSmtpPassword = cleanSensitiveField(smtpPassword, existingSettings?.smtpPassword);
+      const processedApiKey = cleanSensitiveField(apiKey, existingSettings?.apiKey ?? undefined);
+      const processedApiSecret = cleanSensitiveField(apiSecret, existingSettings?.apiSecret ?? undefined);
+      const processedSmtpPassword = cleanSensitiveField(smtpPassword, existingSettings?.smtpPassword ?? undefined);
 
       // Provider-aware validation
       const missingFields = [];
