@@ -806,6 +806,22 @@ export const supportTicketResponsesRelations = relations(supportTicketResponses,
   }),
 }));
 
+// Webhook events table for persistent deduplication
+export const webhookEvents = pgTable("webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stripeEventId: varchar("stripe_event_id").notNull().unique(), // Stripe event ID for deduplication
+  eventType: varchar("event_type").notNull(), // e.g., 'customer.subscription.created'
+  processedAt: timestamp("processed_at").defaultNow(),
+  success: boolean("success").notNull(),
+  errorMessage: text("error_message"), // Store error if processing failed
+  correlationId: varchar("correlation_id"), // For debugging and tracing
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_webhook_events_stripe_event_id").on(table.stripeEventId),
+  index("idx_webhook_events_processed_at").on(table.processedAt),
+  index("idx_webhook_events_event_type").on(table.eventType),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -932,6 +948,12 @@ export const insertOrganisationCourseFolderSchema = createInsertSchema(organisat
   createdAt: true,
 });
 
+export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
+  id: true,
+  processedAt: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1003,3 +1025,7 @@ export type SupportTicket = typeof supportTickets.$inferSelect;
 
 export type InsertSupportTicketResponse = z.infer<typeof insertSupportTicketResponseSchema>;
 export type SupportTicketResponse = typeof supportTicketResponses.$inferSelect;
+
+// Webhook event types
+export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;

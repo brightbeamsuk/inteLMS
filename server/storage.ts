@@ -21,6 +21,7 @@ import {
   emailLogs,
   supportTickets,
   supportTicketResponses,
+  webhookEvents,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -66,6 +67,8 @@ import {
   type InsertSupportTicket,
   type SupportTicketResponse,
   type InsertSupportTicketResponse,
+  type WebhookEvent,
+  type InsertWebhookEvent,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike } from "drizzle-orm";
@@ -297,6 +300,11 @@ export interface IStorage {
   hasFeature(organisationId: string, featureKey: string): Promise<boolean>;
   countAdminsByOrg(organisationId: string): Promise<number>;
   enforceAdminLimit(organisationId: string): Promise<{ allowed: boolean; error?: { code: string; featureKey: string; maxAllowed: number } }>;
+
+  // Webhook event operations for persistent deduplication
+  isWebhookEventProcessed(stripeEventId: string): Promise<boolean>;
+  recordWebhookEvent(event: InsertWebhookEvent): Promise<WebhookEvent>;
+  cleanupOldWebhookEvents(olderThanDays: number): Promise<number>; // Returns number of deleted events
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1585,6 +1593,36 @@ export class DatabaseStorage implements IStorage {
         }
       };
     }
+  }
+
+  // Webhook event operations for persistent deduplication
+  async isWebhookEventProcessed(stripeEventId: string): Promise<boolean> {
+    const [event] = await db
+      .select()
+      .from(webhookEvents)
+      .where(eq(webhookEvents.stripeEventId, stripeEventId))
+      .limit(1);
+    return !!event;
+  }
+
+  async recordWebhookEvent(eventData: InsertWebhookEvent): Promise<WebhookEvent> {
+    const [event] = await db
+      .insert(webhookEvents)
+      .values(eventData)
+      .returning();
+    return event;
+  }
+
+  async cleanupOldWebhookEvents(olderThanDays: number): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    
+    const result = await db
+      .delete(webhookEvents)
+      .where(sql`${webhookEvents.processedAt} < ${cutoffDate}`)
+      .returning({ id: webhookEvents.id });
+    
+    return result.length;
   }
 }
 

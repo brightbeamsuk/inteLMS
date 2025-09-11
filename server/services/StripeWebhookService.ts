@@ -1,29 +1,35 @@
 import Stripe from 'stripe';
 import { storage } from '../storage';
-import type { Organisation, Plan } from '../../shared/schema';
+import type { Organisation, Plan, InsertWebhookEvent } from '../../shared/schema';
 import { nanoid } from 'nanoid';
 
 export class StripeWebhookService {
   private stripe: Stripe;
   private webhookSecret: string;
   
-  // Idempotency tracking to prevent duplicate processing
-  private processedEventIds = new Set<string>();
+  // Note: Persistent idempotency tracking is now handled via database storage
+  // No longer using in-memory Set to prevent loss on server restart
   
   constructor() {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
     this.webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+    const isProduction = process.env.NODE_ENV === 'production';
     
     if (!stripeSecretKey) {
       throw new Error('STRIPE_SECRET_KEY environment variable is required');
     }
     
+    // Enforce webhook secret requirement in production for security
     if (!this.webhookSecret) {
-      console.warn('STRIPE_WEBHOOK_SECRET not set - webhook signature verification disabled');
+      if (isProduction) {
+        throw new Error('STRIPE_WEBHOOK_SECRET environment variable is required in production for webhook signature verification');
+      } else {
+        console.warn('⚠️  STRIPE_WEBHOOK_SECRET not set - webhook signature verification disabled (development mode only)');
+      }
     }
     
     this.stripe = new Stripe(stripeSecretKey, {
-      apiVersion: '2025-08-27.basil',
+      apiVersion: '2024-06-20',
     });
   }
 
@@ -31,22 +37,31 @@ export class StripeWebhookService {
    * Verify webhook signature and construct Stripe event
    */
   constructEvent(body: Buffer, signature: string): Stripe.Event {
+    const isProduction = process.env.NODE_ENV === 'production';
+    
     if (!this.webhookSecret) {
-      // In development, we might not have webhook secret set
-      console.warn('Webhook signature verification skipped - no webhook secret configured');
-      return JSON.parse(body.toString());
+      if (isProduction) {
+        throw new Error('Webhook signature verification failed: STRIPE_WEBHOOK_SECRET not configured in production');
+      } else {
+        console.warn('⚠️  Webhook signature verification skipped - no webhook secret configured (development mode only)');
+        return JSON.parse(body.toString());
+      }
+    }
+
+    if (!signature) {
+      throw new Error('Webhook signature verification failed: Missing stripe-signature header');
     }
 
     try {
       return this.stripe.webhooks.constructEvent(body, signature, this.webhookSecret);
     } catch (error) {
-      console.error('Webhook signature verification failed:', error);
+      console.error('❌ Webhook signature verification failed:', error);
       throw new Error(`Webhook signature verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
-   * Process Stripe webhook event with idempotency protection
+   * Process Stripe webhook event with persistent idempotency protection
    */
   async processWebhookEvent(event: Stripe.Event): Promise<{ success: boolean; message: string }> {
     const correlationId = `webhook-${event.id}-${nanoid(8)}`;
@@ -56,9 +71,10 @@ export class StripeWebhookService {
       created: new Date(event.created * 1000).toISOString()
     });
 
-    // Idempotency check
-    if (this.processedEventIds.has(event.id)) {
-      console.log(`⚠️  Event ${event.id} already processed, skipping`);
+    // Persistent idempotency check using database storage
+    const isAlreadyProcessed = await storage.isWebhookEventProcessed(event.id);
+    if (isAlreadyProcessed) {
+      console.log(`⚠️  Event ${event.id} already processed (found in database), skipping`);
       return { success: true, message: 'Event already processed' };
     }
 
@@ -86,15 +102,21 @@ export class StripeWebhookService {
           return { success: true, message: `Event type ${event.type} not processed` };
       }
 
-      // Mark as processed if successful
-      if (result.success) {
-        this.processedEventIds.add(event.id);
-        
-        // Clean up old processed events (keep last 1000)
-        if (this.processedEventIds.size > 1000) {
-          const eventsArray = Array.from(this.processedEventIds);
-          this.processedEventIds.clear();
-          eventsArray.slice(-500).forEach(id => this.processedEventIds.add(id));
+      // Record webhook event in database with result
+      await storage.recordWebhookEvent({
+        stripeEventId: event.id,
+        eventType: event.type,
+        success: result.success,
+        errorMessage: result.success ? null : result.message,
+        correlationId
+      });
+      
+      // Periodic cleanup of old webhook events (older than 30 days)
+      // Run cleanup on 1% of requests to avoid overhead
+      if (Math.random() < 0.01) {
+        const deletedCount = await storage.cleanupOldWebhookEvents(30);
+        if (deletedCount > 0) {
+          console.log(`🧹 Cleaned up ${deletedCount} old webhook events`);
         }
       }
 
@@ -103,6 +125,20 @@ export class StripeWebhookService {
 
     } catch (error) {
       console.error(`❌ Webhook processing failed [${correlationId}]:`, error);
+      
+      // Record failed webhook event in database for debugging
+      try {
+        await storage.recordWebhookEvent({
+          stripeEventId: event.id,
+          eventType: event.type,
+          success: false,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          correlationId
+        });
+      } catch (recordError) {
+        console.error(`Failed to record failed webhook event:`, recordError);
+      }
+      
       return {
         success: false,
         message: `Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
