@@ -5649,6 +5649,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.json(result);
         } else {
           // API-based provider - use mailerService for proper API handling
+          console.log('🔧 TEST EMAIL DEBUG:', {
+            provider: provider,
+            settingsFromDb: settings ? {
+              emailProvider: settings.emailProvider,
+              apiKeyLength: settings.apiKey?.length || 0,
+              fromEmail: settings.fromEmail
+            } : 'no settings'
+          });
+          
           const result = await mailerService.send({
             orgId: undefined,
             to: testEmail,
