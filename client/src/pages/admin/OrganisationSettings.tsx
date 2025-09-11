@@ -59,7 +59,7 @@ export function AdminOrganisationSettings() {
   });
 
   // Fetch admin users
-  const { data: adminUsers = [], isLoading: adminUsersLoading, refetch: refetchAdminUsers } = useQuery({
+  const { data: adminUsers = [], isLoading: adminUsersLoading, refetch: refetchAdminUsers } = useQuery<any[]>({
     queryKey: ['/api/admin/admin-users', user?.organisationId],
     enabled: !!user?.organisationId && (user?.role === 'admin' || user?.role === 'superadmin'),
   });
@@ -70,6 +70,15 @@ export function AdminOrganisationSettings() {
     enabled: !!user?.organisationId && (user?.role === 'admin' || user?.role === 'superadmin'),
     select: (data: any[]) => data.filter(u => u.role === 'user' && u.organisationId === user?.organisationId),
   });
+
+  // Calculate admin limits based on plan features
+  const hasUnlimitedAdmins = planFeatures.some((feature: any) => 
+    feature.feature?.key === 'unlimited_admin_accounts' && feature.enabled
+  );
+  
+  const currentAdminCount = Array.isArray(adminUsers) ? adminUsers.length : 0;
+  const maxAdmins = hasUnlimitedAdmins ? Infinity : 1;
+  const canAddMoreAdmins = hasUnlimitedAdmins || currentAdminCount < maxAdmins;
 
   const [brandingData, setBrandingData] = useState({
     logoUrl: "",
@@ -273,7 +282,8 @@ The {{organisationDisplayName}} Team`
         'Custom': { smtpHost: '', smtpPort: '587', smtpSecure: true }
       },
       instructions: 'Configure any SMTP server. Use app-specific passwords for Gmail/Outlook.',
-      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword']
+      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword'],
+      website: undefined
     },
     sendgrid_api: {
       name: 'SendGrid API',
@@ -346,8 +356,8 @@ The {{organisationDisplayName}} Team`
 
   const handleSMTPPresetChange = (preset: string) => {
     const config = emailProviders.smtp_generic;
-    if (config && config.presets[preset]) {
-      const presetConfig = config.presets[preset];
+    if (config && config.presets && preset in config.presets) {
+      const presetConfig = config.presets[preset as keyof typeof config.presets];
       setEmailSettings(prev => ({
         ...prev,
         smtpHost: presetConfig.smtpHost,
@@ -1307,7 +1317,7 @@ The {{organisationDisplayName}} Team`
                       <span>
                         {' '}
                         <a 
-                          href={emailProviders[emailSettings.provider].website} 
+                          href={emailProviders[emailSettings.provider].website!} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="link text-info"
@@ -1531,7 +1541,7 @@ The {{organisationDisplayName}} Team`
                     </div>
                   )}
 
-                  {emailSettings.provider === 'ses_api' && (
+                  {emailSettings.provider === 'sparkpost_api' && (
                     <div className="form-control">
                       <label className="label">
                         <span className="label-text font-semibold">AWS Region *</span>
@@ -1748,15 +1758,46 @@ The {{organisationDisplayName}} Team`
           {(user?.role === 'admin' || user?.role === 'superadmin') && activeTab === tabs.indexOf("Admin Management") && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Administrator Management</h3>
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => setShowAddAdminModal(true)}
-                  data-testid="button-add-admin"
-                >
-                  <i className="fas fa-user-plus mr-2"></i>
-                  Add Administrator
-                </button>
+                <div>
+                  <h3 className="text-lg font-semibold">Administrator Management</h3>
+                  <div className="flex items-center gap-3 mt-2">
+                    <div className="text-sm text-base-content/70" data-testid="text-admin-count">
+                      Admin Accounts: <span className="font-semibold">{currentAdminCount}</span> / {hasUnlimitedAdmins ? '∞' : maxAdmins}
+                    </div>
+                    {hasUnlimitedAdmins ? (
+                      <div className="badge badge-success badge-sm" data-testid="badge-unlimited-admins">
+                        <i className="fas fa-infinity mr-1"></i>
+                        Unlimited Admin Accounts
+                      </div>
+                    ) : (
+                      <div className="badge badge-warning badge-sm" data-testid="badge-limited-admins">
+                        <i className="fas fa-lock mr-1"></i>
+                        Limited Admin Accounts
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {canAddMoreAdmins ? (
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => setShowAddAdminModal(true)}
+                    data-testid="button-add-admin"
+                  >
+                    <i className="fas fa-user-plus mr-2"></i>
+                    Add Administrator
+                  </button>
+                ) : (
+                  <div className="tooltip tooltip-left" data-tip="Upgrade your plan to add more administrators">
+                    <button 
+                      className="btn btn-outline btn-disabled"
+                      disabled
+                      data-testid="button-add-admin-locked"
+                    >
+                      <i className="fas fa-lock mr-2"></i>
+                      Add Administrator (Premium)
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="alert alert-info">
@@ -1766,6 +1807,13 @@ The {{organisationDisplayName}} Team`
                   <div className="text-sm">
                     Administrators can manage users, courses, and organization settings. 
                     They have full access to the admin panel for this organization.
+                    {!hasUnlimitedAdmins && (
+                      <div className="mt-2 p-2 bg-warning/10 rounded border border-warning/20">
+                        <i className="fas fa-exclamation-triangle text-warning mr-1"></i>
+                        <span className="text-warning font-medium">Your plan allows up to {maxAdmins} administrator account{maxAdmins === 1 ? '' : 's'}. </span>
+                        <span className="text-sm">Upgrade to add unlimited administrators.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
