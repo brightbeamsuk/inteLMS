@@ -340,12 +340,14 @@ export class StripeService {
           initiator: 'lms',
           update_type: 'subscription_update',
         },
-        customer_email: organisation.contactEmail || undefined,
       };
 
       // If the organisation already has a Stripe customer, use it
       if (organisation.stripeCustomerId) {
         sessionData.customer = organisation.stripeCustomerId;
+      } else {
+        // Only set customer_email if there's no existing customer
+        sessionData.customer_email = organisation.contactEmail || undefined;
       }
 
       // If updating an existing subscription, reference it
