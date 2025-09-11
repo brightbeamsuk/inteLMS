@@ -9,9 +9,10 @@ import MemoryStore from "memorystore";
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
-import { singleMailerService } from "./services/singleMailerService";
-import { mailerService } from "./services/MailerService";
-import { BrevoClient, resolveBrevoKey } from "./services/brevoClient";
+import { MailerService } from "./services/MailerService";
+
+// Initialize the central mailer service with intelligent routing
+const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
@@ -4870,120 +4871,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // BREVO API HEALTH CHECK AND SEND USING ENHANCED CLIENT WITH KEY RESOLUTION
-      if (settings.provider === 'brevo_api') {
-        console.log('Using enhanced BrevoClient with key resolution...');
+      // UNIFIED EMAIL SYSTEM - HEALTH CHECK AND SEND VIA INTELLIGENT ROUTING
+      if (settings.provider === 'brevo_api' || settings.provider === 'smtp' || true) {
+        console.log(`🔄 Using MailerService intelligent routing for provider: ${settings.provider}`);
         
-        // Use key resolution with org/platform fallback
-        let brevoClient;
-        try {
-          // Get platform settings for fallback
-          const platformSettings = await storage.getSystemEmailSettings();
-          
-          // Resolve best available key 
-          brevoClient = BrevoClient.createWithKeyResolution(
-            { brevo: settings.brevo }, 
-            platformSettings, 
-            organisationId
-          );
-        } catch (keyError) {
-          console.error('Brevo key resolution failed:', keyError);
-          return res.status(422).json({
-            success: false,
-            provider: 'brevo_api',
-            httpStatus: 422,
-            message: `API key appears empty/invalid`,
-            details: {
-              endpoint: '/v3/account',
-              from: settings.fromEmail,
-              to: testEmail,
-              apiKeySource: 'none',
-              apiKeyLength: 0,
-              helpText: 'Configure a valid Brevo API key in your organisation settings or platform settings.'
-            }
-          });
-        }
-        // Health check first
-        const healthCheck = await brevoClient.checkAccount();
+        // STEP 1: Health check via MailerService (uses same intelligent routing)
+        const healthCheck = await mailerService.healthCheck(organisationId);
         
         if (!healthCheck.success) {
           return res.json({
             success: false,
-            provider: healthCheck.provider || 'brevo_api',
+            provider: healthCheck.provider,
             httpStatus: healthCheck.httpStatus,
-            message: healthCheck.message,
+            message: healthCheck.error?.short || 'Email health check failed',
             details: {
               endpoint: healthCheck.endpoint,
-              endpointHost: healthCheck.endpointHost,
-              from: settings.fromEmail,
+              from: healthCheck.details?.from || settings.fromEmail,
               to: testEmail,
-              apiKeySource: healthCheck.apiKeySource,
-              apiKeyPreview: healthCheck.apiKeyPreview,
-              apiKeyLength: healthCheck.apiKeyLength,
+              keyPreview: healthCheck.details?.keyPreview,
+              keyLength: healthCheck.details?.keyLength,
+              effectiveFieldSources: healthCheck.details?.effectiveFieldSources,
               helpText: healthCheck.httpStatus === 401 || healthCheck.httpStatus === 403 ? 
-                'Recreate the API key in Brevo (Transactional → SMTP & API → Create a v3 key) and paste it here.' : undefined
+                'Check your API key configuration in organization or platform settings.' : 
+                healthCheck.error?.raw,
+              error: healthCheck.error
             }
           });
         }
 
-        // SEND EMAIL VIA BREVO CLIENT WITH ENHANCED LOGGING
-        const sendResult = await brevoClient.sendEmailWithLogging({
-          fromName: settings.fromName || 'inteLMS System',
-          fromEmail: settings.fromEmail,
-          toEmail: testEmail,
-          subject: 'inteLMS API Test',
-          textContent: 'This is a test from inteLMS (brevo_api).'
+        // STEP 2: Send test email via MailerService intelligent routing
+        const sendResult = await mailerService.send({
+          orgId: organisationId,
+          to: testEmail,
+          subject: `inteLMS Email Test - ${healthCheck.provider.toUpperCase()} via Intelligent Routing`,
+          html: `
+            <h2>✅ Email Test Successful - Intelligent Routing</h2>
+            <p>This test email was sent using the intelligent routing system with org→system fallback.</p>
+            <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #0066cc; margin: 15px 0;">
+              <strong>✅ Intelligent Email Routing Active</strong><br>
+              Organization: ${organisationId || 'System Level'}<br>
+              Provider: ${healthCheck.provider.replace('_', ' ').toUpperCase()}<br>
+              Test Timestamp: ${new Date().toISOString()}
+            </div>
+            <p>Your email configuration is working correctly!</p>
+            <hr>
+            <div style="font-size: 12px; color: #666;">
+              This test uses intelligent routing that automatically tries organization settings first,
+              then falls back to system settings if needed. All providers supported: SMTP, Brevo, SendGrid, Mailgun, etc.
+            </div>
+          `,
+          templateType: 'intelligent_test'
         });
 
-        // Return enhanced structured response format with full diagnostics
+        // Return consistent EmailResult format from MailerService
         return res.json({
           success: sendResult.success,
-          provider: sendResult.provider || 'brevo_api',
+          provider: sendResult.provider,
+          endpoint: sendResult.endpoint,
           httpStatus: sendResult.httpStatus,
-          message: sendResult.message,
+          smtpStatus: sendResult.smtpStatus,
+          message: sendResult.success ? 
+            `Test email sent successfully via ${sendResult.provider} intelligent routing` : 
+            sendResult.error?.short,
           details: {
-            endpoint: sendResult.endpoint,
-            endpointHost: sendResult.endpointHost,
-            from: settings.fromEmail,
-            to: testEmail,
-            messageId: sendResult.messageId || null,
-            latencyMs: (sendResult as any).latencyMs,
-            apiKeySource: sendResult.apiKeySource,
-            apiKeyPreview: sendResult.apiKeyPreview,
-            apiKeyLength: sendResult.apiKeyLength,
+            ...sendResult.details,
+            routingUsed: 'intelligent_org_system_fallback',
             helpText: sendResult.success ? 
-              'Check Spam/Quarantine if you don\'t see the email. Also confirm the recipient server isn\'t blocking transactional mail.' :
-              (sendResult.httpStatus === 400 && sendResult.message.toLowerCase().includes('sender')) ? 
-                'Verify your sender/domain in Brevo → Senders & Domains.' : undefined,
-            brevoError: sendResult.success ? undefined : sendResult.data?.message
-          }
-        });
-
-      } else if (settings.provider === 'smtp') {
-        // SMTP implementation placeholder
-        return res.json({
-          success: false,
-          provider: 'smtp',
-          httpStatus: 501,
-          message: 'SMTP testing not implemented in this version. Please use Brevo API.',
-          details: {
-            endpoint: 'smtp',
-            from: settings.fromEmail,
-            to: testEmail,
-            helpText: 'Configure Brevo API for email testing functionality.'
-          }
-        });
-      } else {
-        return res.json({
-          success: false,
-          provider: 'unknown',
-          httpStatus: 400,
-          message: 'Invalid email provider configuration',
-          details: {
-            endpoint: 'N/A',
-            from: settings.fromEmail,
-            to: testEmail
-          }
+              'Check Spam/Quarantine if email doesn\'t arrive. Intelligent routing ensures optimal delivery.' :
+              'Intelligent routing tried both organization and system settings. Check your email configuration.'
+          },
+          error: sendResult.error
         });
       }
 
@@ -5353,7 +5310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For admins, restrict to their own organization
       const targetOrgId = user.role === 'admin' ? user.organisationId : organisationId;
       
-      const healthResult = await singleMailerService.healthCheck(targetOrgId);
+      const healthResult = await mailerService.healthCheck(targetOrgId);
       
       res.json(healthResult);
     } catch (error: any) {
@@ -5392,31 +5349,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For admins, restrict to their own organization
       const targetOrgId = user.role === 'admin' ? user.organisationId : organisationId;
       
-      const testResult = await singleMailerService.sendTestEmail(testEmail, targetOrgId, {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip,
-        userId: user.id
+      const testResult = await mailerService.send({
+        orgId: targetOrgId,
+        to: testEmail,
+        subject: `SMTP Test Email - ${new Date().toLocaleString()}`,
+        html: `
+          <h2>SMTP Configuration Test - Intelligent Routing</h2>
+          <p>This is a test email sent from the LMS platform to verify email configuration.</p>
+          <div style="background-color: #f0f8ff; padding: 10px; border-left: 4px solid #0066cc; margin: 10px 0;">
+            <strong>✅ Intelligent Email Routing Active</strong><br>
+            This email was sent using the new org→system fallback routing.
+          </div>
+          <hr>
+          <p><strong>Test Details:</strong></p>
+          <ul>
+            <li>Timestamp: ${new Date().toISOString()}</li>
+            <li>Organisation ID: ${targetOrgId || 'System Level'}</li>
+            <li>Test Type: Admin Email Test</li>
+            <li>Routing: Intelligent Fallback Enabled</li>
+            <li>Sent by: ${user.email}</li>
+          </ul>
+          <p>If you received this email, your email configuration is working correctly.</p>
+          <hr>
+          <div style="font-size: 12px; color: #666;">
+            This test uses the new intelligent routing system that tries organization settings first,
+            then falls back to system settings automatically.
+          </div>
+        `,
+        templateType: 'admin_test'
       });
       
       // Return detailed metadata for admin UI
       res.json({
-        ...testResult,
+        success: testResult.success,
+        provider: testResult.provider,
+        endpoint: testResult.endpoint,
+        httpStatus: testResult.httpStatus,
+        timestamp: testResult.details.timestamp,
+        error: testResult.error,
         testDetails: {
           sentBy: user.email,
-          sentAt: testResult.timestamp,
+          sentAt: testResult.details.timestamp,
           userAgent: req.get('User-Agent'),
           clientIp: req.ip,
-          organisationLevel: targetOrgId ? 'organisation' : 'system'
+          organisationLevel: targetOrgId ? 'organisation' : 'system',
+          messageId: testResult.details.messageId,
+          effectiveFieldSources: testResult.details.effectiveFieldSources,
+          routingUsed: testResult.success ? 'intelligent_routing' : 'failed'
         }
       });
     } catch (error: any) {
-      console.error('Error in admin SMTP test:', error);
+      console.error('Error in admin email test:', error);
       res.status(500).json({
         success: false,
         timestamp: new Date().toISOString(),
-        error: (error as any)?.message || 'SMTP test failed',
-        tlsEnabled: false,
-        source: 'none'
+        error: (error as any)?.message || 'Email test failed',
+        provider: 'unknown',
+        testDetails: {
+          sentBy: 'error',
+          sentAt: new Date().toISOString(),
+          userAgent: req.get('User-Agent'),
+          clientIp: req.ip,
+          routingUsed: 'failed'
+        }
       });
     }
   });
@@ -5452,12 +5447,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         if (provider === 'smtp_generic') {
-          // Use existing SMTP health check
-          const smtpHealth = await singleMailerService.healthCheck(undefined);
+          // Use MailerService health check with intelligent routing
+          const emailHealth = await mailerService.healthCheck(undefined);
           healthResult = {
             ...healthResult,
-            success: smtpHealth.success,
-            details: smtpHealth
+            success: emailHealth.success,
+            details: emailHealth
           };
         } else {
           // API-based providers - test basic connectivity
@@ -5600,60 +5595,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const settings = await storage.getSystemEmailSettings();
         const provider = settings?.emailProvider || 'sendgrid_api';
         
-        if (provider === 'smtp_generic') {
-          const connectionResult = await singleMailerService.healthCheck(undefined);
-          res.json({
-            success: connectionResult.success,
-            details: connectionResult
-          });
-        } else {
-          // API-based provider - use mailerService
-          const connectionResult = await mailerService.healthCheck(undefined);
-          res.json({
-            success: connectionResult.success,
-            details: connectionResult
-          });
-        }
+        // Use MailerService for all providers with intelligent routing
+        const connectionResult = await mailerService.healthCheck(undefined);
+        res.json({
+          success: connectionResult.success,
+          details: connectionResult
+        });
       } else {
         // Send test email using appropriate service based on provider
         const settings = await storage.getSystemEmailSettings();
         const provider = settings?.emailProvider || 'sendgrid_api';
         
-        if (provider === 'smtp_generic') {
-          const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
-            userAgent: req.get('User-Agent'),
-            ipAddress: req.ip
-          });
-          res.json(result);
-        } else {
-          // API-based provider - use mailerService for proper API handling
-          const result = await mailerService.send({
-            orgId: undefined,
-            to: testEmail,
-            subject: `✅ API Test Email - ${new Date().toLocaleString()}`,
-            html: `
-              <h2>✅ API Email Configuration Test</h2>
-              <p>This test email was sent via <strong>${provider.replace('_', ' ').toUpperCase()}</strong> to verify your API configuration.</p>
-              <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #0066cc; margin: 15px 0;">
-                <strong>✅ API Integration Active</strong><br>
-                Provider: ${provider.replace('_', ' ').toUpperCase()}<br>
-                Test Timestamp: ${new Date().toISOString()}
-              </div>
-              <p>If you received this email, your API configuration is working correctly.</p>
-            `,
-            templateType: 'system_test'
-          });
-          
-          res.json({
-            success: result.success,
-            timestamp: new Date().toISOString(),
-            provider: provider,
-            message: result.success 
-              ? `Test email sent successfully via ${provider.replace('_', ' ').toUpperCase()}` 
-              : result.error?.short || 'Failed to send test email',
-            details: result
-          });
-        }
+        // Use MailerService for all providers with intelligent routing
+        const result = await mailerService.send({
+          orgId: undefined,
+          to: testEmail,
+          subject: `✅ Email Configuration Test - ${new Date().toLocaleString()}`,
+          html: `
+            <h2>✅ Email Configuration Test - Intelligent Routing</h2>
+            <p>This test email was sent to verify your email configuration using the intelligent routing system.</p>
+            <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #0066cc; margin: 15px 0;">
+              <strong>✅ Intelligent Email Routing Active</strong><br>
+              Provider: ${provider.replace('_', ' ').toUpperCase()}<br>
+              Test Timestamp: ${new Date().toISOString()}<br>
+              Routing: System Level with Auto-Fallback
+            </div>
+            <p>If you received this email, your email configuration is working correctly.</p>
+            <hr>
+            <div style="font-size: 12px; color: #666;">
+              This test uses the new intelligent routing system that automatically selects
+              the best available email configuration.
+            </div>
+          `,
+          templateType: 'system_test'
+        });
+        
+        res.json({
+          success: result.success,
+          timestamp: new Date().toISOString(),
+          provider: result.provider,
+          message: result.success 
+            ? `Test email sent successfully via ${result.provider.replace('_', ' ').toUpperCase()}` 
+            : result.error?.short || 'Failed to send test email',
+          details: result,
+          routingUsed: 'intelligent_system_routing'
+        });
       }
     } catch (error) {
       console.error('Error testing system SMTP:', error);
@@ -5680,22 +5666,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Test email address is required' });
       }
 
-      // Use Single Mailer Service for SMTP-only delivery with comprehensive logging
-      const result = await singleMailerService.sendTestEmail(testEmail, undefined, {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip
+      // Use MailerService with intelligent routing for all email delivery
+      const result = await mailerService.send({
+        orgId: undefined,
+        to: testEmail,
+        subject: `Test Email - ${new Date().toLocaleString()}`,
+        html: `
+          <h2>Email Test Successful - Intelligent Routing</h2>
+          <p>This is a test email to verify your email configuration.</p>
+          <div style="background-color: #f0f8ff; padding: 10px; border-left: 4px solid #0066cc; margin: 10px 0;">
+            <strong>✅ Intelligent Email Routing Active</strong><br>
+            System-level configuration with automatic provider selection.
+          </div>
+          <p>Your email settings are working correctly!</p>
+          <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
+          <br>
+          <p>Best regards,<br>LMS System</p>
+        `,
+        templateType: 'system_test'
       });
       
       if (result.success) {
-        res.json({ success: true, message: 'Test email sent successfully' });
+        res.json({ 
+          success: true, 
+          message: 'Test email sent successfully',
+          provider: result.provider,
+          routingUsed: 'intelligent_routing'
+        });
       } else {
-        res.status(500).json({ success: false, message: (result as any).details?.error || 'Failed to send test email. Please check your SMTP settings.' });
+        res.status(500).json({ 
+          success: false, 
+          message: result.error?.short || 'Failed to send test email. Please check your email settings.',
+          provider: result.provider,
+          error: result.error
+        });
       }
     } catch (error) {
       console.error('Error sending system test email:', error);
       res.status(500).json({ 
         success: false, 
-        message: (error as any)?.message || 'Failed to send test email. Please check your SMTP settings.' 
+        message: (error as any)?.message || 'Failed to send test email. Please check your email settings.',
+        provider: 'unknown',
+        routingUsed: 'failed'
       });
     }
   });
