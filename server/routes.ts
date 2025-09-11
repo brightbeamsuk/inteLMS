@@ -5212,7 +5212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const emailSettings = req.body;
 
       // Provider-agnostic validation
-      const provider = emailSettings.provider || 'sendgrid_api';
+      const provider = emailSettings.emailProvider || 'sendgrid_api';
       
       // Common required fields for all providers
       if (!emailSettings.fromEmail || !emailSettings.fromName) {
