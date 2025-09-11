@@ -62,6 +62,28 @@ interface LicenseInfo {
   adminUsers: number;
 }
 
+interface BillingPreview {
+  immediate_total: number;
+  next_invoice_total: number;
+  proration_details: Array<{
+    description: string;
+    amount: number;
+    period_start: number;
+    period_end: number;
+  }>;
+  currency: string;
+  current_plan: {
+    name: string;
+    quantity: number;
+    unit_amount: number;
+  } | null;
+  new_plan: {
+    name: string;
+    quantity: number;
+    unit_amount: number;
+  };
+}
+
 export function AdminBilling() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -72,6 +94,8 @@ export function AdminBilling() {
   const [userCount, setUserCount] = useState<number>(0);
   const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
   const [showDecreaseWarning, setShowDecreaseWarning] = useState(false);
+  const [previewData, setPreviewData] = useState<BillingPreview | null>(null);
+  const [showPreview, setShowPreview] = useState<boolean>(false);
 
   // Verify Stripe payment and handle success/cancel from checkout
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
@@ -410,6 +434,42 @@ export function AdminBilling() {
     },
   });
 
+  // Mutation to get billing preview
+  const previewMutation = useMutation({
+    mutationFn: async ({ planId, userCount: previewUserCount }: { planId: string; userCount: number }) => {
+      const response = await fetch('/api/billing/preview-change', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          planId,
+          userCount: previewUserCount
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to generate preview');
+      }
+      
+      const data = await response.json();
+      return data.preview as BillingPreview;
+    },
+    onSuccess: (preview: BillingPreview) => {
+      setPreviewData(preview);
+      setShowPreview(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Preview Error",
+        description: error.message || "Failed to generate cost preview",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handle plan selection and user count setup
   const handleSelectPlan = (plan: Plan) => {
     setSelectedPlan(plan);
@@ -418,6 +478,10 @@ export function AdminBilling() {
     const minCount = plan.minSeats || 1;
     const currentCount = Math.max(getCurrentUserCount(), minCount);
     setUserCount(currentCount);
+    
+    // Reset preview state
+    setShowPreview(false);
+    setPreviewData(null);
     
     setShowPlanChangeModal(true);
   };
@@ -677,7 +741,7 @@ export function AdminBilling() {
                 {licenseData?.currentActiveUsers || 0}
               </div>
               <div className="stat-desc" data-testid="stat-users-total">
-                of {licenseData?.totalNonAdminUsers || 0} total users
+                of {licenseData?.totalActiveUsers || 0} total users
               </div>
               {currentPlan?.billingModel === 'metered_per_active_user' && (
                 <div className="mt-2">
@@ -920,6 +984,120 @@ export function AdminBilling() {
                   <div className="text-sm text-base-content/60 mt-2">
                     Monthly cost: {formatPrice((selectedPlan.unitAmount * userCount), selectedPlan.currency)}
                   </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      className={`btn btn-outline btn-sm ${previewMutation.isPending ? 'loading' : ''}`}
+                      onClick={() => previewMutation.mutate({ planId: selectedPlan.id, userCount })}
+                      disabled={previewMutation.isPending || userCount < (selectedPlan.minSeats || 1)}
+                      data-testid="button-generate-preview"
+                    >
+                      {previewMutation.isPending ? 'Generating...' : 'Show Cost Preview'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Cost Preview Section */}
+              {showPreview && previewData && (
+                <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-4 rounded-lg border border-primary/20">
+                  <h4 className="font-semibold mb-4 flex items-center gap-2" data-testid="heading-cost-preview">
+                    <i className="fas fa-calculator text-primary"></i>
+                    Cost Preview
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Current vs New Plan Comparison */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Current Plan */}
+                      {previewData.current_plan && (
+                        <div className="bg-base-200 p-3 rounded-md">
+                          <h5 className="font-medium text-sm mb-2 flex items-center gap-1" data-testid="current-plan-header">
+                            <i className="fas fa-arrow-left text-warning"></i>
+                            Current Plan
+                          </h5>
+                          <div className="text-sm space-y-1" data-testid="current-plan-details">
+                            <div><strong>Plan:</strong> {previewData.current_plan.name}</div>
+                            <div><strong>Quantity:</strong> {previewData.current_plan.quantity}</div>
+                            <div><strong>Unit Cost:</strong> {formatPrice(previewData.current_plan.unit_amount, previewData.currency)}</div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* New Plan */}
+                      <div className="bg-primary/10 p-3 rounded-md border border-primary/30">
+                        <h5 className="font-medium text-sm mb-2 flex items-center gap-1" data-testid="new-plan-header">
+                          <i className="fas fa-arrow-right text-primary"></i>
+                          New Plan
+                        </h5>
+                        <div className="text-sm space-y-1" data-testid="new-plan-details">
+                          <div><strong>Plan:</strong> {previewData.new_plan.name}</div>
+                          <div><strong>Quantity:</strong> {previewData.new_plan.quantity}</div>
+                          <div><strong>Unit Cost:</strong> {formatPrice(previewData.new_plan.unit_amount, previewData.currency)}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Cost Breakdown */}
+                    <div className="border-t pt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Immediate Charge */}
+                        <div className="text-center p-3 bg-warning/10 rounded-md border border-warning/30">
+                          <div className="text-sm text-base-content/60 mb-1">Immediate Charge</div>
+                          <div className="text-lg font-bold text-warning" data-testid="immediate-charge-amount">
+                            {formatPrice(Math.round(previewData.immediate_total), previewData.currency)}
+                          </div>
+                          <div className="text-xs text-base-content/50">Prorated adjustment</div>
+                        </div>
+
+                        {/* Next Invoice */}
+                        <div className="text-center p-3 bg-success/10 rounded-md border border-success/30">
+                          <div className="text-sm text-base-content/60 mb-1">Next Invoice Total</div>
+                          <div className="text-lg font-bold text-success" data-testid="next-invoice-amount">
+                            {formatPrice(Math.round(previewData.next_invoice_total), previewData.currency)}
+                          </div>
+                          <div className="text-xs text-base-content/50">Full billing period</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Proration Details */}
+                    {previewData.proration_details && previewData.proration_details.length > 0 && (
+                      <div>
+                        <h5 className="font-medium text-sm mb-2 flex items-center gap-1">
+                          <i className="fas fa-list-alt text-info"></i>
+                          Proration Breakdown
+                        </h5>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {previewData.proration_details.map((detail, index) => (
+                            <div 
+                              key={index} 
+                              className="flex justify-between items-center text-xs bg-base-200 p-2 rounded"
+                              data-testid={`proration-detail-${index}`}
+                            >
+                              <span className="flex-1 truncate pr-2">{detail.description}</span>
+                              <span className={`font-medium ${detail.amount >= 0 ? 'text-success' : 'text-warning'}`}>
+                                {detail.amount >= 0 ? '+' : ''}{formatPrice(Math.round(detail.amount), previewData.currency)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Total Summary */}
+                    <div className="border-t pt-3">
+                      <div className="flex justify-between items-center font-medium">
+                        <span>Total Change Today:</span>
+                        <span 
+                          className={`text-lg ${previewData.immediate_total >= 0 ? 'text-warning' : 'text-success'}`}
+                          data-testid="total-change-today"
+                        >
+                          {previewData.immediate_total >= 0 ? '+' : ''}{formatPrice(Math.round(previewData.immediate_total), previewData.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -931,6 +1109,8 @@ export function AdminBilling() {
                 onClick={() => {
                   setShowPlanChangeModal(false);
                   setSelectedPlan(null);
+                  setShowPreview(false);
+                  setPreviewData(null);
                 }}
                 data-testid="button-cancel-plan-change"
               >

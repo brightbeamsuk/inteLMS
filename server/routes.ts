@@ -1875,6 +1875,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/billing/preview-change → body: { planId, userCount }
+  app.post('/api/billing/preview-change', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin only' });
+      }
+
+      const { planId, userCount } = req.body;
+
+      if (!planId) {
+        return res.status(400).json({ message: 'Plan ID is required' });
+      }
+
+      if (!userCount || userCount < 1) {
+        return res.status(400).json({ message: 'Valid user count is required' });
+      }
+
+      // Load organisation and new plan
+      if (!user.organisationId) {
+        return res.status(400).json({ message: 'User is not associated with an organisation' });
+      }
+      
+      const [organisation, newPlan] = await Promise.all([
+        storage.getOrganisation(user.organisationId),
+        storage.getPlan(planId)
+      ]);
+
+      if (!organisation) {
+        return res.status(404).json({ message: 'Organisation not found' });
+      }
+
+      if (!newPlan) {
+        return res.status(404).json({ message: 'Plan not found' });
+      }
+
+      if (!newPlan.stripePriceId) {
+        return res.status(422).json({ 
+          message: 'Plan does not have Stripe integration configured',
+          suggestion: 'Contact support to enable Stripe for this plan'
+        });
+      }
+
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Get proration preview
+      const preview = await stripeService.previewSubscriptionChange(
+        newPlan,
+        organisation,
+        userCount
+      );
+
+      res.json({
+        success: true,
+        preview,
+        message: 'Preview generated successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error generating billing preview:', error);
+      res.status(500).json({ 
+        message: 'Failed to generate preview', 
+        error: error.message 
+      });
+    }
+  });
+
   // Comprehensive Stripe Webhook Handler with signature verification
   app.post('/api/webhooks/stripe', async (req: any, res) => {
     const signature = req.headers['stripe-signature'] as string;
