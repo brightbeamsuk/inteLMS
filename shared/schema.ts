@@ -85,8 +85,7 @@ export const emailProviderEnum = pgEnum('email_provider', [
   'mailgun_api',
   'postmark_api',
   'mailjet_api',
-  'sparkpost_api',
-  'ses_api'
+  'sparkpost_api'
 ]);
 
 // Email template type enum
@@ -107,6 +106,14 @@ export const emailTemplateTypeEnum = pgEnum('email_template_type', [
   'staff_training_expired',
   'weekly_training_summary',
   'smtp_test'
+]);
+
+// Email routing source enum for tracking which route was used
+export const emailRoutingSourceEnum = pgEnum('email_routing_source', [
+  'org_primary',     // Organization settings used successfully on first attempt
+  'org_fallback',    // Organization settings failed, used system settings as fallback  
+  'system_default',  // Only system settings available/used
+  'mixed_config'     // Mixed org + system settings (legacy behavior)
 ]);
 
 // Users table (required for Replit Auth)
@@ -526,6 +533,7 @@ export const emailLogs = pgTable("email_logs", {
   keyPreview: varchar("key_preview"), // Masked API key (first4…last4)
   keyLength: integer("key_length"), // API key length
   effectiveFieldSources: jsonb("effective_field_sources"), // Which fields came from org vs platform
+  routingSource: emailRoutingSourceEnum("routing_source"), // Track which routing path was used
   timestamp: timestamp("timestamp").defaultNow(),
   
   // Legacy fields for compatibility

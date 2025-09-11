@@ -1,0 +1,327 @@
+Goal:
+Add an Email Templates system to the LMS with a Superadmin menu item that manages default templates. Allow each Admin (organisation) to optionally create custom overrides for their account only. Wire templates to real events so emails send to the organisation’s admin emails when actions occur. Must sync across all access levels and be multi-tenant safe.
+
+1) Navigation & Permissions
+
+Add a top-level menu item visible to Superadmin:
+Settings → Email Templates
+Sections on the page:
+
+Admin Emails
+
+Learner Emails
+
+Under Admin (organisation) dashboards, add:
+Settings → Email Templates (only shows organisation-level overrides; cannot see or edit superadmin defaults).
+
+Permissions:
+
+Superadmin: CRUD on default templates; view where an org has overrides.
+
+Admin (organisation): CRUD on their own overrides only; cannot change defaults.
+
+Users/Learners: no access.
+
+2) Templates to Implement (keys + categories)
+
+Create these six templates with canonical keys and categories:
+
+Admin Emails
+
+admin.new_admin_added — New admin added
+
+admin.new_user_added — New user added
+
+admin.new_course_assigned — New course assigned
+
+admin.plan_updated — Your plan has been updated
+
+Learner Emails (still sent to admins to notify progress)
+5. admin.learner_completed_course — A learner has completed a course
+6. admin.learner_failed_course — A learner has failed a course
+
+These six are notifications to the organisation’s admin emails. (Later we can add learner-facing versions if needed.)
+
+3) Data Model (multi-tenant)
+
+Create the following tables/collections:
+
+EmailTemplateDefaults
+
+id
+
+key (unique; one of the six above)
+
+category (admin | learner)
+
+subject_default (string)
+
+html_default (long text)
+
+text_default (long text; optional, for fallback)
+
+variables_schema (JSON array of allowed variables with sample values)
+
+updated_at, updated_by
+
+EmailTemplateOverrides
+
+id
+
+org_id (FK to Organisation)
+
+template_key (FK to EmailTemplateDefaults.key)
+
+subject_override (nullable)
+
+html_override (nullable)
+
+text_override (nullable)
+
+is_active (bool; default true)
+
+updated_at, updated_by
+
+unique index on (org_id, template_key)
+
+OrgNotificationSettings
+
+org_id
+
+send_to_admins (bool, default true)
+
+extra_recipients (array/string; optional)
+
+email_provider_config_id (nullable; to allow org-specific SMTP/API)
+
+timestamps
+
+EmailProviderConfigs (for delivery abstraction)
+
+id, org_id (nullable; null means platform default)
+
+provider (smtp, brevo, o365_smtp, etc.)
+
+config_json (host, port, username, from_name, from_email, api keys, etc.)
+
+is_default_for_org (bool)
+
+timestamps
+
+4) Templating & Variables
+
+Use a safe templating engine with whitelisted variables per template.
+
+Implement merge variables like {{org.name}}, {{admin.name}}, {{user.full_name}}, {{course.title}}, {{plan.name}}, {{plan.old_price}}, {{plan.new_price}}, {{attempt.score}}, {{attempt.passed}}, {{completed_at}}, {{failed_at}}, etc.
+
+Enforce variable validation:
+
+On save, lint template for unknown variables; block save with a clear error listing invalid tokens.
+
+Provide a “Preview with sample data” that renders both default and override with mock payloads.
+
+Recommended variable sets per template:
+
+admin.new_admin_added: org.name, new_admin.name, new_admin.email, added_by.name, added_at
+
+admin.new_user_added: org.name, user.full_name, user.email, added_by.name, added_at
+
+admin.new_course_assigned: org.name, user.full_name, course.title, assigned_by.name, assigned_at
+
+admin.plan_updated: org.name, plan.name, plan.old_price, plan.new_price, changed_by.name, changed_at
+
+admin.learner_completed_course: org.name, user.full_name, course.title, attempt.score, completed_at
+
+admin.learner_failed_course: org.name, user.full_name, course.title, attempt.score, failed_at
+
+5) UI Requirements
+
+Superadmin Email Templates page:
+
+Tabs: Admin Emails | Learner Emails
+
+Card list of the 6 templates with:
+
+Template key + human label
+
+“Edit default” action (subject, HTML, optional text)
+
+“Where overridden” badge with count; clicking shows an org list with enable/disable override.
+
+Preview (select example org to preview with realistic data)
+
+Send test (choose target email)
+
+Version note (optional text field to record change intent)
+
+Audit log: Record who changed what (subject, html, text) and when.
+
+Admin (org) Email Templates page:
+
+Same two tabs; list the 6 templates.
+
+Show current effective content (derived from override if exists, else default).
+
+Buttons: Create/Update Override, Disable Override, Preview, Send test.
+
+If an override exists, show a diff vs default.
+
+6) Resolution Rules (effective template)
+
+Implement a resolver:
+getEffectiveTemplate(org_id, template_key) → returns {subject, html, text} using:
+
+If EmailTemplateOverrides exists for (org_id, template_key) and is_active = true, use override fields (fallback any null fields to defaults).
+
+Else, use EmailTemplateDefaults.
+
+7) Event Wiring (send to admin emails)
+
+Hook real events to the templates below. Each handler must:
+
+Resolve org_id for the event.
+
+Resolve recipient list = all active Admin users in that org with receive_notifications = true + OrgNotificationSettings.extra_recipients.
+
+Pull the effective template using the resolver.
+
+Render with event payload → generate subject/body.
+
+Deliver via EmailService (see §8).
+
+Log to EmailOutbox (id, org_id, template_key, recipients, subject, rendered_html, status, provider_response, created_at).
+
+Events → Templates:
+
+On new admin created in org → admin.new_admin_added
+
+On new user added to org → admin.new_user_added
+
+On course assignment (admin assigns course to learner) → admin.new_course_assigned
+
+On plan updated (org subscription/plan change effective) → admin.plan_updated
+
+On learner completes course (SCORM/xAPI/LMS status = completed/passed) → admin.learner_completed_course
+
+On learner fails course (SCORM/xAPI/LMS status = failed) → admin.learner_failed_course
+
+Ensure these are idempotent per event id to avoid duplicates.
+
+8) Email Delivery Abstraction
+
+Create an EmailService with provider-agnostic interface:
+
+sendEmail({ org_id, to[], subject, html, text })
+
+Provider resolution order:
+
+If org has an EmailProviderConfigs marked is_default_for_org, use it.
+
+Else use platform default config (e.g., SMTP relay or transactional API).
+
+Support at least:
+
+SMTP (Office 365/Hostinger) – TLS, auth.
+
+Brevo API (optional now; add connector class but keep inactive until configured).
+
+Apply a sane From: name + email (org-level if configured; else platform default).
+
+Implement basic retry with backoff, and status logging to EmailOutbox.
+
+9) Sync & Caching
+
+Cache resolved templates for 5 minutes per (org_id, template_key).
+
+Invalidate cache on:
+
+Default template update (superadmin)
+
+Override create/update/disable
+
+Provider config change
+
+All reads must respect the cache; all writes must bust it.
+
+10) Testing Hooks & Acceptance Criteria
+
+Seed Defaults:
+Create sensible default subject/body for the 6 templates, including the variables listed.
+
+Unit tests:
+
+Resolver returns default when no override.
+
+Resolver returns override when active.
+
+Partial override (e.g., subject only) falls back to default body.
+
+Variable linting rejects unknown tokens.
+
+Event handlers call EmailService with correct recipients.
+
+Integration tests:
+
+Create an org with two admins; trigger each event; assert outbox entries + recipients match both admins.
+
+Create an override at org level; trigger again; confirm override content used.
+
+Disable override; confirm fallback to default.
+
+Change superadmin default; confirm org without override receives updated content.
+
+Manual checks in UI:
+
+Superadmin can preview any template with sample data and “send test”.
+
+Admin can preview their effective version and “send test”.
+
+“Where overridden” panel correctly lists orgs.
+
+Definition of Done:
+
+Menu items visible to the right roles.
+
+All six templates exist with defaults and variables schema.
+
+Overrides work per-org and never leak across tenants.
+
+All six events send to organisation admin emails (and extra recipients if configured).
+
+Email delivery works with platform default SMTP and is overridable per org.
+
+Outbox logs and audit logs are populated.
+
+Cache invalidation works.
+
+11) Security & Compliance
+
+Sanitise/escape merge variables when rendering HTML.
+
+Enforce RBAC on every CRUD endpoint.
+
+Rate-limit Send test actions.
+
+Store provider secrets encrypted at rest.
+
+Include unsubscribe not required for transactional admin notices, but add org notification toggle per template in OrgNotificationSettings if needed later.
+
+12) Developer Notes
+
+Provide API routes (no code here, just implement):
+
+GET/PUT /api/email-templates/defaults/:key
+
+GET/PUT /api/email-templates/overrides/:orgId/:key
+
+POST /api/email-templates/preview (payload: org_id, key, sample payload)
+
+POST /api/email-templates/send-test (payload: org_id/null, key, to[])
+
+GET /api/email-templates/overrides/usage/:key (list orgs overriding)
+
+Expose Outbox viewer to Superadmin (read-only list with filters).
+
+Ensure all changes appear immediately in UI (cache bust).
+
+Implement everything above now. Do not refactor unrelated code. Return when the feature is fully wired, with seeds, tests, and UI in place.

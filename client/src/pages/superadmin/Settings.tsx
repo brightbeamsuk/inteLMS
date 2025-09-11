@@ -147,7 +147,8 @@ export function SuperAdminSettings() {
         'Custom': { smtpHost: '', smtpPort: '587', smtpSecure: true }
       },
       instructions: 'Configure any SMTP server as platform default. Organizations can override this.',
-      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword']
+      requiredFields: ['fromEmail', 'fromName', 'smtpHost', 'smtpUsername', 'smtpPassword'],
+      website: undefined
     },
     sendgrid_api: {
       name: 'SendGrid API',
@@ -201,25 +202,26 @@ export function SuperAdminSettings() {
 
   useEffect(() => {
     if (systemEmailData) {
+      const data = systemEmailData as any; // Type assertion to access properties
       setEmailSettings({
-        provider: (systemEmailData as any).provider || 'brevo_api',
-        fromEmail: systemEmailData.fromEmail || '',
-        fromName: systemEmailData.fromName || '',
-        replyTo: (systemEmailData as any).replyTo || '',
-        description: systemEmailData.description || '',
+        provider: data.provider || 'brevo_api',
+        fromEmail: data.fromEmail || '',
+        fromName: data.fromName || '',
+        replyTo: data.replyTo || '',
+        description: data.description || '',
         // SMTP fields
-        smtpHost: systemEmailData.smtpHost || '',
-        smtpPort: systemEmailData.smtpPort?.toString() || '587',
-        smtpUsername: systemEmailData.smtpUsername || '',
+        smtpHost: data.smtpHost || '',
+        smtpPort: data.smtpPort?.toString() || '587',
+        smtpUsername: data.smtpUsername || '',
         smtpPassword: '', // Never populate password for security
-        smtpSecure: systemEmailData.smtpSecure !== false,
+        smtpSecure: data.smtpSecure !== false,
         // API fields - show masked indicators when credentials exist
-        apiKey: systemEmailData.apiKey || '',
-        apiSecret: systemEmailData.apiSecret || '',
-        apiBaseUrl: (systemEmailData as any).apiBaseUrl || '',
-        apiDomain: (systemEmailData as any).apiDomain || '',
-        apiRegion: (systemEmailData as any).apiRegion || '',
-        hasPassword: systemEmailData.hasPassword || false,
+        apiKey: data.apiKey || '',
+        apiSecret: data.apiSecret || '',
+        apiBaseUrl: data.apiBaseUrl || '',
+        apiDomain: data.apiDomain || '',
+        apiRegion: data.apiRegion || '',
+        hasPassword: data.hasPassword || false,
       });
     }
   }, [systemEmailData]);
@@ -252,8 +254,8 @@ export function SuperAdminSettings() {
 
   const handleSMTPPresetChange = (preset: string) => {
     const config = emailProviders.smtp_generic;
-    if (config && config.presets[preset]) {
-      const presetConfig = config.presets[preset];
+    if (config && config.presets && config.presets[preset as keyof typeof config.presets]) {
+      const presetConfig = config.presets[preset as keyof typeof config.presets];
       setEmailSettings(prev => ({
         ...prev,
         smtpHost: presetConfig.smtpHost,
@@ -476,39 +478,23 @@ export function SuperAdminSettings() {
         return;
       }
 
-      // SES requires region
-      if (emailSettings.provider === 'ses_api' && !emailSettings.apiRegion) {
-        toast({
-          title: "Error",
-          description: "Amazon SES requires an AWS region selection",
-          variant: "destructive",
-        });
-        return;
-      }
     }
 
-    // Prepare settings for saving
-    const settingsToSave = { ...emailSettings };
-    
     // Clean up empty fields that shouldn't be sent
+    let settingsToSave: any;
     if (emailSettings.provider !== 'smtp_generic') {
       // Remove SMTP fields for API providers
-      delete settingsToSave.smtpHost;
-      delete settingsToSave.smtpPort;
-      delete settingsToSave.smtpUsername;
-      delete settingsToSave.smtpPassword;
-      delete settingsToSave.smtpSecure;
+      const { smtpHost, smtpPort, smtpUsername, smtpPassword, smtpSecure, ...apiSettings } = emailSettings;
+      settingsToSave = apiSettings;
     } else {
       // Remove API fields for SMTP
-      delete settingsToSave.apiKey;
-      delete settingsToSave.apiSecret;
-      delete settingsToSave.apiBaseUrl;
-      delete settingsToSave.apiDomain;
-      delete settingsToSave.apiRegion;
+      const { apiKey, apiSecret, apiBaseUrl, apiDomain, apiRegion, ...smtpSettings } = emailSettings;
+      settingsToSave = smtpSettings;
       
       // Handle masked password for SMTP
-      if (!settingsToSave.smtpPassword && settingsToSave.smtpPassword?.startsWith('••')) {
-        delete settingsToSave.smtpPassword;
+      if (!settingsToSave.smtpPassword || settingsToSave.smtpPassword?.startsWith('••')) {
+        const { smtpPassword, ...restSettings } = settingsToSave;
+        settingsToSave = restSettings;
       }
     }
 
@@ -1326,25 +1312,6 @@ export function SuperAdminSettings() {
                         </div>
                       )}
 
-                      {emailSettings.provider === 'ses_api' && (
-                        <div className="form-control">
-                          <label className="label">
-                            <span className="label-text font-semibold">AWS Region *</span>
-                          </label>
-                          <select 
-                            className="select select-bordered"
-                            value={emailSettings.apiRegion}
-                            onChange={(e) => setEmailSettings(prev => ({ ...prev, apiRegion: e.target.value }))}
-                            data-testid="select-aws-region"
-                          >
-                            <option value="">Select AWS region</option>
-                            <option value="us-east-1">US East (N. Virginia)</option>
-                            <option value="us-west-2">US West (Oregon)</option>
-                            <option value="eu-west-1">Europe (Ireland)</option>
-                            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
-                          </select>
-                        </div>
-                      )}
                     </div>
                   )}
 
