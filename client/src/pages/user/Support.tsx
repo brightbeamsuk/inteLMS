@@ -597,8 +597,11 @@ export function UserSupport() {
                         data-testid={`response-${response.id}`}
                       >
                         <div className="chat-image avatar">
-                          <div className="w-8 h-8 rounded-full bg-info text-info-content flex items-center justify-center text-xs font-bold">
-                            👨‍💼
+                          <div className="w-8 h-8 rounded-full bg-base-300 flex items-center justify-center overflow-hidden">
+                            {/* TODO: Replace with actual profile image when user data is available */}
+                            <div className="w-full h-full rounded-full bg-info text-info-content flex items-center justify-center text-xs font-bold">
+                              <span className="text-[10px]">ST</span>
+                            </div>
                           </div>
                         </div>
                         <div className="chat-header">

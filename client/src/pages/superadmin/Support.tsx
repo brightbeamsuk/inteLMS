@@ -722,11 +722,23 @@ export function SuperAdminSupport() {
                           data-testid={`response-${response.id}`}
                         >
                           <div className="chat-image avatar">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                              response.isInternal ? 'bg-warning text-warning-content' : 
-                              (isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content')
-                            }`}>
-                              {response.isInternal ? '🔒' : (isFromSupport ? '👨‍💼' : '👤')}
+                            <div className="w-8 h-8 rounded-full bg-base-300 flex items-center justify-center overflow-hidden">
+                              {/* TODO: Replace with actual profile image when user data is available */}
+                              <div className={`w-full h-full rounded-full flex items-center justify-center text-xs font-bold ${
+                                response.isInternal ? 'bg-warning text-warning-content' : 
+                                (isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content')
+                              }`}>
+                                {response.isInternal ? (
+                                  <span className="text-[10px]">INT</span>
+                                ) : isFromSupport ? (
+                                  <span className="text-[10px]">ST</span>
+                                ) : (
+                                  <span className="text-[10px]">
+                                    {ticketDetails?.createdByUser?.firstName?.[0] || 'U'}
+                                    {ticketDetails?.createdByUser?.lastName?.[0] || ''}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="chat-header text-xs opacity-70">
