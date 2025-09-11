@@ -5336,7 +5336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Return settings with masked sensitive fields
       const responseData = {
-        provider: settings.emailProvider || 'sendgrid_api',
+        provider: settings.emailProvider,
         fromEmail: settings.fromEmail || '',
         fromName: settings.fromName || '',
         replyTo: settings.replyTo || '',

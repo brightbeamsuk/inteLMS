@@ -202,7 +202,7 @@ export function SuperAdminSettings() {
   useEffect(() => {
     if (systemEmailData) {
       setEmailSettings({
-        provider: (systemEmailData as any).emailProvider || 'sendgrid_api',
+        provider: (systemEmailData as any).provider || 'brevo_api',
         fromEmail: systemEmailData.fromEmail || '',
         fromName: systemEmailData.fromName || '',
         replyTo: (systemEmailData as any).replyTo || '',
