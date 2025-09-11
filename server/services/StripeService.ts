@@ -344,7 +344,17 @@ export class StripeService {
 
       // If the organisation already has a Stripe customer, use it
       if (organisation.stripeCustomerId) {
-        sessionData.customer = organisation.stripeCustomerId;
+        // Extract customer ID (handle case where it might be a JSON object)
+        let customerId = organisation.stripeCustomerId;
+        if (typeof customerId === 'string' && customerId.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(customerId);
+            customerId = parsed.id;
+          } catch (e) {
+            console.error('Error parsing stored customer ID:', e);
+          }
+        }
+        sessionData.customer = customerId;
       } else {
         // Only set customer_email if there's no existing customer
         sessionData.customer_email = organisation.contactEmail || undefined;
@@ -352,9 +362,19 @@ export class StripeService {
 
       // If updating an existing subscription, reference it
       if (organisation.stripeSubscriptionId) {
+        // Extract subscription ID (handle case where it might be a JSON object)
+        let subscriptionId = organisation.stripeSubscriptionId;
+        if (typeof subscriptionId === 'string' && subscriptionId.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(subscriptionId);
+            subscriptionId = parsed.id;
+          } catch (e) {
+            console.error('Error parsing stored subscription ID:', e);
+          }
+        }
         sessionData.subscription_data = {
           metadata: {
-            originalSubscriptionId: organisation.stripeSubscriptionId,
+            originalSubscriptionId: subscriptionId,
             updateType: 'user_count_change',
           },
         };

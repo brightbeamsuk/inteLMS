@@ -381,9 +381,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Payment successful - update our database
         const metadata = session.metadata;
         if (metadata?.org_id) {
+          // Extract IDs from Stripe objects (they may be expanded objects or just strings)
+          const subscriptionId = typeof session.subscription === 'string' 
+            ? session.subscription 
+            : session.subscription?.id;
+          const customerId = typeof session.customer === 'string' 
+            ? session.customer 
+            : session.customer?.id;
+            
           await storage.updateOrganisationBilling(metadata.org_id, {
-            stripeSubscriptionId: session.subscription as string,
-            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: subscriptionId,
+            stripeCustomerId: customerId,
             billingStatus: 'active',
             activeUserCount: parseInt(metadata.userCount || '1'),
             lastBillingSync: new Date(),
