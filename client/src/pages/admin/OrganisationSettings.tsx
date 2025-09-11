@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { VisualCertificateEditor } from "@/components/VisualCertificateEditor";
+import { FeatureUpgradeModal } from "@/components/FeatureUpgradeModal";
 import type { UploadResult } from "@uppy/core";
 
 interface OrganisationSettings {
@@ -140,6 +141,7 @@ export function AdminOrganisationSettings() {
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
   const [selectedUserToPromote, setSelectedUserToPromote] = useState<string>('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const handleEditTemplate = (templateType: string) => {
     const defaultTemplate = getDefaultTemplate(templateType);
@@ -684,6 +686,13 @@ The {{organisationDisplayName}} Team`
       setSelectedUserToPromote('');
     },
     onError: (error: any) => {
+      // Check for feature lock errors (admin limit reached)
+      if (error.status === 403 && (error.featureKey === 'unlimited_admin_accounts' || error.code === 'FEATURE_LOCKED')) {
+        setShowUpgradeModal(true);
+        setShowAddAdminModal(false);
+        return;
+      }
+      
       toast({
         title: "Error",
         description: error.message || "Failed to promote user to admin",
@@ -1789,8 +1798,8 @@ The {{organisationDisplayName}} Team`
                 ) : (
                   <div className="tooltip tooltip-left" data-tip="Upgrade your plan to add more administrators">
                     <button 
-                      className="btn btn-outline btn-disabled"
-                      disabled
+                      className="btn btn-outline"
+                      onClick={() => setShowUpgradeModal(true)}
                       data-testid="button-add-admin-locked"
                     >
                       <i className="fas fa-lock mr-2"></i>
@@ -2336,6 +2345,15 @@ The {{organisationDisplayName}} Team`
               </div>
             </div>
           )}
+
+          {/* Upgrade Modal for Admin Limits */}
+          <FeatureUpgradeModal
+            isOpen={showUpgradeModal}
+            onClose={() => setShowUpgradeModal(false)}
+            featureName="Unlimited Admin Accounts"
+            featureDescription="Your current plan allows 1 administrator account. Upgrade to add unlimited administrator accounts and empower your team with full administrative access."
+            featureIcon="fas fa-users-crown"
+          />
         </div>
       </div>
     </div>
