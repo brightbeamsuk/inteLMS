@@ -769,11 +769,6 @@ export function AdminBilling() {
                           Current Plan
                         </div>
                       )}
-                      {!isCurrentPlan && !isUpgradeOption && (
-                        <div className="badge badge-warning mb-2" data-testid="badge-downgrade-plan">
-                          Lower Cost Plan
-                        </div>
-                      )}
                       {!isCurrentPlan && isUpgradeOption && (
                         <div className="badge badge-success mb-2" data-testid="badge-upgrade-plan">
                           Higher Value Plan
