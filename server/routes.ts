@@ -246,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentActiveCount = activeNonAdminUsers.length;
 
       // Default limits (for organizations without subscription)
-      let maxActiveUsers = 10; // Default free tier limit
+      let maxActiveUsers = organisation.activeUserCount || 0; // Use purchased licenses from database
 
       // If organization has a Stripe subscription, check the limits
       if (organisation.stripeSubscriptionId) {
@@ -899,7 +899,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentActiveCount = activeNonAdminUsers.length;
 
       // Default limits (for organizations without subscription)
-      let maxActiveUsers = 10; // Default free tier limit
+      let maxActiveUsers = organisation.activeUserCount || 0; // Use purchased licenses from database
       let hasActiveSubscription = false;
 
       // If organization has a Stripe subscription, check the limits
