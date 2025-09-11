@@ -905,6 +905,7 @@ export class MailerService {
         keyPreview: logData.keyPreview || null,
         keyLength: logData.keyLength || null,
         effectiveFieldSources: logData.effectiveFieldSources,
+        routingSource: logData.routingSource, // NOW PROPERLY PERSISTING ROUTING SOURCE
         // Legacy compatibility fields
         smtpHost: logData.endpoint || 'unknown',
         smtpPort: logData.httpStatus ? 443 : 587,
