@@ -292,6 +292,11 @@ export interface IStorage {
   createSupportTicketResponse(response: InsertSupportTicketResponse): Promise<SupportTicketResponse>;
   getSupportTicketResponses(ticketId: string): Promise<SupportTicketResponse[]>;
   deleteSupportTicketResponse(id: string): Promise<void>;
+
+  // Feature checking and admin validation helpers
+  hasFeature(organisationId: string, featureKey: string): Promise<boolean>;
+  countAdminsByOrg(organisationId: string): Promise<number>;
+  enforceAdminLimit(organisationId: string): Promise<{ allowed: boolean; error?: { code: string; featureKey: string; maxAllowed: number } }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -356,8 +361,6 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     search?: string;
   }): Promise<User[]> {
-    let query = db.select().from(users);
-
     const conditions = [];
     if (filters.role) {
       if (Array.isArray(filters.role)) {
@@ -379,10 +382,10 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(users).where(and(...conditions)).orderBy(asc(users.firstName));
+    } else {
+      return await db.select().from(users).orderBy(asc(users.firstName));
     }
-
-    return await query.orderBy(asc(users.firstName));
   }
 
   // Organisation operations
@@ -444,7 +447,7 @@ export class DatabaseStorage implements IStorage {
     planId?: string;
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
-    billingStatus?: string;
+    billingStatus?: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused';
     activeUserCount?: number;
     lastBillingSync?: Date;
   }): Promise<Organisation> {
@@ -474,7 +477,7 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
-    const activeUserCount = activeUserResult?.count || 0;
+    const activeUserCount = Number(activeUserResult?.count) || 0;
     const lastSyncTime = new Date();
 
     // Update the organisation with the current active user count
@@ -976,7 +979,7 @@ export class DatabaseStorage implements IStorage {
   }> {
     const [assignmentCount] = await db.select({ count: count() }).from(assignments).where(eq(assignments.courseId, courseId));
     const [completionCount] = await db.select({ count: count() }).from(completions).where(eq(completions.courseId, courseId));
-    const [successfulCount] = await db.select({ count: count() }).from(completions).where(and(eq(completions.courseId, courseId), eq(completions.status, 'completed')));
+    const [successfulCount] = await db.select({ count: count() }).from(completions).where(and(eq(completions.courseId, courseId), eq(completions.status, 'pass')));
     
     // Get unique organizations using this course
     const organizationsUsing = await db
@@ -988,10 +991,10 @@ export class DatabaseStorage implements IStorage {
     const scoreResults = await db
       .select({ score: completions.score })
       .from(completions)
-      .where(and(eq(completions.courseId, courseId), eq(completions.status, 'completed')));
+      .where(and(eq(completions.courseId, courseId), eq(completions.status, 'pass')));
     
     const averageScore = scoreResults.length > 0 
-      ? scoreResults.reduce((sum, c) => sum + (c.score || 0), 0) / scoreResults.length
+      ? scoreResults.reduce((sum, c) => sum + (Number(c.score) || 0), 0) / scoreResults.length
       : 0;
     
     // Calculate average time to complete (in minutes)
@@ -1002,7 +1005,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(assignments)
       .innerJoin(completions, eq(assignments.id, completions.assignmentId))
-      .where(and(eq(assignments.courseId, courseId), eq(completions.status, 'completed')));
+      .where(and(eq(assignments.courseId, courseId), eq(completions.status, 'pass')));
     
     const averageTimeToComplete = timeResults.length > 0
       ? timeResults.reduce((sum, t) => {
@@ -1014,15 +1017,15 @@ export class DatabaseStorage implements IStorage {
         }, 0) / timeResults.length
       : 0;
     
-    const completionRate = assignmentCount.count > 0 
-      ? (successfulCount.count / assignmentCount.count) * 100
+    const completionRate = Number(assignmentCount.count) > 0 
+      ? (Number(successfulCount.count) / Number(assignmentCount.count)) * 100
       : 0;
 
     return {
       courseId,
-      totalAssignments: assignmentCount.count,
-      totalCompletions: completionCount.count,
-      successfulCompletions: successfulCount.count,
+      totalAssignments: Number(assignmentCount.count),
+      totalCompletions: Number(completionCount.count),
+      successfulCompletions: Number(successfulCount.count),
       averageScore,
       completionRate,
       organizationsUsing: organizationsUsing.length,
@@ -1345,8 +1348,6 @@ export class DatabaseStorage implements IStorage {
       offset = 0
     } = filters;
 
-    let query = db.select().from(emailLogs);
-
     const conditions: any[] = [];
     if (organisationId) {
       conditions.push(eq(emailLogs.organisationId, organisationId));
@@ -1362,13 +1363,17 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(emailLogs)
+        .where(and(...conditions))
+        .orderBy(desc(emailLogs.timestamp))
+        .limit(limit)
+        .offset(offset);
+    } else {
+      return await db.select().from(emailLogs)
+        .orderBy(desc(emailLogs.timestamp))
+        .limit(limit)
+        .offset(offset);
     }
-
-    return await query
-      .orderBy(desc(emailLogs.timestamp))
-      .limit(limit)
-      .offset(offset);
   }
 
   async getEmailLogById(id: string): Promise<EmailLog | undefined> {
@@ -1410,8 +1415,6 @@ export class DatabaseStorage implements IStorage {
       offset = 0
     } = filters;
 
-    let query = db.select().from(supportTickets);
-
     const conditions: any[] = [];
     if (organisationId) {
       conditions.push(eq(supportTickets.organisationId, organisationId));
@@ -1423,13 +1426,13 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(supportTickets.assignedTo, assignedTo));
     }
     if (status) {
-      conditions.push(eq(supportTickets.status, status));
+      conditions.push(eq(supportTickets.status, status as any));
     }
     if (priority) {
-      conditions.push(eq(supportTickets.priority, priority));
+      conditions.push(eq(supportTickets.priority, priority as any));
     }
     if (category) {
-      conditions.push(eq(supportTickets.category, category));
+      conditions.push(eq(supportTickets.category, category as any));
     }
     if (search) {
       conditions.push(
@@ -1441,13 +1444,17 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(supportTickets)
+        .where(and(...conditions))
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(limit)
+        .offset(offset);
+    } else {
+      return await db.select().from(supportTickets)
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(limit)
+        .offset(offset);
     }
-
-    return await query
-      .orderBy(desc(supportTickets.createdAt))
-      .limit(limit)
-      .offset(offset);
   }
 
   async updateSupportTicket(id: string, ticketData: Partial<InsertSupportTicket>): Promise<SupportTicket> {
@@ -1477,7 +1484,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const [result] = await query.where(and(...conditions));
-    return result.count;
+    return Number(result.count);
   }
 
   // Support ticket response operations
@@ -1506,6 +1513,78 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSupportTicketResponse(id: string): Promise<void> {
     await db.delete(supportTicketResponses).where(eq(supportTicketResponses.id, id));
+  }
+
+  // Feature checking and admin validation helpers
+  async hasFeature(organisationId: string, featureKey: string): Promise<boolean> {
+    try {
+      const organisation = await this.getOrganisation(organisationId);
+      if (!organisation?.planId) {
+        return false;
+      }
+
+      const planWithFeatures = await this.getPlanWithFeatures(organisation.planId);
+      if (!planWithFeatures?.features) {
+        return false;
+      }
+
+      return planWithFeatures.features.some(feature => feature.key === featureKey);
+    } catch (error) {
+      console.error('Error checking feature access:', error);
+      return false;
+    }
+  }
+
+  async countAdminsByOrg(organisationId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(users)
+      .where(
+        and(
+          eq(users.organisationId, organisationId),
+          eq(users.role, 'admin'),
+          eq(users.status, 'active')
+        )
+      );
+    
+    return result?.count || 0;
+  }
+
+  async enforceAdminLimit(organisationId: string): Promise<{ allowed: boolean; error?: { code: string; featureKey: string; maxAllowed: number } }> {
+    try {
+      // Check if organization has unlimited admin accounts feature
+      const hasUnlimitedAdmins = await this.hasFeature(organisationId, 'unlimited_admin_accounts');
+      
+      if (hasUnlimitedAdmins) {
+        return { allowed: true };
+      }
+      
+      // If feature not enabled, enforce limit of 1 admin
+      const currentAdminCount = await this.countAdminsByOrg(organisationId);
+      
+      if (currentAdminCount >= 1) {
+        return {
+          allowed: false,
+          error: {
+            code: 'FEATURE_LOCKED',
+            featureKey: 'unlimited_admin_accounts',
+            maxAllowed: 1
+          }
+        };
+      }
+      
+      return { allowed: true };
+    } catch (error) {
+      console.error('Error enforcing admin limit:', error);
+      return {
+        allowed: false,
+        error: {
+          code: 'FEATURE_LOCKED',
+          featureKey: 'unlimited_admin_accounts',
+          maxAllowed: 1
+        }
+      };
+    }
   }
 }
 
