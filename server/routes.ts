@@ -4903,28 +4903,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         }
-        
-        // Manual direct test before health check
-        console.log('🔧 MANUAL BREVO TEST - Testing key directly...');
-        try {
-          const directTestResponse = await fetch('https://api.brevo.com/v3/account', {
-            method: 'GET',
-            headers: {
-              'api-key': brevoClient['apiKey'], // Access private key for testing
-              'accept': 'application/json'
-            }
-          });
-          console.log(`🔧 DIRECT TEST: ${directTestResponse.status} ${directTestResponse.statusText}`);
-          const directBody = await directTestResponse.text();
-          console.log(`🔧 DIRECT RESPONSE: ${directBody.substring(0, 200)}...`);
-        } catch (directError: any) {
-          console.log('🔧 DIRECT TEST ERROR:', directError?.message || 'Unknown error');
-        }
-
         // Health check first
-        console.log('🔧 About to call checkAccount()...');
         const healthCheck = await brevoClient.checkAccount();
-        console.log('🔧 checkAccount() completed:', healthCheck.success ? 'SUCCESS' : `FAILED ${healthCheck.httpStatus}`);
         
         if (!healthCheck.success) {
           return res.json({
@@ -4945,8 +4925,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         }
-
-        console.log('Brevo health check passed, proceeding with send...');
 
         // SEND EMAIL VIA BREVO CLIENT WITH ENHANCED LOGGING
         const sendResult = await brevoClient.sendEmailWithLogging({
@@ -5649,15 +5627,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.json(result);
         } else {
           // API-based provider - use mailerService for proper API handling
-          console.log('🔧 TEST EMAIL DEBUG:', {
-            provider: provider,
-            settingsFromDb: settings ? {
-              emailProvider: settings.emailProvider,
-              apiKeyLength: settings.apiKey?.length || 0,
-              fromEmail: settings.fromEmail
-            } : 'no settings'
-          });
-          
           const result = await mailerService.send({
             orgId: undefined,
             to: testEmail,
