@@ -1447,8 +1447,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Plan Change API - creates Stripe checkout session for plan changes
-  app.post('/api/subscriptions/change-plan-checkout', requireAuth, async (req: any, res) => {
+  // Plan Change API - direct subscription update for plan changes
+  app.post('/api/subscriptions/change-plan', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       if (!user || user.role !== 'admin') {
@@ -1515,16 +1515,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date().toISOString()
       });
     } catch (error: any) {
-      console.error('Error creating plan change checkout:', error);
+      console.error('Error updating plan:', error);
       res.status(500).json({ 
-        message: 'Failed to create checkout session', 
+        message: 'Failed to update subscription plan', 
         error: error.message 
       });
     }
   });
 
-  // Subscription Update Checkout - creates checkout session for updating existing subscription
-  app.post('/api/subscriptions/update-checkout', requireAuth, async (req: any, res) => {
+  // Subscription Update - direct subscription update for seat changes
+  app.post('/api/subscriptions/update', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
       
@@ -1604,10 +1604,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error('Error creating subscription update checkout session:', error);
+      console.error('Error updating subscription:', error);
       res.status(500).json({ 
         success: false,
-        message: 'Failed to create subscription update checkout session',
+        message: 'Failed to update subscription',
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       });

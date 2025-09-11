@@ -97,64 +97,7 @@ export function AdminBilling() {
   const [previewData, setPreviewData] = useState<BillingPreview | null>(null);
   const [showPreview, setShowPreview] = useState<boolean>(false);
 
-  // Verify Stripe payment and handle success/cancel from checkout
-  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
-  
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const success = urlParams.get('success');
-    const canceled = urlParams.get('canceled');
-    const sessionId = urlParams.get('session_id');
-    
-    if (success === 'true' && sessionId) {
-      // Verify the payment with Stripe before updating UI
-      setIsVerifyingPayment(true);
-      
-      fetch(`/api/subscriptions/verify/${sessionId}`, {
-        credentials: 'include'
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          toast({
-            title: "Payment Successful!",
-            description: "Your subscription has been updated successfully.",
-          });
-          
-          // Refresh the organisation data to show updated billing
-          queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
-        } else {
-          toast({
-            title: "Payment Verification Failed",
-            description: data.message || "Unable to verify your payment. Please contact support if this persists.",
-            variant: "destructive",
-          });
-        }
-      })
-      .catch(error => {
-        console.error('Payment verification error:', error);
-        toast({
-          title: "Payment Verification Error",
-          description: "Unable to verify your payment status. Please contact support.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => {
-        setIsVerifyingPayment(false);
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-      });
-    } else if (canceled === 'true') {
-      toast({
-        title: "Payment Canceled",
-        description: "Your subscription update was canceled. No changes were made.",
-        variant: "destructive",
-      });
-      
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, [toast, queryClient, user?.organisationId]);
+  // Remove checkout verification logic - using direct subscription updates
 
   const { data: organisation, isLoading: orgLoading } = useQuery<Organisation>({
     queryKey: ['/api/organisations', user?.organisationId],
@@ -318,11 +261,10 @@ export function AdminBilling() {
     }
   }, [organisation, currentPlan, licenseData]);
 
-  // Mutation to change plan - redirects to Stripe checkout instead of immediate update
+  // Mutation to change plan - direct subscription update
   const changePlanMutation = useMutation({
     mutationFn: async ({ planId, userCount: newUserCount }: { planId: string; userCount?: number }) => {
-      // Instead of updating immediately, create Stripe checkout for plan change
-      const response = await fetch(`/api/subscriptions/change-plan-checkout`, {
+      const response = await fetch(`/api/subscriptions/change-plan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -337,39 +279,28 @@ export function AdminBilling() {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to create checkout session');
+        throw new Error(errorData.message || 'Failed to update subscription plan');
       }
       
-      const data = await response.json();
-      
-      // Redirect to Stripe Checkout
-      if (data.checkoutUrl) {
-        const stripeWindow = window.open(data.checkoutUrl, '_blank');
-        
-        if (!stripeWindow || stripeWindow.closed || typeof stripeWindow.closed === 'undefined') {
-          window.location.href = data.checkoutUrl;
-        } else {
-          stripeWindow.focus();
-        }
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-      
-      return data;
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setShowPlanChangeModal(false);
       setSelectedPlan(null);
       
+      // Refresh the organisation data to show updated billing
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
+      
       toast({
-        title: "Redirecting to Checkout",
-        description: "Complete payment to activate your new plan",
+        title: "Plan Updated Successfully!",
+        description: `Your subscription has been updated to ${data.planName}${data.prorationAmount ? ` with a proration of ${formatPrice(Math.abs(data.prorationAmount) * 100, organisation?.plan?.currency || 'USD')}` : ''}.`,
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to create checkout session",
+        title: "Update Failed",
+        description: error.message || "Failed to update subscription plan",
         variant: "destructive",
       });
     },
@@ -382,7 +313,7 @@ export function AdminBilling() {
         throw new Error('No Stripe integration available for this plan');
       }
 
-      const response = await fetch(`/api/subscriptions/update-checkout`, {
+      const response = await fetch(`/api/subscriptions/update`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -397,38 +328,25 @@ export function AdminBilling() {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to create checkout session');
+        throw new Error(errorData.message || 'Failed to update subscription');
       }
       
-      const data = await response.json();
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      // Refresh the organisation data to show updated billing
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
       
-      console.log('Received response from /api/subscriptions/update-checkout:', data);
-      
-      // Redirect to Stripe Checkout
-      if (data.checkoutUrl) {
-        console.log('Redirecting to checkout URL:', data.checkoutUrl);
-        
-        // Try window.open first (more reliable for external URLs)
-        const stripeWindow = window.open(data.checkoutUrl, '_blank');
-        
-        // Check if popup was blocked
-        if (!stripeWindow || stripeWindow.closed || typeof stripeWindow.closed === 'undefined') {
-          console.warn('Popup blocked, trying window.location.href');
-          window.location.href = data.checkoutUrl;
-        } else {
-          console.log('Opened Stripe checkout in new window');
-          // Focus the new window
-          stripeWindow.focus();
-        }
-      } else {
-        console.error('No checkout URL in response:', data);
-        throw new Error('No checkout URL returned');
-      }
+      toast({
+        title: "Subscription Updated!",
+        description: `Your user count has been updated to ${data.userCount}${data.prorationAmount ? ` with a proration of ${formatPrice(Math.abs(data.prorationAmount) * 100, organisation?.plan?.currency || 'USD')}` : ''}.`,
+      });
     },
     onError: (error: Error) => {
       toast({
-        title: "Checkout Error",
-        description: error.message || "Failed to create checkout session",
+        title: "Update Failed",
+        description: error.message || "Failed to update subscription",
         variant: "destructive",
       });
     },
@@ -496,28 +414,7 @@ export function AdminBilling() {
     });
   };
 
-  // Show loading overlay during payment verification
-  if (isVerifyingPayment) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" data-testid="payment-verification-loading">
-          <div className="bg-base-100 p-8 rounded-lg shadow-lg text-center">
-            <div className="loading loading-spinner loading-lg text-primary mb-4"></div>
-            <h3 className="text-lg font-semibold mb-2">Verifying Payment</h3>
-            <p className="text-base-content/60">Please wait while we confirm your payment with Stripe...</p>
-          </div>
-        </div>
-        
-        {/* Show the page content behind the overlay */}
-        <div className="opacity-30">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold">Billing & Subscription</h1>
-          </div>
-          <div className="text-base-content/60">Verifying payment...</div>
-        </div>
-      </div>
-    );
-  }
+  // Removed checkout verification loading overlay - using direct updates
 
   return (
     <div>
