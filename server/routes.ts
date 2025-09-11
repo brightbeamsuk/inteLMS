@@ -6553,8 +6553,17 @@ This test was initiated by ${user.email}.
       // Get all assignments for the organisation
       const assignments = await storage.getAssignmentsByOrganisation(organisationId);
       
-      // Count overdue assignments (due date passed or status is overdue)
+      // Get all users for the organisation to filter by active status
+      const users = await storage.getUsersByOrganisation(organisationId);
+      const activeUserIds = new Set(users.filter(user => user.status === 'active').map(user => user.id));
+      
+      // Count overdue assignments (due date passed or status is overdue) for ACTIVE users only
       const overdueCount = assignments.filter(assignment => {
+        // Only count assignments for active users
+        if (!activeUserIds.has(assignment.userId)) {
+          return false;
+        }
+        
         if (assignment.status === 'overdue') {
           return true;
         }
