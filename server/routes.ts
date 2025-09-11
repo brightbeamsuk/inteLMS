@@ -786,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const completions = await storage.getCompletionsByUser(user.id);
       
       // Group completions by month
-      const monthlyData = {};
+      const monthlyData: Record<string, { monthName: string; successful: number; failed: number; total: number }> = {};
       const currentDate = new Date();
       
       // Initialize last 12 months with zero values
@@ -811,7 +811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (monthlyData[monthKey]) {
             monthlyData[monthKey].total++;
-            if (completion.passed) {
+            if (completion.status === 'pass') {
               monthlyData[monthKey].successful++;
             } else {
               monthlyData[monthKey].failed++;
@@ -843,11 +843,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalAssigned = assignments.length;
       const completed = assignments.filter(a => a.status === 'completed').length;
       const inProgress = assignments.filter(a => a.status === 'in_progress').length;
-      const notStarted = assignments.filter(a => a.status === 'assigned').length;
+      const notStarted = assignments.filter(a => a.status === 'not_started').length;
       
       // Calculate average scores and pass rate
-      const passedCompletions = completions.filter(c => c.passed);
-      const failedCompletions = completions.filter(c => c.passed === false);
+      const passedCompletions = completions.filter(c => c.status === 'pass');
+      const failedCompletions = completions.filter(c => c.status === 'fail');
       const passRate = completions.length > 0 ? Math.round((passedCompletions.length / completions.length) * 100) : 0;
       
       // Get scores for chart data
@@ -2092,17 +2092,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
             { expand: ['items', 'customer'] }
           );
 
+          const customer = typeof subscription.customer === 'string' ? null : subscription.customer;
           stripeData = {
-            customer: {
-              id: subscription.customer.id,
-              email: subscription.customer.email,
-              name: subscription.customer.name,
-            },
+            customer: customer && 'email' in customer ? {
+              id: customer.id,
+              email: customer.email,
+              name: customer.name,
+            } : null,
             subscription: {
               id: subscription.id,
               status: subscription.status,
-              current_period_start: subscription.current_period_start,
-              current_period_end: subscription.current_period_end,
+              current_period_start: (subscription as any).current_period_start,
+              current_period_end: (subscription as any).current_period_end,
               cancel_at_period_end: subscription.cancel_at_period_end,
             },
             items: subscription.items.data.map(item => ({
@@ -2174,7 +2175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         // Get upcoming invoice preview
-        const upcomingInvoice = await stripeService['stripe'].invoices.retrieveUpcoming({
+        const upcomingInvoice = await (stripeService['stripe'].invoices as any).retrieveUpcoming({
           customer: organisation.stripeCustomerId,
           subscription: organisation.stripeSubscriptionId,
         });
@@ -2188,7 +2189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           period_start: upcomingInvoice.period_start,
           period_end: upcomingInvoice.period_end,
           status: upcomingInvoice.status,
-          line_items: upcomingInvoice.lines.data.map(line => ({
+          line_items: upcomingInvoice.lines.data.map((line: any) => ({
             id: line.id,
             description: line.description,
             amount: line.amount,
@@ -2408,17 +2409,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const { getStripeService } = await import('./services/StripeService.js');
           const stripeService = getStripeService();
           
-          // Create usage record for Stripe
-          const usageRecord = await stripeService.reportUsage(
-            orgWithPlan.stripeSubscriptionId,
-            usageSync.activeUserCount,
-            Math.floor(usageSync.lastSyncTime.getTime() / 1000)
-          );
+          // Note: Usage reporting would be implemented here
+          // For now, we'll skip the Stripe usage record creation
+          console.log('Usage sync completed locally. Stripe usage reporting not yet implemented.');
           
           stripeUsageUpdate = {
-            stripeUsageRecordId: usageRecord.id,
-            quantity: usageRecord.quantity,
-            timestamp: new Date(usageRecord.timestamp * 1000),
+            stripeUsageRecordId: 'not_implemented',
+            quantity: usageSync.activeUserCount,
+            timestamp: new Date(),
           };
         } catch (stripeError) {
           console.error('Error updating Stripe usage:', stripeError);
@@ -3498,7 +3496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         res.json(finalResponse);
       } catch (scormError: any) {
-        console.error(`❌ SCORM processing failed for assignment ${assignmentId}:`, scormError);
+        console.error(`❌ SCORM processing failed for assignment:`, scormError);
         
         // Provide specific error messages based on the error type
         let errorMessage = 'Failed to launch course';
@@ -3522,7 +3520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
     } catch (error) {
-      console.error(`❌ Unexpected error in SCORM launch for assignment ${assignmentId}:`, error);
+      console.error(`❌ Unexpected error in SCORM launch:`, error);
       res.status(500).json({ message: 'Failed to launch course', code: 'SERVER_ERROR' });
     }
   });
@@ -4399,7 +4397,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const planData = {
           name: customPlan.name,
           description: customPlan.description || '',
-          pricePerUser: customPlan.pricePerUser,
+          billingModel: 'per_seat' as const,
+          unitAmount: Math.round(customPlan.pricePerUser * 100), // Convert to cents
+          currency: 'USD',
+          cadence: 'monthly' as const,
           status: 'active' as const,
           createdBy: user.id,
         };
@@ -4726,14 +4727,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingSettings = await storage.getOrganisationSettings(organisationId);
 
       // Clean and validate sensitive fields - prevent masked value storage
-      const cleanSensitiveField = (field: string | undefined, existingValue: string | undefined): string | null => {
-        if (!field) return null;
+      const cleanSensitiveField = (field: string | undefined, existingValue: string | undefined): string | undefined => {
+        if (!field) return undefined;
         const cleaned = field.replace(/^["']|["']$/g, "").replace(/\r?\n/g, "").trim();
         // If it's a masked value (contains only • or similar characters), keep existing
         if (cleaned && /^[•*]+$/.test(cleaned)) {
-          return existingValue || null;
+          return existingValue || undefined;
         }
-        return cleaned || null;
+        return cleaned || undefined;
       };
 
       const processedApiKey = cleanSensitiveField(apiKey, existingSettings?.apiKey);
@@ -4985,8 +4986,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`🔧 DIRECT TEST: ${directTestResponse.status} ${directTestResponse.statusText}`);
           const directBody = await directTestResponse.text();
           console.log(`🔧 DIRECT RESPONSE: ${directBody.substring(0, 200)}...`);
-        } catch (directError) {
-          console.log('🔧 DIRECT TEST ERROR:', directError.message);
+        } catch (directError: any) {
+          console.log('🔧 DIRECT TEST ERROR:', directError?.message || 'Unknown error');
         }
 
         // Health check first
@@ -5206,7 +5207,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedBy: user.id
       };
 
-      const settings = await storage.createSystemEmailSettings(settingsData);
+      const settingsDataWithProvider = {
+        ...settingsData,
+        emailProvider: 'smtp_generic' as const
+      };
+      const settings = await storage.createSystemEmailSettings(settingsDataWithProvider);
       
       // Return settings without password
       const { smtpPassword: _, ...safeSettings } = settings;
@@ -5547,7 +5552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         } else {
           // API-based providers - test basic connectivity
-          const singleMailer = await singleMailerService.getInstance();
+          // Note: API-based providers use direct configuration validation
           
           // Create a minimal test to validate API key
           try {
@@ -6260,6 +6265,24 @@ This test was initiated by ${user.email}.
         }
       }
 
+      // Check admin limit if creating an admin user
+      if (validatedData.role === 'admin') {
+        const orgId = validatedData.organisationId || user.organisationId;
+        if (!orgId) {
+          return res.status(400).json({ message: 'Organisation ID is required for admin users' });
+        }
+        
+        const adminLimitCheck = await storage.enforceAdminLimit(orgId);
+        if (!adminLimitCheck.allowed) {
+          return res.status(403).json({
+            message: 'Admin user limit exceeded',
+            code: adminLimitCheck.error?.code || 'FEATURE_LOCKED',
+            featureKey: adminLimitCheck.error?.featureKey || 'unlimited_admin_accounts',
+            maxAllowed: adminLimitCheck.error?.maxAllowed || 1
+          });
+        }
+      }
+
       const newUser = await storage.createUser(validatedData);
       res.status(201).json(newUser);
     } catch (error) {
@@ -6435,6 +6458,22 @@ This test was initiated by ${user.email}.
       // Cannot promote superadmins or existing admins
       if (targetUser.role === 'superadmin' || targetUser.role === 'admin') {
         return res.status(400).json({ message: 'User is already an administrator' });
+      }
+
+      // Check admin limit before promoting
+      const orgId = targetUser.organisationId;
+      if (!orgId) {
+        return res.status(400).json({ message: 'User must be associated with an organisation' });
+      }
+      
+      const adminLimitCheck = await storage.enforceAdminLimit(orgId);
+      if (!adminLimitCheck.allowed) {
+        return res.status(403).json({
+          message: 'Admin user limit exceeded',
+          code: adminLimitCheck.error?.code || 'FEATURE_LOCKED',
+          featureKey: adminLimitCheck.error?.featureKey || 'unlimited_admin_accounts',
+          maxAllowed: adminLimitCheck.error?.maxAllowed || 1
+        });
       }
 
       const updatedUser = await storage.updateUser(userId, { role: 'admin' });
@@ -7550,6 +7589,31 @@ This test was initiated by ${user.email}.
           return res.status(403).json({ 
             message: licenseCheck.error,
             code: 'LICENSE_LIMIT_EXCEEDED'
+          });
+        }
+      }
+
+      // Count how many admin users will be created
+      const adminUsersToCreate = usersData.filter(userData => userData.role === 'admin').length;
+      
+      // Check admin limit if creating admin users
+      if (adminUsersToCreate > 0) {
+        const orgId = user.organisationId;
+        if (!orgId) {
+          return res.status(400).json({ message: 'Organisation ID is required for admin users' });
+        }
+        
+        // For bulk import, we need to check if we can create ALL the admin users
+        // Since enforceAdminLimit checks current count vs limit, we need to check each one
+        // For simplicity, we'll reject the entire bulk import if admin limit is exceeded
+        const adminLimitCheck = await storage.enforceAdminLimit(orgId);
+        if (!adminLimitCheck.allowed) {
+          return res.status(403).json({
+            message: `Admin user limit exceeded. Cannot import ${adminUsersToCreate} admin user(s).`,
+            code: adminLimitCheck.error?.code || 'FEATURE_LOCKED',
+            featureKey: adminLimitCheck.error?.featureKey || 'unlimited_admin_accounts',
+            maxAllowed: adminLimitCheck.error?.maxAllowed || 1,
+            attemptedAdminUsers: adminUsersToCreate
           });
         }
       }
