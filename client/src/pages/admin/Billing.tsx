@@ -636,7 +636,7 @@ export function AdminBilling() {
                   <div className="stat">
                     <div className="stat-title">Allocated</div>
                     <div className="stat-value text-sm">{licenseData?.currentActiveUsers || 0}</div>
-                    <div className="stat-desc">regular users</div>
+                    <div className="stat-desc">Allocated Licenses</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Available</div>
