@@ -340,8 +340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (session.payment_status === 'paid' && session.subscription) {
         // Payment successful - update our database
         const metadata = session.metadata;
-        if (metadata?.organisationId) {
-          await storage.updateOrganisationBilling(metadata.organisationId, {
+        if (metadata?.org_id) {
+          await storage.updateOrganisationBilling(metadata.org_id, {
             stripeSubscriptionId: session.subscription as string,
             stripeCustomerId: session.customer as string,
             billingStatus: 'active',
@@ -350,7 +350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           // Get updated organisation data
-          const updatedOrg = await storage.getOrganisation(metadata.organisationId);
+          const updatedOrg = await storage.getOrganisation(metadata.org_id);
           
           res.json({
             success: true,
