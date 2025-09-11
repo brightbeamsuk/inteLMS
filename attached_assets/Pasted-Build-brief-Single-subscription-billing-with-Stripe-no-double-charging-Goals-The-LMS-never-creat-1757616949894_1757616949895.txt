@@ -1,0 +1,157 @@
+Build brief: Single-subscription billing with Stripe (no double charging)
+Goals
+
+The LMS never creates a second active subscription for the same organisation/user.
+
+Any plan change in the LMS updates the existing Stripe subscription item (replace price & set quantity), not add a new item.
+
+Stripe is the source of truth for subscription status; the LMS mirrors it via webhooks.
+
+Changes use explicit proration and idempotency to avoid duplicate charges.
+
+Data you must persist (names are examples; use your own)
+
+Customer reference to Stripe (e.g., “stripe_customer_id”).
+
+Active subscription reference (e.g., “stripe_subscription_id”).
+
+Active subscription item reference (e.g., “stripe_subscription_item_id”).
+
+Current price reference (e.g., “plan_price_id”).
+
+Current seat count (e.g., “active_users”).
+
+Current subscription status mirrored from Stripe (e.g., trialling/active/past_due/cancelled).
+
+Behaviour to implement
+1) Change plan / seats (the common path)
+
+When an admin changes plan or seat count in the LMS:
+
+Retrieve the existing Stripe subscription and the single active subscription item.
+
+Replace the item’s price with the new price and set quantity to the LMS seat count.
+
+Set an explicit proration behaviour (choose either “create prorations” or “no proration” as a platform setting).
+
+Do not add a second item and do not create a new subscription.
+
+After Stripe confirms, update local records: price id, seat count, and (if Stripe returned a new item id) the stored subscription-item id.
+
+Do not change local status here; let the webhook do it.
+
+2) Starting a subscription (only if none exists)
+
+If no active subscription exists for the org/user:
+
+Create a single subscription with one item (the chosen price) and the seat quantity from the LMS.
+
+Save the subscription id + the first item’s id.
+
+Treat the local status as provisional; rely on webhook events for the authoritative status.
+
+3) Cancelling / switching across billing periods (rare path)
+
+Prefer price replacement on the same item; it avoids overcharging and is simpler.
+
+If you truly must end one and start another:
+
+Mark the current subscription to cancel at period end, and schedule the new one to start on renewal.
+
+Ensure there is never more than one active subscription at the same time.
+
+Webhooks (authoritative sync from Stripe → LMS)
+
+Verify webhook signatures.
+
+Handle at least:
+
+customer.subscription.created
+
+customer.subscription.updated
+
+customer.subscription.deleted
+
+invoice.paid
+
+invoice.payment_failed
+
+On subscription events:
+
+Find the org/user by Stripe customer id.
+
+Update local: subscription id, subscription item id (first/only item), status, and current price id.
+
+On invoice events:
+
+Optionally mark account “in good standing” on paid, or flag/grace-period on failed.
+
+Protection against double charging
+
+Enforce one active subscription per org/user at the database level (e.g., a uniqueness or partial-uniqueness rule for “active-like” statuses).
+
+Anywhere you expose Stripe Customer Portal or Checkout, configure it so customers can’t create a second subscription for the same product set.
+
+When updating a plan, always specify which existing subscription item you’re replacing; otherwise Stripe will keep both items active.
+
+Idempotency & reliability
+
+Attach an Idempotency-Key to every create/update/cancel call to Stripe.
+
+Treat local writes as non-authoritative until a signed webhook confirms.
+
+Log every outbound action and every inbound event with correlation ids so you can trace issues.
+
+Proration & transparency
+
+Provide a preview action (e.g., “show next invoice with the proposed change”) before applying changes, so admins can see costs.
+
+Make proration behaviour a visible platform setting (e.g., “bill difference now” vs “no proration; take effect next cycle”) and apply it consistently.
+
+PAYG / usage-based notes (if you use them)
+
+Before switching a metered price, finalise usage on the old item for the period, then replace the item with the new price.
+
+Remove superseded metered items to avoid parallel metered charges.
+
+Security & compliance
+
+Store only the necessary Stripe ids.
+
+Verify webhook signatures and reject unverifiable events.
+
+Do not use client-side secrets; all Stripe calls originate server-side.
+
+Minimal acceptance criteria (tick these off)
+
+Changing plan or seats never creates a second Stripe subscription or a second active item.
+
+The LMS always updates the existing subscription item (price + quantity).
+
+Local subscription status only changes after receiving a valid Stripe webhook.
+
+A database rule prevents a second active subscription for the same org/user.
+
+Idempotency is used for all state-changing Stripe requests.
+
+An admin can preview proration totals before confirming a change.
+
+Test scenarios you must pass
+
+Plan change with proration: preview shows expected delta; applying the change keeps exactly one item active.
+
+Seat change only: quantity updates; invoice reflects the new quantity; no duplicate items created.
+
+Duplicate creation attempt: second subscription attempt is blocked by business logic and DB rule.
+
+Webhook resilience: if the outbound call succeeds but your app restarts, the subsequent webhook still brings the LMS into the correct state.
+
+Failure retries: repeating the same request (network error) does not create duplicate charges due to idempotency.
+
+Metered switch (if applicable): old usage recorded; new metered price active; only one metered item remains.
+
+Operational notes
+
+Log and surface a clear admin timeline (who changed plan/seats, when, and what Stripe reported).
+
+Keep a reconciliation report: list all active LMS subscriptions and confirm each has exactly one active Stripe subscription with one active item and matching quantity.
