@@ -5627,7 +5627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               the best available email configuration.
             </div>
           `,
-          templateType: 'system_test'
+          templateType: 'smtp_test'
         });
         
         res.json({
@@ -5683,7 +5683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           <br>
           <p>Best regards,<br>LMS System</p>
         `,
-        templateType: 'system_test'
+        templateType: 'smtp_test'
       });
       
       if (result.success) {
@@ -5892,7 +5892,7 @@ If you received this email, your inteLMS email configuration is working correctl
 This test was initiated by ${user.email}.
 
 🚀 Powered by inteLMS Email Service`,
-        templateType: 'system_test'
+        templateType: 'smtp_test'
       });
 
       if (emailResult.success) {
