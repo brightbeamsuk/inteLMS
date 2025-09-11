@@ -193,16 +193,16 @@ export function AdminDashboard() {
       {/* Charts and Analytics */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
         {/* Course Completion Trend Chart */}
-        <div className="card bg-base-200 shadow-sm xl:col-span-2">
+        <div className="card bg-base-100 border border-base-300 shadow-md xl:col-span-2">
           <div className="card-body">
-            <h3 className="card-title">
+            <h3 className="card-title text-base-content">
               <i className="fas fa-chart-line text-primary"></i>
               Course Completion Trends
             </h3>
-            <div className="h-80 bg-base-100 rounded p-4">
+            <div className="h-80 bg-base-50 rounded-lg border border-base-200 p-4">
               {analyticsLoading ? (
                 <div className="flex items-center justify-center h-full">
-                  <span className="loading loading-spinner loading-lg"></span>
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
                 </div>
               ) : analyticsData.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-center">
@@ -216,35 +216,40 @@ export function AdminDashboard() {
                   config={{
                     successful: {
                       label: "Successful Completions",
-                      color: "hsl(142, 76%, 36%)",
+                      color: "hsl(var(--su))",
                     },
                     failed: {
                       label: "Failed Attempts", 
-                      color: "hsl(0, 84%, 60%)",
+                      color: "hsl(var(--er))",
                     },
                     total: {
                       label: "Total Attempts",
-                      color: "hsl(217, 91%, 60%)",
+                      color: "hsl(var(--in))",
                     },
                   }}
                 >
                   <AreaChart data={analyticsData}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--bc) / 0.1)" />
                     <XAxis 
                       dataKey="monthName" 
-                      tick={{ fontSize: 11, fill: 'currentColor' }}
+                      tick={{ fontSize: 11, fill: 'hsl(var(--bc) / 0.7)' }}
+                      axisLine={{ stroke: 'hsl(var(--bc) / 0.2)' }}
                       interval={0}
                       angle={-45}
                       textAnchor="end"
                       height={60}
                     />
-                    <YAxis tick={{ fontSize: 11, fill: 'currentColor' }} />
+                    <YAxis 
+                      tick={{ fontSize: 11, fill: 'hsl(var(--bc) / 0.7)' }}
+                      axisLine={{ stroke: 'hsl(var(--bc) / 0.2)' }}
+                    />
                     <ChartTooltip 
                       content={<ChartTooltipContent />} 
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--base-100))',
-                        border: '1px solid hsl(var(--base-300))',
-                        borderRadius: '8px'
+                        backgroundColor: 'hsl(var(--b1))',
+                        border: '1px solid hsl(var(--b3))',
+                        borderRadius: '0.5rem',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
                     />
                     <ChartLegend content={<ChartLegendContent />} />
@@ -252,17 +257,17 @@ export function AdminDashboard() {
                       type="monotone" 
                       dataKey="successful" 
                       stackId="1" 
-                      stroke="var(--color-successful)" 
-                      fill="var(--color-successful)" 
-                      fillOpacity={0.7}
+                      stroke="hsl(var(--su))" 
+                      fill="hsl(var(--su))" 
+                      fillOpacity={0.8}
                     />
                     <Area 
                       type="monotone" 
                       dataKey="failed" 
                       stackId="1" 
-                      stroke="var(--color-failed)" 
-                      fill="var(--color-failed)" 
-                      fillOpacity={0.7}
+                      stroke="hsl(var(--er))" 
+                      fill="hsl(var(--er))" 
+                      fillOpacity={0.8}
                     />
                   </AreaChart>
                 </ChartContainer>
@@ -272,16 +277,16 @@ export function AdminDashboard() {
         </div>
 
         {/* Completion Rate Donut Chart */}
-        <div className="card bg-base-200 shadow-sm">
+        <div className="card bg-base-100 border border-base-300 shadow-md">
           <div className="card-body">
-            <h3 className="card-title">
+            <h3 className="card-title text-base-content">
               <i className="fas fa-chart-pie text-secondary"></i>
               Overall Success Rate
             </h3>
-            <div className="h-80 bg-base-100 rounded p-4">
+            <div className="h-80 bg-base-50 rounded-lg border border-base-200 p-4">
               {analyticsLoading || !stats ? (
                 <div className="flex items-center justify-center h-full">
-                  <span className="loading loading-spinner loading-lg"></span>
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full">
@@ -289,11 +294,11 @@ export function AdminDashboard() {
                     config={{
                       successful: {
                         label: "Successful",
-                        color: "hsl(142, 76%, 36%)",
+                        color: "hsl(var(--su))",
                       },
                       pending: {
                         label: "In Progress", 
-                        color: "hsl(45, 93%, 47%)",
+                        color: "hsl(var(--wa))",
                       },
                     }}
                     className="h-48 w-full"
@@ -301,8 +306,8 @@ export function AdminDashboard() {
                     <PieChart>
                       <Pie
                         data={[
-                          { name: 'Completed', value: stats.coursesCompleted, fill: 'hsl(142, 76%, 36%)' },
-                          { name: 'In Progress', value: Math.max(0, stats.coursesAssigned - stats.coursesCompleted), fill: 'hsl(45, 93%, 47%)' }
+                          { name: 'Completed', value: stats.coursesCompleted, fill: 'hsl(var(--su))' },
+                          { name: 'In Progress', value: Math.max(0, stats.coursesAssigned - stats.coursesCompleted), fill: 'hsl(var(--wa))' }
                         ]}
                         cx="50%"
                         cy="50%"
@@ -310,14 +315,17 @@ export function AdminDashboard() {
                         outerRadius={80}
                         paddingAngle={2}
                         dataKey="value"
+                        stroke="hsl(var(--b1))"
+                        strokeWidth={2}
                       >
                       </Pie>
                       <ChartTooltip 
                         content={<ChartTooltipContent />} 
                         contentStyle={{
-                          backgroundColor: 'hsl(var(--base-100))',
-                          border: '1px solid hsl(var(--base-300))',
-                          borderRadius: '8px'
+                          backgroundColor: 'hsl(var(--b1))',
+                          border: '1px solid hsl(var(--b3))',
+                          borderRadius: '0.5rem',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                         }}
                       />
                     </PieChart>
@@ -340,16 +348,16 @@ export function AdminDashboard() {
       {/* Secondary Analytics Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Monthly Performance Bar Chart */}
-        <div className="card bg-base-200 shadow-sm">
+        <div className="card bg-base-100 border border-base-300 shadow-md">
           <div className="card-body">
-            <h3 className="card-title">
+            <h3 className="card-title text-base-content">
               <i className="fas fa-chart-bar text-accent"></i>
               Monthly Performance
             </h3>
-            <div className="h-64 bg-base-100 rounded p-4">
+            <div className="h-64 bg-base-50 rounded-lg border border-base-200 p-4">
               {analyticsLoading ? (
                 <div className="flex items-center justify-center h-full">
-                  <span className="loading loading-spinner loading-lg"></span>
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
                 </div>
               ) : analyticsData.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-center">
@@ -363,43 +371,48 @@ export function AdminDashboard() {
                   config={{
                     successful: {
                       label: "Pass",
-                      color: "hsl(142, 76%, 36%)",
+                      color: "hsl(var(--su))",
                     },
                     failed: {
                       label: "Fail", 
-                      color: "hsl(0, 84%, 60%)",
+                      color: "hsl(var(--er))",
                     },
                   }}
                 >
                   <BarChart data={analyticsData}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--bc) / 0.1)" />
                     <XAxis 
                       dataKey="monthName" 
-                      tick={{ fontSize: 11, fill: 'currentColor' }}
+                      tick={{ fontSize: 11, fill: 'hsl(var(--bc) / 0.7)' }}
+                      axisLine={{ stroke: 'hsl(var(--bc) / 0.2)' }}
                       interval={0}
                       angle={-45}
                       textAnchor="end"
                       height={50}
                     />
-                    <YAxis tick={{ fontSize: 11, fill: 'currentColor' }} />
+                    <YAxis 
+                      tick={{ fontSize: 11, fill: 'hsl(var(--bc) / 0.7)' }}
+                      axisLine={{ stroke: 'hsl(var(--bc) / 0.2)' }}
+                    />
                     <ChartTooltip 
                       content={<ChartTooltipContent />} 
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--base-100))',
-                        border: '1px solid hsl(var(--base-300))',
-                        borderRadius: '8px'
+                        backgroundColor: 'hsl(var(--b1))',
+                        border: '1px solid hsl(var(--b3))',
+                        borderRadius: '0.5rem',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
                     />
                     <ChartLegend content={<ChartLegendContent />} />
                     <Bar 
                       dataKey="successful" 
-                      fill="var(--color-successful)" 
-                      radius={[2, 2, 0, 0]}
+                      fill="hsl(var(--su))" 
+                      radius={[4, 4, 0, 0]}
                     />
                     <Bar 
                       dataKey="failed" 
-                      fill="var(--color-failed)" 
-                      radius={[2, 2, 0, 0]}
+                      fill="hsl(var(--er))" 
+                      radius={[4, 4, 0, 0]}
                     />
                   </BarChart>
                 </ChartContainer>
@@ -409,16 +422,16 @@ export function AdminDashboard() {
         </div>
 
         {/* Recent Completions */}
-        <div className="card bg-base-200 shadow-sm">
+        <div className="card bg-base-100 border border-base-300 shadow-md">
           <div className="card-body">
-            <h3 className="card-title">
+            <h3 className="card-title text-base-content">
               <i className="fas fa-trophy text-success"></i>
               Recent Completions
             </h3>
-            <div className="space-y-3" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+            <div className="space-y-3 bg-base-50 rounded-lg border border-base-200 p-3" style={{ maxHeight: '240px', overflowY: 'auto' }}>
               {completionsLoading ? (
                 <div className="text-center py-8">
-                  <span className="loading loading-spinner loading-md"></span>
+                  <span className="loading loading-spinner loading-md text-primary"></span>
                 </div>
               ) : recentCompletions.length === 0 ? (
                 <div className="text-center py-8 text-base-content/60">
@@ -428,7 +441,7 @@ export function AdminDashboard() {
                 </div>
               ) : (
                 recentCompletions.map((completion, index) => (
-                  <div key={completion.id} className="flex justify-between items-center p-3 bg-base-100 rounded">
+                  <div key={completion.id} className="flex justify-between items-center p-3 bg-base-100 rounded-lg border border-base-200 hover:bg-base-200 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="avatar placeholder">
                         <div className={`bg-${['neutral', 'primary', 'secondary', 'accent', 'info'][index % 5]} text-${['neutral', 'primary', 'secondary', 'accent', 'info'][index % 5]}-content rounded-full w-8`}>
@@ -464,16 +477,16 @@ export function AdminDashboard() {
       </div>
 
       {/* Expiring Training Alerts */}
-      <div className="card bg-base-200 shadow-sm">
+      <div className="card bg-base-100 border border-base-300 shadow-md">
         <div className="card-body">
-          <h3 className="card-title">
+          <h3 className="card-title text-base-content">
             <i className="fas fa-exclamation-triangle text-warning"></i>
             Expiring Training Alerts
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 bg-base-50 rounded-lg border border-base-200 p-4">
             {expiringLoading ? (
               <div className="text-center py-8">
-                <span className="loading loading-spinner loading-md"></span>
+                <span className="loading loading-spinner loading-md text-primary"></span>
               </div>
             ) : (
               <>
