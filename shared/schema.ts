@@ -158,7 +158,12 @@ export const organisations = pgTable("organisations", {
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  // Additional indexes for performance on billing queries
+  index("idx_organisation_billing_status").on(table.billingStatus),
+  index("idx_organisation_stripe_customer").on(table.stripeCustomerId),
+  index("idx_organisation_subscription").on(table.stripeSubscriptionId),
+]);
 
 // Course folders table
 export const courseFolders = pgTable("course_folders", {
