@@ -894,6 +894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Count active users in the organization, EXCLUDING admin users from license count
       const allUsers = await storage.getUsersByOrganisation(user.organisationId);
       const activeUsers = allUsers.filter(u => u.status === 'active');
+      const nonAdminUsers = allUsers.filter(u => u.role !== 'admin' && u.role !== 'superadmin');
       const activeNonAdminUsers = activeUsers.filter(u => u.role !== 'admin' && u.role !== 'superadmin');
       const currentActiveCount = activeNonAdminUsers.length;
 
@@ -951,6 +952,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         organisationName: organisation.displayName || organisation.name,
         // Additional info for clarity
         totalActiveUsers: activeUsers.length,
+        totalNonAdminUsers: nonAdminUsers.length, // Total non-admin users (active and inactive)
         adminUsers: activeUsers.filter(u => u.role === 'admin' || u.role === 'superadmin').length
       });
     } catch (error) {

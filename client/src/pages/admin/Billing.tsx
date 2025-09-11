@@ -674,10 +674,10 @@ export function AdminBilling() {
               </div>
               <div className="stat-title">Licensed Active Users</div>
               <div className="stat-value text-primary" data-testid="stat-users-count">
-                {organisationStats?.activeUsers || 0}
+                {licenseData?.currentActiveUsers || 0}
               </div>
               <div className="stat-desc" data-testid="stat-users-total">
-                of {organisationStats?.totalUsers || 0} total users
+                of {licenseData?.totalNonAdminUsers || 0} total users
               </div>
               {currentPlan?.billingModel === 'metered_per_active_user' && (
                 <div className="mt-2">
