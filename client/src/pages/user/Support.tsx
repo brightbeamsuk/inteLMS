@@ -197,7 +197,7 @@ export function UserSupport() {
         <div className="flex items-center gap-4">
           <div className="avatar">
             <div className="w-12 h-12 rounded bg-accent text-accent-content flex items-center justify-center">
-              <i className="fas fa-question-circle text-xl"></i>
+              🙋‍♂️
             </div>
           </div>
           <div>
@@ -596,6 +596,11 @@ export function UserSupport() {
                         className="chat chat-start"
                         data-testid={`response-${response.id}`}
                       >
+                        <div className="chat-image avatar">
+                          <div className="w-8 h-8 rounded-full bg-info text-info-content flex items-center justify-center text-xs font-bold">
+                            👨‍💼
+                          </div>
+                        </div>
                         <div className="chat-header">
                           Support Team • {format(new Date(response.createdAt), 'MMM dd, HH:mm')}
                         </div>

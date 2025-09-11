@@ -248,7 +248,7 @@ export function AdminSupport() {
         <div className="flex items-center gap-4">
           <div className="avatar">
             <div className="w-12 h-12 rounded bg-secondary text-secondary-content flex items-center justify-center">
-              <i className="fas fa-life-ring text-xl"></i>
+              👨‍💼
             </div>
           </div>
           <div>
@@ -638,7 +638,7 @@ export function AdminSupport() {
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
                               isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content'
                             }`}>
-                              {isFromSupport ? '🛠️' : '👤'}
+                              {isFromSupport ? '👨‍💼' : '👤'}
                             </div>
                           </div>
                           <div className="chat-header text-xs opacity-70">

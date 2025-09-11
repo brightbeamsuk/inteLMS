@@ -303,7 +303,7 @@ export function SuperAdminSupport() {
         <div className="flex items-center gap-4">
           <div className="avatar">
             <div className="w-12 h-12 rounded bg-primary text-primary-content flex items-center justify-center">
-              <i className="fas fa-headset text-xl"></i>
+              🧑‍💻
             </div>
           </div>
           <div>
@@ -726,7 +726,7 @@ export function SuperAdminSupport() {
                               response.isInternal ? 'bg-warning text-warning-content' : 
                               (isFromSupport ? 'bg-info text-info-content' : 'bg-primary text-primary-content')
                             }`}>
-                              {response.isInternal ? '🔒' : (isFromSupport ? '🛠️' : '👤')}
+                              {response.isInternal ? '🔒' : (isFromSupport ? '👨‍💼' : '👤')}
                             </div>
                           </div>
                           <div className="chat-header text-xs opacity-70">
