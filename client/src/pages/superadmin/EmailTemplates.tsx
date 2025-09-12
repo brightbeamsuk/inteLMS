@@ -7,20 +7,20 @@ import { DataLoadFailurePanel, FailurePanel } from "@/components/ui/failure-pane
 import { Eye, Send, Edit, RefreshCw, X, ChevronRight } from "lucide-react";
 
 interface EmailTemplate {
-  id: string;
-  templateKey: string;
-  category: 'admin' | 'learner';
+  key: string;
   name: string;
-  description: string;
+  category: string;
   subject: string;
-  htmlContent: string;
-  textContent?: string;
-  variables: string[];
-  version: number;
+  html: string;
+  text?: string;
+  mjml?: string;
   isActive: boolean;
-  hasHtml: boolean;
-  hasText: boolean;
-  updatedAt: string;
+  version: number;
+  variablesSchema?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  htmlSize?: number;
+  error?: string;
 }
 
 interface TemplatesResponse {
@@ -28,16 +28,20 @@ interface TemplatesResponse {
   stage?: string;
   error?: {
     short: string;
-    detail?: string;
+    raw?: string;
   };
-  data?: {
-    templates: EmailTemplate[];
-    stats: {
-      total: number;
-      configured: number;
-      defaults: number;
+  data?: EmailTemplate[];
+  meta?: {
+    totalCount: number;
+    activeCount: number;
+    categories: string[];
+    health: {
+      isHealthy: boolean;
+      missingKeys: string[];
+      missingCount: number;
     };
   };
+  hasRepair?: boolean;
 }
 
 interface PreviewRequest {
@@ -269,7 +273,8 @@ function SuperAdminEmailTemplatesContent() {
       );
     }
 
-    const { templates, stats } = response.data!;
+    const templates = response.data || [];
+    const stats = response.meta || { totalCount: 0, activeCount: 0, categories: [] };
 
     if (templates.length === 0) {
       return (
@@ -298,15 +303,15 @@ function SuperAdminEmailTemplatesContent() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="stat bg-base-100 rounded-lg">
             <div className="stat-title">Total Templates</div>
-            <div className="stat-value text-primary">{stats.total}</div>
+            <div className="stat-value text-primary">{stats.totalCount}</div>
           </div>
           <div className="stat bg-base-100 rounded-lg">
-            <div className="stat-title">Configured</div>
-            <div className="stat-value text-success">{stats.configured}</div>
+            <div className="stat-title">Active</div>
+            <div className="stat-value text-success">{stats.activeCount}</div>
           </div>
           <div className="stat bg-base-100 rounded-lg">
-            <div className="stat-title">Using Defaults</div>
-            <div className="stat-value text-warning">{stats.defaults}</div>
+            <div className="stat-title">Categories</div>
+            <div className="stat-value text-warning">{stats.categories?.length || 0}</div>
           </div>
         </div>
 
@@ -342,19 +347,19 @@ function SuperAdminEmailTemplatesContent() {
                 <tbody>
                   {templates.map((template) => (
                     <tr 
-                      key={template.id}
+                      key={template.key}
                       className="cursor-pointer hover:bg-base-200"
-                      onClick={() => handleTemplateClick(template.templateKey)}
-                      data-testid={`template-row-${template.templateKey}`}
+                      onClick={() => handleTemplateClick(template.key)}
+                      data-testid={`template-row-${template.key}`}
                     >
                       <td>
                         <div className="font-mono text-xs text-base-content/60">
-                          {template.templateKey}
+                          {template.key}
                         </div>
                       </td>
                       <td>
                         <div className="font-medium">{template.name}</div>
-                        <div className="text-sm text-base-content/60">{template.description}</div>
+                        <div className="text-sm text-base-content/60">{template.category || 'No category'}</div>
                       </td>
                       <td>
                         <div className="badge badge-ghost badge-sm">v{template.version}</div>
@@ -366,17 +371,20 @@ function SuperAdminEmailTemplatesContent() {
                       </td>
                       <td>
                         <div className="flex space-x-1">
-                          {template.hasHtml && (
+                          {template.html && (
                             <div className="badge badge-primary badge-xs">HTML</div>
                           )}
-                          {template.hasText && (
+                          {template.text && (
                             <div className="badge badge-secondary badge-xs">TEXT</div>
+                          )}
+                          {template.mjml && (
+                            <div className="badge badge-accent badge-xs">MJML</div>
                           )}
                         </div>
                       </td>
                       <td>
                         <div className="text-sm text-base-content/60">
-                          {new Date(template.updatedAt).toLocaleDateString()}
+                          {template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : 'Unknown'}
                         </div>
                       </td>
                       <td>
@@ -385,9 +393,9 @@ function SuperAdminEmailTemplatesContent() {
                             className="btn btn-ghost btn-xs"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handlePreview(template.templateKey);
+                              handlePreview(template.key);
                             }}
-                            data-testid={`button-preview-${template.templateKey}`}
+                            data-testid={`button-preview-${template.key}`}
                           >
                             <Eye className="w-3 h-3" />
                           </button>
@@ -395,9 +403,9 @@ function SuperAdminEmailTemplatesContent() {
                             className="btn btn-ghost btn-xs"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleTest(template.templateKey);
+                              handleTest(template.key);
                             }}
-                            data-testid={`button-test-${template.templateKey}`}
+                            data-testid={`button-test-${template.key}`}
                           >
                             <Send className="w-3 h-3" />
                           </button>
@@ -414,8 +422,8 @@ function SuperAdminEmailTemplatesContent() {
     );
   };
 
-  const selectedTemplateData = templatesQuery.data?.ok 
-    ? templatesQuery.data.data?.templates.find(t => t.templateKey === selectedTemplate)
+  const selectedTemplateData = templatesQuery.data?.ok && templatesQuery.data?.data
+    ? templatesQuery.data.data.find(t => t.key === selectedTemplate)
     : null;
 
   return (
@@ -449,7 +457,7 @@ function SuperAdminEmailTemplatesContent() {
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <h3 className="text-lg font-bold">{selectedTemplateData.name}</h3>
-                  <p className="text-sm text-base-content/60">{selectedTemplateData.templateKey}</p>
+                  <p className="text-sm text-base-content/60">{selectedTemplateData.key}</p>
                 </div>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -476,11 +484,20 @@ function SuperAdminEmailTemplatesContent() {
                     <span className="label-text font-medium">Variables</span>
                   </label>
                   <div className="flex flex-wrap gap-1">
-                    {selectedTemplateData.variables.map((variable, index) => (
-                      <div key={index} className="badge badge-ghost badge-sm">
-                        {variable}
-                      </div>
-                    ))}
+                    {(() => {
+                      try {
+                        const vars = selectedTemplateData.variablesSchema ? JSON.parse(selectedTemplateData.variablesSchema) : [];
+                        return Array.isArray(vars) ? vars.map((variable, index) => (
+                          <div key={index} className="badge badge-ghost badge-sm">
+                            {variable}
+                          </div>
+                        )) : (
+                          <div className="text-sm text-base-content/60">No variables defined</div>
+                        );
+                      } catch (e) {
+                        return <div className="text-sm text-base-content/60">Invalid variables schema</div>;
+                      }
+                    })()}
                   </div>
                 </div>
 
@@ -502,7 +519,7 @@ function SuperAdminEmailTemplatesContent() {
 
                 <button
                   className={`btn btn-primary w-full ${previewMutation.isPending ? 'loading' : ''}`}
-                  onClick={() => handlePreview(selectedTemplateData.templateKey)}
+                  onClick={() => handlePreview(selectedTemplateData.key)}
                   disabled={previewMutation.isPending}
                   data-testid="button-generate-preview"
                 >
