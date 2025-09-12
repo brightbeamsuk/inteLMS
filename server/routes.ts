@@ -22,7 +22,11 @@ import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
 import { emailTemplateEngine } from "./services/EmailTemplateEngineService";
 import { emailTemplateResolver } from "./services/EmailTemplateResolutionService";
+import { EmailTemplateService } from "./services/EmailTemplateService";
 import { z } from "zod";
+
+// Initialize EmailTemplateService for event notifications
+const emailTemplateService = new EmailTemplateService();
 
 // Safe organization lookup wrapper - handles spelling & structure differences
 async function getOrgById(storage: any, id: string) {
@@ -160,6 +164,216 @@ async function getEffectiveEmailSettings(storage: any, orgId: string) {
       valid: false,
       errors: [(error as Error).message || 'Failed to retrieve email settings']
     };
+  }
+}
+
+// Email notification helper functions
+async function getOrganizationAdminEmails(orgId: string): Promise<string[]> {
+  try {
+    const allUsers = await storage.getUsersByOrganisation(orgId);
+    const adminUsers = allUsers.filter(user => 
+      user.role === 'admin' && 
+      user.status === 'active' && 
+      user.email
+    );
+    return adminUsers.map(user => user.email);
+  } catch (error) {
+    console.error('Failed to get organization admin emails:', error);
+    return [];
+  }
+}
+
+// Format user data for email templates
+function formatUserDataForEmail(user: any, organization: any) {
+  return {
+    name: user.name || user.email?.split('@')[0] || 'Unknown',
+    email: user.email || '',
+    full_name: user.fullName || user.name || user.email?.split('@')[0] || 'Unknown',
+    job_title: user.jobTitle || '',
+    department: user.department || ''
+  };
+}
+
+// Format course data for email templates
+function formatCourseDataForEmail(course: any) {
+  return {
+    title: course.title || 'Unknown Course',
+    description: course.description || '',
+    category: course.category || 'General',
+    estimated_duration: course.estimatedDuration || 0
+  };
+}
+
+// Format organization data for email templates
+function formatOrgDataForEmail(organization: any) {
+  return {
+    name: organization.name || 'Unknown Organization',
+    display_name: organization.displayName || organization.name || 'Unknown Organization',
+    subdomain: organization.subdomain || ''
+  };
+}
+
+// Helper functions for multi-recipient email notifications
+async function sendMultiRecipientNotification<T>(
+  operation: string,
+  recipients: string[],
+  notificationFn: (email: string) => Promise<T>
+): Promise<void> {
+  if (recipients.length === 0) {
+    console.log(`📧 ${operation} - No recipients to notify`);
+    return;
+  }
+
+  console.log(`📧 ${operation} - Sending to ${recipients.length} recipient(s)`);
+  
+  for (const email of recipients) {
+    await sendEmailNotificationSafely(
+      `${operation} (${email})`,
+      () => notificationFn(email)
+    );
+  }
+}
+
+// Build complete variable data for email templates
+function buildNewUserNotificationData(
+  organization: any,
+  currentUser: any,
+  newUser: any,
+  addedBy: any
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    user: formatUserDataForEmail(newUser, organization),
+    added_by: {
+      name: addedBy.name || addedBy.email?.split('@')[0] || 'Unknown',
+      full_name: addedBy.fullName || addedBy.name || addedBy.email?.split('@')[0] || 'Unknown'
+    },
+    added_at: new Date().toISOString()
+  };
+}
+
+function buildNewAdminNotificationData(
+  organization: any,
+  currentUser: any,
+  newAdmin: any,
+  addedBy: any
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    new_admin: formatUserDataForEmail(newAdmin, organization),
+    added_by: {
+      name: addedBy.name || addedBy.email?.split('@')[0] || 'Unknown',
+      full_name: addedBy.fullName || addedBy.name || addedBy.email?.split('@')[0] || 'Unknown'
+    },
+    added_at: new Date().toISOString()
+  };
+}
+
+function buildCourseAssignedNotificationData(
+  organization: any,
+  currentUser: any,
+  assignedUser: any,
+  course: any,
+  assignedBy: any,
+  dueDate?: string
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    user: formatUserDataForEmail(assignedUser, organization),
+    course: formatCourseDataForEmail(course),
+    assigned_by: {
+      name: assignedBy.name || assignedBy.email?.split('@')[0] || 'Unknown',
+      full_name: assignedBy.fullName || assignedBy.name || assignedBy.email?.split('@')[0] || 'Unknown'
+    },
+    assigned_at: new Date().toISOString(),
+    due_date: dueDate
+  };
+}
+
+function buildPlanUpdatedNotificationData(
+  organization: any,
+  currentUser: any,
+  planData: any,
+  changedBy: any
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    plan: {
+      name: planData.name || 'Unknown Plan',
+      old_price: planData.oldPrice || 0,
+      new_price: planData.newPrice || 0,
+      billing_cadence: planData.billingCadence || 'monthly'
+    },
+    changed_by: {
+      name: changedBy.name || changedBy.email?.split('@')[0] || 'Unknown',
+      full_name: changedBy.fullName || changedBy.name || changedBy.email?.split('@')[0] || 'Unknown'
+    },
+    changed_at: new Date().toISOString(),
+    effective_date: planData.effectiveDate
+  };
+}
+
+function buildLearnerCompletedNotificationData(
+  organization: any,
+  currentUser: any,
+  learner: any,
+  course: any,
+  attempt: any
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    user: formatUserDataForEmail(learner, organization),
+    course: formatCourseDataForEmail(course),
+    attempt: {
+      score: attempt.score || 0,
+      status: attempt.status || 'completed',
+      time_spent: attempt.timeSpent || 0
+    },
+    completed_at: new Date().toISOString()
+  };
+}
+
+function buildLearnerFailedNotificationData(
+  organization: any,
+  currentUser: any,
+  learner: any,
+  course: any,
+  attempt: any
+) {
+  return {
+    org: formatOrgDataForEmail(organization),
+    admin: formatUserDataForEmail(currentUser, organization),
+    user: formatUserDataForEmail(learner, organization),
+    course: formatCourseDataForEmail(course),
+    attempt: {
+      score: attempt.score || 0,
+      status: attempt.status || 'failed',
+      time_spent: attempt.timeSpent || 0
+    },
+    failed_at: new Date().toISOString()
+  };
+}
+
+// Safely send email notifications without breaking core functionality
+async function sendEmailNotificationSafely(
+  operation: string,
+  emailFunction: () => Promise<any>
+): Promise<void> {
+  try {
+    const result = await emailFunction();
+    if (result.success) {
+      console.log(`✅ ${operation} email notification sent successfully`);
+    } else {
+      console.warn(`⚠️ ${operation} email notification failed:`, result.errors);
+    }
+  } catch (error) {
+    console.error(`❌ ${operation} email notification error:`, error);
+    // Don't throw - email failures shouldn't break core functionality
   }
 }
 
@@ -1588,12 +1802,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       // Update organization billing to reflect the changes
+      const previousPlan = await storage.getPlan(organisation.planId || '');
       await storage.updateOrganisationBilling(organisation.id, {
         planId: plan.id,
         activeUserCount: userCount || 1,
         billingStatus: 'active',
         lastBillingSync: new Date()
       });
+      
+      // Send plan updated notification to organization admins
+      const adminEmails = await getOrganizationAdminEmails(organisation.id);
+      await sendMultiRecipientNotification(
+        'Plan Updated',
+        adminEmails,
+        (adminEmail) => emailTemplateService.sendPlanUpdatedNotification(
+          adminEmail,
+          buildPlanUpdatedNotificationData(
+            organisation,
+            { name: adminEmail.split('@')[0], email: adminEmail }, // Admin placeholder since we only have email
+            {
+              name: plan.name,
+              oldPrice: previousPlan?.unitAmount ? previousPlan.unitAmount / 100 : 0,
+              newPrice: plan.unitAmount ? plan.unitAmount / 100 : 0,
+              billingCadence: plan.cadence || 'monthly',
+              effectiveDate: new Date().toISOString()
+            },
+            user
+          ),
+          organisation.id
+        )
+      );
       
       res.json({
         success: true,
@@ -2232,6 +2470,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Organisation not found' });
       }
 
+      // Get previous plan for comparison
+      const previousPlan = organisation.planId ? await storage.getPlan(organisation.planId) : null;
+      
       // Update organization billing
       const updatedOrg = await storage.updateOrganisationBilling(id, {
         planId,
@@ -2240,6 +2481,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billingStatus: 'active',
         lastBillingSync: new Date(),
       });
+      
+      // Send plan updated notification to organization admins
+      if (planId && planId !== organisation.planId) {
+        const newPlan = await storage.getPlan(planId);
+        if (newPlan) {
+          const adminEmails = await getOrganizationAdminEmails(id);
+          await sendMultiRecipientNotification(
+            'Plan Updated',
+            adminEmails,
+            (adminEmail) => emailTemplateService.sendPlanUpdatedNotification(
+              adminEmail,
+              buildPlanUpdatedNotificationData(
+                organisation,
+                { name: adminEmail.split('@')[0], email: adminEmail }, // Admin placeholder since we only have email
+                {
+                  name: newPlan.name,
+                  oldPrice: previousPlan?.unitAmount ? previousPlan.unitAmount / 100 : 0,
+                  newPrice: newPlan.unitAmount ? newPlan.unitAmount / 100 : 0,
+                  billingCadence: newPlan.cadence || 'monthly',
+                  effectiveDate: new Date().toISOString()
+                },
+                user
+              ),
+              id
+            )
+          );
+        }
+      }
 
       // Sync usage count
       const usageSync = await storage.syncOrganisationUsage(id);
@@ -4162,6 +4431,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Send bulk course assignment notification to organization admins
+      if (assignments.length > 0 && orgId) {
+        const organization = await storage.getOrganisation(orgId);
+        if (organization) {
+          const adminEmails = await getOrganizationAdminEmails(organization.id);
+          
+          if (adminEmails.length > 0 && courseIds.length > 0) {
+            // Get first course details for notification (as representative example)
+            const firstCourse = await storage.getCourse(courseIds[0]);
+            if (firstCourse) {
+              await sendMultiRecipientNotification(
+                'Bulk Course Assignment',
+                adminEmails,
+                (adminEmail) => emailTemplateService.sendCourseAssignedNotification(
+                  adminEmail,
+                  buildCourseAssignedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, activeUsers[0], firstCourse, user),
+                  organization.id
+                )
+              );
+            }
+          }
+        }
+      }
+      
       res.json({ 
         message: `Successfully assigned ${courseIds.length} course(s) to ${activeUsers.length} user(s)`,
         assignmentsCreated: assignments.length 
@@ -7003,6 +7296,25 @@ This test was initiated by ${user.email}.
       }
 
       const newUser = await storage.createUser(validatedData);
+      
+      // Send new user added notification to organization admins (only for regular users, not admins)
+      if (newUser.role !== 'admin' && newUser.role !== 'superadmin' && newUser.organisationId) {
+        const organization = await storage.getOrganisation(newUser.organisationId);
+        if (organization) {
+          const adminEmails = await getOrganizationAdminEmails(organization.id);
+          
+          await sendMultiRecipientNotification(
+            'New User Added',
+            adminEmails,
+            (adminEmail) => emailTemplateService.sendNewUserNotification(
+              adminEmail,
+              buildNewUserNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, newUser, user),
+              organization.id
+            )
+          );
+        }
+      }
+      
       res.status(201).json(newUser);
     } catch (error) {
       console.error('Error creating user:', error);
@@ -7113,6 +7425,25 @@ This test was initiated by ${user.email}.
       };
 
       const assignment = await storage.createAssignment(assignmentData);
+      
+      // Send course assignment notification to organization admins
+      if (assignment.organisationId) {
+        const organization = await storage.getOrganisation(assignment.organisationId);
+        if (organization) {
+          const adminEmails = await getOrganizationAdminEmails(organization.id);
+          
+          await sendMultiRecipientNotification(
+            'Course Assignment',
+            adminEmails,
+            (adminEmail) => emailTemplateService.sendCourseAssignedNotification(
+              adminEmail,
+              buildCourseAssignedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, targetUser, course, currentUser, assignment.dueDate?.toISOString()),
+              organization.id
+            )
+          );
+        }
+      }
+      
       res.status(201).json(assignment);
     } catch (error) {
       console.error('Error creating assignment:', error);
@@ -7196,6 +7527,25 @@ This test was initiated by ${user.email}.
       }
 
       const updatedUser = await storage.updateUser(userId, { role: 'admin' });
+      
+      // Send new admin added notification to organization admins
+      const organization = await storage.getOrganisation(targetUser.organisationId!);
+      if (organization) {
+        const adminEmails = await getOrganizationAdminEmails(organization.id);
+        // Exclude the newly promoted admin from notification recipients
+        const recipientEmails = adminEmails.filter(email => email !== updatedUser.email);
+        
+        await sendMultiRecipientNotification(
+          'New Admin Added',
+          recipientEmails,
+          (adminEmail) => emailTemplateService.sendNewAdminNotification(
+            adminEmail,
+            buildNewAdminNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, updatedUser, currentUser),
+            organization.id
+          )
+        );
+      }
+      
       res.json({ message: 'User promoted to admin successfully', user: updatedUser });
     } catch (error) {
       console.error('Error promoting user to admin:', error);
@@ -8349,6 +8699,8 @@ This test was initiated by ${user.email}.
       let created = 0;
       let failed = 0;
       const errors: string[] = [];
+      const createdRegularUsers = [];
+      const createdAdmins = [];
 
       for (const userData of usersData) {
         try {
@@ -8359,11 +8711,56 @@ This test was initiated by ${user.email}.
             validatedData.organisationId = user.organisationId;
           }
 
-          await storage.createUser(validatedData);
+          const newUser = await storage.createUser(validatedData);
           created++;
+          
+          // Track created users for email notifications
+          if (newUser.role === 'admin') {
+            createdAdmins.push(newUser);
+          } else if (newUser.role === 'user') {
+            createdRegularUsers.push(newUser);
+          }
         } catch (error: any) {
           failed++;
           errors.push(`${userData.email || 'Unknown'}: ${error.message}`);
+        }
+      }
+      
+      // Send email notifications for bulk user creation
+      if (user.organisationId && (createdRegularUsers.length > 0 || createdAdmins.length > 0)) {
+        const organization = await storage.getOrganisation(user.organisationId);
+        if (organization) {
+          const adminEmails = await getOrganizationAdminEmails(organization.id);
+          
+          if (adminEmails.length > 0) {
+            // Send notification for new regular users
+            if (createdRegularUsers.length > 0) {
+              // For bulk imports, send a summary notification about the first user as example
+              await sendMultiRecipientNotification(
+                'Bulk User Import - New Users Added',
+                adminEmails,
+                (adminEmail) => emailTemplateService.sendNewUserNotification(
+                  adminEmail,
+                  buildNewUserNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, createdRegularUsers[0], user),
+                  organization.id
+                )
+              );
+            }
+            
+            // Send notification for new admin users
+            if (createdAdmins.length > 0) {
+              const recipientEmails = adminEmails.filter(email => email !== createdAdmins[0].email);
+              await sendMultiRecipientNotification(
+                'Bulk User Import - New Admins Added',
+                recipientEmails,
+                (adminEmail) => emailTemplateService.sendNewAdminNotification(
+                  adminEmail,
+                  buildNewAdminNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, createdAdmins[0], user),
+                  organization.id
+                )
+              );
+            }
+          }
         }
       }
 
@@ -8707,6 +9104,35 @@ This test was initiated by ${user.email}.
       }
 
       const assignment = await storage.createAssignment(validatedData);
+      
+      // Send course assignment notification to organization admins
+      if (assignment.organisationId && assignment.courseId && assignment.userId) {
+        try {
+          const [organization, course, targetUser] = await Promise.all([
+            storage.getOrganisation(assignment.organisationId),
+            storage.getCourse(assignment.courseId),
+            storage.getUser(assignment.userId)
+          ]);
+          
+          if (organization && course && targetUser) {
+            const adminEmails = await getOrganizationAdminEmails(organization.id);
+            
+            await sendMultiRecipientNotification(
+              'Course Assignment',
+              adminEmails,
+              (adminEmail) => emailTemplateService.sendCourseAssignedNotification(
+                adminEmail,
+                buildCourseAssignedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, targetUser, course, user, assignment.dueDate?.toISOString()),
+                organization.id
+              )
+            );
+          }
+        } catch (emailError) {
+          console.error('Error sending course assignment notification:', emailError);
+          // Don't let email errors break the assignment creation
+        }
+      }
+      
       res.status(201).json(assignment);
     } catch (error) {
       console.error('Error creating assignment:', error);
@@ -9844,7 +10270,7 @@ This test was initiated by ${user.email}.
           // Create or update completion record for compatibility
           const existingCompletions = await storage.getCompletionsByAssignment(assignmentId);
           if (existingCompletions.length === 0) {
-            await storage.createCompletion({
+            const completion = await storage.createCompletion({
               assignmentId,
               userId,
               courseId: assignment.courseId,
@@ -9854,6 +10280,57 @@ This test was initiated by ${user.email}.
               timeSpent: 0, // Could be derived from session time if needed
               scormData: scormData,
             });
+            
+            // Send course completion/failure notification to organization admins
+            if (assignment.organisationId) {
+              const [organization, course, user] = await Promise.all([
+                storage.getOrganisation(assignment.organisationId),
+                storage.getCourse(assignment.courseId),
+                storage.getUser(userId)
+              ]);
+              
+              if (organization && course && user) {
+                const adminEmails = await getOrganizationAdminEmails(organization.id);
+                
+                if (adminEmails.length > 0) {
+                  const emailData = {
+                    org: formatOrgDataForEmail(organization),
+                    admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
+                    user: formatUserDataForEmail(user, organization),
+                    course: formatCourseDataForEmail(course),
+                    completion: {
+                      score: attemptData.scoreRaw || 0,
+                      status: passed ? 'pass' : 'fail',
+                      completion_date: new Date().toISOString()
+                    }
+                  };
+                  
+                  if (passed) {
+                    // Course Completion event
+                    await sendMultiRecipientNotification(
+                      'Course Completion',
+                      adminEmails,
+                      (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
+                        adminEmail,
+                        buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, learner, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                        organization.id
+                      )
+                    );
+                  } else {
+                    // Course Failure event  
+                    await sendMultiRecipientNotification(
+                      'Course Failure',
+                      adminEmails,
+                      (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
+                        adminEmail,
+                        buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, learner, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                        organization.id
+                      )
+                    );
+                  }
+                }
+              }
+            }
           }
         } else if (assignment.status === 'not_started' && (attemptData.progressPercent > 0 || reason === 'commit' || reason === 'finish')) {
           // Course started - update to in_progress status
@@ -9934,6 +10411,57 @@ This test was initiated by ${user.email}.
         timeSpent: completionData.timeSpent,
         scormData: completionData.sessionData,
       });
+      
+      // Send course completion/failure notification to organization admins
+      if (assignment.organisationId) {
+        const [organization, user] = await Promise.all([
+          storage.getOrganisation(assignment.organisationId),
+          storage.getUser(userId)
+        ]);
+        
+        if (organization && user) {
+          const adminEmails = await getOrganizationAdminEmails(organization.id);
+          
+          if (adminEmails.length > 0) {
+            const isPassed = completionData.status === 'passed';
+            const emailData = {
+              org: formatOrgDataForEmail(organization),
+              admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
+              user: formatUserDataForEmail(user, organization),
+              course: formatCourseDataForEmail(course),
+              completion: {
+                score: completionData.score || 0,
+                status: isPassed ? 'pass' : 'fail',
+                completion_date: new Date().toISOString()
+              }
+            };
+            
+            if (isPassed) {
+              // Course Completion event
+              await sendMultiRecipientNotification(
+                'Course Completion',
+                adminEmails,
+                (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
+                  adminEmail,
+                  buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                  organization.id
+                )
+              );
+            } else {
+              // Course Failure event  
+              await sendMultiRecipientNotification(
+                'Course Failure',
+                adminEmails,
+                (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
+                  adminEmail,
+                  buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                  organization.id
+                )
+              );
+            }
+          }
+        }
+      }
 
       // Update assignment status
       await storage.updateAssignment(assignmentId, {
@@ -10103,7 +10631,64 @@ This test was initiated by ${user.email}.
             };
 
             console.log(`📋 Creating completion record:`, completionData);
-            await storage.createCompletion(completionData);
+            const completion = await storage.createCompletion(completionData);
+            
+            // Send course completion/failure notification to organization admins
+            if (completionData.organisationId && completionData.courseId) {
+              try {
+                const [organization, course, user] = await Promise.all([
+                  storage.getOrganisation(completionData.organisationId),
+                  storage.getCourse(completionData.courseId),
+                  storage.getUser(completionData.userId)
+                ]);
+                
+                if (organization && course && user) {
+                  const adminEmails = await getOrganizationAdminEmails(organization.id);
+                  
+                  if (adminEmails.length > 0) {
+                    const isPassed = completionData.status === 'pass';
+                    const emailData = {
+                      org: formatOrgDataForEmail(organization),
+                      admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
+                      user: formatUserDataForEmail(user, organization),
+                      course: formatCourseDataForEmail(course),
+                      completion: {
+                        score: completionData.score || 0,
+                        status: completionData.status,
+                        completion_date: new Date().toISOString()
+                      }
+                    };
+                    
+                    if (isPassed) {
+                      // Course Completion event
+                      await sendMultiRecipientNotification(
+                        'Course Completion',
+                        adminEmails,
+                        (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
+                          adminEmail,
+                          buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                          organization.id
+                        )
+                      );
+                    } else {
+                      // Course Failure event  
+                      await sendMultiRecipientNotification(
+                        'Course Failure',
+                        adminEmails,
+                        (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
+                          adminEmail,
+                          buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                          organization.id
+                        )
+                      );
+                    }
+                  }
+                }
+              } catch (emailError) {
+                console.error('Error sending completion/failure notification:', emailError);
+                // Don't let email errors break completion recording
+              }
+            }
           }
         }
       } catch (completionError) {
