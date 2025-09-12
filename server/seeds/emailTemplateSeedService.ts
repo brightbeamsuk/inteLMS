@@ -397,31 +397,35 @@ Questions? Contact your administrator or our support team.`,
         <mj-text font-size="16px">
           This is a friendly reminder that you have a course deadline approaching. We want to ensure you have enough time to complete your training successfully.
         </mj-text>
+      </mj-column>
+    </mj-section>
 
-        <!-- Course Progress Card -->
-        <mj-section background-color="#FFFBEB" border-radius="8px" padding="24px" border="2px solid #F59E0B">
-          <mj-column>
-            <mj-text font-size="20px" font-weight="600" color="#92400E" padding-bottom="12px">
-              📖 {{course.title}}
-            </mj-text>
-            <mj-text font-size="16px" color="#D97706" padding-bottom="16px">
-              {{course.description}}
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Progress:</strong> {{progress.percentage}}% complete
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Time Remaining:</strong> {{progress.estimated_time_left}} minutes
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Due Date:</strong> {{due_date}}
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Days Until Due:</strong> {{days_until_due}} days
-            </mj-text>
-          </mj-column>
-        </mj-section>
+    <!-- Course Progress Card -->
+    <mj-section background-color="#FFFBEB" padding="24px 32px" border="2px solid #F59E0B">
+      <mj-column>
+        <mj-text font-size="20px" font-weight="600" color="#92400E" padding-bottom="12px">
+          📖 {{course.title}}
+        </mj-text>
+        <mj-text font-size="16px" color="#D97706" padding-bottom="16px">
+          {{course.description}}
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Progress:</strong> {{progress.percentage}}% complete
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Time Remaining:</strong> {{progress.estimated_time_left}} minutes
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Due Date:</strong> {{due_date}}
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Days Until Due:</strong> {{days_until_due}} days
+        </mj-text>
+      </mj-column>
+    </mj-section>
 
+    <mj-section background-color="#FFFFFF" padding="0 32px">
+      <mj-column>
         <mj-text font-size="16px" padding-top="24px">
           <strong>Complete your training to:</strong>
         </mj-text>
@@ -569,31 +573,35 @@ You can adjust notification preferences in your account settings.`,
         <mj-text font-size="16px">
           We need to bring to your attention that your assigned course has passed its due date. Please take immediate action to complete this training requirement.
         </mj-text>
+      </mj-column>
+    </mj-section>
 
-        <!-- Overdue Course Card -->
-        <mj-section background-color="#FEF2F2" border-radius="8px" padding="24px" border="2px solid #DC2626">
-          <mj-column>
-            <mj-text font-size="20px" font-weight="600" color="#991B1B" padding-bottom="12px">
-              ⚠️ {{course.title}}
-            </mj-text>
-            <mj-text font-size="16px" color="#B91C1C" padding-bottom="16px">
-              {{course.description}}
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Current Progress:</strong> {{progress.percentage}}% complete
-            </mj:text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Original Due Date:</strong> {{due_date}}
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Days Overdue:</strong> {{days_overdue}} days
-            </mj-text>
-            <mj-text font-size="14px" padding="4px 0">
-              <strong>Time to Complete:</strong> {{progress.estimated_time_left}} minutes remaining
-            </mj-text>
-          </mj-column>
-        </mj-section>
+    <!-- Overdue Course Card -->
+    <mj-section background-color="#FEF2F2" padding="24px 32px" border="2px solid #DC2626">
+      <mj-column>
+        <mj-text font-size="20px" font-weight="600" color="#991B1B" padding-bottom="12px">
+          ⚠️ {{course.title}}
+        </mj-text>
+        <mj-text font-size="16px" color="#B91C1C" padding-bottom="16px">
+          {{course.description}}
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Current Progress:</strong> {{progress.percentage}}% complete
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Original Due Date:</strong> {{due_date}}
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Days Overdue:</strong> {{days_overdue}} days
+        </mj-text>
+        <mj-text font-size="14px" padding="4px 0">
+          <strong>Time to Complete:</strong> {{progress.estimated_time_left}} minutes remaining
+        </mj-text>
+      </mj-column>
+    </mj-section>
 
+    <mj-section background-color="#FFFFFF" padding="0 32px">
+      <mj-column>
         <mj-text font-size="16px" padding-top="24px">
           <strong>Why immediate action is needed:</strong>
         </mj-text>
