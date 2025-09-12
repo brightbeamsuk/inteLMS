@@ -110,40 +110,69 @@ async function getEffectiveEmailSettings(storage: any, orgId: string | null | un
     if (!orgId) {
       console.log('📧 Using system-level email settings for SuperAdmin user');
       
-      // For SuperAdmin users, use environment variables or default system settings
-      const systemSettings = {
-        provider: process.env.SYSTEM_EMAIL_PROVIDER || 'brevo_api',
-        fromName: process.env.SYSTEM_FROM_NAME || 'inteLMS Platform',
-        fromEmail: process.env.SYSTEM_FROM_EMAIL || 'noreply@intellms.app',
-        brevo: {
-          apiKey: process.env.BREVO_API_KEY || ''
-        },
-        smtp: {
-          host: process.env.SYSTEM_SMTP_HOST || '',
-          port: parseInt(process.env.SYSTEM_SMTP_PORT || '587'),
-          user: process.env.SYSTEM_SMTP_USER || '',
-          pass: process.env.SYSTEM_SMTP_PASS || '',
-          secure: process.env.SYSTEM_SMTP_SECURE !== 'false'
-        }
-      };
+      // First try to get database-stored system email settings
+      const dbSystemSettings = await storage.getSystemEmailSettings();
+      
+      let systemSettings;
+      
+      if (dbSystemSettings) {
+        console.log('📧 Found database-stored system email settings');
+        
+        // Use database settings and map them to the expected format
+        systemSettings = {
+          provider: dbSystemSettings.emailProvider,
+          fromName: dbSystemSettings.fromName,
+          fromEmail: dbSystemSettings.fromEmail,
+          replyTo: dbSystemSettings.replyTo,
+          brevo: {
+            apiKey: dbSystemSettings.apiKey || ''
+          },
+          smtp: {
+            host: dbSystemSettings.smtpHost || '',
+            port: dbSystemSettings.smtpPort || 587,
+            user: dbSystemSettings.smtpUsername || '',
+            pass: dbSystemSettings.smtpPassword || '',
+            secure: dbSystemSettings.smtpSecure !== false
+          }
+        };
+      } else {
+        console.log('📧 No database settings found, falling back to environment variables');
+        
+        // Fallback to environment variables if no database settings exist
+        systemSettings = {
+          provider: process.env.SYSTEM_EMAIL_PROVIDER || 'brevo_api',
+          fromName: process.env.SYSTEM_FROM_NAME || 'inteLMS Platform',
+          fromEmail: process.env.SYSTEM_FROM_EMAIL || 'noreply@intellms.app',
+          brevo: {
+            apiKey: process.env.BREVO_API_KEY || ''
+          },
+          smtp: {
+            host: process.env.SYSTEM_SMTP_HOST || '',
+            port: parseInt(process.env.SYSTEM_SMTP_PORT || '587'),
+            user: process.env.SYSTEM_SMTP_USER || '',
+            pass: process.env.SYSTEM_SMTP_PASS || '',
+            secure: process.env.SYSTEM_SMTP_SECURE !== 'false'
+          }
+        };
+      }
 
       // Validate system settings
       const validationErrors = [];
       
       if (!systemSettings.fromEmail) {
-        validationErrors.push('System FROM email missing');
+        validationErrors.push('System FROM email missing - configure in SuperAdmin Email Settings');
       } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(systemSettings.fromEmail)) {
         validationErrors.push('System FROM email invalid format');
       }
       
       if (systemSettings.provider === 'brevo_api') {
         if (!systemSettings.brevo.apiKey) {
-          validationErrors.push('System Brevo API key missing');
+          validationErrors.push('Brevo API key missing - configure in SuperAdmin Email Settings');
         }
-      } else if (systemSettings.provider === 'smtp') {
-        if (!systemSettings.smtp.host) validationErrors.push('System SMTP host missing');
-        if (!systemSettings.smtp.user) validationErrors.push('System SMTP username missing');
-        if (!systemSettings.smtp.pass) validationErrors.push('System SMTP password missing');
+      } else if (systemSettings.provider === 'smtp_generic') {
+        if (!systemSettings.smtp.host) validationErrors.push('SMTP host missing - configure in SuperAdmin Email Settings');
+        if (!systemSettings.smtp.user) validationErrors.push('SMTP username missing - configure in SuperAdmin Email Settings');
+        if (!systemSettings.smtp.pass) validationErrors.push('SMTP password missing - configure in SuperAdmin Email Settings');
       }
       
       return {
