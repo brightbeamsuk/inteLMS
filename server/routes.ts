@@ -538,6 +538,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function checkLicenseCapacity(userId: string, additionalActiveUsers: number = 1): Promise<{ canProceed: boolean; error?: string }> {
     try {
       const user = await storage.getUser(userId);
+      
+      // SuperAdmins can create users without organization restriction
+      if (user?.role === 'superadmin') {
+        return { canProceed: true };
+      }
+      
       if (!user?.organisationId) {
         return { canProceed: false, error: 'User not associated with an organization' };
       }
