@@ -5605,17 +5605,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied - Admin or SuperAdmin required' });
       }
 
-      const defaults = await storage.getAllEmailTemplates();
+      console.log('📧 Fetching email templates for defaults endpoint...');
 
-      res.json({
-        success: true,
-        data: defaults,
-        count: defaults.length,
-        message: 'Default templates retrieved successfully'
-      });
+      // Get all platform templates from storage
+      const platformTemplates = await storage.getAllEmailTemplates();
+      console.log(`📧 Found ${platformTemplates.length} platform templates`);
+
+      // Build the response in the format the frontend expects
+      const formattedTemplates = [];
+
+      for (const template of platformTemplates) {
+        // Count overrides across all organizations (for SuperAdmin view)
+        let overrideCount = 0;
+        try {
+          const allOrgs = await storage.getAllOrganisations();
+          for (const org of allOrgs) {
+            const orgOverrides = await storage.getOrgEmailTemplatesByOrg(org.id);
+            const hasOverride = orgOverrides.some(override => 
+              override.templateKey === template.key && override.isActive
+            );
+            if (hasOverride) {
+              overrideCount++;
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to count overrides for template ${template.key}:`, error);
+          overrideCount = 0;
+        }
+
+        // Build template object matching frontend interface
+        const formattedTemplate = {
+          id: template.id,
+          templateKey: template.key,
+          category: template.category,
+          name: template.name,
+          description: '', // Platform templates don't have descriptions stored, frontend has hardcoded ones
+          subject: template.subject || '',
+          htmlContent: template.html || '',
+          textContent: template.text || '',
+          variables: [], // Frontend has hardcoded variable lists
+          isConfigured: !!template.subject && !!template.html, // Consider configured if has subject and HTML
+          overrideCount: overrideCount
+        };
+
+        formattedTemplates.push(formattedTemplate);
+      }
+
+      console.log(`📧 Returning ${formattedTemplates.length} formatted templates`);
+
+      // Return array directly (frontend expects EmailTemplate[])
+      res.json(formattedTemplates);
 
     } catch (error: any) {
-      console.error('Error fetching default templates:', error);
+      console.error('❌ Error fetching default templates:', error);
       res.status(500).json({ 
         message: 'Failed to fetch default templates',
         error: error.message 
