@@ -2190,7 +2190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error updating subscription:', error);
       res.status(500).json({ 
         success: false,
-        message: 'Failed to update subscription',
+        message: error instanceof Error ? error.message : 'Failed to update subscription',
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       });
