@@ -105,6 +105,7 @@ function SuperAdminEmailTemplatesContent() {
   const [previewData, setPreviewData] = useState<PreviewResponse['preview'] | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<EmailTemplate>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [activeEditTab, setActiveEditTab] = useState<'html' | 'text' | 'mjml'>('html');
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -278,6 +279,7 @@ function SuperAdminEmailTemplatesContent() {
       isActive: template.isActive
     });
     setEditErrors({});
+    setActiveEditTab('html'); // Reset to HTML tab when opening edit modal
     setShowEditModal(true);
   };
 
@@ -898,60 +900,90 @@ function SuperAdminEmailTemplatesContent() {
               {/* Right Column - Content */}
               <div className="space-y-4">
                 <div className="tabs tabs-bordered">
-                  <a className="tab tab-active" data-testid="tab-html">HTML Content</a>
-                  <a className="tab" data-testid="tab-text">Text Content</a>
-                  <a className="tab" data-testid="tab-mjml">MJML Source</a>
+                  <a 
+                    className={`tab ${activeEditTab === 'html' ? 'tab-active' : ''}`} 
+                    data-testid="tab-html"
+                    onClick={() => setActiveEditTab('html')}
+                  >
+                    HTML Content
+                  </a>
+                  <a 
+                    className={`tab ${activeEditTab === 'text' ? 'tab-active' : ''}`} 
+                    data-testid="tab-text"
+                    onClick={() => setActiveEditTab('text')}
+                  >
+                    Text Content
+                  </a>
+                  <a 
+                    className={`tab ${activeEditTab === 'mjml' ? 'tab-active' : ''}`} 
+                    data-testid="tab-mjml"
+                    onClick={() => setActiveEditTab('mjml')}
+                  >
+                    MJML Source
+                  </a>
                 </div>
 
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-medium">HTML Content *</span>
-                  </label>
-                  <textarea
-                    className={`textarea textarea-bordered h-64 font-mono text-xs ${editErrors.html ? 'textarea-error' : ''}`}
-                    placeholder="Enter HTML content (can include {{variables}})"
-                    value={editFormData.html || ''}
-                    onChange={(e) => handleEditInputChange('html', e.target.value)}
-                    data-testid="textarea-edit-html"
-                  />
-                  {editErrors.html && (
+                {/* HTML Content Tab */}
+                {activeEditTab === 'html' && (
+                  <div className="form-control">
                     <label className="label">
-                      <span className="label-text-alt text-error">{editErrors.html}</span>
+                      <span className="label-text font-medium">HTML Content *</span>
                     </label>
-                  )}
-                </div>
-
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-medium">Plain Text Content</span>
-                  </label>
-                  <textarea
-                    className="textarea textarea-bordered h-32 font-mono text-xs"
-                    placeholder="Enter plain text version (optional)"
-                    value={editFormData.text || ''}
-                    onChange={(e) => handleEditInputChange('text', e.target.value)}
-                    data-testid="textarea-edit-text"
-                  />
-                  <div className="label">
-                    <span className="label-text-alt">Fallback for email clients that don't support HTML</span>
+                    <textarea
+                      className={`textarea textarea-bordered h-64 font-mono text-xs ${editErrors.html ? 'textarea-error' : ''}`}
+                      placeholder="Enter HTML content (can include {{variables}})"
+                      value={editFormData.html || ''}
+                      onChange={(e) => handleEditInputChange('html', e.target.value)}
+                      data-testid="textarea-edit-html"
+                    />
+                    {editErrors.html && (
+                      <label className="label">
+                        <span className="label-text-alt text-error">{editErrors.html}</span>
+                      </label>
+                    )}
+                    <div className="label">
+                      <span className="label-text-alt">Rich HTML email content with variable support</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-medium">MJML Source</span>
-                  </label>
-                  <textarea
-                    className="textarea textarea-bordered h-32 font-mono text-xs"
-                    placeholder="Enter MJML source (advanced feature)"
-                    value={editFormData.mjml || ''}
-                    onChange={(e) => handleEditInputChange('mjml', e.target.value)}
-                    data-testid="textarea-edit-mjml"
-                  />
-                  <div className="label">
-                    <span className="label-text-alt">MJML will be compiled to HTML automatically</span>
+                {/* Text Content Tab */}
+                {activeEditTab === 'text' && (
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">Plain Text Content</span>
+                    </label>
+                    <textarea
+                      className="textarea textarea-bordered h-64 font-mono text-xs"
+                      placeholder="Enter plain text version (optional, but recommended)"
+                      value={editFormData.text || ''}
+                      onChange={(e) => handleEditInputChange('text', e.target.value)}
+                      data-testid="textarea-edit-text"
+                    />
+                    <div className="label">
+                      <span className="label-text-alt">Fallback for email clients that don't support HTML</span>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* MJML Content Tab */}
+                {activeEditTab === 'mjml' && (
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">MJML Source</span>
+                    </label>
+                    <textarea
+                      className="textarea textarea-bordered h-64 font-mono text-xs"
+                      placeholder="Enter MJML source (advanced feature)"
+                      value={editFormData.mjml || ''}
+                      onChange={(e) => handleEditInputChange('mjml', e.target.value)}
+                      data-testid="textarea-edit-mjml"
+                    />
+                    <div className="label">
+                      <span className="label-text-alt">MJML will be compiled to HTML automatically</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
