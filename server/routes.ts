@@ -873,9 +873,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const context = {
             user: {
               name: `${newUser.firstName} ${newUser.lastName}`,
-              email: newUser.email,
-              firstName: newUser.firstName,
-              lastName: newUser.lastName,
+              email: newUser.email || undefined,
+              firstName: newUser.firstName || undefined,
+              lastName: newUser.lastName || undefined,
               fullName: `${newUser.firstName} ${newUser.lastName}`
             },
             addedBy: {
@@ -889,7 +889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await emailOrchestrator.queue({
             triggerEvent: 'USER_FAST_ADD',
             templateKey: 'new_user_welcome',
-            toEmail: newUser.email,
+            toEmail: newUser.email!,
             context,
             organisationId: undefined, // Individual users don't have an org
             resourceId: newUser.id,
@@ -1000,9 +1000,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const context = {
             user: {
               name: `${newAdmin.firstName} ${newAdmin.lastName}`,
-              email: newAdmin.email,
-              firstName: newAdmin.firstName,
-              lastName: newAdmin.lastName,
+              email: newAdmin.email || undefined,
+              firstName: newAdmin.firstName || undefined,
+              lastName: newAdmin.lastName || undefined,
               fullName: `${newAdmin.firstName} ${newAdmin.lastName}`
             },
             org: {
@@ -1020,7 +1020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await emailOrchestrator.queue({
             triggerEvent: 'ORG_FAST_ADD',
             templateKey: 'new_org_welcome',
-            toEmail: newAdmin.email,
+            toEmail: newAdmin.email!,
             context,
             organisationId: newOrganisation.id,
             resourceId: newOrganisation.id,
@@ -4780,9 +4780,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const context = {
                 user: {
                   name: `${orgUser.firstName} ${orgUser.lastName}`,
-                  email: orgUser.email,
-                  firstName: orgUser.firstName,
-                  lastName: orgUser.lastName,
+                  email: orgUser.email || undefined,
+                  firstName: orgUser.firstName || undefined,
+                  lastName: orgUser.lastName || undefined,
                   fullName: `${orgUser.firstName} ${orgUser.lastName}`
                 },
                 course: {
@@ -4805,7 +4805,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await emailOrchestrator.queue({
                 triggerEvent: 'COURSE_ASSIGNED',
                 templateKey: 'course_assigned',
-                toEmail: orgUser.email,
+                toEmail: orgUser.email!,
                 context,
                 organisationId: orgId,
                 resourceId: assignment.id,
@@ -4917,9 +4917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const context = {
             user: {
               name: `${adminUser.firstName} ${adminUser.lastName}`,
-              email: adminUser.email,
-              firstName: adminUser.firstName,
-              lastName: adminUser.lastName,
+              email: adminUser.email || undefined,
+              firstName: adminUser.firstName || undefined,
+              lastName: adminUser.lastName || undefined,
               fullName: `${adminUser.firstName} ${adminUser.lastName}`
             },
             org: {
@@ -4937,7 +4937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await emailOrchestrator.queue({
             triggerEvent: 'ORG_FAST_ADD',
             templateKey: 'new_org_welcome',
-            toEmail: adminUser.email,
+            toEmail: adminUser.email!,
             context,
             organisationId: organisation.id,
             resourceId: organisation.id,

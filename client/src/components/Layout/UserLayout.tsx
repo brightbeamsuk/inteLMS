@@ -13,6 +13,9 @@ interface Organization {
   planId: string;
   logoUrl?: string;
   displayName: string;
+  useCustomColors?: boolean;
+  primaryColor?: string;
+  accentColor?: string;
 }
 
 export function UserLayout({ children }: UserLayoutProps) {
