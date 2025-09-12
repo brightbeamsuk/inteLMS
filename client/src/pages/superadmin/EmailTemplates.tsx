@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import { DataLoadFailurePanel, FailurePanel } from "@/components/ui/failure-panel";
-import { Eye, Send, Edit, RefreshCw, X, ChevronRight } from "lucide-react";
+import { Eye, Send, Edit, RefreshCw, X, ChevronRight, Save, AlertCircle } from "lucide-react";
 
 interface EmailTemplate {
   key: string;
@@ -99,9 +99,12 @@ function SuperAdminEmailTemplatesContent() {
   const [showDetailDrawer, setShowDetailDrawer] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [previewVariables, setPreviewVariables] = useState<string>('{}');
   const [previewData, setPreviewData] = useState<PreviewResponse['preview'] | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<EmailTemplate>>({});
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -192,6 +195,39 @@ function SuperAdminEmailTemplatesContent() {
     }
   });
 
+  // Edit template mutation
+  const editTemplateMutation = useMutation({
+    mutationFn: async ({ templateKey, updateData }: { templateKey: string; updateData: Partial<EmailTemplate> }) => {
+      const response = await apiRequest('PUT', `/api/superadmin/email/templates/${templateKey}`, updateData);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        toast({
+          title: "Success",
+          description: "Template updated successfully",
+        });
+        setShowEditModal(false);
+        setEditFormData({});
+        setEditErrors({});
+        queryClient.invalidateQueries({ queryKey: ['/api/superadmin/email/templates'] });
+      } else {
+        toast({
+          title: "Update Failed",
+          description: data.error?.short || "Failed to update template",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update template",
+        variant: "destructive",
+      });
+    }
+  });
+
   // Handle template row click
   const handleTemplateClick = (templateKey: string) => {
     setSelectedTemplate(templateKey);
@@ -226,6 +262,110 @@ function SuperAdminEmailTemplatesContent() {
   const handleTest = (templateKey: string) => {
     setSelectedTemplate(templateKey);
     setShowTestModal(true);
+  };
+
+  // Handle edit template
+  const handleEdit = (template: EmailTemplate) => {
+    setSelectedTemplate(template.key);
+    setEditFormData({
+      name: template.name,
+      subject: template.subject,
+      html: template.html,
+      mjml: template.mjml,
+      text: template.text || '',
+      variablesSchema: template.variablesSchema,
+      category: template.category,
+      isActive: template.isActive
+    });
+    setEditErrors({});
+    setShowEditModal(true);
+  };
+
+  // Validate edit form
+  const validateEditForm = (data: Partial<EmailTemplate>): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    
+    if (!data.name?.trim()) {
+      errors.name = 'Name is required';
+    }
+    
+    if (!data.subject?.trim()) {
+      errors.subject = 'Subject is required';
+    }
+    
+    if (!data.html?.trim() && !data.mjml?.trim()) {
+      errors.html = 'Either HTML content or MJML source is required';
+    }
+    
+    if (!data.category) {
+      errors.category = 'Category is required';
+    }
+    
+    // Validate variables schema if provided
+    if (data.variablesSchema && typeof data.variablesSchema === 'string') {
+      try {
+        JSON.parse(data.variablesSchema);
+      } catch (e) {
+        errors.variablesSchema = 'Variables schema must be valid JSON';
+      }
+    }
+    
+    return errors;
+  };
+
+  // Handle edit form input changes
+  const handleEditInputChange = (field: string, value: any) => {
+    setEditFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    
+    // Clear error for this field
+    if (editErrors[field]) {
+      setEditErrors(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
+  };
+
+  // Handle save edit
+  const handleSaveEdit = () => {
+    const errors = validateEditForm(editFormData);
+    
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      toast({
+        title: "Validation Error",
+        description: "Please fix the validation errors before saving",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!selectedTemplate) {
+      toast({
+        title: "Error",
+        description: "No template selected for editing",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Parse variables schema if it's a string
+    const processedData = { ...editFormData };
+    if (typeof processedData.variablesSchema === 'string') {
+      try {
+        processedData.variablesSchema = JSON.parse(processedData.variablesSchema);
+      } catch (e) {
+        processedData.variablesSchema = undefined;
+      }
+    }
+    
+    editTemplateMutation.mutate({
+      templateKey: selectedTemplate,
+      updateData: processedData
+    });
   };
 
   // Render main content based on query state
@@ -393,9 +533,21 @@ function SuperAdminEmailTemplatesContent() {
                             className="btn btn-ghost btn-xs"
                             onClick={(e) => {
                               e.stopPropagation();
+                              handleEdit(template);
+                            }}
+                            data-testid={`button-edit-${template.key}`}
+                            title="Edit template"
+                          >
+                            <Edit className="w-3 h-3" />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               handlePreview(template.key);
                             }}
                             data-testid={`button-preview-${template.key}`}
+                            title="Preview template"
                           >
                             <Eye className="w-3 h-3" />
                           </button>
@@ -406,6 +558,7 @@ function SuperAdminEmailTemplatesContent() {
                               handleTest(template.key);
                             }}
                             data-testid={`button-test-${template.key}`}
+                            title="Send test email"
                           >
                             <Send className="w-3 h-3" />
                           </button>
@@ -619,6 +772,221 @@ function SuperAdminEmailTemplatesContent() {
               >
                 {!testEmailMutation.isPending && <Send className="w-4 h-4 mr-2" />}
                 Send Test
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Template Modal */}
+      {showEditModal && selectedTemplate && (
+        <div className="modal modal-open" data-testid="modal-edit-template">
+          <div className="modal-box max-w-6xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg">Edit Email Template</h3>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowEditModal(false)}
+                data-testid="button-close-edit"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Basic Info */}
+              <div className="space-y-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Template Name *</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={`input input-bordered ${editErrors.name ? 'input-error' : ''}`}
+                    placeholder="Enter template name"
+                    value={editFormData.name || ''}
+                    onChange={(e) => handleEditInputChange('name', e.target.value)}
+                    data-testid="input-edit-name"
+                  />
+                  {editErrors.name && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{editErrors.name}</span>
+                    </label>
+                  )}
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Subject Line *</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={`input input-bordered ${editErrors.subject ? 'input-error' : ''}`}
+                    placeholder="Enter email subject (can include {{variables}})"
+                    value={editFormData.subject || ''}
+                    onChange={(e) => handleEditInputChange('subject', e.target.value)}
+                    data-testid="input-edit-subject"
+                  />
+                  {editErrors.subject && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{editErrors.subject}</span>
+                    </label>
+                  )}
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Category *</span>
+                  </label>
+                  <select
+                    className={`select select-bordered ${editErrors.category ? 'select-error' : ''}`}
+                    value={editFormData.category || ''}
+                    onChange={(e) => handleEditInputChange('category', e.target.value)}
+                    data-testid="select-edit-category"
+                  >
+                    <option value="">Select category</option>
+                    <option value="admin">Admin</option>
+                    <option value="learner">Learner</option>
+                  </select>
+                  {editErrors.category && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{editErrors.category}</span>
+                    </label>
+                  )}
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Status</span>
+                  </label>
+                  <label className="label cursor-pointer justify-start">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-primary mr-3"
+                      checked={editFormData.isActive || false}
+                      onChange={(e) => handleEditInputChange('isActive', e.target.checked)}
+                      data-testid="checkbox-edit-active"
+                    />
+                    <span className="label-text">Template is active</span>
+                  </label>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Variables Schema (JSON)</span>
+                  </label>
+                  <textarea
+                    className={`textarea textarea-bordered h-24 font-mono text-xs ${editErrors.variablesSchema ? 'textarea-error' : ''}`}
+                    placeholder={`["user.name", "user.email", "org.name", "course.title"]`}
+                    value={typeof editFormData.variablesSchema === 'string' 
+                      ? editFormData.variablesSchema 
+                      : JSON.stringify(editFormData.variablesSchema || [], null, 2)}
+                    onChange={(e) => handleEditInputChange('variablesSchema', e.target.value)}
+                    data-testid="textarea-edit-variables"
+                  />
+                  {editErrors.variablesSchema && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{editErrors.variablesSchema}</span>
+                    </label>
+                  )}
+                  <div className="label">
+                    <span className="label-text-alt">Array of available variable names for this template</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Content */}
+              <div className="space-y-4">
+                <div className="tabs tabs-bordered">
+                  <a className="tab tab-active" data-testid="tab-html">HTML Content</a>
+                  <a className="tab" data-testid="tab-text">Text Content</a>
+                  <a className="tab" data-testid="tab-mjml">MJML Source</a>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">HTML Content *</span>
+                  </label>
+                  <textarea
+                    className={`textarea textarea-bordered h-64 font-mono text-xs ${editErrors.html ? 'textarea-error' : ''}`}
+                    placeholder="Enter HTML content (can include {{variables}})"
+                    value={editFormData.html || ''}
+                    onChange={(e) => handleEditInputChange('html', e.target.value)}
+                    data-testid="textarea-edit-html"
+                  />
+                  {editErrors.html && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{editErrors.html}</span>
+                    </label>
+                  )}
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Plain Text Content</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered h-32 font-mono text-xs"
+                    placeholder="Enter plain text version (optional)"
+                    value={editFormData.text || ''}
+                    onChange={(e) => handleEditInputChange('text', e.target.value)}
+                    data-testid="textarea-edit-text"
+                  />
+                  <div className="label">
+                    <span className="label-text-alt">Fallback for email clients that don't support HTML</span>
+                  </div>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">MJML Source</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered h-32 font-mono text-xs"
+                    placeholder="Enter MJML source (advanced feature)"
+                    value={editFormData.mjml || ''}
+                    onChange={(e) => handleEditInputChange('mjml', e.target.value)}
+                    data-testid="textarea-edit-mjml"
+                  />
+                  <div className="label">
+                    <span className="label-text-alt">MJML will be compiled to HTML automatically</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Error Summary */}
+            {Object.keys(editErrors).length > 0 && (
+              <div className="alert alert-error mt-4" data-testid="edit-error-summary">
+                <AlertCircle className="w-4 h-4" />
+                <div>
+                  <div className="font-medium">Please fix the following errors:</div>
+                  <ul className="list-disc list-inside text-sm mt-1">
+                    {Object.entries(editErrors).map(([field, error]) => (
+                      <li key={field}>{error}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <div className="modal-action mt-6">
+              <button
+                className="btn"
+                onClick={() => setShowEditModal(false)}
+                disabled={editTemplateMutation.isPending}
+                data-testid="button-cancel-edit"
+              >
+                Cancel
+              </button>
+              <button
+                className={`btn btn-primary ${editTemplateMutation.isPending ? 'loading' : ''}`}
+                onClick={handleSaveEdit}
+                disabled={editTemplateMutation.isPending}
+                data-testid="button-save-edit"
+              >
+                {!editTemplateMutation.isPending && <Save className="w-4 h-4 mr-2" />}
+                Save Changes
               </button>
             </div>
           </div>
