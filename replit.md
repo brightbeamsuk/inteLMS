@@ -20,6 +20,12 @@ The client uses **React with TypeScript** and follows a component-based architec
 
 The frontend is organized into role-specific layouts (SuperAdminLayout, AdminLayout, UserLayout) with dedicated page components for each user role's interface.
 
+### Email Templates UI
+
+- **SuperAdmin Templates Page**: Complete default template management with editing, preview, and testing capabilities
+- **Admin Templates Page**: Organization-level template override management with fallback to system defaults
+- **Navigation Integration**: Properly integrated into role-specific navigation menus with permissions
+
 ## Backend Architecture
 
 The server uses **Express.js with TypeScript** in an ESM environment:
