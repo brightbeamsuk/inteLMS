@@ -516,11 +516,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   }));
 
-  // Simple auth middleware
+  // Simple auth middleware with improved debugging
   function requireAuth(req: any, res: any, next: any) {
     if (!req.session?.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      console.log(`🔒 Auth failed for ${req.method} ${req.path} - No session user found`);
+      return res.status(401).json({ 
+        message: "Unauthorized",
+        error: "Authentication required. Please log in to continue.",
+        redirectTo: "/api/login"
+      });
     }
+    
+    // Log successful auth for debugging
+    console.log(`✅ Auth success for ${req.method} ${req.path} - User: ${req.session.user.id || req.session.user.claims?.sub}`);
     next();
   }
 

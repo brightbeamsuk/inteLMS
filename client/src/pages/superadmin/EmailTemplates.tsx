@@ -176,6 +176,19 @@ function SuperAdminEmailTemplatesContent() {
       });
     },
     onError: (error: any) => {
+      // Handle authentication errors specifically
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        toast({
+          title: "Authentication Required",
+          description: "Your session has expired. Please log in again to continue.",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 2000);
+        return;
+      }
+      
       toast({
         title: "Repair Failed",
         description: error.message || "Failed to repair templates",
@@ -203,6 +216,20 @@ function SuperAdminEmailTemplatesContent() {
       }
     },
     onError: (error: any) => {
+      // Handle authentication errors specifically
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        toast({
+          title: "Authentication Required",
+          description: "Your session has expired. Please log in again to continue.",
+          variant: "destructive",
+        });
+        // Redirect to login after a brief delay
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 2000);
+        return;
+      }
+      
       toast({
         title: "Preview Error",
         description: error.message || "Failed to generate preview",
@@ -233,6 +260,19 @@ function SuperAdminEmailTemplatesContent() {
       setTestEmailAddress('');
     },
     onError: (error: any) => {
+      // Handle authentication errors specifically
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        toast({
+          title: "Authentication Required",
+          description: "Your session has expired. Please log in again to continue.",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 2000);
+        return;
+      }
+      
       toast({
         title: "Error",
         description: error.message || "Failed to send test email",
@@ -268,6 +308,19 @@ function SuperAdminEmailTemplatesContent() {
       }
     },
     onError: (error: any) => {
+      // Handle authentication errors specifically
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        toast({
+          title: "Authentication Required",
+          description: "Your session has expired. Please log in again to continue.",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 2000);
+        return;
+      }
+      
       toast({
         title: "Error",
         description: error.message || "Failed to update template",
