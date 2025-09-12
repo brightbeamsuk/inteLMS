@@ -20,6 +20,7 @@ import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertA
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
+import { emailTemplateEngine } from "./services/EmailTemplateEngineService";
 import { z } from "zod";
 
 // Safe organization lookup wrapper - handles spelling & structure differences
@@ -4611,6 +4612,244 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error deleting email template:', error);
       res.status(500).json({ message: 'Failed to delete email template' });
+    }
+  });
+
+  // Email Template Engine API Routes
+  // Preview template with sample data
+  app.post('/api/template-engine/preview/:orgId/:templateKey', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { orgId, templateKey } = req.params;
+      const { customSampleData } = req.body;
+
+      // Check access permissions
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+      
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only preview templates for your organization' });
+      }
+
+      const preview = await emailTemplateEngine.previewTemplate(orgId, templateKey, customSampleData);
+      
+      res.json({
+        success: true,
+        data: preview,
+        message: 'Template preview generated successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error generating template preview:', error);
+      res.status(500).json({ 
+        message: 'Failed to generate template preview',
+        error: error.message 
+      });
+    }
+  });
+
+  // Validate template content
+  app.post('/api/template-engine/validate', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const { templateContent, allowedVariables } = req.body;
+
+      if (!templateContent || !allowedVariables) {
+        return res.status(400).json({ 
+          message: 'templateContent and allowedVariables are required' 
+        });
+      }
+
+      const validation = emailTemplateEngine.validateTemplate(templateContent, allowedVariables);
+      
+      res.json({
+        success: true,
+        data: validation,
+        message: validation.isValid ? 'Template is valid' : 'Template has validation errors'
+      });
+
+    } catch (error: any) {
+      console.error('Error validating template:', error);
+      res.status(500).json({ 
+        message: 'Failed to validate template',
+        error: error.message 
+      });
+    }
+  });
+
+  // Test template rendering with custom data
+  app.post('/api/template-engine/test-render', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const { templateContent, variables, options } = req.body;
+
+      if (!templateContent || !variables) {
+        return res.status(400).json({ 
+          message: 'templateContent and variables are required' 
+        });
+      }
+
+      const rendered = emailTemplateEngine.renderTemplate(templateContent, variables, options);
+      
+      res.json({
+        success: true,
+        data: {
+          rendered,
+          originalTemplate: templateContent,
+          variables: variables
+        },
+        message: 'Template rendered successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error rendering template:', error);
+      res.status(500).json({ 
+        message: 'Failed to render template',
+        error: error.message 
+      });
+    }
+  });
+
+  // Get recommended variable schema for template type
+  app.get('/api/template-engine/schema/:templateType', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const { templateType } = req.params;
+      
+      const schema = emailTemplateEngine.getRecommendedVariablesSchema(templateType);
+      const sampleData = emailTemplateEngine.generateSampleData(templateType);
+      
+      res.json({
+        success: true,
+        data: {
+          templateType,
+          variablesSchema: schema,
+          sampleData
+        },
+        message: 'Variable schema retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error retrieving variable schema:', error);
+      res.status(500).json({ 
+        message: 'Failed to retrieve variable schema',
+        error: error.message 
+      });
+    }
+  });
+
+  // Parse variables from template content
+  app.post('/api/template-engine/parse-variables', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const { templateContent } = req.body;
+
+      if (!templateContent) {
+        return res.status(400).json({ 
+          message: 'templateContent is required' 
+        });
+      }
+
+      const variables = emailTemplateEngine.parseVariables(templateContent);
+      
+      res.json({
+        success: true,
+        data: {
+          variables,
+          count: variables.length,
+          uniqueVariables: Array.from(new Set(variables.map(v => v.path)))
+        },
+        message: 'Variables parsed successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error parsing variables:', error);
+      res.status(500).json({ 
+        message: 'Failed to parse variables',
+        error: error.message 
+      });
+    }
+  });
+
+  // Get template engine statistics and health check
+  app.get('/api/template-engine/health', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - superadmin only' });
+      }
+
+      // Test basic functionality
+      const testContent = 'Hello {{user.name}}, welcome to {{org.name}}!';
+      const testVariables = { user: { name: 'John' }, org: { name: 'Acme Corp' } };
+      const testSchema = { user: { name: 'string' }, org: { name: 'string' } };
+
+      const parsed = emailTemplateEngine.parseVariables(testContent);
+      const validation = emailTemplateEngine.validateTemplate(testContent, testSchema);
+      const rendered = emailTemplateEngine.renderTemplate(testContent, testVariables);
+
+      res.json({
+        success: true,
+        data: {
+          status: 'healthy',
+          features: {
+            variableParsing: parsed.length > 0,
+            templateValidation: validation.isValid,
+            templateRendering: rendered.includes('Hello John')
+          },
+          test: {
+            parsed,
+            validation,
+            rendered
+          }
+        },
+        message: 'Template engine is healthy and operational'
+      });
+
+    } catch (error: any) {
+      console.error('Template engine health check failed:', error);
+      res.status(500).json({ 
+        message: 'Template engine health check failed',
+        error: error.message,
+        status: 'unhealthy'
+      });
     }
   });
 
