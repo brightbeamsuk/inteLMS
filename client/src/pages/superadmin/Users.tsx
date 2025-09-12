@@ -133,13 +133,18 @@ export function SuperAdminUsers() {
     mutationFn: async (data: any) => {
       return await apiRequest('POST', '/api/users', data);
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       setShowCreateModal(false);
       resetForm();
+      
+      // Show different success message based on whether email was sent
+      const isAdmin = formData.role === 'admin';
       toast({
         title: "Success",
-        description: "User created successfully",
+        description: isAdmin 
+          ? "Admin user created successfully and welcome email sent with login credentials"
+          : "User created successfully",
       });
     },
     onError: (error) => {
@@ -244,7 +249,14 @@ export function SuperAdminUsers() {
       });
       return;
     }
-    createUserMutation.mutate(formData);
+    
+    // Include generated password in the request for admin users
+    const userDataWithPassword = {
+      ...formData,
+      ...(formData.role === 'admin' ? { password: generatedPassword } : {})
+    };
+    
+    createUserMutation.mutate(userDataWithPassword);
   };
 
   const generatePassword = () => {

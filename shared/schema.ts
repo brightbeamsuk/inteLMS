@@ -128,6 +128,7 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  passwordHash: varchar("password_hash"), // Store hashed password for authentication
   role: userRoleEnum("role").notNull().default('user'),
   status: userStatusEnum("status").notNull().default('active'),
   organisationId: varchar("organisation_id"),
@@ -991,8 +992,16 @@ export const webhookEvents = pgTable("webhook_events", {
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
+  passwordHash: true, // Don't allow direct passwordHash input - use password instead
   createdAt: true,
   updatedAt: true,
+}).extend({
+  password: z.string().min(6).optional(), // Allow password for creation, will be hashed into passwordHash
+});
+
+// Schema for user creation with password
+export const createUserWithPasswordSchema = insertUserSchema.extend({
+  password: z.string().min(6), // Required password for new user creation
 });
 
 export const insertOrganisationSchema = createInsertSchema(organisations).omit({

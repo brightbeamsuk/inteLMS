@@ -27,6 +27,8 @@ import { emailTemplateResolver } from "./services/EmailTemplateResolutionService
 import { EmailTemplateService } from "./services/EmailTemplateService";
 import { emailTemplateSeedService } from "./seeds/emailTemplateSeedService";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import { emailService } from "./services/emailService";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -8462,7 +8464,9 @@ This test was initiated by ${user.email}.
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const validatedData = insertUserSchema.parse(req.body);
+      // Extract password from request body before validation
+      const { password, ...userData } = req.body;
+      const validatedData = insertUserSchema.parse(userData);
       
       // If admin, can only create users in their organisation
       if (user.role === 'admin') {
@@ -8498,7 +8502,30 @@ This test was initiated by ${user.email}.
         }
       }
 
+      // Hash password if provided (for admin users)
+      if (password && validatedData.role === 'admin') {
+        if (password.length < 6) {
+          return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+        }
+        const saltRounds = 10;
+        validatedData.passwordHash = await bcrypt.hash(password, saltRounds);
+      }
+
       const newUser = await storage.createUser(validatedData);
+      
+      // Send welcome email for admin users with their password
+      if (validatedData.role === 'admin' && password && newUser.organisationId) {
+        try {
+          const organisation = await getOrgById(storage, newUser.organisationId);
+          if (organisation) {
+            await emailService.sendWelcomeEmail(newUser, organisation, password);
+            console.log(`Welcome email sent to admin user: ${newUser.email}`);
+          }
+        } catch (emailError) {
+          console.error('Failed to send welcome email:', emailError);
+          // Don't fail the user creation if email sending fails
+        }
+      }
       
       // Send new user added notification to organization admins (only for regular users, not admins)
       if (newUser.role !== 'admin' && newUser.role !== 'superadmin' && newUser.organisationId) {
@@ -8518,7 +8545,10 @@ This test was initiated by ${user.email}.
         }
       }
       
-      res.status(201).json(newUser);
+      res.status(201).json({ 
+        ...newUser, 
+        welcomeEmailSent: validatedData.role === 'admin' && password ? true : false 
+      });
     } catch (error) {
       console.error('Error creating user:', error);
       res.status(500).json({ message: 'Failed to create user' });
