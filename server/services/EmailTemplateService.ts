@@ -697,8 +697,8 @@ export class EmailTemplateService {
     const missingVariables: string[] = [];
     const invalidVariables: string[] = [];
 
-    // Recursively check schema requirements
-    this.checkSchemaRequirements('', variables, schema, missingVariables, invalidVariables);
+    // Handle JSON Schema format validation
+    this.validateJsonSchema('', variables, schema, missingVariables, invalidVariables);
 
     if (missingVariables.length > 0 || invalidVariables.length > 0) {
       console.error(`${this.LOG_PREFIX} Variable validation failed for template '${templateKey}':`, {
@@ -715,15 +715,15 @@ export class EmailTemplateService {
   }
 
   /**
-   * Recursively check schema requirements against provided variables
+   * Validate data against JSON Schema format
    * 
    * @param path Current path in schema traversal
    * @param data Current data object
-   * @param schema Current schema object
+   * @param schema Current schema object (JSON Schema format)
    * @param missing Array to collect missing variables
    * @param invalid Array to collect invalid variables
    */
-  private checkSchemaRequirements(
+  private validateJsonSchema(
     path: string, 
     data: any, 
     schema: any, 
@@ -734,29 +734,77 @@ export class EmailTemplateService {
       return;
     }
 
-    for (const [key, schemaValue] of Object.entries(schema)) {
-      const currentPath = path ? `${path}.${key}` : key;
-      const dataValue = data?.[key];
-
-      if (schemaValue === 'required' || schemaValue === 'string' || schemaValue === 'number') {
-        // Required primitive field
-        if (dataValue === undefined || dataValue === null) {
-          missing.push(currentPath);
-        } else if (schemaValue === 'number' && typeof dataValue !== 'number') {
-          invalid.push(`${currentPath} (expected number, got ${typeof dataValue})`);
-        } else if (schemaValue === 'string' && typeof dataValue !== 'string') {
-          invalid.push(`${currentPath} (expected string, got ${typeof dataValue})`);
-        }
-      } else if (typeof schemaValue === 'object') {
-        // Nested object schema
-        if (dataValue === undefined || dataValue === null) {
-          missing.push(currentPath);
-        } else if (typeof dataValue === 'object') {
-          this.checkSchemaRequirements(currentPath, dataValue, schemaValue, missing, invalid);
-        } else {
-          invalid.push(`${currentPath} (expected object, got ${typeof dataValue})`);
+    // Handle JSON Schema format with type, required, properties
+    if (schema.type === 'object' && schema.properties) {
+      // Check required fields
+      if (schema.required && Array.isArray(schema.required)) {
+        for (const requiredField of schema.required) {
+          const fieldPath = path ? `${path}.${requiredField}` : requiredField;
+          if (data === null || data === undefined || !(requiredField in data)) {
+            missing.push(fieldPath);
+          }
         }
       }
+
+      // Validate properties
+      if (data && typeof data === 'object') {
+        for (const [propName, propSchema] of Object.entries(schema.properties)) {
+          const propPath = path ? `${path}.${propName}` : propName;
+          const propValue = data[propName];
+          
+          if (propValue !== undefined && propValue !== null) {
+            this.validateJsonSchema(propPath, propValue, propSchema, missing, invalid);
+          }
+        }
+      }
+    } else if (schema.type) {
+      // Validate primitive types
+      this.validatePrimitiveType(path, data, schema, invalid);
+    }
+  }
+
+  /**
+   * Validate primitive types against JSON Schema
+   */
+  private validatePrimitiveType(
+    path: string,
+    data: any,
+    schema: any,
+    invalid: string[]
+  ): void {
+    if (data === null || data === undefined) {
+      return; // Null/undefined handled in required field validation
+    }
+
+    const expectedType = schema.type;
+    const actualType = typeof data;
+
+    switch (expectedType) {
+      case 'string':
+        if (actualType !== 'string') {
+          invalid.push(`${path} (expected string, got ${actualType})`);
+        }
+        break;
+      case 'number':
+        if (actualType !== 'number') {
+          invalid.push(`${path} (expected number, got ${actualType})`);
+        }
+        break;
+      case 'boolean':
+        if (actualType !== 'boolean') {
+          invalid.push(`${path} (expected boolean, got ${actualType})`);
+        }
+        break;
+      case 'array':
+        if (!Array.isArray(data)) {
+          invalid.push(`${path} (expected array, got ${actualType})`);
+        }
+        break;
+      case 'object':
+        if (actualType !== 'object' || Array.isArray(data)) {
+          invalid.push(`${path} (expected object, got ${actualType})`);
+        }
+        break;
     }
   }
 
