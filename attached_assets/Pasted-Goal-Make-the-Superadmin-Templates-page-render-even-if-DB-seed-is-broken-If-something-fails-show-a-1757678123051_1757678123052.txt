@@ -1,0 +1,166 @@
+Goal
+Make the Superadmin Templates page render even if DB/seed is broken. If something fails, show a clear diagnostic panel and a Repair/Seed button.
+
+1) Backend: routes & controller (platform scope only)
+
+Add routes:
+
+GET /superadmin/email/templates → list platform templates (no org join)
+
+GET /superadmin/email/templates/:key → get one
+
+POST /superadmin/email/templates/repair → seed/repair missing defaults
+
+POST /superadmin/email/templates/preview → body { key, variables? } → returns rendered subject/html/text (compile MJML server-side; catch errors)
+
+Controller behaviour (no throws → always JSON):
+
+Wrap logic in try/catch; on error return:
+
+{
+  "ok": false,
+  "stage": "query|serialize|render|unknown",
+  "error": { "short": "human text", "raw": "<first 200 chars>" },
+  "hasRepair": true
+}
+
+
+If table missing or empty → set stage="query" and hasRepair=true.
+
+2) Data: ensure tables + indexes (idempotent migration)
+
+Ensure EmailTemplate table exists (platform only):
+
+cols: id (uuid pk), key (text unique), name, subject, html, text, variables_schema (json), version (int), is_active (bool), timestamps.
+
+Add indexes: idx_emailtemplate_key, idx_emailtemplate_active.
+
+Add a health check function used by list route:
+
+Returns { tableExists, rowCount, missingKeys: [..] }.
+
+3) Seeder/Repair (platform defaults)
+
+Implement seedDefaultsIfMissing(requiredKeys?: string[]) that upserts minimal rows for keys:
+
+welcome, course_assigned, course_reminder, course_overdue, training_expiring, training_expired, course_completed, course_failed, password_reset, weekly_digest, policy_ack_reminder.
+
+Minimal seed values (safe, renderable):
+
+subject: short string
+
+html: simple <h1>{{name}}</h1><p>…</p>
+
+text: same content in plain text
+
+variables_schema: ["user.firstName","course.name","dueDate"] (adjust per key)
+
+version=1, is_active=true
+
+POST /superadmin/email/templates/repair calls this and returns:
+
+{ "ok": true, "inserted": [...keys], "skipped": [...keys], "nowCount": N }
+
+4) List endpoint must never 500
+
+GET /superadmin/email/templates returns:
+
+{
+  "ok": true,
+  "items": [
+    { "key":"course_assigned","name":"Course Assigned","version":3,"is_active":true,
+      "hasHtml": true, "hasText": true, "updatedAt":"…" }
+  ],
+  "health": { "tableExists": true, "rowCount": 11, "missingKeys": [] }
+}
+
+
+If DB error/missing table → return:
+
+{ "ok": false, "stage":"query", "error":{ "short":"EmailTemplate table missing or unreadable" }, "hasRepair": true }
+
+5) Frontend: resilient page with ErrorBoundary
+
+Superadmin → Email → Templates page should:
+
+On mount call GET /superadmin/email/templates.
+
+If ok=true → render list table.
+
+If ok=false → render FailurePanel with:
+
+Title: “Templates failed to load”
+
+Stage + short error
+
+Buttons:
+
+Repair/Seed defaults → POST /superadmin/email/templates/repair, then refetch
+
+Retry → refetch list
+
+Wrap the page in an ErrorBoundary that shows the same FailurePanel if rendering crashes.
+
+List table basics:
+
+Columns: Key, Name, Version, Active, HTML/Text flags, Updated
+
+Row click → loads detail GET /superadmin/email/templates/:key into a right drawer
+
+Detail drawer:
+
+Shows subject, MJML/HTML preview (server-rendered HTML from API), text
+
+Preview variables form (small JSON input), Preview button → calls /preview
+
+Save button → PUT to a /superadmin/email/templates/:key (subject/mjml/text); server compiles MJML, bumps version.
+
+On compile error: show line/col; don’t save.
+
+6) “Safe mode” loader
+
+If the list API returns 0 items but tableExists=true: show banner “No templates found; click Repair to seed defaults.”
+
+If API unreachable/timeouts: show cached last-good list from localStorage (if present) with a yellow “stale” badge and a Retry button.
+
+7) Logging (one line, easy grep)
+
+On backend list failure: log email.tpl.list.fail stage=<stage> err="<short>".
+
+On repair: log email.tpl.repair inserted=<n> missing="<keys>".
+
+On detail load fail: email.tpl.get.fail key=<key>.
+
+On preview compile fail: email.tpl.preview.fail key=<key> reason=mjml.
+
+8) Permissions & guards
+
+Gate routes with superadmin role; return 403 otherwise.
+
+Server-side cap: limit HTML size (e.g., 200 KB) to avoid payload blowups.
+
+9) Acceptance tests (do these now)
+
+Missing table: temporarily rename table → list must not 500; FailurePanel shows; Repair creates table/rows; page loads after Retry.
+
+Empty table: list ok with 0 items; Repair seeds; list shows 11 items.
+
+Broken row (null subject): list still loads; row shows warning icon; edit/save fixes it.
+
+MJML error: preview returns structured error; UI shows line/column; save blocked.
+
+Network error: page shows FailurePanel with Retry; works after server back.
+
+No crash: ErrorBoundary never shows raw stack to users.
+
+Likely reasons yours isn’t loading (this prompt handles them)
+
+EmailTemplate table missing/renamed → handled by health + Repair.
+
+Query joins to org overrides (not needed for superadmin) → simplified to platform-only.
+
+Uncaught error in controller → now returned as { ok:false, stage, error }.
+
+Frontend assumed items.length > 0 and crashed → safe conditionals + ErrorBoundary.
+
+MJML compilation happening on list (expensive/fragile) → move compile to save/preview only.

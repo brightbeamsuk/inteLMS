@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import ErrorBoundary from "@/components/ui/error-boundary";
+import { DataLoadFailurePanel, FailurePanel } from "@/components/ui/failure-panel";
+import { Eye, Send, Edit, RefreshCw, X, ChevronRight } from "lucide-react";
 
 interface EmailTemplate {
   id: string;
@@ -13,155 +16,143 @@ interface EmailTemplate {
   htmlContent: string;
   textContent?: string;
   variables: string[];
-  isConfigured: boolean;
-  overrideCount: number;
+  version: number;
+  isActive: boolean;
+  hasHtml: boolean;
+  hasText: boolean;
+  updatedAt: string;
 }
 
-interface EditTemplateData {
-  subject: string;
-  htmlContent: string;
-  textContent: string;
+interface TemplatesResponse {
+  ok: boolean;
+  stage?: string;
+  error?: {
+    short: string;
+    detail?: string;
+  };
+  data?: {
+    templates: EmailTemplate[];
+    stats: {
+      total: number;
+      configured: number;
+      defaults: number;
+    };
+  };
 }
 
-// Template definitions with metadata - ALL templates are admin notifications
-const templateDefinitions = {
-  admin: [
-    {
-      key: 'admin.new_admin_added',
-      name: 'New Admin Added',
-      description: 'Sent when a new admin is added to an organisation',
-      variables: ['{{new_admin.name}}', '{{new_admin.email}}', '{{org.name}}', '{{added_by.name}}', '{{added_at}}']
-    },
-    {
-      key: 'admin.new_user_added',
-      name: 'New User Added',
-      description: 'Sent when a new learner is added to an organisation',
-      variables: ['{{user.name}}', '{{user.email}}', '{{user.full_name}}', '{{org.name}}', '{{added_by.name}}', '{{added_at}}']
-    },
-    {
-      key: 'admin.new_course_assigned',
-      name: 'Course Assigned',
-      description: 'Sent when a course is assigned to users',
-      variables: ['{{course.title}}', '{{user.name}}', '{{org.name}}', '{{assigned_by.name}}', '{{assigned_at}}']
-    },
-    {
-      key: 'admin.plan_updated',
-      name: 'Plan Updated',
-      description: 'Sent when billing plan is changed',
-      variables: ['{{plan.name}}', '{{plan.old_price}}', '{{plan.new_price}}', '{{org.name}}', '{{changed_by.name}}', '{{changed_at}}']
-    },
-    {
-      key: 'admin.learner_completed_course',
-      name: 'Learner Course Completion',
-      description: 'Sent to admin when a learner completes a course',
-      variables: ['{{user.name}}', '{{user.full_name}}', '{{course.title}}', '{{attempt.score}}', '{{org.name}}', '{{completed_at}}']
-    },
-    {
-      key: 'admin.learner_failed_course',
-      name: 'Learner Course Failed',
-      description: 'Sent to admin when a learner fails a course',
-      variables: ['{{user.name}}', '{{user.full_name}}', '{{course.title}}', '{{attempt.score}}', '{{org.name}}', '{{failed_at}}']
-    }
-  ]
+interface PreviewRequest {
+  templateKey: string;
+  variables?: Record<string, any>;
+}
+
+interface PreviewResponse {
+  ok: boolean;
+  error?: {
+    short: string;
+    detail?: string;
+  };
+  preview?: {
+    subject: string;
+    html: string;
+    text?: string;
+  };
+}
+
+// Sample data for variable preview
+const sampleVariableData: Record<string, any> = {
+  user: {
+    name: "John Doe",
+    email: "john.doe@acmecorp.com",
+    full_name: "John Doe"
+  },
+  org: {
+    name: "Acme Corporation",
+    display_name: "Acme Corp"
+  },
+  admin: {
+    name: "Admin User",
+    full_name: "Admin User"
+  },
+  course: {
+    title: "Safety Training Course"
+  },
+  attempt: {
+    score: "85.5"
+  },
+  added_by: {
+    name: "Manager Smith"
+  },
+  assigned_by: {
+    name: "Manager Smith"
+  },
+  added_at: new Date().toLocaleDateString(),
+  completed_at: new Date().toLocaleDateString(),
+  assigned_at: new Date().toLocaleDateString()
 };
 
-// Sample data for previews - matching backend variable structure
-const sampleData = {
-  'admin.new_admin_added': {
-    '{{new_admin.name}}': 'Alice Johnson',
-    '{{new_admin.email}}': 'alice.johnson@acmecorp.com',
-    '{{org.name}}': 'Acme Corporation',
-    '{{added_by.name}}': 'John Smith',
-    '{{added_at}}': 'September 12, 2025'
-  },
-  'admin.new_user_added': {
-    '{{user.name}}': 'Sarah Johnson',
-    '{{user.email}}': 'sarah.johnson@acmecorp.com',
-    '{{user.full_name}}': 'Sarah Johnson',
-    '{{org.name}}': 'Acme Corporation',
-    '{{added_by.name}}': 'John Smith',
-    '{{added_at}}': 'September 12, 2025'
-  },
-  'admin.new_course_assigned': {
-    '{{course.title}}': 'Health & Safety Training',
-    '{{user.name}}': 'Jane Doe',
-    '{{org.name}}': 'Acme Corporation',
-    '{{assigned_by.name}}': 'John Smith',
-    '{{assigned_at}}': 'September 12, 2025'
-  },
-  'admin.plan_updated': {
-    '{{plan.name}}': 'Professional Plan',
-    '{{plan.old_price}}': '29.99',
-    '{{plan.new_price}}': '34.99',
-    '{{org.name}}': 'Acme Corporation',
-    '{{changed_by.name}}': 'John Smith',
-    '{{changed_at}}': 'September 12, 2025'
-  },
-  'admin.learner_completed_course': {
-    '{{user.name}}': 'Michael Davis',
-    '{{user.full_name}}': 'Michael Davis',
-    '{{course.title}}': 'Data Protection Training',
-    '{{attempt.score}}': '87.5',
-    '{{org.name}}': 'Acme Corporation',
-    '{{completed_at}}': 'September 12, 2025'
-  },
-  'admin.learner_failed_course': {
-    '{{user.name}}': 'Lisa Anderson',
-    '{{user.full_name}}': 'Lisa Anderson',
-    '{{course.title}}': 'Financial Compliance',
-    '{{attempt.score}}': '42.0',
-    '{{org.name}}': 'Acme Corporation',
-    '{{failed_at}}': 'September 12, 2025'
-  }
-};
-
-export function SuperAdminEmailTemplates() {
-  const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+function SuperAdminEmailTemplatesContent() {
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [showDetailDrawer, setShowDetailDrawer] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
-  const [previewTemplate, setPreviewTemplate] = useState<string | null>(null);
-  const [testTemplate, setTestTemplate] = useState<string | null>(null);
   const [testEmailAddress, setTestEmailAddress] = useState('');
-  const [editData, setEditData] = useState<EditTemplateData>({
-    subject: '',
-    htmlContent: '',
-    textContent: ''
-  });
+  const [previewVariables, setPreviewVariables] = useState<string>('{}');
+  const [previewData, setPreviewData] = useState<PreviewResponse['preview'] | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch email templates
-  const { data: templates = [], isLoading, error } = useQuery<EmailTemplate[]>({
-    queryKey: ['/api/email-templates/defaults'],
+  // Main templates query using resilient endpoint
+  const templatesQuery = useQuery<TemplatesResponse>({
+    queryKey: ['/api/superadmin/email/templates'],
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
-  // Get template data by key
-  const getTemplate = (templateKey: string): EmailTemplate | null => {
-    return templates.find((t: EmailTemplate) => t.templateKey === templateKey) || null;
-  };
-
-  // Save template mutation
-  const saveTemplateMutation = useMutation({
-    mutationFn: async ({ templateKey, data }: { templateKey: string; data: EditTemplateData }) => {
-      const response = await apiRequest('PUT', `/api/email-templates/defaults/${templateKey}`, data);
+  // Repair/seed templates mutation
+  const repairMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/superadmin/email/templates/repair');
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/email-templates/defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/superadmin/email/templates'] });
       toast({
         title: "Success",
-        description: "Email template updated successfully",
+        description: "Templates repaired and defaults seeded successfully",
       });
-      setShowEditModal(false);
-      setEditingTemplate(null);
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to save template",
+        title: "Repair Failed",
+        description: error.message || "Failed to repair templates",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Preview template mutation
+  const previewMutation = useMutation({
+    mutationFn: async (request: PreviewRequest) => {
+      const response = await apiRequest('POST', '/api/superadmin/email/templates/preview', request);
+      return response.json() as Promise<PreviewResponse>;
+    },
+    onSuccess: (data) => {
+      if (data.ok && data.preview) {
+        setPreviewData(data.preview);
+        setShowPreviewModal(true);
+      } else {
+        toast({
+          title: "Preview Failed",
+          description: data.error?.short || "Failed to generate preview",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Preview Error",
+        description: error.message || "Failed to generate preview",
         variant: "destructive",
       });
     }
@@ -173,7 +164,7 @@ export function SuperAdminEmailTemplates() {
       const response = await apiRequest('POST', '/api/email-templates/send-test', {
         key: templateKey,
         to: [testEmail],
-        orgId: null // Will use current user's org
+        orgId: null
       });
       return response.json();
     },
@@ -197,359 +188,375 @@ export function SuperAdminEmailTemplates() {
     }
   });
 
-  // Handle edit template
-  const handleEdit = (templateKey: string) => {
-    const template = getTemplate(templateKey);
-    if (template) {
-      setEditData({
-        subject: template.subject || '',
-        htmlContent: template.htmlContent || '',
-        textContent: template.textContent || ''
-      });
-    } else {
-      // New template - set defaults
-      setEditData({
-        subject: '',
-        htmlContent: '',
-        textContent: ''
-      });
-    }
-    setEditingTemplate(templateKey);
-    setShowEditModal(true);
+  // Handle template row click
+  const handleTemplateClick = (templateKey: string) => {
+    setSelectedTemplate(templateKey);
+    setShowDetailDrawer(true);
   };
 
-  // Handle preview
+  // Handle preview with variables
   const handlePreview = (templateKey: string) => {
-    setPreviewTemplate(templateKey);
-    setShowPreviewModal(true);
+    let variables = {};
+    try {
+      if (previewVariables.trim()) {
+        variables = JSON.parse(previewVariables);
+      } else {
+        variables = sampleVariableData;
+      }
+    } catch (error) {
+      toast({
+        title: "Invalid JSON",
+        description: "Preview variables must be valid JSON",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    previewMutation.mutate({
+      templateKey,
+      variables
+    });
   };
 
   // Handle test email
   const handleTest = (templateKey: string) => {
-    setTestTemplate(templateKey);
+    setSelectedTemplate(templateKey);
     setShowTestModal(true);
   };
 
-  // Replace variables in content with sample data
-  const replaceVariables = (content: string, templateKey: string): string => {
-    const samples = sampleData[templateKey as keyof typeof sampleData];
-    if (!samples) return content;
+  // Render main content based on query state
+  const renderContent = () => {
+    if (templatesQuery.isLoading) {
+      return (
+        <div className="flex items-center justify-center h-64" data-testid="loading-templates">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="loading loading-spinner loading-lg"></div>
+            <p className="text-base-content/70">Loading email templates...</p>
+          </div>
+        </div>
+      );
+    }
 
-    let result = content;
-    Object.entries(samples).forEach(([variable, value]) => {
-      result = result.replace(new RegExp(variable.replace(/[{}]/g, '\\$&'), 'g'), value);
-    });
-    return result;
+    if (templatesQuery.error) {
+      return (
+        <DataLoadFailurePanel
+          title="Network connection failed"
+          stage="Fetching templates"
+          error={{
+            short: "Could not connect to the server",
+            detail: (templatesQuery.error as Error).message
+          }}
+          onRetry={() => templatesQuery.refetch()}
+          retryLoading={templatesQuery.isFetching}
+          className="max-w-2xl mx-auto"
+        />
+      );
+    }
+
+    const response = templatesQuery.data;
+    if (!response?.ok) {
+      return (
+        <DataLoadFailurePanel
+          title="Templates failed to load"
+          stage={response?.stage || "Database query"}
+          error={response?.error}
+          onRetry={() => templatesQuery.refetch()}
+          onRepair={() => repairMutation.mutate()}
+          retryLoading={templatesQuery.isFetching}
+          repairLoading={repairMutation.isPending}
+          className="max-w-2xl mx-auto"
+        />
+      );
+    }
+
+    const { templates, stats } = response.data!;
+
+    if (templates.length === 0) {
+      return (
+        <div className="text-center py-12" data-testid="empty-state">
+          <div className="bg-base-200 rounded-lg p-8 max-w-md mx-auto">
+            <h3 className="text-lg font-semibold mb-2">No templates found</h3>
+            <p className="text-base-content/70 mb-4">
+              No email templates are configured. Click "Repair/Seed Defaults" to create the default templates.
+            </p>
+            <button
+              className={`btn btn-primary ${repairMutation.isPending ? 'loading' : ''}`}
+              onClick={() => repairMutation.mutate()}
+              disabled={repairMutation.isPending}
+              data-testid="button-seed-defaults"
+            >
+              {!repairMutation.isPending && "Repair/Seed Defaults"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="stat bg-base-100 rounded-lg">
+            <div className="stat-title">Total Templates</div>
+            <div className="stat-value text-primary">{stats.total}</div>
+          </div>
+          <div className="stat bg-base-100 rounded-lg">
+            <div className="stat-title">Configured</div>
+            <div className="stat-value text-success">{stats.configured}</div>
+          </div>
+          <div className="stat bg-base-100 rounded-lg">
+            <div className="stat-title">Using Defaults</div>
+            <div className="stat-value text-warning">{stats.defaults}</div>
+          </div>
+        </div>
+
+        {/* Templates Table */}
+        <div className="card bg-base-100 shadow-sm">
+          <div className="card-body">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="card-title">Email Templates</h2>
+              <button
+                className={`btn btn-outline btn-sm ${templatesQuery.isFetching ? 'loading' : ''}`}
+                onClick={() => templatesQuery.refetch()}
+                disabled={templatesQuery.isFetching}
+                data-testid="button-refresh"
+              >
+                {!templatesQuery.isFetching && <RefreshCw className="w-4 h-4 mr-1" />}
+                Refresh
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="table table-hover w-full" data-testid="templates-table">
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Content</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {templates.map((template) => (
+                    <tr 
+                      key={template.id}
+                      className="cursor-pointer hover:bg-base-200"
+                      onClick={() => handleTemplateClick(template.templateKey)}
+                      data-testid={`template-row-${template.templateKey}`}
+                    >
+                      <td>
+                        <div className="font-mono text-xs text-base-content/60">
+                          {template.templateKey}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="font-medium">{template.name}</div>
+                        <div className="text-sm text-base-content/60">{template.description}</div>
+                      </td>
+                      <td>
+                        <div className="badge badge-ghost badge-sm">v{template.version}</div>
+                      </td>
+                      <td>
+                        <div className={`badge badge-sm ${template.isActive ? 'badge-success' : 'badge-error'}`}>
+                          {template.isActive ? 'Active' : 'Inactive'}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex space-x-1">
+                          {template.hasHtml && (
+                            <div className="badge badge-primary badge-xs">HTML</div>
+                          )}
+                          {template.hasText && (
+                            <div className="badge badge-secondary badge-xs">TEXT</div>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="text-sm text-base-content/60">
+                          {new Date(template.updatedAt).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex space-x-2">
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePreview(template.templateKey);
+                            }}
+                            data-testid={`button-preview-${template.templateKey}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTest(template.templateKey);
+                            }}
+                            data-testid={`button-test-${template.templateKey}`}
+                          >
+                            <Send className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </>
+    );
   };
 
-  // Get template definition
-  const getTemplateDefinition = (templateKey: string) => {
-    return templateDefinitions.admin.find(t => t.key === templateKey);
-  };
-
-  if (isLoading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center h-64">
-          <span className="loading loading-spinner loading-lg" data-testid="loading-templates"></span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="alert alert-error" data-testid="error-templates">
-          <i className="fas fa-exclamation-triangle"></i>
-          <span>Failed to load email templates</span>
-        </div>
-      </div>
-    );
-  }
+  const selectedTemplateData = templatesQuery.data?.ok 
+    ? templatesQuery.data.data?.templates.find(t => t.templateKey === selectedTemplate)
+    : null;
 
   return (
     <div className="container mx-auto p-6">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2" data-testid="heading-email-templates">Email Templates</h1>
+        <h1 className="text-3xl font-bold mb-2" data-testid="heading-email-templates">
+          Email Templates
+        </h1>
         <p className="text-base-content/70" data-testid="text-description">
-          Manage default email templates for the platform. Organizations can override these templates with their own versions.
+          Manage and configure email templates for the platform. These serve as defaults that organizations can override.
         </p>
       </div>
 
-      {/* Header with info about all templates being admin notifications */}
-      <div className="alert alert-info mb-6" data-testid="info-admin-templates">
-        <i className="fas fa-info-circle"></i>
-        <div>
-          <div className="font-semibold">Admin Notification Templates</div>
-          <div className="text-sm">All templates below are sent TO administrators about various platform events, including learner activities.</div>
-        </div>
-      </div>
+      {/* Main Content */}
+      {renderContent()}
 
-      {/* Template Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {templateDefinitions.admin.map((templateDef) => {
-          const template = getTemplate(templateDef.key);
-          const isConfigured = template?.isConfigured || false;
-          const overrideCount = template?.overrideCount || 0;
+      {/* Template Detail Drawer */}
+      {showDetailDrawer && selectedTemplateData && (
+        <div className="drawer drawer-end">
+          <input 
+            type="checkbox" 
+            className="drawer-toggle" 
+            checked={showDetailDrawer}
+            onChange={() => setShowDetailDrawer(!showDetailDrawer)}
+          />
+          <div className="drawer-side z-50">
+            <label className="drawer-overlay" onClick={() => setShowDetailDrawer(false)}></label>
+            <div className="min-h-full w-96 bg-base-100 p-6" data-testid="template-detail-drawer">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-lg font-bold">{selectedTemplateData.name}</h3>
+                  <p className="text-sm text-base-content/60">{selectedTemplateData.templateKey}</p>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowDetailDrawer(false)}
+                  data-testid="button-close-drawer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-          return (
-            <div key={templateDef.key} className="card bg-base-100 border border-base-300 shadow-sm" data-testid={`card-template-${templateDef.key}`}>
-              <div className="card-body">
-                {/* Header */}
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="card-title text-lg" data-testid={`title-${templateDef.key}`}>
-                      {templateDef.name}
-                    </h3>
-                    <p className="text-sm text-base-content/70 mt-1" data-testid={`description-${templateDef.key}`}>
-                      {templateDef.description}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {/* Configuration status */}
-                    <div className={`badge badge-sm ${isConfigured ? 'badge-success' : 'badge-warning'}`} data-testid={`status-${templateDef.key}`}>
-                      {isConfigured ? 'Configured' : 'Default'}
-                    </div>
-                    {/* Override count */}
-                    {overrideCount > 0 && (
-                      <div className="badge badge-sm badge-info" data-testid={`overrides-${templateDef.key}`}>
-                        {overrideCount} override{overrideCount > 1 ? 's' : ''}
-                      </div>
-                    )}
+              {/* Template Info */}
+              <div className="space-y-4">
+                <div>
+                  <label className="label">
+                    <span className="label-text font-medium">Subject</span>
+                  </label>
+                  <div className="text-sm bg-base-200 p-3 rounded">
+                    {selectedTemplateData.subject || 'No subject configured'}
                   </div>
                 </div>
 
-                {/* Template key */}
-                <div className="text-xs font-mono text-base-content/50 mb-3" data-testid={`key-${templateDef.key}`}>
-                  {templateDef.key}
-                </div>
-
-                {/* Variables */}
-                <div className="mb-4">
-                  <div className="text-sm font-medium mb-2">Available Variables:</div>
+                <div>
+                  <label className="label">
+                    <span className="label-text font-medium">Variables</span>
+                  </label>
                   <div className="flex flex-wrap gap-1">
-                    {templateDef.variables.slice(0, 3).map((variable, index) => (
-                      <div key={index} className="badge badge-ghost badge-sm" data-testid={`variable-${templateDef.key}-${index}`}>
+                    {selectedTemplateData.variables.map((variable, index) => (
+                      <div key={index} className="badge badge-ghost badge-sm">
                         {variable}
                       </div>
                     ))}
-                    {templateDef.variables.length > 3 && (
-                      <div className="badge badge-ghost badge-sm" data-testid={`variable-more-${templateDef.key}`}>
-                        +{templateDef.variables.length - 3} more
-                      </div>
-                    )}
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="card-actions justify-end">
-                  <button 
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => handlePreview(templateDef.key)}
-                    data-testid={`button-preview-${templateDef.key}`}
-                  >
-                    <i className="fas fa-eye"></i>
-                    Preview
-                  </button>
-                  <button 
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => handleTest(templateDef.key)}
-                    data-testid={`button-test-${templateDef.key}`}
-                  >
-                    <i className="fas fa-paper-plane"></i>
-                    Test
-                  </button>
-                  <button 
-                    className="btn btn-sm btn-primary"
-                    onClick={() => handleEdit(templateDef.key)}
-                    data-testid={`button-edit-${templateDef.key}`}
-                  >
-                    <i className="fas fa-edit"></i>
-                    Edit Default
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Edit Template Modal */}
-      {showEditModal && editingTemplate && (
-        <div className="modal modal-open" data-testid="modal-edit-template">
-          <div className="modal-box max-w-4xl">
-            <h3 className="font-bold text-lg mb-4" data-testid="heading-edit-modal">
-              Edit Default Template: {getTemplateDefinition(editingTemplate)?.name}
-            </h3>
-
-            {/* Available Variables */}
-            <div className="mb-4">
-              <div className="text-sm font-medium mb-2">Available Variables:</div>
-              <div className="flex flex-wrap gap-2">
-                {getTemplateDefinition(editingTemplate)?.variables.map((variable, index) => (
-                  <div 
-                    key={index} 
-                    className="badge badge-ghost cursor-pointer hover:badge-primary"
-                    onClick={() => {
-                      // Insert variable at cursor position in active textarea
-                      const activeElement = document.activeElement as HTMLTextAreaElement;
-                      if (activeElement && (activeElement.name === 'subject' || activeElement.name === 'htmlContent' || activeElement.name === 'textContent')) {
-                        const start = activeElement.selectionStart;
-                        const end = activeElement.selectionEnd;
-                        const value = activeElement.value;
-                        const newValue = value.substring(0, start) + variable + value.substring(end);
-                        
-                        if (activeElement.name === 'subject') {
-                          setEditData(prev => ({ ...prev, subject: newValue }));
-                        } else if (activeElement.name === 'htmlContent') {
-                          setEditData(prev => ({ ...prev, htmlContent: newValue }));
-                        } else if (activeElement.name === 'textContent') {
-                          setEditData(prev => ({ ...prev, textContent: newValue }));
-                        }
-                      }
-                    }}
-                    data-testid={`variable-insert-${index}`}
-                  >
-                    {variable}
+                <div>
+                  <label className="label">
+                    <span className="label-text font-medium">Preview Variables (JSON)</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered w-full h-32 font-mono text-xs"
+                    placeholder="Enter JSON for preview variables..."
+                    value={previewVariables}
+                    onChange={(e) => setPreviewVariables(e.target.value)}
+                    data-testid="textarea-preview-variables"
+                  />
+                  <div className="text-xs text-base-content/60 mt-1">
+                    Leave empty to use sample data
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            <div className="space-y-4">
-              {/* Subject */}
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text font-medium">Subject *</span>
-                </label>
-                <input
-                  type="text"
-                  name="subject"
-                  className="input input-bordered w-full"
-                  placeholder="Email subject line..."
-                  value={editData.subject}
-                  onChange={(e) => setEditData(prev => ({ ...prev, subject: e.target.value }))}
-                  data-testid="input-subject"
-                />
+                <button
+                  className={`btn btn-primary w-full ${previewMutation.isPending ? 'loading' : ''}`}
+                  onClick={() => handlePreview(selectedTemplateData.templateKey)}
+                  disabled={previewMutation.isPending}
+                  data-testid="button-generate-preview"
+                >
+                  {!previewMutation.isPending && <Eye className="w-4 h-4 mr-2" />}
+                  Generate Preview
+                </button>
               </div>
-
-              {/* HTML Content */}
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text font-medium">HTML Content *</span>
-                </label>
-                <textarea
-                  name="htmlContent"
-                  className="textarea textarea-bordered h-48 font-mono text-sm"
-                  placeholder="HTML email content..."
-                  value={editData.htmlContent}
-                  onChange={(e) => setEditData(prev => ({ ...prev, htmlContent: e.target.value }))}
-                  data-testid="textarea-html-content"
-                />
-              </div>
-
-              {/* Text Content */}
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text font-medium">Text Content (Fallback)</span>
-                </label>
-                <textarea
-                  name="textContent"
-                  className="textarea textarea-bordered h-32"
-                  placeholder="Plain text email content (optional)..."
-                  value={editData.textContent}
-                  onChange={(e) => setEditData(prev => ({ ...prev, textContent: e.target.value }))}
-                  data-testid="textarea-text-content"
-                />
-              </div>
-            </div>
-
-            <div className="modal-action">
-              <button 
-                className="btn btn-ghost"
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditingTemplate(null);
-                }}
-                data-testid="button-cancel-edit"
-              >
-                Cancel
-              </button>
-              <button 
-                className={`btn btn-primary ${saveTemplateMutation.isPending ? 'loading' : ''}`}
-                onClick={() => {
-                  if (editingTemplate && editData.subject && editData.htmlContent) {
-                    saveTemplateMutation.mutate({ 
-                      templateKey: editingTemplate, 
-                      data: editData 
-                    });
-                  } else {
-                    toast({
-                      title: "Validation Error",
-                      description: "Please fill in the subject and HTML content",
-                      variant: "destructive",
-                    });
-                  }
-                }}
-                disabled={!editData.subject || !editData.htmlContent || saveTemplateMutation.isPending}
-                data-testid="button-save-template"
-              >
-                {saveTemplateMutation.isPending ? 'Saving...' : 'Save Template'}
-              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* Preview Modal */}
-      {showPreviewModal && previewTemplate && (
-        <div className="modal modal-open" data-testid="modal-preview-template">
+      {showPreviewModal && previewData && (
+        <div className="modal modal-open" data-testid="modal-preview">
           <div className="modal-box max-w-4xl">
-            <h3 className="font-bold text-lg mb-4" data-testid="heading-preview-modal">
-              Preview: {getTemplateDefinition(previewTemplate)?.name}
-            </h3>
+            <h3 className="font-bold text-lg mb-4">Template Preview</h3>
             
             <div className="space-y-4">
-              {(() => {
-                const template = getTemplate(previewTemplate);
-                const subject = template?.subject || 'No subject configured';
-                const htmlContent = template?.htmlContent || 'No HTML content configured';
-                
-                return (
-                  <>
-                    {/* Subject Preview */}
-                    <div>
-                      <div className="text-sm font-medium mb-2">Subject:</div>
-                      <div className="bg-base-200 p-3 rounded border" data-testid="preview-subject">
-                        {replaceVariables(subject, previewTemplate)}
-                      </div>
-                    </div>
+              <div>
+                <label className="label">
+                  <span className="label-text font-medium">Subject</span>
+                </label>
+                <div className="bg-base-200 p-3 rounded">
+                  {previewData.subject}
+                </div>
+              </div>
 
-                    {/* HTML Preview */}
-                    <div>
-                      <div className="text-sm font-medium mb-2">HTML Content:</div>
-                      <div className="bg-white border rounded p-4 h-96 overflow-auto" data-testid="preview-html">
-                        <iframe
-                          srcDoc={replaceVariables(htmlContent, previewTemplate)}
-                          className="w-full h-full border-0"
-                          title="Email Preview"
-                        />
-                      </div>
+              <div className="tabs tabs-bordered">
+                <input type="radio" name="preview_tabs" className="tab" aria-label="HTML" defaultChecked />
+                <div className="tab-content bg-base-100 border-base-300 rounded-box p-6">
+                  <div 
+                    className="prose max-w-none"
+                    dangerouslySetInnerHTML={{ __html: previewData.html }}
+                  />
+                </div>
+
+                {previewData.text && (
+                  <>
+                    <input type="radio" name="preview_tabs" className="tab" aria-label="Text" />
+                    <div className="tab-content bg-base-100 border-base-300 rounded-box p-6">
+                      <pre className="whitespace-pre-wrap text-sm">
+                        {previewData.text}
+                      </pre>
                     </div>
                   </>
-                );
-              })()}
+                )}
+              </div>
             </div>
 
             <div className="modal-action">
               <button 
-                className="btn btn-ghost"
-                onClick={() => {
-                  setShowPreviewModal(false);
-                  setPreviewTemplate(null);
-                }}
+                className="btn"
+                onClick={() => setShowPreviewModal(false)}
                 data-testid="button-close-preview"
               >
                 Close
@@ -560,63 +567,76 @@ export function SuperAdminEmailTemplates() {
       )}
 
       {/* Test Email Modal */}
-      {showTestModal && testTemplate && (
+      {showTestModal && selectedTemplate && (
         <div className="modal modal-open" data-testid="modal-test-email">
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4" data-testid="heading-test-modal">
-              Send Test Email: {getTemplateDefinition(testTemplate)?.name}
-            </h3>
+            <h3 className="font-bold text-lg mb-4">Send Test Email</h3>
             
-            <div className="form-control mb-4">
+            <div className="form-control">
               <label className="label">
                 <span className="label-text">Email Address</span>
               </label>
               <input
                 type="email"
-                className="input input-bordered w-full"
-                placeholder="Enter email address..."
+                className="input input-bordered"
+                placeholder="test@example.com"
                 value={testEmailAddress}
                 onChange={(e) => setTestEmailAddress(e.target.value)}
                 data-testid="input-test-email"
               />
             </div>
 
-            <div className="alert alert-info" data-testid="alert-test-info">
-              <i className="fas fa-info-circle"></i>
-              <span>The test email will be sent with sample data for preview purposes.</span>
-            </div>
-
             <div className="modal-action">
               <button 
-                className="btn btn-ghost"
-                onClick={() => {
-                  setShowTestModal(false);
-                  setTestTemplate(null);
-                  setTestEmailAddress('');
-                }}
+                className="btn"
+                onClick={() => setShowTestModal(false)}
                 data-testid="button-cancel-test"
               >
                 Cancel
               </button>
               <button 
                 className={`btn btn-primary ${testEmailMutation.isPending ? 'loading' : ''}`}
-                onClick={() => {
-                  if (testTemplate && testEmailAddress) {
-                    testEmailMutation.mutate({ 
-                      templateKey: testTemplate, 
-                      testEmail: testEmailAddress 
-                    });
-                  }
-                }}
-                disabled={!testEmailAddress || testEmailMutation.isPending}
+                onClick={() => testEmailMutation.mutate({ templateKey: selectedTemplate, testEmail: testEmailAddress })}
+                disabled={!testEmailAddress.trim() || testEmailMutation.isPending}
                 data-testid="button-send-test"
               >
-                {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                {!testEmailMutation.isPending && <Send className="w-4 h-4 mr-2" />}
+                Send Test
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// Main component wrapped with ErrorBoundary
+export function SuperAdminEmailTemplates() {
+  return (
+    <ErrorBoundary
+      fallback={
+        <div className="container mx-auto p-6">
+          <FailurePanel
+            title="Email Templates page crashed"
+            stage="Page Render"
+            error={{
+              short: "The page encountered an error and could not render",
+              detail: "This typically happens due to corrupt component state or invalid data"
+            }}
+            actions={{
+              primary: {
+                label: "Reload Page",
+                action: () => window.location.reload(),
+                variant: 'primary'
+              }
+            }}
+            className="max-w-2xl mx-auto"
+          />
+        </div>
+      }
+    >
+      <SuperAdminEmailTemplatesContent />
+    </ErrorBoundary>
   );
 }

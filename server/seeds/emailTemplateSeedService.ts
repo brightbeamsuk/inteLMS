@@ -2679,6 +2679,95 @@ Policy acknowledgements are required for compliance and governance purposes.`,
   }
 
   /**
+   * Seed missing template defaults with structured result format
+   * 
+   * This is the primary interface for the repair system. It ensures all required
+   * template keys exist without overwriting existing templates.
+   * 
+   * @param requiredKeys Optional array of specific keys to check/seed. If not provided, checks all platform defaults
+   * @returns Structured result with inserted, skipped, and count information
+   */
+  async seedDefaultsIfMissing(requiredKeys?: string[]): Promise<{
+    ok: boolean;
+    inserted: string[];
+    skipped: string[];
+    nowCount: number;
+    errors?: string[];
+  }> {
+    console.log(`${this.LOG_PREFIX} Starting seedDefaultsIfMissing`);
+
+    const result = {
+      ok: true,
+      inserted: [] as string[],
+      skipped: [] as string[],
+      nowCount: 0,
+      errors: [] as string[]
+    };
+
+    try {
+      // Get all platform template definitions
+      const allTemplateDefaults = this.getPlatformTemplateDefaults();
+      
+      // Filter to specific keys if provided, otherwise use all
+      const targetKeys = requiredKeys || allTemplateDefaults.map(t => t.key);
+      const templatesToCheck = allTemplateDefaults.filter(t => targetKeys.includes(t.key));
+
+      console.log(`${this.LOG_PREFIX} Checking ${templatesToCheck.length} template keys: ${targetKeys.join(', ')}`);
+
+      // Check which templates are missing
+      for (const templateDef of templatesToCheck) {
+        try {
+          const existingTemplate = await storage.getEmailTemplateByKey(templateDef.key);
+          
+          if (existingTemplate) {
+            console.log(`${this.LOG_PREFIX} Template '${templateDef.key}' exists, skipping`);
+            result.skipped.push(templateDef.key);
+          } else {
+            console.log(`${this.LOG_PREFIX} Template '${templateDef.key}' missing, creating`);
+            
+            // Create the missing template
+            await this.emailTemplateService.createTemplate(templateDef);
+            result.inserted.push(templateDef.key);
+            
+            console.log(`${this.LOG_PREFIX} Successfully created template '${templateDef.key}'`);
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.error(`${this.LOG_PREFIX} Failed to process template '${templateDef.key}':`, error);
+          
+          result.errors!.push(`${templateDef.key}: ${errorMessage}`);
+          result.ok = false;
+        }
+      }
+
+      // Get final count of all templates
+      try {
+        const allTemplates = await storage.getAllEmailTemplates();
+        result.nowCount = allTemplates.length;
+      } catch (error) {
+        console.warn(`${this.LOG_PREFIX} Could not get final template count:`, error);
+        result.nowCount = result.inserted.length + result.skipped.length;
+      }
+
+      console.log(`${this.LOG_PREFIX} seedDefaultsIfMissing complete: inserted=${result.inserted.length}, skipped=${result.skipped.length}, total=${result.nowCount}`);
+      
+      return result;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`${this.LOG_PREFIX} Critical error in seedDefaultsIfMissing:`, error);
+      
+      return {
+        ok: false,
+        inserted: result.inserted,
+        skipped: result.skipped,
+        nowCount: result.nowCount,
+        errors: [...(result.errors || []), `Critical error: ${errorMessage}`]
+      };
+    }
+  }
+
+  /**
    * Validate all seeded templates
    * 
    * @returns Validation results

@@ -10,6 +10,8 @@ import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { MailerService } from "./services/MailerService";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 // Initialize the central mailer service with intelligent routing
 const mailerService = new MailerService();
@@ -5848,6 +5850,632 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: 'Auto-healing failed',
         error: error.message 
+      });
+    }
+  });
+
+  // ========================================================================
+  // RESILIENT SUPERADMIN EMAIL TEMPLATE API ROUTES  
+  // ========================================================================
+
+  /**
+   * Idempotent table creation function for EmailTemplate table
+   * Creates the table with proper schema and indexes if it doesn't exist
+   * Safe to run multiple times - will not affect existing data
+   */
+  async function createEmailTemplateTableIfNotExists() {
+    try {
+      console.log('📊 Creating EmailTemplate table if not exists...');
+      
+      // Create the main table with all columns and constraints
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS email_templates (
+          id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+          key VARCHAR NOT NULL UNIQUE,
+          name VARCHAR NOT NULL,
+          subject TEXT NOT NULL,
+          html TEXT NOT NULL,
+          mjml TEXT NOT NULL,
+          text TEXT,
+          variables_schema JSONB,
+          category VARCHAR NOT NULL DEFAULT 'learner',
+          version INTEGER NOT NULL DEFAULT 1,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+
+      // Create indexes if they don't exist
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_template_key ON email_templates(key)
+      `);
+      
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_template_category ON email_templates(category)
+      `);
+      
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_template_active ON email_templates(is_active)
+      `);
+
+      console.log('✅ EmailTemplate table and indexes created/verified successfully');
+      return { success: true, created: true };
+      
+    } catch (error: any) {
+      console.error('❌ Failed to create EmailTemplate table:', error);
+      return { 
+        success: false, 
+        created: false, 
+        error: error.message || 'Unknown table creation error' 
+      };
+    }
+  }
+
+  /**
+   * Database health check function for EmailTemplate table
+   * Returns never-failing diagnostic information
+   */
+  async function checkEmailTemplateDbHealth() {
+    const requiredKeys = [
+      'welcome', 'course_assigned', 'course_reminder', 'course_overdue',
+      'training_expiring', 'training_expired', 'course_completed', 
+      'course_failed', 'password_reset', 'weekly_digest', 'policy_ack_reminder'
+    ];
+    
+    try {
+      // Check if table exists and get row count
+      const allTemplates = await storage.getAllEmailTemplates();
+      const existingKeys = allTemplates.map(t => t.key);
+      const missingKeys = requiredKeys.filter(key => !existingKeys.includes(key));
+      
+      return {
+        tableExists: true,
+        rowCount: allTemplates.length,
+        missingKeys,
+        existingKeys,
+        isHealthy: missingKeys.length === 0
+      };
+    } catch (error: any) {
+      console.log('💡 Table access failed, attempting repair...');
+      
+      // Attempt to create table if it doesn't exist
+      const createResult = await createEmailTemplateTableIfNotExists();
+      
+      if (createResult.success) {
+        // Try the health check again after table creation
+        try {
+          const allTemplates = await storage.getAllEmailTemplates();
+          const existingKeys = allTemplates.map(t => t.key);
+          const missingKeys = requiredKeys.filter(key => !existingKeys.includes(key));
+          
+          return {
+            tableExists: true,
+            rowCount: allTemplates.length,
+            missingKeys,
+            existingKeys,
+            isHealthy: missingKeys.length === 0,
+            repairAttempted: true,
+            repairSuccessful: true
+          };
+        } catch (retryError: any) {
+          return {
+            tableExists: false,
+            rowCount: 0,
+            missingKeys: requiredKeys,
+            existingKeys: [],
+            isHealthy: false,
+            error: retryError.message || 'Table created but still inaccessible',
+            repairAttempted: true,
+            repairSuccessful: false
+          };
+        }
+      } else {
+        return {
+          tableExists: false,
+          rowCount: 0,
+          missingKeys: requiredKeys,
+          existingKeys: [],
+          isHealthy: false,
+          error: error.message || 'Unknown database error',
+          repairAttempted: true,
+          repairSuccessful: false,
+          repairError: createResult.error
+        };
+      }
+    }
+  }
+
+  /**
+   * 1. GET /api/superadmin/email/templates
+   * List platform templates with resilient error handling
+   */
+  app.get('/api/superadmin/email/templates', requireAuth, async (req: any, res) => {
+    console.log('email.tpl.list.start');
+    
+    try {
+      // SuperAdmin role check
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        console.log('email.tpl.list.fail stage=auth err="Access denied"');
+        return res.status(403).json({ 
+          ok: false, 
+          stage: 'auth', 
+          error: { short: 'Access denied - SuperAdmin required', raw: 'User role check failed' },
+          hasRepair: false 
+        });
+      }
+
+      console.log('email.tpl.list.query');
+      
+      // Get database health first  
+      const health = await checkEmailTemplateDbHealth();
+      
+      if (!health.tableExists) {
+        console.log('email.tpl.list.fail stage=query err="Table missing"');
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: 'EmailTemplate table does not exist or is inaccessible', 
+            raw: health.error || 'Database table missing' 
+          },
+          hasRepair: true,
+          health
+        });
+      }
+
+      if (health.rowCount === 0) {
+        console.log('email.tpl.list.fail stage=query err="No templates found"');
+        return res.json({
+          ok: false,
+          stage: 'query', 
+          error: { 
+            short: 'No email templates found in database', 
+            raw: 'Template table is empty - seed required' 
+          },
+          hasRepair: true,
+          health
+        });
+      }
+
+      // Get all platform templates
+      const allTemplates = await storage.getAllEmailTemplates();
+      
+      console.log('email.tpl.list.serialize');
+      
+      // Build safe response data
+      const safeTemplates = allTemplates.map(template => {
+        try {
+          // Limit HTML size to 200KB for response
+          const htmlSize = (template.html || '').length;
+          const html = htmlSize > 200000 
+            ? (template.html || '').substring(0, 200000) + '...[truncated]'
+            : template.html;
+
+          return {
+            key: template.key || 'unknown',
+            name: template.name || 'Untitled',
+            category: template.category || 'uncategorized',
+            subject: template.subject || '',
+            html: html || '',
+            text: template.text || null,
+            mjml: template.mjml || null,
+            isActive: template.isActive !== false,
+            version: template.version || 1,
+            variablesSchema: template.variablesSchema || null,
+            createdAt: template.createdAt || null,
+            updatedAt: template.updatedAt || null,
+            htmlSize
+          };
+        } catch (serializeError: any) {
+          console.warn('email.tpl.list.serialize_item_fail', template.key, serializeError.message);
+          return {
+            key: template.key || 'unknown',
+            name: 'Serialization Error',
+            category: 'error',
+            subject: 'Template serialization failed',
+            html: '',
+            text: null,
+            mjml: null,
+            isActive: false,
+            version: 1,
+            variablesSchema: null,
+            createdAt: null,
+            updatedAt: null,
+            htmlSize: 0,
+            error: serializeError.message
+          };
+        }
+      });
+      
+      console.log(`email.tpl.list.success count=${safeTemplates.length} missing=${health.missingKeys.length}`);
+      
+      // Success response
+      return res.json({
+        ok: true,
+        data: safeTemplates,
+        meta: {
+          totalCount: safeTemplates.length,
+          activeCount: safeTemplates.filter(t => t.isActive).length,
+          categories: Array.from(new Set(safeTemplates.map(t => t.category))),
+          health: {
+            isHealthy: health.isHealthy,
+            missingKeys: health.missingKeys,
+            missingCount: health.missingKeys.length
+          }
+        }
+      });
+
+    } catch (error: any) {
+      console.error('email.tpl.list.fail stage=unknown err="' + (error.message || 'Unknown error').substring(0, 50) + '"');
+      
+      // Never return 500 - always return structured error
+      return res.json({
+        ok: false,
+        stage: 'unknown',
+        error: { 
+          short: 'Unexpected error retrieving email templates', 
+          raw: (error.message || 'Unknown error').substring(0, 200) 
+        },
+        hasRepair: true
+      });
+    }
+  });
+
+  /**
+   * 2. GET /api/superadmin/email/templates/:key
+   * Get single template with error handling
+   */
+  app.get('/api/superadmin/email/templates/:key', requireAuth, async (req: any, res) => {
+    const { key } = req.params;
+    console.log(`email.tpl.get.start key=${key}`);
+    
+    try {
+      // SuperAdmin role check
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        console.log(`email.tpl.get.fail key=${key} stage=auth err="Access denied"`);
+        return res.status(403).json({ 
+          ok: false, 
+          stage: 'auth', 
+          error: { short: 'Access denied - SuperAdmin required', raw: 'User role check failed' },
+          hasRepair: false 
+        });
+      }
+
+      if (!key || typeof key !== 'string' || key.length === 0) {
+        console.log(`email.tpl.get.fail key=${key} stage=validation err="Invalid key"`);
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { short: 'Invalid template key provided', raw: `Key: "${key}"` },
+          hasRepair: false
+        });
+      }
+
+      console.log(`email.tpl.get.query key=${key}`);
+      
+      // Get database health
+      const health = await checkEmailTemplateDbHealth();
+      
+      if (!health.tableExists) {
+        console.log(`email.tpl.get.fail key=${key} stage=query err="Table missing"`);
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: 'EmailTemplate table does not exist or is inaccessible', 
+            raw: health.error || 'Database table missing' 
+          },
+          hasRepair: true
+        });
+      }
+
+      // Get specific template
+      const template = await storage.getEmailTemplateByKey(key);
+      
+      if (!template) {
+        console.log(`email.tpl.get.fail key=${key} stage=query err="Template not found"`);
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: `Template '${key}' not found`, 
+            raw: `No template exists with key: ${key}` 
+          },
+          hasRepair: health.missingKeys.includes(key)
+        });
+      }
+
+      console.log(`email.tpl.get.serialize key=${key}`);
+      
+      // Build safe response - limit HTML size
+      const htmlSize = (template.html || '').length;
+      const html = htmlSize > 200000 
+        ? (template.html || '').substring(0, 200000) + '...[truncated]'
+        : template.html;
+
+      const safeTemplate = {
+        key: template.key,
+        name: template.name || 'Untitled',
+        category: template.category || 'uncategorized',
+        subject: template.subject || '',
+        html: html || '',
+        text: template.text || null,
+        mjml: template.mjml || null,
+        isActive: template.isActive !== false,
+        version: template.version || 1,
+        variablesSchema: template.variablesSchema || null,
+        createdAt: template.createdAt || null,
+        updatedAt: template.updatedAt || null,
+        htmlSize
+      };
+      
+      console.log(`email.tpl.get.success key=${key}`);
+      
+      return res.json({
+        ok: true,
+        data: safeTemplate
+      });
+
+    } catch (error: any) {
+      console.error(`email.tpl.get.fail key=${key} stage=unknown err="` + (error.message || 'Unknown error').substring(0, 50) + '"');
+      
+      return res.json({
+        ok: false,
+        stage: 'unknown',
+        error: { 
+          short: 'Unexpected error retrieving template', 
+          raw: (error.message || 'Unknown error').substring(0, 200) 
+        },
+        hasRepair: true
+      });
+    }
+  });
+
+  /**
+   * 3. POST /api/superadmin/email/templates/repair  
+   * Seed/repair missing defaults
+   */
+  app.post('/api/superadmin/email/templates/repair', requireAuth, async (req: any, res) => {
+    console.log('email.tpl.repair.start');
+    
+    try {
+      // SuperAdmin role check
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        console.log('email.tpl.repair.fail stage=auth err="Access denied"');
+        return res.status(403).json({ 
+          ok: false, 
+          stage: 'auth', 
+          error: { short: 'Access denied - SuperAdmin required', raw: 'User role check failed' },
+          hasRepair: false 
+        });
+      }
+
+      console.log('email.tpl.repair.health_check');
+      
+      // Get pre-repair health status
+      const preHealth = await checkEmailTemplateDbHealth();
+      const { overwriteExisting = false, specificKeys } = req.body;
+      
+      console.log(`email.tpl.repair.seed overwrite=${overwriteExisting}`);
+      
+      // Run the repair/seeding process using appropriate method
+      const results = overwriteExisting 
+        ? await emailTemplateSeedService.seedPlatformTemplates({
+            overwriteExisting: true,
+            specificKeys
+          })
+        : await emailTemplateSeedService.seedDefaultsIfMissing(specificKeys);
+
+      // Get post-repair health status
+      const postHealth = await checkEmailTemplateDbHealth();
+      
+      // Handle different result structures based on method used
+      const isNewFormat = 'inserted' in results;
+      const success = isNewFormat ? results.ok : results.success;
+      const seeded = isNewFormat ? results.inserted?.length : results.seeded;
+      const skipped = isNewFormat ? results.skipped?.length : results.skipped;
+      const failed = isNewFormat ? (results.errors?.length || 0) : results.failed;
+      const errorsList = isNewFormat ? (results.errors || []) : (results.errors || []);
+      
+      if (success) {
+        const insertedKeys = isNewFormat ? results.inserted : [];
+        const skippedKeys = isNewFormat ? results.skipped : [];
+        
+        console.log(`email.tpl.repair.success inserted=${seeded} skipped=${skipped} failed=${failed} inserted="${insertedKeys.join(',')}" missing="${insertedKeys.join(',')}"`);
+        
+        return res.json({
+          ok: true,
+          data: {
+            repairCompleted: true,
+            seeded: seeded || 0,
+            skipped: skipped || 0,
+            failed: failed || 0,
+            inserted: insertedKeys,
+            details: isNewFormat ? [] : (results.details || []),
+            errors: errorsList
+          },
+          meta: {
+            preRepair: preHealth,
+            postRepair: postHealth,
+            improvement: {
+              missingBefore: preHealth.missingKeys.length,
+              missingAfter: postHealth.missingKeys.length,
+              fixed: preHealth.missingKeys.length - postHealth.missingKeys.length
+            }
+          }
+        });
+      } else {
+        console.log(`email.tpl.repair.partial seeded=${seeded} failed=${failed}`);
+        
+        return res.json({
+          ok: false,
+          stage: 'seed',
+          error: { 
+            short: `Repair completed with ${failed} failures`, 
+            raw: errorsList.join('; ').substring(0, 200) 
+          },
+          hasRepair: true,
+          data: {
+            partialSuccess: true,
+            seeded: seeded || 0,
+            skipped: skipped || 0, 
+            failed: failed || 0,
+            details: isNewFormat ? [] : (results.details || []),
+            errors: errorsList
+          },
+          meta: {
+            preRepair: preHealth,
+            postRepair: postHealth
+          }
+        });
+      }
+
+    } catch (error: any) {
+      console.error('email.tpl.repair.fail stage=unknown err="' + (error.message || 'Unknown error').substring(0, 50) + '"');
+      
+      return res.json({
+        ok: false,
+        stage: 'unknown',
+        error: { 
+          short: 'Unexpected error during template repair', 
+          raw: (error.message || 'Unknown error').substring(0, 200) 
+        },
+        hasRepair: true
+      });
+    }
+  });
+
+  /**
+   * 4. POST /api/superadmin/email/templates/preview
+   * Render template with variables
+   */
+  app.post('/api/superadmin/email/templates/preview', requireAuth, async (req: any, res) => {
+    console.log('email.tpl.preview.start');
+    
+    try {
+      // SuperAdmin role check
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        console.log('email.tpl.preview.fail stage=auth err="Access denied"');
+        return res.status(403).json({ 
+          ok: false, 
+          stage: 'auth', 
+          error: { short: 'Access denied - SuperAdmin required', raw: 'User role check failed' },
+          hasRepair: false 
+        });
+      }
+
+      const { templateKey, orgId, variables } = req.body;
+
+      if (!templateKey || typeof templateKey !== 'string') {
+        console.log('email.tpl.preview.fail stage=validation err="Missing templateKey"');
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { short: 'templateKey is required', raw: 'Missing or invalid templateKey in request body' },
+          hasRepair: false
+        });
+      }
+
+      console.log(`email.tpl.preview.render key=${templateKey} orgId=${orgId || 'none'}`);
+      
+      // Use EmailTemplateService to render with variables
+      const orgIdToUse = orgId || 'platform-preview';
+      const variablesToUse = variables || {};
+      
+      // Add some default preview variables if none provided
+      const defaultVariables = {
+        org: { 
+          name: 'Preview Organization', 
+          display_name: 'Preview Organization',
+          subdomain: 'preview'
+        },
+        user: { 
+          name: 'Preview User', 
+          email: 'preview@example.com', 
+          full_name: 'Preview User' 
+        },
+        admin: { 
+          name: 'Preview Admin', 
+          full_name: 'Preview Admin' 
+        },
+        course: { 
+          title: 'Preview Course', 
+          description: 'This is a preview course' 
+        },
+        ...variablesToUse
+      };
+
+      const renderedTemplate = await emailTemplateService.render(
+        templateKey, 
+        orgIdToUse, 
+        defaultVariables
+      );
+
+      // Limit HTML size for response
+      const htmlSize = (renderedTemplate.html || '').length;
+      const html = htmlSize > 200000 
+        ? (renderedTemplate.html || '').substring(0, 200000) + '...[truncated]'
+        : renderedTemplate.html;
+
+      console.log(`email.tpl.preview.success key=${templateKey} htmlSize=${htmlSize}`);
+      
+      return res.json({
+        ok: true,
+        data: {
+          templateKey,
+          rendered: {
+            subject: renderedTemplate.subject || '',
+            html: html || '',
+            text: renderedTemplate.text || null
+          },
+          variables: defaultVariables,
+          htmlSize,
+          truncated: htmlSize > 200000
+        }
+      });
+
+    } catch (error: any) {
+      console.error('email.tpl.preview.fail stage=render err="' + (error.message || 'Unknown error').substring(0, 50) + '"');
+      
+      // Check if it's a template not found error
+      if (error.name === 'TemplateNotFoundError' || error.message?.includes('not found')) {
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: `Template '${req.body.templateKey}' not found`, 
+            raw: (error.message || 'Template not found').substring(0, 200) 
+          },
+          hasRepair: true
+        });
+      }
+
+      // Check if it's a variable validation error
+      if (error.name === 'VariableValidationError') {
+        return res.json({
+          ok: false,
+          stage: 'render',
+          error: { 
+            short: 'Template variable validation failed', 
+            raw: (error.message || 'Variable validation error').substring(0, 200) 
+          },
+          hasRepair: false
+        });
+      }
+      
+      return res.json({
+        ok: false,
+        stage: 'render',
+        error: { 
+          short: 'Template rendering failed', 
+          raw: (error.message || 'Unknown rendering error').substring(0, 200) 
+        },
+        hasRepair: false
       });
     }
   });
