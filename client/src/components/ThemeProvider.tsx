@@ -87,11 +87,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   });
 
   // Helper function to check feature access
-  const hasFeatureAccess = (featureId: string) => {
+  const hasFeatureAccess = (featureKey: string) => {
     // If plan features are still loading, return false to prevent applying custom colors prematurely
     if (planFeaturesLoading) return false;
     
-    const feature = planFeatures.find((f: any) => f.featureId === featureId);
+    const feature = planFeatures.find((f: any) => f.featureId === featureKey);
     return feature?.enabled || false;
   };
 
