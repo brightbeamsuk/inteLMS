@@ -17,8 +17,8 @@ const defaultEmailTemplates: InsertEmailTemplateDefaults[] = [
   {
     key: 'admin.new_admin_added',
     category: 'admin',
-    subjectDefault: 'New Administrator Added to {{org.name}}',
-    htmlDefault: `
+    subject: 'New Administrator Added to {{org.name}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -103,7 +103,7 @@ const defaultEmailTemplates: InsertEmailTemplateDefaults[] = [
   </div>
 </body>
 </html>`,
-    textDefault: `New Administrator Added to {{org.name}}
+    textContent: `New Administrator Added to {{org.name}}
 
 Hello {{admin.name}},
 
@@ -157,8 +157,8 @@ This is an automated notification from your learning management system.`,
   {
     key: 'admin.new_user_added',
     category: 'admin',
-    subjectDefault: 'New Learner Enrolled: {{user.full_name}}',
-    htmlDefault: `
+    subject: 'New Learner Enrolled: {{user.full_name}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -258,7 +258,7 @@ This is an automated notification from your learning management system.`,
   </div>
 </body>
 </html>`,
-    textDefault: `New Learner Enrolled: {{user.full_name}}
+    textContent: `New Learner Enrolled: {{user.full_name}}
 
 Hello {{admin.name}},
 
@@ -322,8 +322,8 @@ This is an automated notification from your learning management system.`,
   {
     key: 'admin.new_course_assigned',
     category: 'admin',
-    subjectDefault: 'Course Assigned: {{course.title}} → {{user.full_name}}',
-    htmlDefault: `
+    subject: 'Course Assigned: {{course.title}} → {{user.full_name}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -422,7 +422,7 @@ This is an automated notification from your learning management system.`,
   </div>
 </body>
 </html>`,
-    textDefault: `Course Assigned: {{course.title}} → {{user.full_name}}
+    textContent: `Course Assigned: {{course.title}} → {{user.full_name}}
 
 Hello {{admin.name}},
 
@@ -493,8 +493,8 @@ This is an automated notification from your learning management system.`,
   {
     key: 'admin.plan_updated',
     category: 'admin',
-    subjectDefault: 'Billing Plan Updated for {{org.name}}',
-    htmlDefault: `
+    subject: 'Billing Plan Updated for {{org.name}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -602,7 +602,7 @@ This is an automated notification from your learning management system.`,
   </div>
 </body>
 </html>`,
-    textDefault: `Billing Plan Updated for {{org.name}}
+    textContent: `Billing Plan Updated for {{org.name}}
 
 Hello {{admin.name}},
 
@@ -667,8 +667,8 @@ This is an automated notification from your learning management system.`,
   {
     key: 'admin.learner_completed_course',
     category: 'admin',
-    subjectDefault: '🎉 Course Completed: {{user.full_name}} - {{course.title}}',
-    htmlDefault: `
+    subject: '🎉 Course Completed: {{user.full_name}} - {{course.title}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -786,7 +786,7 @@ This is an automated notification from your learning management system.`,
   </div>
 </body>
 </html>`,
-    textDefault: `🎉 Course Completed: {{user.full_name}} - {{course.title}}
+    textContent: `🎉 Course Completed: {{user.full_name}} - {{course.title}}
 
 Hello {{admin.name}},
 
@@ -858,8 +858,8 @@ This is an automated notification from your learning management system.`,
   {
     key: 'admin.learner_failed_course',
     category: 'admin',
-    subjectDefault: '⚠️ Course Failed: {{user.full_name}} - {{course.title}}',
-    htmlDefault: `
+    subject: '⚠️ Course Failed: {{user.full_name}} - {{course.title}}',
+    htmlContent: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -995,7 +995,7 @@ This is an automated notification from your learning management system.`,
   </div>
 </body>
 </html>`,
-    textDefault: `⚠️ Course Failed: {{user.full_name}} - {{course.title}}
+    textContent: `⚠️ Course Failed: {{user.full_name}} - {{course.title}}
 
 Hello {{admin.name}},
 

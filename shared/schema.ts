@@ -554,9 +554,9 @@ export const emailTemplateDefaults = pgTable("email_template_defaults", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   key: varchar("key").notNull().unique(), // e.g., 'admin.new_admin_added', 'learner.course_assigned'
   category: emailTemplateCategoryEnum("category").notNull(), // 'admin' | 'learner'
-  subjectDefault: varchar("subject_default").notNull(),
-  htmlDefault: text("html_default").notNull(),
-  textDefault: text("text_default"),
+  subject: varchar("subject").notNull(),
+  htmlContent: text("html_content").notNull(),
+  textContent: text("text_content"),
   variablesSchema: jsonb("variables_schema"), // Array of allowed variables for this template
   updatedAt: timestamp("updated_at").defaultNow(),
   updatedBy: varchar("updated_by").notNull(),
