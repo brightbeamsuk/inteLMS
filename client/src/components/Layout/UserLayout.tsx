@@ -37,7 +37,7 @@ export function UserLayout({ children }: UserLayoutProps) {
     queryKey: ['/api/plan-features/mappings', organization?.planId],
     enabled: !!organization?.planId,
     queryFn: async () => {
-      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+      const response = await fetch(`/api/plan-features/mappings/${organization?.planId}`, {
         credentials: 'include'
       });
       if (!response.ok) {
@@ -83,7 +83,7 @@ export function UserLayout({ children }: UserLayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-base-100" data-theme="light" style={customStyles}>
+    <div className="min-h-screen bg-base-100" data-theme="light" style={customStyles as React.CSSProperties}>
       {/* Header */}
       <div className="navbar bg-base-300 shadow-lg">
         <div className="navbar-start">
