@@ -8509,15 +8509,16 @@ This test was initiated by ${user.email}.
       }
 
       // Hash password if provided (for admin users)
+      let userDataWithPassword = { ...validatedData };
       if (password && validatedData.role === 'admin') {
         if (password.length < 6) {
           return res.status(400).json({ message: 'Password must be at least 6 characters long' });
         }
         const saltRounds = 10;
-        validatedData.passwordHash = await bcrypt.hash(password, saltRounds);
+        userDataWithPassword.passwordHash = await bcrypt.hash(password, saltRounds);
       }
 
-      const newUser = await storage.createUser(validatedData);
+      const newUser = await storage.createUser(userDataWithPassword);
       
       // Send welcome email for admin users with their password
       if (validatedData.role === 'admin' && password && newUser.organisationId) {
@@ -8555,8 +8556,17 @@ This test was initiated by ${user.email}.
         ...newUser, 
         welcomeEmailSent: validatedData.role === 'admin' && password ? true : false 
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating user:', error);
+      
+      // Handle duplicate email error
+      if (error?.code === '23505' && error?.constraint === 'users_email_unique') {
+        return res.status(409).json({ 
+          message: 'A user with this email address already exists',
+          error: 'DUPLICATE_EMAIL'
+        });
+      }
+      
       res.status(500).json({ message: 'Failed to create user' });
     }
   });
