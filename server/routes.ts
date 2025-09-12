@@ -104,8 +104,56 @@ async function canUserModifyTarget(currentUser: any, targetUser: any): Promise<{
 }
 
 // Effective email settings resolver
-async function getEffectiveEmailSettings(storage: any, orgId: string) {
+async function getEffectiveEmailSettings(storage: any, orgId: string | null | undefined) {
   try {
+    // Handle SuperAdmin users (no organization) with system-level email settings
+    if (!orgId) {
+      console.log('📧 Using system-level email settings for SuperAdmin user');
+      
+      // For SuperAdmin users, use environment variables or default system settings
+      const systemSettings = {
+        provider: process.env.SYSTEM_EMAIL_PROVIDER || 'brevo_api',
+        fromName: process.env.SYSTEM_FROM_NAME || 'inteLMS Platform',
+        fromEmail: process.env.SYSTEM_FROM_EMAIL || 'noreply@intellms.app',
+        brevo: {
+          apiKey: process.env.BREVO_API_KEY || ''
+        },
+        smtp: {
+          host: process.env.SYSTEM_SMTP_HOST || '',
+          port: parseInt(process.env.SYSTEM_SMTP_PORT || '587'),
+          user: process.env.SYSTEM_SMTP_USER || '',
+          pass: process.env.SYSTEM_SMTP_PASS || '',
+          secure: process.env.SYSTEM_SMTP_SECURE !== 'false'
+        }
+      };
+
+      // Validate system settings
+      const validationErrors = [];
+      
+      if (!systemSettings.fromEmail) {
+        validationErrors.push('System FROM email missing');
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(systemSettings.fromEmail)) {
+        validationErrors.push('System FROM email invalid format');
+      }
+      
+      if (systemSettings.provider === 'brevo_api') {
+        if (!systemSettings.brevo.apiKey) {
+          validationErrors.push('System Brevo API key missing');
+        }
+      } else if (systemSettings.provider === 'smtp') {
+        if (!systemSettings.smtp.host) validationErrors.push('System SMTP host missing');
+        if (!systemSettings.smtp.user) validationErrors.push('System SMTP username missing');
+        if (!systemSettings.smtp.pass) validationErrors.push('System SMTP password missing');
+      }
+      
+      return {
+        valid: validationErrors.length === 0,
+        errors: validationErrors,
+        settings: systemSettings
+      };
+    }
+
+    // Standard organization-based email settings
     const org = await getOrgById(storage, orgId);
     if (!org) {
       return {
@@ -5530,10 +5578,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Authorization check if orgId is provided
-      const effectiveOrgId = orgId || user.organisationId;
-      if (user.role === 'admin' && user.organisationId !== effectiveOrgId) {
-        return res.status(403).json({ message: 'Access denied - can only send tests for your organization' });
+      // Authorization check and organization determination
+      let effectiveOrgId;
+      
+      // Handle SuperAdmin users who don't have an organizationId
+      if (user.role === 'superadmin') {
+        // SuperAdmin can test any organization's templates or use system-level settings
+        effectiveOrgId = orgId || null; // Use provided orgId or null for system-level settings
+        console.log(`📧 SuperAdmin test email: orgId=${orgId}, effectiveOrgId=${effectiveOrgId}`);
+      } else {
+        // For Admin users, stick to their organization
+        effectiveOrgId = orgId || user.organisationId;
+        if (user.role === 'admin' && user.organisationId !== effectiveOrgId) {
+          return res.status(403).json({ message: 'Access denied - can only send tests for your organization' });
+        }
       }
 
       // Get effective email settings
