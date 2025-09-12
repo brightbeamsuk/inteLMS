@@ -462,20 +462,49 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Email templates table - stores customizable email templates for organisations
+// NEW ROBUST EMAIL TEMPLATE SCHEMA
+
+// EmailTemplate table - platform-level default email templates with MJML support
 export const emailTemplates = pgTable("email_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organisationId: varchar("organisation_id").notNull(),
-  templateType: emailTemplateTypeEnum("template_type").notNull(),
-  subject: varchar("subject").notNull(),
-  htmlContent: text("html_content").notNull(),
-  textContent: text("text_content"),
-  isEnabled: boolean("is_enabled").default(true),
-  reminderDays: integer("reminder_days"), // For reminder templates (e.g., 7 days, 3 days)
-  createdBy: varchar("created_by").notNull(),
+  key: varchar("key").notNull().unique(), // e.g., 'welcome', 'course_assigned', 'training_expiring'
+  name: varchar("name").notNull(), // Human-readable title
+  subject: text("subject").notNull(), // Handlebars-enabled subject template
+  html: text("html").notNull(), // Compiled HTML from MJML
+  mjml: text("mjml").notNull(), // Source MJML template
+  text: text("text"), // Optional plain text version
+  variablesSchema: jsonb("variables_schema"), // JSON schema defining required/optional variables
+  category: emailTemplateCategoryEnum("category").notNull(), // learner | admin
+  version: integer("version").notNull().default(1), // Version control for templates
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_email_template_key").on(table.key),
+  index("idx_email_template_category").on(table.category),
+  index("idx_email_template_active").on(table.isActive),
+]);
+
+// OrgEmailTemplate table - organization-specific overrides for email templates
+export const orgEmailTemplates = pgTable("org_email_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(), // FK to organisations
+  templateKey: varchar("template_key").notNull(), // FK to EmailTemplate.key
+  subjectOverride: text("subject_override"), // Override subject template
+  htmlOverride: text("html_override"), // Override compiled HTML
+  mjmlOverride: text("mjml_override"), // Override MJML source
+  textOverride: text("text_override"), // Override plain text version
+  version: integer("version").notNull().default(1), // Track override version
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_org_email_template_org").on(table.orgId),
+  index("idx_org_email_template_key").on(table.templateKey),
+  index("idx_org_email_template_org_key").on(table.orgId, table.templateKey),
+  // Unique constraint to prevent duplicate overrides for same org+template
+  unique("unique_org_email_template").on(table.orgId, table.templateKey),
+]);
 
 // System-wide email settings table (SuperAdmin level - platform defaults)
 export const systemEmailSettings = pgTable("system_email_settings", {
@@ -549,7 +578,10 @@ export const emailLogs = pgTable("email_logs", {
   fallbackUsed: boolean("fallback_used").default(false),
 });
 
-// Email template defaults table - stores platform-level default templates
+// DEPRECATED - OLD EMAIL TEMPLATE DEFAULTS TABLE (REPLACED BY NEW ROBUST SCHEMA)
+// This table has been replaced by the new 'emailTemplates' table with MJML support
+// TODO: Remove this table after data migration
+/*
 export const emailTemplateDefaults = pgTable("email_template_defaults", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   key: varchar("key").notNull().unique(), // e.g., 'admin.new_admin_added', 'learner.course_assigned'
@@ -561,8 +593,12 @@ export const emailTemplateDefaults = pgTable("email_template_defaults", {
   updatedAt: timestamp("updated_at").defaultNow(),
   updatedBy: varchar("updated_by").notNull(),
 });
+*/
 
-// Email template overrides table - stores org-specific template customizations
+// DEPRECATED - OLD EMAIL TEMPLATE OVERRIDES TABLE (REPLACED BY NEW ROBUST SCHEMA)
+// This table has been replaced by the new 'orgEmailTemplates' table with MJML support
+// TODO: Remove this table after data migration
+/*
 export const emailTemplateOverrides = pgTable("email_template_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
@@ -578,6 +614,7 @@ export const emailTemplateOverrides = pgTable("email_template_overrides", {
   // Unique constraint to prevent duplicate overrides for same org+template
   unique("unique_email_override_org_template").on(table.orgId, table.templateKey),
 ]);
+*/
 
 // Organisation notification settings table - controls who receives notifications
 export const orgNotificationSettings = pgTable("org_notification_settings", {
@@ -821,14 +858,22 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
-export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
+// NEW ROBUST EMAIL TEMPLATE RELATIONS
+
+// EmailTemplate relations (platform defaults - no org relationship)
+export const emailTemplatesRelations = relations(emailTemplates, ({ many }) => ({
+  orgOverrides: many(orgEmailTemplates), // One template can have many org overrides
+}));
+
+// OrgEmailTemplate relations (tenant overrides)
+export const orgEmailTemplatesRelations = relations(orgEmailTemplates, ({ one }) => ({
   organisation: one(organisations, {
-    fields: [emailTemplates.organisationId],
+    fields: [orgEmailTemplates.orgId],
     references: [organisations.id],
   }),
-  createdByUser: one(users, {
-    fields: [emailTemplates.createdBy],
-    references: [users.id],
+  template: one(emailTemplates, {
+    fields: [orgEmailTemplates.templateKey],
+    references: [emailTemplates.key],
   }),
 }));
 
@@ -874,29 +919,29 @@ export const supportTicketResponsesRelations = relations(supportTicketResponses,
 }));
 
 // Email template defaults relations
-export const emailTemplateDefaultsRelations = relations(emailTemplateDefaults, ({ one, many }) => ({
-  updatedByUser: one(users, {
-    fields: [emailTemplateDefaults.updatedBy],
-    references: [users.id],
-  }),
-  overrides: many(emailTemplateOverrides),
-}));
+// DEPRECATED - OLD EMAIL TEMPLATE RELATIONS (TO BE REMOVED)
+// export const emailTemplateDefaultsRelations = relations(emailTemplateDefaults, ({ one, many }) => ({
+//   updatedByUser: one(users, {
+//     fields: [emailTemplateDefaults.updatedBy],
+//     references: [users.id],
+//   }),
+//   overrides: many(emailTemplateOverrides),
+// }));
 
-// Email template overrides relations
-export const emailTemplateOverridesRelations = relations(emailTemplateOverrides, ({ one }) => ({
-  organisation: one(organisations, {
-    fields: [emailTemplateOverrides.orgId],
-    references: [organisations.id],
-  }),
-  templateDefault: one(emailTemplateDefaults, {
-    fields: [emailTemplateOverrides.templateKey],
-    references: [emailTemplateDefaults.key],
-  }),
-  updatedByUser: one(users, {
-    fields: [emailTemplateOverrides.updatedBy],
-    references: [users.id],
-  }),
-}));
+// export const emailTemplateOverridesRelations = relations(emailTemplateOverrides, ({ one }) => ({
+//   organisation: one(organisations, {
+//     fields: [emailTemplateOverrides.orgId],
+//     references: [organisations.id],
+//   }),
+//   templateDefault: one(emailTemplateDefaults, {
+//     fields: [emailTemplateOverrides.templateKey],
+//     references: [emailTemplateDefaults.key],
+//   }),
+//   updatedByUser: one(users, {
+//     fields: [emailTemplateOverrides.updatedBy],
+//     references: [users.id],
+//   }),
+// }));
 
 // Organisation notification settings relations
 export const orgNotificationSettingsRelations = relations(orgNotificationSettings, ({ one }) => ({
@@ -1029,8 +1074,17 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+// NEW ROBUST EMAIL TEMPLATE INSERT SCHEMAS
 export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
   id: true,
+  version: true, // Auto-managed
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrgEmailTemplateSchema = createInsertSchema(orgEmailTemplates).omit({
+  id: true,
+  version: true, // Auto-managed
   createdAt: true,
   updatedAt: true,
 });
@@ -1047,15 +1101,16 @@ export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({
 });
 
 // Email template system insert schemas
-export const insertEmailTemplateDefaultsSchema = createInsertSchema(emailTemplateDefaults).omit({
-  id: true,
-  updatedAt: true,
-});
+// DEPRECATED - OLD EMAIL TEMPLATE INSERT SCHEMAS (TO BE REMOVED)
+// export const insertEmailTemplateDefaultsSchema = createInsertSchema(emailTemplateDefaults).omit({
+//   id: true,
+//   updatedAt: true,
+// });
 
-export const insertEmailTemplateOverridesSchema = createInsertSchema(emailTemplateOverrides).omit({
-  id: true,
-  updatedAt: true,
-});
+// export const insertEmailTemplateOverridesSchema = createInsertSchema(emailTemplateOverrides).omit({
+//   id: true,
+//   updatedAt: true,
+// });
 
 export const insertOrgNotificationSettingsSchema = createInsertSchema(orgNotificationSettings).omit({
   updatedAt: true,
@@ -1143,15 +1198,18 @@ export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 
+// NEW ROBUST EMAIL TEMPLATE TYPES
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
 
-// Email template system types
-export type InsertEmailTemplateDefaults = z.infer<typeof insertEmailTemplateDefaultsSchema>;
-export type EmailTemplateDefaults = typeof emailTemplateDefaults.$inferSelect;
+export type InsertOrgEmailTemplate = z.infer<typeof insertOrgEmailTemplateSchema>;
+export type OrgEmailTemplate = typeof orgEmailTemplates.$inferSelect;
 
-export type InsertEmailTemplateOverrides = z.infer<typeof insertEmailTemplateOverridesSchema>;
-export type EmailTemplateOverrides = typeof emailTemplateOverrides.$inferSelect;
+// DEPRECATED - OLD EMAIL TEMPLATE TYPES (TO BE REMOVED)
+// export type InsertEmailTemplateDefaults = z.infer<typeof insertEmailTemplateDefaultsSchema>;
+// export type EmailTemplateDefaults = typeof emailTemplateDefaults.$inferSelect;
+// export type InsertEmailTemplateOverrides = z.infer<typeof insertEmailTemplateOverridesSchema>;
+// export type EmailTemplateOverrides = typeof emailTemplateOverrides.$inferSelect;
 
 export type InsertOrgNotificationSettings = z.infer<typeof insertOrgNotificationSettingsSchema>;
 export type OrgNotificationSettings = typeof orgNotificationSettings.$inferSelect;

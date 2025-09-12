@@ -16,7 +16,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
@@ -4751,7 +4751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
 
-      const templates = await storage.getEmailTemplatesByOrganisation(orgId);
+      const templates = await storage.getOrgEmailTemplatesByOrg(orgId);
       res.json(templates);
     } catch (error) {
       console.error('Error fetching email templates:', error);
@@ -4769,19 +4769,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const template = await storage.getEmailTemplate(id);
+      const template = await storage.getOrgEmailTemplate(id);
       
       if (!template) {
         return res.status(404).json({ message: 'Email template not found' });
       }
 
       // Admins can only access their own organization's templates
-      if (user.role === 'admin' && user.organisationId !== template.organisationId) {
+      if (user.role === 'admin' && user.organisationId !== template.orgId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       // Check if custom email templates feature is available
-      const hasEmailTemplatesAccess = await hasFeatureAccess(template.organisationId, 'custom_email_templates');
+      const hasEmailTemplatesAccess = await hasFeatureAccess(template.orgId, 'custom_email_templates');
       if (!hasEmailTemplatesAccess) {
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
@@ -4816,13 +4816,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Validate the request body
-      const templateData = insertEmailTemplateSchema.parse({
+      const templateData = insertOrgEmailTemplateSchema.parse({
         ...req.body,
-        organisationId: orgId,
-        createdBy: user.id,
+        orgId: orgId,
       });
 
-      const template = await storage.createEmailTemplate(templateData);
+      const template = await storage.createOrgEmailTemplate(templateData);
       res.status(201).json(template);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -4843,19 +4842,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const existingTemplate = await storage.getEmailTemplate(id);
+      const existingTemplate = await storage.getOrgEmailTemplate(id);
       
       if (!existingTemplate) {
         return res.status(404).json({ message: 'Email template not found' });
       }
 
       // Admins can only update their own organization's templates
-      if (user.role === 'admin' && user.organisationId !== existingTemplate.organisationId) {
+      if (user.role === 'admin' && user.organisationId !== existingTemplate.orgId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       // Check if custom email templates feature is available
-      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.organisationId, 'custom_email_templates');
+      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.orgId, 'custom_email_templates');
       if (!hasEmailTemplatesAccess) {
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
@@ -4866,7 +4865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedAt: new Date(),
       };
 
-      const updatedTemplate = await storage.updateEmailTemplate(id, updateData);
+      const updatedTemplate = await storage.updateOrgEmailTemplate(id, updateData);
       res.json(updatedTemplate);
     } catch (error) {
       console.error('Error updating email template:', error);
@@ -4884,24 +4883,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { id } = req.params;
-      const existingTemplate = await storage.getEmailTemplate(id);
+      const existingTemplate = await storage.getOrgEmailTemplate(id);
       
       if (!existingTemplate) {
         return res.status(404).json({ message: 'Email template not found' });
       }
 
       // Admins can only delete their own organization's templates
-      if (user.role === 'admin' && user.organisationId !== existingTemplate.organisationId) {
+      if (user.role === 'admin' && user.organisationId !== existingTemplate.orgId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       // Check if custom email templates feature is available
-      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.organisationId, 'custom_email_templates');
+      const hasEmailTemplatesAccess = await hasFeatureAccess(existingTemplate.orgId, 'custom_email_templates');
       if (!hasEmailTemplatesAccess) {
         return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
 
-      await storage.deleteEmailTemplate(id);
+      await storage.deleteOrgEmailTemplate(id);
       res.status(204).end();
     } catch (error) {
       console.error('Error deleting email template:', error);
@@ -5606,7 +5605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied - Admin or SuperAdmin required' });
       }
 
-      const defaults = await storage.getAllEmailTemplateDefaults();
+      const defaults = await storage.getAllEmailTemplates();
 
       res.json({
         success: true,
@@ -5643,7 +5642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
       }
 
-      const overrides = await storage.getEmailTemplateOverridesByOrg(orgId);
+      const overrides = await storage.getOrgEmailTemplatesByOrg(orgId);
 
       res.json({
         success: true,

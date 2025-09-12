@@ -1,0 +1,298 @@
+Goal
+Make email templates load reliably for every tenant. If anything is missing or broken, the system should:
+
+Fall back to platform defaults,
+
+Explain exactly what failed (in UI + logs), and
+
+Offer a one-click “Repair/Seed” to restore templates.
+
+1) Data model (source of truth)
+
+Create two tables:
+
+EmailTemplate (platform defaults)
+
+id (uuid)
+
+key (string, unique; e.g. welcome, course_assigned, training_expiring, training_expired, course_overdue, course_completed, course_failed, password_reset, weekly_digest, policy_ack_reminder)
+
+name (string, human title)
+
+subject (string, handlebars-enabled)
+
+html (text, compiled from MJML at save; store both mjml and html)
+
+text (text, optional)
+
+variables_schema (json; list of required/optional variables)
+
+category (string: learner | manager | admin)
+
+version (int; increment on changes)
+
+is_active (bool)
+
+Timestamps
+
+OrgEmailTemplate (tenant override)
+
+id (uuid)
+
+org_id
+
+template_key (FK to EmailTemplate.key)
+
+subject_override (nullable)
+
+html_override (nullable)
+
+text_override (nullable)
+
+version (int; track override version)
+
+is_active (bool)
+
+Timestamps
+
+Rule: when rendering, use OrgEmailTemplate if present & active, otherwise EmailTemplate.
+
+2) Loader & resolver (one entry point)
+
+Create EmailTemplateService with:
+
+getTemplate(orgId, key)
+
+Load platform default by key.
+
+Load org override (if any).
+
+Return ResolvedTemplate:
+
+{
+  key, name, subject, html, text,
+  source: "org" | "platform",
+  version: { org: n|null, platform: m }
+}
+
+
+If platform default missing → seed defaults (see §5) then retry once.
+
+If still missing → throw TEMPLATE_NOT_FOUND (handled gracefully in UI).
+
+render(key, orgId, variables)
+
+Validate variables against variables_schema (missing required → error with list).
+
+Compile with Handlebars (HTML + TEXT).
+
+Return { subject, html, text }.
+
+list(orgId)
+
+For UI: list all keys with availability (org override?, platform?, versions, active flags).
+
+3) Storage & editing (UI)
+
+Add Admin → Email → Templates (org level) and Superadmin → Email → Templates (platform):
+
+Platform Templates (Superadmin)
+
+Table of all default templates (key, name, version, active).
+
+Edit form: name, subject, mjml (with live HTML preview), text, variables list.
+
+Save compiles MJML → HTML (use mjml compiler) and stores both.
+
+Version auto-increments.
+
+Seed/Repair button (see §5).
+
+Org Templates (Org Admin)
+
+List of available templates (from platform).
+
+Toggle Use default / Use override.
+
+If override: editor for subject, mjml (with preview), text.
+
+Show Variable Inspector panel: lists required variables and marks any not used.
+
+“Revert to default” button.
+
+4) Preview & Test Send
+
+Add per-template buttons:
+
+Preview:
+
+Left pane: variable form with sensible defaults (e.g. {{user.firstName}}, {{course.name}}, {{dueDate}}).
+
+Right pane: rendered HTML preview + plain text preview + subject.
+
+Send Test Email:
+
+Input: recipient email.
+
+Uses current resolved template + filled variables.
+
+Sends via the unified MailerService (whatever provider is configured).
+
+Show a Diagnostic Report on result (see §7).
+
+5) Self-healing seed (defaults)
+
+Create a seed script + UI action that inserts/repairs platform defaults for these keys (at minimum):
+
+welcome
+
+course_assigned
+
+course_reminder
+
+course_overdue
+
+training_expiring
+
+training_expired
+
+course_completed
+
+course_failed
+
+password_reset
+
+weekly_digest
+
+policy_ack_reminder
+
+Each with: name, subject, MJML body, text, variable schema.
+On Repair: upsert any missing default templates; do not overwrite existing ones; just fill gaps.
+
+6) Robust rendering & safety rails
+
+Use Handlebars for variables and simple conditionals ({{#if}}).
+
+Escape variables by default; allow {{{unescaped}}} only for trusted HTML fragments.
+
+Support helpers: formatDate, uppercase, link (sanitised).
+
+Strict mode: if a required variable is missing, renderer returns a 422 with exact names of missing vars.
+
+Block inline <script> and remote scripts; sanitize URLs.
+
+7) Failure diagnostics (what you’ll see instead of “failed to load”)
+
+When anything fails (load, render, send), return a structured payload the UI renders in a Diagnostics Drawer:
+
+{
+  "success": false,
+  "stage": "load" | "render" | "send",
+  "templateKey": "course_assigned",
+  "orgId": "org_123",
+  "sources": { "used": "platform|org", "orgVersion": 2, "platformVersion": 5 },
+  "missing": ["subject","html"] | [],
+  "variables": {
+    "required": ["user.firstName","course.name","dueDate"],
+    "provided": ["user.firstName","course.name"],
+    "missing": ["dueDate"]
+  },
+  "mailer": {
+    "provider": "smtp|sendgrid_api|brevo_api|mailgun_api|postmark_api|mailjet_api|sparkpost_api",
+    "httpStatus": 202 | 201 | 200 | 0,
+    "smtpStatus": "250 2.0.0 Ok" | null,
+    "host": "...",
+    "port": 587,
+    "tls": true
+  },
+  "error": {
+    "code": "TEMPLATE_NOT_FOUND|RENDER_VALIDATION|MAILER_AUTH|MAILER_PAYLOAD|NETWORK",
+    "short": "Required variables missing: dueDate",
+    "raw": "<first 200 chars provider error or stack>"
+  },
+  "timestamp": "ISO"
+}
+
+
+UI shows human message at top, details below.
+Also write a compact line to logs: email.fail key=course_assigned stage=render org=org_123 missing=dueDate.
+
+8) Common root causes this fixes
+
+Missing defaults (seed repairs them automatically).
+
+Org override exists but empty/null (resolver ignores empty overrides and falls back to platform).
+
+Case-sensitive key mismatch (enforce lowercase key; 409 on duplicates).
+
+MJML compile errors (caught at save; show line/column).
+
+Variables not provided by caller (strict render shows exact missing names).
+
+Wrong tenant scope (resolver always accepts orgId and reports which source used).
+
+Caching stale (invalidate cache on save; include version in cache key).
+
+9) API endpoints (backend)
+
+GET /admin/email/templates → list resolved summaries (org scope)
+
+GET /admin/email/templates/:key → resolved detail (org scope)
+
+POST /admin/email/templates/:key/preview → body { variables } → returns rendered { subject, html, text } or 422 with missing vars
+
+POST /admin/email/templates/:key/test → body { to, variables } → sends and returns diagnostics
+
+POST /superadmin/email/templates/seed → (superadmin only) run seeder/repair
+
+POST /superadmin/email/templates → create/update platform template (compile MJML server-side)
+
+10) Integration with the Mailer (send path)
+
+All senders (welcome, course_assigned, etc.) must call:
+
+EmailTemplateService.getTemplate(orgId, key)
+
+EmailTemplateService.render(key, orgId, variables)
+
+MailerService.send({ orgId, to, subject, html, text })
+
+No other path may compose emails. Add a code search test that fails build if a template key is hard-coded elsewhere.
+
+11) Acceptance criteria
+
+Visiting Admin → Email → Templates (org) always shows templates; if none existed, Repair/Seed creates them.
+
+Preview works with default variables; missing variables clearly listed.
+
+Test Send shows success or a diagnostic report explaining exactly why it failed (and at which stage).
+
+Org overrides work; switching “Use default/Use override” updates the source indicator and render.
+
+Platform editor compiles MJML; HTML appears in preview before saving; save increments version.
+
+Sending any system email uses this resolver; if a template is broken, the app doesn’t silently crash — it reports the issue with guidance.
+
+12) Seed suggestions (starter copy)
+
+You can use simple, brand-neutral MJML defaults like:
+
+course_assigned.subject: You’ve been assigned {{course.name}}
+
+course_assigned.mjml: greeting with {{user.firstName}}, due date {{dueDate}}, CTA button {{course.launchUrl}}.
+
+training_expiring.subject: Your {{course.name}} expires in {{days}} days
+
+password_reset.subject: Reset your password with {{resetUrl}}.
+
+(Keep UK spelling for all copy.)
+
+13) Optional niceties
+
+i18n field on templates (locale code; allow per-locale overrides).
+
+Clone from default button when creating an org override.
+
+Diff view between platform and org versions.
+
+Linter that warns if your MJML/HTML doesn’t reference required variables.
