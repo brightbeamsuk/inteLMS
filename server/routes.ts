@@ -21,6 +21,7 @@ import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
 import { emailTemplateEngine } from "./services/EmailTemplateEngineService";
+import { emailTemplateResolver } from "./services/EmailTemplateResolutionService";
 import { z } from "zod";
 
 // Safe organization lookup wrapper - handles spelling & structure differences
@@ -4849,6 +4850,520 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'Template engine health check failed',
         error: error.message,
         status: 'unhealthy'
+      });
+    }
+  });
+
+  // =============================================================================
+  // COMPREHENSIVE EMAIL TEMPLATE API ROUTES
+  // =============================================================================
+  
+  // 1. DEFAULT TEMPLATE MANAGEMENT (SuperAdmin only)
+  
+  // Get default template
+  app.get('/api/email-templates/defaults/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { key } = req.params;
+      
+      const defaultTemplate = await emailTemplateResolver.getDefaultTemplate(key);
+      
+      if (!defaultTemplate) {
+        return res.status(404).json({ message: 'Default template not found' });
+      }
+
+      res.json({
+        success: true,
+        data: defaultTemplate,
+        message: 'Default template retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching default template:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch default template',
+        error: error.message 
+      });
+    }
+  });
+
+  // Update default template
+  app.put('/api/email-templates/defaults/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { key } = req.params;
+      const updateData = req.body;
+
+      // Validate required fields
+      if (!updateData.subjectDefault && !updateData.htmlDefault && !updateData.textDefault) {
+        return res.status(400).json({ 
+          message: 'At least one of subjectDefault, htmlDefault, or textDefault must be provided' 
+        });
+      }
+
+      // Add audit fields
+      const updatedTemplate = await emailTemplateResolver.updateDefaultTemplate(key, {
+        ...updateData,
+        updatedBy: user.id,
+        updatedAt: new Date()
+      });
+
+      res.json({
+        success: true,
+        data: updatedTemplate,
+        message: 'Default template updated successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error updating default template:', error);
+      res.status(500).json({ 
+        message: 'Failed to update default template',
+        error: error.message 
+      });
+    }
+  });
+
+  // 2. ORGANIZATION TEMPLATE OVERRIDES
+  
+  // Get organization override
+  app.get('/api/email-templates/overrides/:orgId/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { orgId, key } = req.params;
+
+      // Authorization: Admin can only access their own org, SuperAdmin can access any
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only access your own organization' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const override = await emailTemplateResolver.getOverride(orgId, key);
+      
+      if (!override) {
+        return res.status(404).json({ message: 'Template override not found' });
+      }
+
+      res.json({
+        success: true,
+        data: override,
+        message: 'Template override retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching template override:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch template override',
+        error: error.message 
+      });
+    }
+  });
+
+  // Create/update organization override
+  app.put('/api/email-templates/overrides/:orgId/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { orgId, key } = req.params;
+      const overrideData = req.body;
+
+      // Authorization: Admin can only modify their own org, SuperAdmin can modify any
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only modify your own organization' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(orgId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
+      }
+
+      // Validate at least one override field is provided
+      if (!overrideData.subjectOverride && !overrideData.htmlOverride && !overrideData.textOverride) {
+        return res.status(400).json({ 
+          message: 'At least one of subjectOverride, htmlOverride, or textOverride must be provided' 
+        });
+      }
+
+      // Add audit fields and ensure active
+      const override = await emailTemplateResolver.setOverride(orgId, key, {
+        ...overrideData,
+        isActive: true,
+        updatedBy: user.id,
+        updatedAt: new Date()
+      });
+
+      res.json({
+        success: true,
+        data: override,
+        message: 'Template override saved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error saving template override:', error);
+      res.status(500).json({ 
+        message: 'Failed to save template override',
+        error: error.message 
+      });
+    }
+  });
+
+  // Disable organization override
+  app.delete('/api/email-templates/overrides/:orgId/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { orgId, key } = req.params;
+
+      // Authorization: Admin can only modify their own org, SuperAdmin can modify any
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only modify your own organization' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      await emailTemplateResolver.disableOverride(orgId, key);
+
+      res.json({
+        success: true,
+        message: 'Template override disabled successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error disabling template override:', error);
+      res.status(500).json({ 
+        message: 'Failed to disable template override',
+        error: error.message 
+      });
+    }
+  });
+
+  // 3. TEMPLATE USAGE & ANALYTICS (SuperAdmin only)
+  
+  // Get template usage analytics
+  app.get('/api/email-templates/overrides/usage/:key', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { key } = req.params;
+
+      // Get all organizations that have active overrides for this template
+      const allOrgs = await storage.getAllOrganisations();
+      const usageData = [];
+
+      for (const org of allOrgs) {
+        const override = await emailTemplateResolver.getOverride(org.id, key);
+        if (override) {
+          usageData.push({
+            orgId: org.id,
+            orgName: org.name,
+            overrideId: override.id,
+            isActive: override.isActive,
+            hasSubjectOverride: !!override.subjectOverride,
+            hasHtmlOverride: !!override.htmlOverride,
+            hasTextOverride: !!override.textOverride,
+            updatedAt: override.updatedAt,
+            updatedBy: override.updatedBy
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          templateKey: key,
+          totalOrganizations: allOrgs.length,
+          organizationsWithOverrides: usageData.length,
+          activeOverrides: usageData.filter(u => u.isActive).length,
+          usage: usageData
+        },
+        message: 'Template usage analytics retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching template usage:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch template usage analytics',
+        error: error.message 
+      });
+    }
+  });
+
+  // 4. TEMPLATE OPERATIONS
+  
+  // Preview template with sample data
+  app.post('/api/email-templates/preview', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const { orgId, key, sampleData } = req.body;
+
+      if (!key) {
+        return res.status(400).json({ message: 'Template key is required' });
+      }
+
+      // Authorization check if orgId is provided
+      if (orgId && user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only preview templates for your organization' });
+      }
+
+      // Get effective template (with fallback to defaults)
+      const effectiveOrgId = orgId || user.organisationId;
+      const resolvedTemplate = await emailTemplateResolver.getEffectiveTemplate(effectiveOrgId, key);
+
+      // Generate sample data if not provided
+      const templateData = sampleData || emailTemplateEngine.generateSampleData(key);
+
+      // Render the template
+      const renderedSubject = emailTemplateEngine.renderTemplate(resolvedTemplate.subject, templateData);
+      const renderedHtml = emailTemplateEngine.renderTemplate(resolvedTemplate.html, templateData);
+      const renderedText = resolvedTemplate.text ? 
+        emailTemplateEngine.renderTemplate(resolvedTemplate.text, templateData) : null;
+
+      res.json({
+        success: true,
+        data: {
+          templateKey: key,
+          orgId: effectiveOrgId,
+          source: resolvedTemplate.source,
+          rendered: {
+            subject: renderedSubject,
+            html: renderedHtml,
+            text: renderedText
+          },
+          sampleData: templateData,
+          raw: {
+            subject: resolvedTemplate.subject,
+            html: resolvedTemplate.html,
+            text: resolvedTemplate.text
+          }
+        },
+        message: 'Template preview generated successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error generating template preview:', error);
+      res.status(500).json({ 
+        message: 'Failed to generate template preview',
+        error: error.message 
+      });
+    }
+  });
+
+  // Rate limiting for send-test endpoint
+  const sendTestEmailLimiter = new Map<string, { count: number; resetTime: number }>();
+  const SEND_TEST_RATE_LIMIT = 5; // 5 emails per minute per user
+  const SEND_TEST_WINDOW = 60 * 1000; // 1 minute
+
+  // Send test email
+  app.post('/api/email-templates/send-test', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      // Rate limiting
+      const now = Date.now();
+      const userKey = user.id;
+      const userLimit = sendTestEmailLimiter.get(userKey) || { count: 0, resetTime: now + SEND_TEST_WINDOW };
+      
+      if (now > userLimit.resetTime) {
+        userLimit.count = 0;
+        userLimit.resetTime = now + SEND_TEST_WINDOW;
+      }
+      
+      if (userLimit.count >= SEND_TEST_RATE_LIMIT) {
+        return res.status(429).json({ 
+          message: `Rate limit exceeded. Maximum ${SEND_TEST_RATE_LIMIT} test emails per minute.`,
+          retryAfter: Math.ceil((userLimit.resetTime - now) / 1000)
+        });
+      }
+
+      const { orgId, key, to, sampleData } = req.body;
+
+      if (!key || !to || !Array.isArray(to) || to.length === 0) {
+        return res.status(400).json({ 
+          message: 'Template key and recipient email addresses (to) are required' 
+        });
+      }
+
+      // Validate email addresses
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      for (const email of to) {
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({ message: `Invalid email address: ${email}` });
+        }
+      }
+
+      // Authorization check if orgId is provided
+      const effectiveOrgId = orgId || user.organisationId;
+      if (user.role === 'admin' && user.organisationId !== effectiveOrgId) {
+        return res.status(403).json({ message: 'Access denied - can only send tests for your organization' });
+      }
+
+      // Get effective email settings
+      const emailConfig = await getEffectiveEmailSettings(storage, effectiveOrgId);
+      if (!emailConfig.valid) {
+        return res.status(400).json({ 
+          message: 'Email configuration invalid', 
+          errors: emailConfig.errors 
+        });
+      }
+
+      // Get and render template
+      const resolvedTemplate = await emailTemplateResolver.getEffectiveTemplate(effectiveOrgId, key);
+      const templateData = sampleData || emailTemplateEngine.generateSampleData(key);
+
+      const renderedSubject = `[TEST] ${emailTemplateEngine.renderTemplate(resolvedTemplate.subject, templateData)}`;
+      const renderedHtml = emailTemplateEngine.renderTemplate(resolvedTemplate.html, templateData);
+      const renderedText = resolvedTemplate.text ? 
+        emailTemplateEngine.renderTemplate(resolvedTemplate.text, templateData) : null;
+
+      // Send test emails
+      const results = [];
+      for (const email of to) {
+        try {
+          await mailerService.send({
+            orgId: effectiveOrgId,
+            to: email,
+            subject: renderedSubject,
+            html: renderedHtml,
+            text: renderedText || undefined
+          });
+
+          results.push({ email, status: 'sent' });
+        } catch (error: any) {
+          results.push({ email, status: 'failed', error: error.message });
+        }
+      }
+
+      // Update rate limit
+      userLimit.count++;
+      sendTestEmailLimiter.set(userKey, userLimit);
+
+      res.json({
+        success: true,
+        data: {
+          templateKey: key,
+          orgId: effectiveOrgId,
+          results,
+          totalSent: results.filter(r => r.status === 'sent').length,
+          totalFailed: results.filter(r => r.status === 'failed').length
+        },
+        message: 'Test emails processed'
+      });
+
+    } catch (error: any) {
+      console.error('Error sending test email:', error);
+      res.status(500).json({ 
+        message: 'Failed to send test email',
+        error: error.message 
+      });
+    }
+  });
+
+  // 5. TEMPLATE LISTING
+  
+  // List all default templates (SuperAdmin only)
+  app.get('/api/email-templates/defaults', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const defaults = await storage.getAllEmailTemplateDefaults();
+
+      res.json({
+        success: true,
+        data: defaults,
+        count: defaults.length,
+        message: 'Default templates retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching default templates:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch default templates',
+        error: error.message 
+      });
+    }
+  });
+
+  // List all overrides for organization
+  app.get('/api/email-templates/overrides/:orgId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { orgId } = req.params;
+
+      // Authorization: Admin can only access their own org, SuperAdmin can access any
+      if (user.role === 'admin' && user.organisationId !== orgId) {
+        return res.status(403).json({ message: 'Access denied - can only access your own organization' });
+      }
+
+      if (user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - admin or superadmin required' });
+      }
+
+      const overrides = await storage.getEmailTemplateOverridesByOrg(orgId);
+
+      res.json({
+        success: true,
+        data: overrides,
+        count: overrides.length,
+        message: 'Template overrides retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching template overrides:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch template overrides',
+        error: error.message 
       });
     }
   });
