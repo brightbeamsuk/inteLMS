@@ -121,6 +121,25 @@ export const emailRoutingSourceEnum = pgEnum('email_routing_source', [
 // Email template category enum
 export const emailTemplateCategoryEnum = pgEnum('email_template_category', ['admin', 'learner']);
 
+// Email orchestrator trigger events enum
+export const emailTriggerEventEnum = pgEnum('email_trigger_event', [
+  'ORG_FAST_ADD',
+  'USER_FAST_ADD', 
+  'COURSE_ASSIGNED',
+  'COURSE_COMPLETED',
+  'COURSE_FAILED',
+  'PLAN_UPDATED'
+]);
+
+// Email send status enum for orchestrator
+export const emailSendStatusEnum = pgEnum('email_send_status', [
+  'queued',      // Queued for sending
+  'sending',     // Currently being sent
+  'sent',        // Successfully sent
+  'failed',      // Permanently failed after retries
+  'retrying'     // Temporarily failed, will retry
+]);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -578,6 +597,77 @@ export const emailLogs = pgTable("email_logs", {
   usedOrgSettings: boolean("used_org_settings").default(false),
   fallbackUsed: boolean("fallback_used").default(false),
 });
+
+// EMAIL ORCHESTRATOR TABLES - New centralized email system
+
+// Email sends table - primary orchestrator tracking table  
+export const emailSends = pgTable("email_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Idempotency and trigger context
+  idempotencyKey: varchar("idempotency_key").notNull().unique(), // Format: TRIGGER:recipient:resource_id
+  triggerEvent: emailTriggerEventEnum("trigger_event").notNull(), // Which event triggered this
+  
+  // Email metadata
+  organisationId: varchar("organisation_id"), // null for system emails
+  templateKey: varchar("template_key").notNull(), // Which template was used
+  toEmail: varchar("to_email").notNull(),
+  subject: varchar("subject").notNull(),
+  
+  // Content (rendered)
+  htmlContent: text("html_content").notNull(),
+  textContent: text("text_content"),
+  
+  // Template context used for rendering
+  templateVariables: jsonb("template_variables"), // Variables passed to template engine
+  
+  // Send status and retry logic
+  status: emailSendStatusEnum("status").notNull().default('queued'),
+  provider: emailProviderEnum("provider"),
+  providerMessageId: varchar("provider_message_id"),
+  
+  // Error tracking and retry logic
+  errorMessage: text("error_message"),
+  errorCode: varchar("error_code"),
+  retryCount: integer("retry_count").notNull().default(0),
+  nextRetryAt: timestamp("next_retry_at"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  
+  // Success tracking
+  sentAt: timestamp("sent_at"),
+  deliveredAt: timestamp("delivered_at"), // If provider supports delivery confirmations
+  
+  // Metadata
+  fromEmail: varchar("from_email"),
+  fromName: varchar("from_name"),
+  replyTo: varchar("reply_to"),
+  routingSource: emailRoutingSourceEnum("routing_source"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_email_sends_status").on(table.status),
+  index("idx_email_sends_trigger").on(table.triggerEvent),
+  index("idx_email_sends_org").on(table.organisationId),
+  index("idx_email_sends_retry").on(table.status, table.nextRetryAt),
+  index("idx_email_sends_created").on(table.createdAt),
+  unique("unique_email_send_idempotency").on(table.idempotencyKey),
+]);
+
+// Email settings lock table - prevents concurrent template modifications
+export const emailSettingsLock = pgTable("email_settings_lock", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lockType: varchar("lock_type").notNull(), // 'template_edit', 'system_settings', 'org_settings'
+  resourceId: varchar("resource_id").notNull(), // template key, org id, or 'system'
+  lockedBy: varchar("locked_by").notNull(), // user id
+  lockReason: varchar("lock_reason"), // e.g., 'editing_template', 'testing_send'
+  expiresAt: timestamp("expires_at").notNull(), // auto-expire locks after 30 minutes
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_email_lock_resource").on(table.lockType, table.resourceId),
+  index("idx_email_lock_expires").on(table.expiresAt),
+  unique("unique_email_lock").on(table.lockType, table.resourceId),
+]);
 
 // DEPRECATED - OLD EMAIL TEMPLATE DEFAULTS TABLE (REPLACED BY NEW ROBUST SCHEMA)
 // This table has been replaced by the new 'emailTemplates' table with MJML support
@@ -1109,6 +1199,18 @@ export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({
   timestamp: true,
 });
 
+// Email orchestrator insert schemas
+export const insertEmailSendSchema = createInsertSchema(emailSends).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmailSettingsLockSchema = createInsertSchema(emailSettingsLock).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Email template system insert schemas
 // DEPRECATED - OLD EMAIL TEMPLATE INSERT SCHEMAS (TO BE REMOVED)
 // export const insertEmailTemplateDefaultsSchema = createInsertSchema(emailTemplateDefaults).omit({
@@ -1239,6 +1341,13 @@ export type SystemEmailSettings = typeof systemEmailSettings.$inferSelect;
 
 export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
 export type EmailLog = typeof emailLogs.$inferSelect;
+
+// Email orchestrator types  
+export type InsertEmailSend = z.infer<typeof insertEmailSendSchema>;
+export type EmailSend = typeof emailSends.$inferSelect;
+
+export type InsertEmailSettingsLock = z.infer<typeof insertEmailSettingsLockSchema>;
+export type EmailSettingsLock = typeof emailSettingsLock.$inferSelect;
 
 // Support ticket types
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;

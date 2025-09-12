@@ -1,0 +1,93 @@
+All three must:
+	•	Call EmailOrchestrator.queue(...) with trigger_event set.
+	•	Include idempotency_key such as EVENTNAME:recipient:courseId where applicable.
+
+⸻
+
+6) Seed default templates (editable later by Superadmin)
+
+Create initial rows in email_templates:
+
+Key: new_org_welcome
+Name: New Organisation — Login Details
+Subject (placeholders allowed): Your organisation {{orgName}} is set up — login details inside
+Body (HTML):
+	•	Greeting: “Hi {{adminFirstName}},”
+	•	Short intro confirming org creation.
+	•	Login block with {{loginUrl}}, {{adminEmail}}, {{temporaryPassword}} as a one-time password, and advice to change it at first login.
+	•	Support line: {{supportEmail}} / {{supportPhone}}.
+	•	Signature using {{fromName}} / {{fromEmail}}.
+
+Key: new_user_welcome
+Name: New User — Login Details
+Subject: Welcome to {{orgName}} training — your login details
+Body (HTML):
+	•	Greeting: “Hi {{firstName}},”
+	•	Explain account creation and where to log in.
+	•	Credentials: {{email}}, {{temporaryPassword}} (one-time).
+	•	Support & signature as above.
+
+Key: course_assigned
+Name: Course Assigned to User
+Subject: You’ve been assigned: {{courseTitle}}
+Body (HTML):
+	•	Greeting.
+	•	Brief course description line (generic).
+	•	Button-style link with {{launchUrl}}.
+	•	Due date line: “Due by {{dueDate}}” if provided.
+	•	Support & signature as above.
+
+Include placeholders_json for each with the exact variable names listed in Section 5.
+
+⸻
+
+7) Permissions & safety
+	•	Only Superadmin can view/edit templates.
+	•	Editing templates does not expose or modify email API credentials.
+	•	Block dangerous HTML (script tags). Links open in new tab with rel="noopener".
+	•	Rate limit test-sends from the editor (e.g. 5/minute per Superadmin).
+
+⸻
+
+8) Delivery rules
+	•	Use the existing provider client/module and settings. Do not rename or relocate env vars.
+	•	From address/name resolution:
+	•	Prefer fromName/fromEmail from context; otherwise fall back to global defaults from existing settings.
+	•	Always generate and store a text fallback for provider compatibility.
+
+⸻
+
+9) Observability
+	•	Add Superadmin → Email Logs (read-only):
+	•	Filter by date, status, template key, recipient.
+	•	Show subject, recipient, status, error (if any), provider message ID, trigger event.
+	•	Row action: “View rendered email” (read-only).
+
+⸻
+
+10) Testing plan (must pass before release)
+	1.	Unit: render all three templates with full context; assert placeholders resolved; no missing variables.
+	2.	Idempotency: fire COURSE_ASSIGNED twice with same idempotency_key; exactly one send recorded.
+	3.	Queue/Retry: simulate transient provider error; confirm 3 retries with back-off, then failed with error captured.
+	4.	UI: edit a template, bump version, preview, and send a test email; confirm production emails use the new content.
+	5.	Event wiring:
+	•	Fast-add an organisation → admin receives login email.
+	•	Fast-add a user → user receives login email.
+	•	Assign a course → user receives assignment email with working launchUrl.
+	6.	No regression: confirm email API credentials/config remain unchanged and functional.
+
+⸻
+
+11) Rollout & cleanup
+	•	Add a migration step to de-register all legacy automation hooks and mark them deprecated in code comments.
+	•	Gate new system behind EMAIL_TEMPLATES_V2; enable in staging first, then production.
+	•	Remove dead code after verification.
+
+⸻
+
+12) Acceptance criteria (ship only when all true)
+	•	Superadmin can edit, preview, and test-send the three default templates via a rich-text editor.
+	•	Emails for the three events send successfully using the existing email API provider settings (unchanged).
+	•	All sends go through the orchestrator and are logged with status and provider IDs.
+	•	Duplicate triggers do not cause duplicate emails within the idempotency window.
+	•	Legacy email automations are fully removed/disabled.

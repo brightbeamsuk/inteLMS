@@ -1,0 +1,113 @@
+Got it, Ben. Here’s a single, copy-paste “Replit prompt” you can run to wipe and rebuild the automated email flow, add a Superadmin > Email Templates area with a rich-text editor, and ensure all emails use the existing email API settings (unchanged). No code below—just exact build instructions, acceptance criteria, and checks.
+
+⸻
+
+REPLIT PROMPT — RESET & REBUILD AUTOMATED EMAILS (KEEP EXISTING EMAIL API SETTINGS)
+
+Objective:
+Completely replace all existing automated-email logic with a clean, centralised system. Preserve the current email API credentials/settings exactly as they are. Provide a Superadmin UI to manage default templates (rich-text editable) and wire emails to fire on specific events:
+	1.	Fast-add New Organisation → send organisation admin their login details.
+	2.	Fast-add New User → send user their login details.
+	3.	Course Assigned to User → send user an assignment email.
+
+⸻
+
+1) Architectural reset (DO NOT TOUCH EMAIL API SETTINGS)
+	•	Preserve the existing email provider configuration (keys, domains, endpoints) and any working API client module.
+	•	Remove/disable all previous email-automation code paths:
+	•	Delete or de-register old cron jobs, listeners, legacy “send on save” hooks, and ad-hoc sendEmail(...) calls scattered across the codebase.
+	•	Replace them with a single Email Orchestrator service described below.
+	•	Add a feature flag EMAIL_TEMPLATES_V2=true and route all automated emails through the new orchestrator when enabled.
+
+⸻
+
+2) Data model (new tables)
+
+Create three tables (or collections) — names are indicative:
+
+A) email_templates
+Holds default, rich-text editable templates managed by Superadmin.
+	•	id (uuid)
+	•	key (string, unique; e.g. new_org_welcome, new_user_welcome, course_assigned)
+	•	name (string, human label)
+	•	subject (string, may include placeholders)
+	•	body_html (long text; rich-text/HTML content)
+	•	body_text (long text; auto-derived plain-text fallback)
+	•	is_active (boolean, default true)
+	•	version (int, auto-increment)
+	•	updated_by (user id)
+	•	updated_at (timestamp)
+	•	placeholders_json (json array of allowed variables for this template for inline help)
+
+B) email_sends
+Immutable log of every attempted send.
+	•	id (uuid)
+	•	template_key (string)
+	•	to_email (string)
+	•	subject_rendered (string)
+	•	body_html_rendered (long text)
+	•	status (queued|sent|failed|cancelled|skipped)
+	•	error_message (string, nullable)
+	•	provider_message_id (string, nullable)
+	•	trigger_event (string; e.g. ORG_FAST_ADD, USER_FAST_ADD, COURSE_ASSIGNED)
+	•	context_json (json; payload used for rendering)
+	•	created_at, sent_at
+
+C) email_settings_lock (optional)
+	•	Single-row guard to prevent editing of provider/API creds from this feature.
+	•	lock_email_api_settings (boolean=true) – UI will show info banner: “Email API settings are managed elsewhere and cannot be edited here.”
+
+Migration: seed email_templates with three defaults (see Section 6).
+
+⸻
+
+3) Superadmin UI: “Email Templates”
+
+Menu: Superadmin → Email Templates
+Sections:
+	•	Admin Emails:
+	•	New Organisation (key: new_org_welcome)
+	•	New User (key: new_user_welcome)
+	•	Learner Emails:
+	•	Course Assigned (key: course_assigned)
+
+Capabilities:
+	•	List templates with search/filter, show key, name, is_active, version, updated_at.
+	•	Edit panel with:
+	•	Subject (text input, supports placeholders).
+	•	Rich-Text Editor (WYSIWYG) for body_html (Quill, TipTap, or similar). Must allow bold, italics, lists, links, simple tables, and placeholder chips.
+	•	Live placeholder helper: show allowed variables and sample values. Clicking a variable inserts the token at the cursor.
+	•	Preview (rendered HTML) and Send test (enter target email; sends via existing provider).
+	•	Versioning: increment version on save; show “last updated by/at”.
+	•	Activate/Deactivate toggle (cannot deactivate if it’s the only template for that key).
+	•	Read-only notice that Email API credentials are configured elsewhere and cannot be changed here.
+
+Rich-Text requirements:
+	•	Store HTML exactly as produced.
+	•	Also auto-generate a plain-text fallback by stripping tags for providers that use text fallbacks.
+
+⸻
+
+4) Email Orchestrator service (centralised, idempotent)
+
+Create EmailOrchestrator with:
+	•	render(template_key, context) → {subject, html, text}
+	•	queue(template_key, to, context, trigger_event) → creates email_sends row with queued status and enqueues job.
+	•	sendNow(send_id) → loads row, resolves template, renders, calls existing provider client (unaltered), updates status.
+	•	Idempotency: compute a hash(context + template_key + to); allow optional idempotency_key in queue calls. Drop duplicates within 10 minutes to prevent double-send.
+	•	Retry policy: up to 3 retries with exponential back-off on transient provider errors; store error message.
+	•	Audit: always persist rendered subject/body and provider message ID.
+
+Placeholders rendering: simple mustache-style {{variable}} replacement with HTML-escaped values by default. Allow {{{rawHtml}}} only for known safe fields (none by default).
+
+⸻
+
+5) Event wiring (exact triggers)
+
+Replace all legacy send paths with these three event handlers:
+
+A) ORG_FAST_ADD (new organisation created via fast-add)
+
+Recipient: primary admin email for the organisation.
+Template key: new_org_welcome
+Context required:

@@ -22,6 +22,8 @@ import {
   // emailTemplateOverrides, // DEPRECATED
   systemEmailSettings,
   emailLogs,
+  emailSends, // NEW: Email orchestrator sends tracking
+  emailSettingsLock, // NEW: Email settings lock table
   supportTickets,
   supportTicketResponses,
   webhookEvents,
@@ -72,6 +74,10 @@ import {
   type InsertSystemEmailSettings,
   type EmailLog,
   type InsertEmailLog,
+  type EmailSend, // NEW: Email orchestrator send record type  
+  type InsertEmailSend,
+  type EmailSettingsLock, // NEW: Email settings lock type
+  type InsertEmailSettingsLock,
   type SupportTicket,
   type InsertSupportTicket,
   type SupportTicketResponse,
@@ -319,6 +325,30 @@ export interface IStorage {
     offset?: number;
   }): Promise<EmailLog[]>;
   getEmailLogById(id: string): Promise<EmailLog | undefined>;
+
+  // Email orchestrator send operations
+  createEmailSend(emailSend: InsertEmailSend): Promise<EmailSend>;
+  getEmailSend(id: string): Promise<EmailSend | undefined>;
+  getEmailSendByIdempotencyKey(idempotencyKey: string, windowStart?: Date): Promise<EmailSend | undefined>;
+  updateEmailSend(id: string, updates: Partial<InsertEmailSend>): Promise<EmailSend>;
+  getEmailSends(filters?: {
+    organisationId?: string;
+    triggerEvent?: string;
+    status?: string;
+    templateKey?: string;
+    toEmail?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<EmailSend[]>;
+  getEmailSendsForRetry(maxRetries?: number): Promise<EmailSend[]>;
+
+  // Email settings lock operations
+  createEmailSettingsLock(lock: InsertEmailSettingsLock): Promise<EmailSettingsLock>;
+  getEmailSettingsLock(lockType: string, resourceId: string): Promise<EmailSettingsLock | undefined>;
+  deleteEmailSettingsLock(id: string): Promise<void>;
+  cleanupExpiredEmailLocks(): Promise<number>;
 
   // Support ticket operations
   createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
@@ -1553,6 +1583,143 @@ export class DatabaseStorage implements IStorage {
   async getEmailLogById(id: string): Promise<EmailLog | undefined> {
     const [log] = await db.select().from(emailLogs).where(eq(emailLogs.id, id));
     return log;
+  }
+
+  // Email orchestrator send operations
+  async createEmailSend(emailSendData: InsertEmailSend): Promise<EmailSend> {
+    const [emailSend] = await db.insert(emailSends).values(emailSendData).returning();
+    return emailSend;
+  }
+
+  async getEmailSend(id: string): Promise<EmailSend | undefined> {
+    const [emailSend] = await db.select().from(emailSends).where(eq(emailSends.id, id));
+    return emailSend;
+  }
+
+  async getEmailSendByIdempotencyKey(idempotencyKey: string, windowStart?: Date): Promise<EmailSend | undefined> {
+    const conditions: any[] = [eq(emailSends.idempotencyKey, idempotencyKey)];
+    
+    // If windowStart is provided, only check within the time window
+    if (windowStart) {
+      conditions.push(sql`${emailSends.createdAt} >= ${windowStart}`);
+    }
+
+    const [emailSend] = await db
+      .select()
+      .from(emailSends)
+      .where(and(...conditions))
+      .orderBy(desc(emailSends.createdAt));
+      
+    return emailSend;
+  }
+
+  async updateEmailSend(id: string, updates: Partial<InsertEmailSend>): Promise<EmailSend> {
+    const [emailSend] = await db
+      .update(emailSends)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(emailSends.id, id))
+      .returning();
+    return emailSend;
+  }
+
+  async getEmailSends(filters: {
+    organisationId?: string;
+    triggerEvent?: string;
+    status?: string;
+    templateKey?: string;
+    toEmail?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<EmailSend[]> {
+    const {
+      organisationId,
+      triggerEvent,
+      status,
+      templateKey,
+      toEmail,
+      fromDate,
+      toDate,
+      limit = 50,
+      offset = 0
+    } = filters;
+
+    const conditions: any[] = [];
+    if (organisationId) {
+      conditions.push(eq(emailSends.organisationId, organisationId));
+    }
+    if (triggerEvent) {
+      conditions.push(eq(emailSends.triggerEvent, triggerEvent as any));
+    }
+    if (status) {
+      conditions.push(eq(emailSends.status, status as any));
+    }
+    if (templateKey) {
+      conditions.push(eq(emailSends.templateKey, templateKey));
+    }
+    if (toEmail) {
+      conditions.push(eq(emailSends.toEmail, toEmail));
+    }
+    if (fromDate) {
+      conditions.push(sql`${emailSends.createdAt} >= ${fromDate}`);
+    }
+    if (toDate) {
+      conditions.push(sql`${emailSends.createdAt} <= ${toDate}`);
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(emailSends)
+        .where(and(...conditions))
+        .orderBy(desc(emailSends.createdAt))
+        .limit(limit)
+        .offset(offset);
+    } else {
+      return await db.select().from(emailSends)
+        .orderBy(desc(emailSends.createdAt))
+        .limit(limit)
+        .offset(offset);
+    }
+  }
+
+  async getEmailSendsForRetry(maxRetries: number = 3): Promise<EmailSend[]> {
+    return await db.select().from(emailSends)
+      .where(and(
+        eq(emailSends.status, 'retrying'),
+        sql`${emailSends.retryCount} < ${maxRetries}`,
+        sql`${emailSends.nextRetryAt} <= NOW()`
+      ))
+      .orderBy(asc(emailSends.nextRetryAt))
+      .limit(100); // Process max 100 retries at once
+  }
+
+  // Email settings lock operations
+  async createEmailSettingsLock(lockData: InsertEmailSettingsLock): Promise<EmailSettingsLock> {
+    const [lock] = await db.insert(emailSettingsLock).values(lockData).returning();
+    return lock;
+  }
+
+  async getEmailSettingsLock(lockType: string, resourceId: string): Promise<EmailSettingsLock | undefined> {
+    const [lock] = await db
+      .select()
+      .from(emailSettingsLock)
+      .where(and(
+        eq(emailSettingsLock.lockType, lockType),
+        eq(emailSettingsLock.resourceId, resourceId),
+        sql`${emailSettingsLock.expiresAt} > NOW()`
+      ));
+    return lock;
+  }
+
+  async deleteEmailSettingsLock(id: string): Promise<void> {
+    await db.delete(emailSettingsLock).where(eq(emailSettingsLock.id, id));
+  }
+
+  async cleanupExpiredEmailLocks(): Promise<number> {
+    const result = await db
+      .delete(emailSettingsLock)
+      .where(sql`${emailSettingsLock.expiresAt} <= NOW()`);
+    return result.rowCount || 0;
   }
 
   // Support ticket operations
