@@ -28,6 +28,7 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     { path: "/superadmin/subscriptions", icon: "fas fa-chart-line", label: "Subscriptions" },
     { path: "/superadmin/course-builder", icon: "fas fa-hammer", label: "Course Builder" },
     { path: "/superadmin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
+    { path: "/superadmin/email-templates", icon: "fas fa-envelope-open-text", label: "Email Templates" },
     { path: "/superadmin/support", icon: "fas fa-headset", label: "Support" },
     { path: "/superadmin/settings", icon: "fas fa-cog", label: "Settings" },
   ];
