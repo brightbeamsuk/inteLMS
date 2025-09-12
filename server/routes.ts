@@ -8509,7 +8509,7 @@ This test was initiated by ${user.email}.
       }
 
       // Hash password if provided (for admin users)
-      let userDataWithPassword = { ...validatedData };
+      let userDataWithPassword: any = { ...validatedData };
       if (password && validatedData.role === 'admin') {
         if (password.length < 6) {
           return res.status(400).json({ message: 'Password must be at least 6 characters long' });
@@ -8521,12 +8521,20 @@ This test was initiated by ${user.email}.
       const newUser = await storage.createUser(userDataWithPassword);
       
       // Send welcome email for admin users with their password
-      if (validatedData.role === 'admin' && password && newUser.organisationId) {
+      if (validatedData.role === 'admin' && password) {
         try {
-          const organisation = await getOrgById(storage, newUser.organisationId);
-          if (organisation) {
-            await emailService.sendWelcomeEmail(newUser, organisation, password);
-            console.log(`Welcome email sent to admin user: ${newUser.email}`);
+          // For admin users, get their organization ID
+          const orgId = newUser.organisationId || validatedData.organisationId;
+          if (orgId) {
+            const organisation = await getOrgById(storage, orgId);
+            if (organisation) {
+              await emailService.sendWelcomeEmail(newUser, organisation, password);
+              console.log(`Welcome email sent to admin user: ${newUser.email}`);
+            } else {
+              console.log(`No organization found for admin user: ${newUser.email}`);
+            }
+          } else {
+            console.log(`No organization ID for admin user: ${newUser.email}`);
           }
         } catch (emailError) {
           console.error('Failed to send welcome email:', emailError);
