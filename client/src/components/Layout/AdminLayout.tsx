@@ -98,8 +98,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // Check if branding feature is enabled
   const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
-  // Apply custom colors if enabled
-  const customStyles: React.CSSProperties = organization?.useCustomColors ? {
+  // Check if custom branding colors feature is enabled
+  const hasCustomBrandingAccess = hasFeatureAccess('custom_branding_colors');
+
+  // Apply custom colors only if organization has the feature enabled AND plan includes it
+  const customStyles: React.CSSProperties = organization?.useCustomColors && hasCustomBrandingAccess ? {
     '--primary-color': organization.primaryColor || '#3b82f6',
     '--accent-color': organization.accentColor || '#3b82f6',
   } as React.CSSProperties : {};

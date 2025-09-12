@@ -400,6 +400,10 @@ The {{organisationDisplayName}} Team`
   const emailTemplatesFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_email_templates');
   const hasEmailTemplatesAccess = emailTemplatesFeature?.enabled || false;
 
+  // Check if custom branding colors feature is enabled
+  const customBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_branding_colors');
+  const hasCustomBrandingAccess = customBrandingFeature?.enabled || false;
+
   const handleLogoUpload = async () => {
     try {
       const response = await apiRequest('POST', '/api/objects/upload', {});
@@ -974,32 +978,42 @@ The {{organisationDisplayName}} Team`
                 </div>
               </div>
 
-              {/* Custom Colors Section - Only show when remove branding feature is enabled */}
-              {hasBrandingAccess && (
-                <div className="space-y-4">
-                  <div className="divider">Custom Colors</div>
-                  
-                  <div className="form-control">
-                    <label className="label cursor-pointer justify-start gap-3">
-                      <input 
-                        type="checkbox" 
-                        className={`toggle ${brandingData.useCustomColors ? 'toggle-success' : ''}`}
-                        checked={brandingData.useCustomColors}
-                        onChange={(e) => setBrandingData(prev => ({ ...prev, useCustomColors: e.target.checked }))}
-                        data-testid="toggle-custom-colors"
-                        style={{
-                          '--tglbg': brandingData.useCustomColors ? '#4ade80' : '#d1d5db',
-                          backgroundColor: brandingData.useCustomColors ? '#4ade80' : '#d1d5db',
-                        } as React.CSSProperties}
-                      />
-                      <span className="label-text font-semibold">Enable Custom Brand Colors</span>
-                    </label>
-                    <div className="text-sm text-base-content/60 ml-12">
-                      Customize your platform's colors to match your brand identity
-                    </div>
+              {/* Custom Colors Section - Only show when custom branding colors feature is enabled */}
+              <div className="space-y-4">
+                <div className="divider">Custom Colors</div>
+                
+                <div className="form-control">
+                  <label className="label cursor-pointer justify-start gap-3">
+                    <input 
+                      type="checkbox" 
+                      className={`toggle ${brandingData.useCustomColors && hasCustomBrandingAccess ? 'toggle-success' : ''} ${!hasCustomBrandingAccess ? 'toggle-disabled' : ''}`}
+                      checked={brandingData.useCustomColors && hasCustomBrandingAccess}
+                      onChange={(e) => setBrandingData(prev => ({ ...prev, useCustomColors: e.target.checked }))}
+                      disabled={!hasCustomBrandingAccess}
+                      data-testid="toggle-custom-colors"
+                      style={{
+                        '--tglbg': brandingData.useCustomColors && hasCustomBrandingAccess ? '#4ade80' : '#d1d5db',
+                        backgroundColor: brandingData.useCustomColors && hasCustomBrandingAccess ? '#4ade80' : '#d1d5db',
+                      } as React.CSSProperties}
+                    />
+                    <span className="label-text font-semibold">Enable Custom Brand Colors</span>
+                  </label>
+                  <div className="text-sm text-base-content/60 ml-12">
+                    {hasCustomBrandingAccess ? 
+                      "Customize your platform's colors to match your brand identity" :
+                      "Upgrade your plan to customize your brand colors"
+                    }
                   </div>
+                </div>
+                
+                {!hasCustomBrandingAccess && (
+                  <div className="alert alert-info">
+                    <i className="fas fa-palette"></i>
+                    <span>Custom branding colors are available with premium plans. Contact support to upgrade your plan.</span>
+                  </div>
+                )}
 
-                  {brandingData.useCustomColors && (
+                  {brandingData.useCustomColors && hasCustomBrandingAccess && (
                     <div className="bg-base-200 p-4 rounded-lg space-y-4">
                       <div className="grid grid-cols-1 gap-4">
                         <div className="form-control">
