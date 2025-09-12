@@ -196,10 +196,12 @@ function SuperAdminEmailTemplatesContent() {
     }
   });
 
-  // Edit template mutation
+  // Edit template mutation (using GET workaround for Vite middleware issue)
   const editTemplateMutation = useMutation({
     mutationFn: async ({ templateKey, updateData }: { templateKey: string; updateData: Partial<EmailTemplate> }) => {
-      const response = await apiRequest('PUT', `/api/superadmin/email/templates/${templateKey}`, updateData);
+      // Use GET request with data in query parameter to bypass Vite middleware interception
+      const dataParam = encodeURIComponent(JSON.stringify(updateData));
+      const response = await apiRequest('GET', `/api/superadmin/email/templates/update/${templateKey}?data=${dataParam}`);
       return response.json();
     },
     onSuccess: (data) => {

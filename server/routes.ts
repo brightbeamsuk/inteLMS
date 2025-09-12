@@ -6615,6 +6615,160 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * 6. GET /api/superadmin/email/templates/update/:key
+   * Update an email template (Workaround for Vite middleware interception)
+   * This is a workaround for the Vite development middleware interception issue.
+   * Vite intercepts PUT/POST requests and returns HTML, so we use GET with action parameters.
+   */
+  app.get('/api/superadmin/email/templates/update/:key', requireAuth, async (req: any, res) => {
+    console.log('email.tpl.update.start (GET workaround)');
+    
+    try {
+      // SuperAdmin role check
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        console.log('email.tpl.update.fail stage=auth err="Access denied"');
+        return res.status(403).json({ 
+          ok: false, 
+          stage: 'auth', 
+          error: { short: 'Access denied - SuperAdmin required', raw: 'User role check failed' },
+          hasRepair: false 
+        });
+      }
+
+      const { key } = req.params;
+      
+      // For GET requests with JSON data, we expect it in the query parameter 'data'
+      let updateData;
+      try {
+        if (req.query.data) {
+          updateData = JSON.parse(req.query.data as string);
+        } else {
+          throw new Error('No update data provided');
+        }
+      } catch (error) {
+        console.log('email.tpl.update.fail stage=validation err="Invalid JSON data"');
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { short: 'Invalid JSON data in request', raw: (error as Error).message },
+          hasRepair: false
+        });
+      }
+
+      if (!key || typeof key !== 'string') {
+        console.log('email.tpl.update.fail stage=validation err="Missing template key"');
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { short: 'Template key is required', raw: 'Missing or invalid key in URL params' },
+          hasRepair: false
+        });
+      }
+
+      console.log(`email.tpl.update.validate key=${key} (GET workaround)`);
+
+      // Validate the update data using the insert schema (subset for updates)
+      const updateSchema = insertEmailTemplateSchema.partial().omit({ key: true });
+      const validation = updateSchema.safeParse(updateData);
+      
+      if (!validation.success) {
+        console.log('email.tpl.update.fail stage=validation err="Invalid update data"');
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { 
+            short: 'Invalid template data provided', 
+            raw: JSON.stringify(validation.error.errors).substring(0, 200) 
+          },
+          hasRepair: false
+        });
+      }
+
+      const validatedData = validation.data;
+
+      console.log(`email.tpl.update.query key=${key} (GET workaround)`);
+
+      // Check if template exists
+      const existingTemplate = await storage.getEmailTemplateByKey(key);
+      if (!existingTemplate) {
+        console.log('email.tpl.update.fail stage=query err="Template not found"');
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: `Template '${key}' not found`, 
+            raw: `No template found with key: ${key}` 
+          },
+          hasRepair: true
+        });
+      }
+
+      // Prepare update data with version increment and timestamp
+      const updatePayload = {
+        ...validatedData,
+        version: existingTemplate.version + 1,
+        updatedAt: new Date()
+      };
+
+      console.log(`email.tpl.update.save key=${key} version=${updatePayload.version} (GET workaround)`);
+
+      // Update the template
+      const updatedTemplate = await storage.updateEmailTemplate(key, updatePayload);
+
+      if (!updatedTemplate) {
+        console.log('email.tpl.update.fail stage=save err="Update failed"');
+        return res.json({
+          ok: false,
+          stage: 'save',
+          error: { 
+            short: 'Failed to update template', 
+            raw: 'Database update operation returned null' 
+          },
+          hasRepair: false
+        });
+      }
+
+      console.log(`email.tpl.update.success key=${key} version=${updatedTemplate.version} (GET workaround)`);
+
+      return res.json({
+        ok: true,
+        data: {
+          template: {
+            id: updatedTemplate.id,
+            key: updatedTemplate.key,
+            name: updatedTemplate.name,
+            subject: updatedTemplate.subject,
+            html: updatedTemplate.html,
+            mjml: updatedTemplate.mjml,
+            text: updatedTemplate.text,
+            variablesSchema: updatedTemplate.variablesSchema,
+            category: updatedTemplate.category,
+            version: updatedTemplate.version,
+            isActive: updatedTemplate.isActive,
+            createdAt: updatedTemplate.createdAt,
+            updatedAt: updatedTemplate.updatedAt
+          },
+          changes: Object.keys(validatedData)
+        }
+      });
+
+    } catch (error: any) {
+      console.error('email.tpl.update.fail stage=unknown err="' + (error.message || 'Unknown error').substring(0, 50) + '" (GET workaround)');
+      
+      return res.json({
+        ok: false,
+        stage: 'unknown',
+        error: { 
+          short: 'Unexpected error during template update', 
+          raw: (error.message || 'Unknown error').substring(0, 200) 
+        },
+        hasRepair: false
+      });
+    }
+  });
+
   // Email settings routes - Provider-agnostic
   app.put('/api/organisations/:id/email-settings', requireAuth, async (req: any, res) => {
     try {

@@ -112,6 +112,12 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Debug middleware for API requests
+  app.use('/api/*', (req, res, next) => {
+    console.log(`🔍 DEBUG: API request intercepted - ${req.method} ${req.path}`);
+    next();
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
@@ -120,6 +126,132 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
+
+  // Workaround: Create POST endpoint to bypass Vite PUT interception issue
+  app.post('/api/superadmin/email/templates/:key/update', async (req: any, res) => {
+    try {
+      // Simple auth check
+      if (!req.session?.user?.role || req.session.user.role !== 'superadmin') {
+        return res.status(403).json({ 
+          ok: false, 
+          error: 'Access denied - SuperAdmin required' 
+        });
+      }
+      
+      const { key } = req.params;
+      
+      if (!key) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Template key is required'
+        });
+      }
+
+      // Import necessary modules
+      const { storage } = await import('./storage.js');
+      const { insertEmailTemplateSchema } = await import('@shared/schema.js');
+      
+      console.log(`🔧 WORKAROUND: email.tpl.update.start key=${key}`);
+
+      // Validate the update data using the insert schema (subset for updates)
+      const updateSchema = insertEmailTemplateSchema.partial().omit({ key: true });
+      const validation = updateSchema.safeParse(req.body);
+      
+      if (!validation.success) {
+        console.log('🔧 WORKAROUND: email.tpl.update.fail stage=validation err="Invalid update data"');
+        return res.json({
+          ok: false,
+          stage: 'validation',
+          error: { 
+            short: 'Invalid template data provided', 
+            raw: JSON.stringify(validation.error.errors).substring(0, 200) 
+          },
+          hasRepair: false
+        });
+      }
+
+      const validatedData = validation.data;
+
+      console.log(`🔧 WORKAROUND: email.tpl.update.query key=${key}`);
+
+      // Check if template exists
+      const existingTemplate = await storage.getEmailTemplateByKey(key);
+      if (!existingTemplate) {
+        console.log('🔧 WORKAROUND: email.tpl.update.fail stage=query err="Template not found"');
+        return res.json({
+          ok: false,
+          stage: 'query',
+          error: { 
+            short: `Template '${key}' not found`, 
+            raw: `No template found with key: ${key}` 
+          },
+          hasRepair: true
+        });
+      }
+
+      // Prepare update data with version increment and timestamp
+      const updatePayload = {
+        ...validatedData,
+        version: existingTemplate.version + 1,
+        updatedAt: new Date()
+      };
+
+      console.log(`🔧 WORKAROUND: email.tpl.update.save key=${key} version=${updatePayload.version}`);
+
+      // Update the template
+      const updatedTemplate = await storage.updateEmailTemplate(key, updatePayload);
+
+      if (!updatedTemplate) {
+        console.log('🔧 WORKAROUND: email.tpl.update.fail stage=save err="Update failed"');
+        return res.json({
+          ok: false,
+          stage: 'save',
+          error: { 
+            short: 'Failed to update template', 
+            raw: 'Database update operation returned null' 
+          },
+          hasRepair: false
+        });
+      }
+
+      console.log(`🔧 WORKAROUND: email.tpl.update.success key=${key} version=${updatedTemplate.version}`);
+
+      return res.json({
+        ok: true,
+        data: {
+          template: {
+            id: updatedTemplate.id,
+            key: updatedTemplate.key,
+            name: updatedTemplate.name,
+            subject: updatedTemplate.subject,
+            html: updatedTemplate.html,
+            mjml: updatedTemplate.mjml,
+            text: updatedTemplate.text,
+            variablesSchema: updatedTemplate.variablesSchema,
+            category: updatedTemplate.category,
+            version: updatedTemplate.version,
+            isActive: updatedTemplate.isActive,
+            createdAt: updatedTemplate.createdAt,
+            updatedAt: updatedTemplate.updatedAt
+          },
+          changes: Object.keys(validatedData)
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('🔧 WORKAROUND: email.tpl.update.fail stage=unknown err="' + (error.message || 'Unknown error').substring(0, 50) + '"');
+      
+      return res.json({
+        ok: false,
+        stage: 'unknown',
+        error: { 
+          short: 'Unexpected error during template update', 
+          raw: (error.message || 'Unknown error').substring(0, 200) 
+        },
+        hasRepair: false
+      });
+    }
+  });
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.
