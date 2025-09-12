@@ -97,6 +97,8 @@ export interface AdminSampleData {
   changed_at: string;
   completed_at: string;
   failed_at: string;
+  due_date?: string;
+  effective_date?: string;
 }
 
 // Variable schema definition interface
@@ -395,14 +397,114 @@ export class EmailTemplateEngineService {
           }
         };
 
+      case 'admin.new_user_added':
+        return {
+          ...baseData,
+          user: {
+            name: 'Jane Doe',
+            email: 'jane.doe@acmecorp.com',
+            full_name: 'Jane Doe',
+            job_title: 'Care Assistant',
+            department: 'Healthcare'
+          },
+          added_by: {
+            name: 'John Smith',
+            full_name: 'John Smith'
+          },
+          added_at: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
+        };
+
+      case 'admin.new_course_assigned':
+      case 'course_assigned': // Handle both variants for backward compatibility
+        return {
+          ...baseData,
+          user: {
+            name: 'Jane Doe',
+            email: 'jane.doe@acmecorp.com',
+            full_name: 'Jane Doe',
+            job_title: 'Care Assistant',
+            department: 'Healthcare'
+          },
+          course: {
+            title: 'Health & Safety Training',
+            description: 'Essential health and safety procedures for care workers',
+            category: 'Compliance',
+            estimated_duration: 45
+          },
+          assigned_by: {
+            name: 'John Smith',
+            full_name: 'John Smith'
+          },
+          assigned_at: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
+        };
+
+      case 'admin.learner_completed_course':
+        return {
+          ...baseData,
+          user: {
+            name: 'Jane Doe',
+            email: 'jane.doe@acmecorp.com',
+            full_name: 'Jane Doe',
+            job_title: 'Care Assistant',
+            department: 'Healthcare'
+          },
+          course: {
+            title: 'Health & Safety Training',
+            description: 'Essential health and safety procedures for care workers',
+            category: 'Compliance',
+            estimated_duration: 45
+          },
+          attempt: {
+            score: 87.5,
+            status: 'passed',
+            time_spent: 42
+          },
+          completed_at: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
+        };
+
       case 'admin.learner_failed_course':
         return {
           ...baseData,
+          user: {
+            name: 'Jane Doe',
+            email: 'jane.doe@acmecorp.com',
+            full_name: 'Jane Doe',
+            job_title: 'Care Assistant',
+            department: 'Healthcare'
+          },
+          course: {
+            title: 'Health & Safety Training',
+            description: 'Essential health and safety procedures for care workers',
+            category: 'Compliance',
+            estimated_duration: 45
+          },
           attempt: {
             score: 42.0,
             status: 'failed',
             time_spent: 38
-          }
+          },
+          failed_at: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
         };
 
       case 'admin.plan_updated':
@@ -413,11 +515,69 @@ export class EmailTemplateEngineService {
             old_price: 49.99,
             new_price: 59.99,
             billing_cadence: 'annual'
-          }
+          },
+          changed_by: {
+            name: 'John Smith',
+            full_name: 'John Smith'
+          },
+          changed_at: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          effective_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
         };
 
       default:
-        return baseData;
+        // For unknown template types, return comprehensive sample data
+        // This ensures test emails always have data to work with
+        return {
+          ...baseData,
+          // Add comprehensive default data for common template patterns
+          user: {
+            name: 'Jane Doe',
+            email: 'jane.doe@acmecorp.com',
+            full_name: 'Jane Doe',
+            job_title: 'Care Assistant',
+            department: 'Healthcare'
+          },
+          course: {
+            title: 'Health & Safety Training',
+            description: 'Essential health and safety procedures for care workers',
+            category: 'Compliance',
+            estimated_duration: 45
+          },
+          new_admin: {
+            name: 'Alice Johnson',
+            email: 'alice.johnson@acmecorp.com',
+            full_name: 'Alice Johnson'
+          },
+          attempt: {
+            score: 87.5,
+            status: 'passed',
+            time_spent: 42
+          },
+          plan: {
+            name: 'Professional Plan',
+            old_price: 29.99,
+            new_price: 34.99,
+            billing_cadence: 'monthly'
+          },
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          effective_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
+        };
     }
   }
 
