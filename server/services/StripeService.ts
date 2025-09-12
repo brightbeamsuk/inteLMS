@@ -771,11 +771,13 @@ export class StripeService {
       const billingValidation = await this.validateOrganizationBillingState(organisation);
       
       if (!billingValidation.canUpdateSubscription) {
-        throw new Error(`Cannot update subscription for organization ${organisation.id}: ${billingValidation.issues?.join(', ') || 'billing validation failed'}`);
-      }
-      
-      if (!billingValidation.hasActiveSubscription) {
-        throw new Error(`Organization ${organisation.id} has no active subscription to update. Use createSingleSubscription instead.`);
+        if (!billingValidation.hasActiveSubscription) {
+          throw new Error(`No active subscription found for this organization. Please create a subscription first before trying to update it.`);
+        } else if (billingValidation.issues && billingValidation.issues.length > 0) {
+          throw new Error(`Cannot update subscription: ${billingValidation.issues.join(', ')}`);
+        } else {
+          throw new Error(`Cannot update subscription: billing validation failed`);
+        }
       }
 
       if (!plan.stripePriceId) {
