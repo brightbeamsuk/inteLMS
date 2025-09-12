@@ -137,7 +137,7 @@ export function AdminEmailTemplates() {
   const { user } = useAuth();
 
   // Fetch organization overrides
-  const { data: overridesResponse, isLoading, error } = useQuery({
+  const { data: overridesResponse, isLoading, error } = useQuery<{data: EmailTemplate[]}>({
     queryKey: ['/api/email-templates/overrides', user?.organisationId],
     enabled: !!user?.organisationId,
     retry: false,

@@ -5598,12 +5598,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 5. TEMPLATE LISTING
   
-  // List all default templates (SuperAdmin only)
+  // List all default templates (SuperAdmin and Admin can view)
   app.get('/api/email-templates/defaults', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
-      if (!user || user.role !== 'superadmin') {
-        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      if (!user || user.role === 'user') {
+        return res.status(403).json({ message: 'Access denied - Admin or SuperAdmin required' });
       }
 
       const defaults = await storage.getAllEmailTemplateDefaults();
