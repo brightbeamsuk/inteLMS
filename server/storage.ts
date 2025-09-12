@@ -17,6 +17,8 @@ import {
   planFeatureMappings,
   auditLogs,
   emailTemplates,
+  emailTemplateDefaults,
+  emailTemplateOverrides,
   systemEmailSettings,
   emailLogs,
   supportTickets,
@@ -59,6 +61,10 @@ import {
   type InsertAuditLog,
   type EmailTemplate,
   type InsertEmailTemplate,
+  type EmailTemplateDefaults,
+  type InsertEmailTemplateDefaults,
+  type EmailTemplateOverrides,
+  type InsertEmailTemplateOverrides,
   type SystemEmailSettings,
   type InsertSystemEmailSettings,
   type EmailLog,
@@ -255,6 +261,22 @@ export interface IStorage {
   getEmailTemplatesByOrganisation(organisationId: string): Promise<EmailTemplate[]>;
   updateEmailTemplate(id: string, template: Partial<InsertEmailTemplate>): Promise<EmailTemplate>;
   deleteEmailTemplate(id: string): Promise<void>;
+
+  // Email template defaults operations
+  createEmailTemplateDefault(template: InsertEmailTemplateDefaults): Promise<EmailTemplateDefaults>;
+  getEmailTemplateDefault(key: string): Promise<EmailTemplateDefaults | undefined>;
+  getAllEmailTemplateDefaults(): Promise<EmailTemplateDefaults[]>;
+  updateEmailTemplateDefault(key: string, template: Partial<InsertEmailTemplateDefaults>): Promise<EmailTemplateDefaults>;
+  deleteEmailTemplateDefault(key: string): Promise<void>;
+
+  // Email template overrides operations
+  createEmailTemplateOverride(override: InsertEmailTemplateOverrides): Promise<EmailTemplateOverrides>;
+  getEmailTemplateOverride(orgId: string, templateKey: string): Promise<EmailTemplateOverrides | undefined>;
+  getEmailTemplateOverridesByOrg(orgId: string): Promise<EmailTemplateOverrides[]>;
+  updateEmailTemplateOverride(id: string, override: Partial<InsertEmailTemplateOverrides>): Promise<EmailTemplateOverrides>;
+  upsertEmailTemplateOverride(orgId: string, templateKey: string, override: Partial<InsertEmailTemplateOverrides>): Promise<EmailTemplateOverrides>;
+  deleteEmailTemplateOverride(id: string): Promise<void>;
+  disableEmailTemplateOverride(orgId: string, templateKey: string): Promise<void>;
 
   // System SMTP settings operations (SuperAdmin level)
   getSystemEmailSettings(): Promise<SystemEmailSettings | undefined>;
@@ -1294,6 +1316,112 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEmailTemplate(id: string): Promise<void> {
     await db.delete(emailTemplates).where(eq(emailTemplates.id, id));
+  }
+
+  // Email template defaults operations
+  async createEmailTemplateDefault(templateData: InsertEmailTemplateDefaults): Promise<EmailTemplateDefaults> {
+    const [template] = await db.insert(emailTemplateDefaults).values(templateData).returning();
+    return template;
+  }
+
+  async getEmailTemplateDefault(key: string): Promise<EmailTemplateDefaults | undefined> {
+    const [template] = await db.select().from(emailTemplateDefaults).where(eq(emailTemplateDefaults.key, key));
+    return template;
+  }
+
+  async getAllEmailTemplateDefaults(): Promise<EmailTemplateDefaults[]> {
+    return await db.select().from(emailTemplateDefaults).orderBy(asc(emailTemplateDefaults.key));
+  }
+
+  async updateEmailTemplateDefault(key: string, templateData: Partial<InsertEmailTemplateDefaults>): Promise<EmailTemplateDefaults> {
+    const [template] = await db
+      .update(emailTemplateDefaults)
+      .set({ ...templateData, updatedAt: new Date() })
+      .where(eq(emailTemplateDefaults.key, key))
+      .returning();
+    return template;
+  }
+
+  async deleteEmailTemplateDefault(key: string): Promise<void> {
+    await db.delete(emailTemplateDefaults).where(eq(emailTemplateDefaults.key, key));
+  }
+
+  // Email template overrides operations
+  async createEmailTemplateOverride(overrideData: InsertEmailTemplateOverrides): Promise<EmailTemplateOverrides> {
+    const [override] = await db.insert(emailTemplateOverrides).values(overrideData).returning();
+    return override;
+  }
+
+  async getEmailTemplateOverride(orgId: string, templateKey: string): Promise<EmailTemplateOverrides | undefined> {
+    const [override] = await db
+      .select()
+      .from(emailTemplateOverrides)
+      .where(
+        and(
+          eq(emailTemplateOverrides.orgId, orgId),
+          eq(emailTemplateOverrides.templateKey, templateKey)
+        )
+      );
+    return override;
+  }
+
+  async getEmailTemplateOverridesByOrg(orgId: string): Promise<EmailTemplateOverrides[]> {
+    return await db
+      .select()
+      .from(emailTemplateOverrides)
+      .where(eq(emailTemplateOverrides.orgId, orgId))
+      .orderBy(asc(emailTemplateOverrides.templateKey));
+  }
+
+  async updateEmailTemplateOverride(id: string, overrideData: Partial<InsertEmailTemplateOverrides>): Promise<EmailTemplateOverrides> {
+    const [override] = await db
+      .update(emailTemplateOverrides)
+      .set({ ...overrideData, updatedAt: new Date() })
+      .where(eq(emailTemplateOverrides.id, id))
+      .returning();
+    return override;
+  }
+
+  async upsertEmailTemplateOverride(
+    orgId: string, 
+    templateKey: string, 
+    overrideData: Partial<InsertEmailTemplateOverrides>
+  ): Promise<EmailTemplateOverrides> {
+    const existing = await this.getEmailTemplateOverride(orgId, templateKey);
+    
+    if (existing) {
+      // Update existing override
+      return await this.updateEmailTemplateOverride(existing.id, {
+        ...overrideData,
+        updatedBy: overrideData.updatedBy ?? 'system',
+        isActive: true
+      });
+    } else {
+      // Create new override
+      return await this.createEmailTemplateOverride({
+        orgId,
+        templateKey,
+        ...overrideData,
+        updatedBy: overrideData.updatedBy ?? 'system',
+        isActive: true
+      });
+    }
+  }
+
+  async deleteEmailTemplateOverride(id: string): Promise<void> {
+    await db.delete(emailTemplateOverrides).where(eq(emailTemplateOverrides.id, id));
+  }
+
+  async disableEmailTemplateOverride(orgId: string, templateKey: string): Promise<void> {
+    await db
+      .update(emailTemplateOverrides)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(emailTemplateOverrides.orgId, orgId),
+          eq(emailTemplateOverrides.templateKey, templateKey)
+        )
+      );
   }
 
   // System SMTP settings operations

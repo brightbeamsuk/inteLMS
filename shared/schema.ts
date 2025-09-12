@@ -10,6 +10,7 @@ import {
   boolean,
   decimal,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -105,7 +106,8 @@ export const emailTemplateTypeEnum = pgEnum('email_template_type', [
   'staff_training_expiring',
   'staff_training_expired',
   'weekly_training_summary',
-  'smtp_test'
+  'smtp_test',
+  'system_test'
 ]);
 
 // Email routing source enum for tracking which route was used
@@ -115,6 +117,9 @@ export const emailRoutingSourceEnum = pgEnum('email_routing_source', [
   'system_default',  // Only system settings available/used
   'mixed_config'     // Mixed org + system settings (legacy behavior)
 ]);
+
+// Email template category enum
+export const emailTemplateCategoryEnum = pgEnum('email_template_category', ['admin', 'learner']);
 
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
@@ -544,6 +549,60 @@ export const emailLogs = pgTable("email_logs", {
   fallbackUsed: boolean("fallback_used").default(false),
 });
 
+// Email template defaults table - stores platform-level default templates
+export const emailTemplateDefaults = pgTable("email_template_defaults", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: varchar("key").notNull().unique(), // e.g., 'admin.new_admin_added', 'learner.course_assigned'
+  category: emailTemplateCategoryEnum("category").notNull(), // 'admin' | 'learner'
+  subjectDefault: varchar("subject_default").notNull(),
+  htmlDefault: text("html_default").notNull(),
+  textDefault: text("text_default"),
+  variablesSchema: jsonb("variables_schema"), // Array of allowed variables for this template
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").notNull(),
+});
+
+// Email template overrides table - stores org-specific template customizations
+export const emailTemplateOverrides = pgTable("email_template_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  templateKey: varchar("template_key").notNull(), // FK to EmailTemplateDefaults.key
+  subjectOverride: varchar("subject_override"),
+  htmlOverride: text("html_override"),
+  textOverride: text("text_override"),
+  isActive: boolean("is_active").default(true),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").notNull(),
+}, (table) => [
+  index("idx_email_override_org_template").on(table.orgId, table.templateKey),
+  // Unique constraint to prevent duplicate overrides for same org+template
+  unique("unique_email_override_org_template").on(table.orgId, table.templateKey),
+]);
+
+// Organisation notification settings table - controls who receives notifications
+export const orgNotificationSettings = pgTable("org_notification_settings", {
+  orgId: varchar("org_id").primaryKey(), // FK to Organisation
+  sendToAdmins: boolean("send_to_admins").default(true),
+  extraRecipients: jsonb("extra_recipients"), // Array of additional email addresses
+  emailProviderConfigId: varchar("email_provider_config_id"), // nullable FK to EmailProviderConfigs
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").notNull(),
+});
+
+// Email provider configurations table - stores provider-specific settings
+export const emailProviderConfigs = pgTable("email_provider_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"), // nullable FK to Organisation; null = platform default
+  provider: varchar("provider").notNull(), // 'smtp', 'brevo', 'sendgrid', etc.
+  configJson: jsonb("config_json").notNull(), // Provider-specific configuration object
+  isDefaultForOrg: boolean("is_default_for_org").default(false),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").notNull(),
+}, (table) => [
+  index("idx_email_provider_org").on(table.orgId),
+  index("idx_email_provider_default").on(table.isDefaultForOrg),
+]);
+
 // Support tickets table
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -814,6 +873,60 @@ export const supportTicketResponsesRelations = relations(supportTicketResponses,
   }),
 }));
 
+// Email template defaults relations
+export const emailTemplateDefaultsRelations = relations(emailTemplateDefaults, ({ one, many }) => ({
+  updatedByUser: one(users, {
+    fields: [emailTemplateDefaults.updatedBy],
+    references: [users.id],
+  }),
+  overrides: many(emailTemplateOverrides),
+}));
+
+// Email template overrides relations
+export const emailTemplateOverridesRelations = relations(emailTemplateOverrides, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [emailTemplateOverrides.orgId],
+    references: [organisations.id],
+  }),
+  templateDefault: one(emailTemplateDefaults, {
+    fields: [emailTemplateOverrides.templateKey],
+    references: [emailTemplateDefaults.key],
+  }),
+  updatedByUser: one(users, {
+    fields: [emailTemplateOverrides.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+// Organisation notification settings relations
+export const orgNotificationSettingsRelations = relations(orgNotificationSettings, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [orgNotificationSettings.orgId],
+    references: [organisations.id],
+  }),
+  emailProviderConfig: one(emailProviderConfigs, {
+    fields: [orgNotificationSettings.emailProviderConfigId],
+    references: [emailProviderConfigs.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [orgNotificationSettings.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+// Email provider configs relations
+export const emailProviderConfigsRelations = relations(emailProviderConfigs, ({ one, many }) => ({
+  organisation: one(organisations, {
+    fields: [emailProviderConfigs.orgId],
+    references: [organisations.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [emailProviderConfigs.updatedBy],
+    references: [users.id],
+  }),
+  notificationSettings: many(orgNotificationSettings),
+}));
+
 // Webhook events table for persistent deduplication
 export const webhookEvents = pgTable("webhook_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -933,6 +1046,26 @@ export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({
   timestamp: true,
 });
 
+// Email template system insert schemas
+export const insertEmailTemplateDefaultsSchema = createInsertSchema(emailTemplateDefaults).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertEmailTemplateOverridesSchema = createInsertSchema(emailTemplateOverrides).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertOrgNotificationSettingsSchema = createInsertSchema(orgNotificationSettings).omit({
+  updatedAt: true,
+});
+
+export const insertEmailProviderConfigsSchema = createInsertSchema(emailProviderConfigs).omit({
+  id: true,
+  updatedAt: true,
+});
+
 export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
   id: true,
   createdAt: true,
@@ -1012,6 +1145,19 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
+
+// Email template system types
+export type InsertEmailTemplateDefaults = z.infer<typeof insertEmailTemplateDefaultsSchema>;
+export type EmailTemplateDefaults = typeof emailTemplateDefaults.$inferSelect;
+
+export type InsertEmailTemplateOverrides = z.infer<typeof insertEmailTemplateOverridesSchema>;
+export type EmailTemplateOverrides = typeof emailTemplateOverrides.$inferSelect;
+
+export type InsertOrgNotificationSettings = z.infer<typeof insertOrgNotificationSettingsSchema>;
+export type OrgNotificationSettings = typeof orgNotificationSettings.$inferSelect;
+
+export type InsertEmailProviderConfigs = z.infer<typeof insertEmailProviderConfigsSchema>;
+export type EmailProviderConfigs = typeof emailProviderConfigs.$inferSelect;
 
 // Course folder types
 export type InsertCourseFolder = z.infer<typeof insertCourseFolderSchema>;
