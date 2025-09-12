@@ -39,6 +39,7 @@ import { AdminOrganisationSettings } from "@/pages/admin/OrganisationSettings";
 import { AdminProfile } from "@/pages/admin/Profile";
 import { AdminTrainingMatrix } from "@/pages/admin/TrainingMatrix";
 import AdminCertificates from "@/pages/admin/Certificates";
+import { AdminEmailTemplates } from "@/pages/admin/EmailTemplates";
 import AuditLog from "@/pages/admin/AuditLog";
 import { AdminSupport } from "@/pages/admin/Support";
 
@@ -252,6 +253,14 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminBilling />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/email-templates">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminEmailTemplates />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

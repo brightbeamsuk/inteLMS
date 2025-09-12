@@ -22,6 +22,9 @@ interface Organization {
   planId: string;
   logoUrl?: string;
   displayName: string;
+  useCustomColors?: boolean;
+  primaryColor?: string;
+  accentColor?: string;
 }
 
 interface OverdueData {
@@ -72,7 +75,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     queryKey: ['/api/plan-features/mappings', organization?.planId],
     enabled: !!organization?.planId,
     queryFn: async () => {
-      const response = await fetch(`/api/plan-features/mappings/${organization.planId}`, {
+      const response = await fetch(`/api/plan-features/mappings/${organization!.planId}`, {
         credentials: 'include'
       });
       if (!response.ok) {
@@ -96,10 +99,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
   // Apply custom colors if enabled
-  const customStyles = organization?.useCustomColors ? {
+  const customStyles: React.CSSProperties = organization?.useCustomColors ? {
     '--primary-color': organization.primaryColor || '#3b82f6',
     '--accent-color': organization.accentColor || '#3b82f6',
-  } : {};
+  } as React.CSSProperties : {};
 
   // Feature definitions for premium features
   const featureDefinitions = {
@@ -154,6 +157,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       requiresFeature: "training_matrix"
     },
     { path: "/admin/certificates", icon: "fas fa-certificate", label: "Certificates" },
+    { path: "/admin/email-templates", icon: "fas fa-envelope", label: "Email Templates" },
     { path: "/admin/support", icon: "fas fa-headset", label: "Support" },
     { path: "/admin/billing", icon: "fas fa-credit-card", label: "Billing" },
     { 
@@ -179,7 +183,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <i className="fas fa-bars text-xl"></i>
             </button>
             <Link href="/admin" className="btn btn-ghost" data-testid="link-home">
-              {!orgLoading && organization && hasBrandingAccess && organization?.logoUrl ? (
+              {!orgLoading && organization && hasBrandingAccess && organization.logoUrl ? (
                 <img 
                   src={organization.logoUrl} 
                   alt={organization.displayName || "Logo"} 
