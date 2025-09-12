@@ -66,10 +66,37 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const { user, isAuthenticated } = useAuth();
   
   // Fetch organization data if user is authenticated and has an organisationId
-  const { data: organization } = useQuery<{ accentColor?: string }>({
+  const { data: organization } = useQuery<{ accentColor?: string; planId?: string }>({
     queryKey: [`/api/organisations/${user?.organisationId}`],
     enabled: !!user?.organisationId && isAuthenticated,
   });
+
+  // Fetch plan features to check branding access
+  const { data: planFeatures = [], isLoading: planFeaturesLoading } = useQuery({
+    queryKey: ['/api/plan-features/mappings', organization?.planId],
+    enabled: !!organization?.planId,
+    queryFn: async () => {
+      const response = await fetch(`/api/plan-features/mappings/${organization!.planId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch plan features');
+      }
+      return response.json();
+    },
+  });
+
+  // Helper function to check feature access
+  const hasFeatureAccess = (featureId: string) => {
+    // If plan features are still loading, return false to prevent applying custom colors prematurely
+    if (planFeaturesLoading) return false;
+    
+    const feature = planFeatures.find((f: any) => f.featureId === featureId);
+    return feature?.enabled || false;
+  };
+
+  // Check if branding feature is enabled
+  const hasBrandingAccess = hasFeatureAccess('remove_branding');
 
   const setDynamicTheme = (color: string) => {
     const { h, s, l } = hexToHsl(color);
@@ -90,16 +117,17 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   };
 
   useEffect(() => {
-    if (organization?.accentColor) {
+    // Only apply custom colors if organization has branding access
+    if (organization?.accentColor && hasBrandingAccess) {
       setDynamicTheme(organization.accentColor);
     } else {
-      // Reset to default primary color if no organization or accent color
+      // Reset to default primary color if no organization, no accent color, or no branding access
       setDynamicTheme('#3b82f6');
     }
-  }, [organization?.accentColor]);
+  }, [organization?.accentColor, hasBrandingAccess]);
 
   const contextValue: ThemeContextType = {
-    accentColor: organization?.accentColor || '#3b82f6',
+    accentColor: (organization?.accentColor && hasBrandingAccess) ? organization.accentColor : '#3b82f6',
     setDynamicTheme,
   };
 
