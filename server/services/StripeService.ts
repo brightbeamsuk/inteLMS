@@ -77,6 +77,7 @@ export class StripeService {
 
   /**
    * Release a mutex lock for subscription operations
+   * Always resolves to prevent unhandled promise rejections
    */
   private releaseSubscriptionLock(orgId: string, operation: string, success: boolean = true, error?: any): void {
     const lockKey = `${orgId}-${operation}`;
@@ -85,11 +86,13 @@ export class StripeService {
     if (lockPromise) {
       this.subscriptionLocks.delete(lockKey);
       
-      if (success) {
-        (lockPromise as any)._resolve();
-      } else {
-        (lockPromise as any)._reject(error);
+      // Always resolve to prevent unhandled promise rejections
+      // Log error for debugging but don't reject the promise
+      if (!success && error) {
+        console.error(`Lock operation failed for ${lockKey}:`, error);
       }
+      
+      (lockPromise as any)._resolve();
       
       console.log(`Lock released: ${lockKey} (success: ${success})`);
     }
