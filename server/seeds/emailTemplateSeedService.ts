@@ -30,6 +30,296 @@ export class EmailTemplateSeedService {
   private getPlatformTemplateDefaults(): TemplateInput[] {
     return [
       // ========================================================================
+      // ADMIN TEMPLATES - Core system templates for organization management
+      // ========================================================================
+
+      {
+        key: 'new_org_welcome',
+        name: 'New Organisation Welcome',
+        category: 'admin',
+        subject: 'Your organisation {{orgName}} is set up — login details inside',
+        mjml: `
+<mjml>
+  <mj-head>
+    <mj-title>Your organisation {{orgName}} is set up</mj-title>
+    <mj-font name="Inter" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+    <mj-attributes>
+      <mj-all font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" />
+      <mj-text line-height="1.6" color="#374151" />
+      <mj-button background-color="#3B82F6" border-radius="8px" font-weight="600" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#F9FAFB">
+    <mj-section background-color="#FFFFFF" border-radius="12px" padding="0">
+      <!-- Header -->
+      <mj-column>
+        <mj-spacer height="32px" />
+        <mj-text align="center" font-size="32px" font-weight="700" color="#1F2937" line-height="1.2">
+          🎉 Your organisation is ready!
+        </mj-text>
+        <mj-text align="center" font-size="18px" color="#6B7280" padding-top="8px">
+          {{orgName}} has been successfully set up
+        </mj-text>
+        <mj-spacer height="32px" />
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#FFFFFF" padding="0 32px">
+      <mj-column>
+        <mj-text font-size="16px">
+          Hello {{adminName}},
+        </mj-text>
+        <mj-text font-size="16px">
+          Great news! Your organisation <strong>{{orgName}}</strong> has been successfully set up and is ready to use. 
+          Below are your administrator login details to get started.
+        </mj-text>
+
+        <!-- Login Details Card -->
+        <mj-section background-color="#F8FAFC" border-radius="8px" padding="24px" border="2px solid #3B82F6">
+          <mj-column>
+            <mj-text font-size="18px" font-weight="600" color="#1F2937" padding-bottom="16px">
+              🔐 Your Administrator Login Details
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Login URL:</strong> {{loginUrl}}
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Email:</strong> {{adminEmail}}
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Temporary Password:</strong> {{temporaryPassword}}
+            </mj-text>
+            <mj-text font-size="12px" padding="8px 0" color="#DC2626">
+              <strong>Important:</strong> Please change your password after first login
+            </mj-text>
+          </mj-column>
+        </mj-section>
+
+        <mj-text font-size="16px" padding-top="24px">
+          <strong>Next steps to get started:</strong>
+        </mj-text>
+        <mj-text font-size="16px" line-height="1.8">
+          • Log in using the credentials above<br/>
+          • Change your password and complete your profile<br/>
+          • Set up your organisation settings and branding<br/>
+          • Upload courses and training materials<br/>
+          • Invite users to your organisation<br/>
+          • Configure email settings and notifications
+        </mj-text>
+
+        <mj-button href="{{loginUrl}}" align="center" background-color="#3B82F6" color="#FFFFFF" font-size="16px" padding="24px 0">
+          Access Administrator Dashboard
+        </mj-button>
+
+        <mj-text font-size="16px" color="#6B7280" align="center" padding-top="24px">
+          If you need any assistance getting started, our support team is here to help.
+        </mj-text>
+
+        <mj-text font-size="16px" padding-top="32px">
+          Welcome aboard!<br/>
+          <strong>The inteLMS Team</strong>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Footer -->
+    <mj-section background-color="#F9FAFB" padding="32px">
+      <mj-column>
+        <mj-text align="center" font-size="12px" color="#9CA3AF">
+          This is an automated message from inteLMS Learning Management System.
+          <br/>You received this because an organisation account was created for you.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>`,
+        text: `Your organisation {{orgName}} is set up — login details inside
+
+Hello {{adminName}},
+
+Great news! Your organisation {{orgName}} has been successfully set up and is ready to use. Below are your administrator login details to get started.
+
+YOUR ADMINISTRATOR LOGIN DETAILS:
+Login URL: {{loginUrl}}
+Email: {{adminEmail}}
+Temporary Password: {{temporaryPassword}}
+
+IMPORTANT: Please change your password after first login
+
+NEXT STEPS TO GET STARTED:
+• Log in using the credentials above
+• Change your password and complete your profile
+• Set up your organisation settings and branding
+• Upload courses and training materials
+• Invite users to your organisation
+• Configure email settings and notifications
+
+Access your administrator dashboard: {{loginUrl}}
+
+If you need any assistance getting started, our support team is here to help.
+
+Welcome aboard!
+The inteLMS Team
+
+This is an automated message from inteLMS Learning Management System.
+You received this because an organisation account was created for you.`,
+        variablesSchema: {
+          type: 'object',
+          required: ['orgName', 'adminName', 'adminEmail', 'loginUrl', 'temporaryPassword'],
+          properties: {
+            orgName: { type: 'string', description: 'Organization name' },
+            adminName: { type: 'string', description: 'Administrator name' },
+            adminEmail: { type: 'string', description: 'Administrator email address' },
+            loginUrl: { type: 'string', description: 'Login URL for the organisation' },
+            temporaryPassword: { type: 'string', description: 'Temporary password for first login' }
+          }
+        }
+      },
+
+      {
+        key: 'new_user_welcome',
+        name: 'New User Welcome',
+        category: 'user',
+        subject: 'Welcome to {{orgName}} training — your login details',
+        mjml: `
+<mjml>
+  <mj-head>
+    <mj-title>Welcome to {{orgName}} training</mj-title>
+    <mj-font name="Inter" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+    <mj-attributes>
+      <mj-all font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" />
+      <mj-text line-height="1.6" color="#374151" />
+      <mj-button background-color="#059669" border-radius="8px" font-weight="600" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#F9FAFB">
+    <mj-section background-color="#FFFFFF" border-radius="12px" padding="0">
+      <!-- Header -->
+      <mj-column>
+        <mj-spacer height="32px" />
+        <mj-text align="center" font-size="32px" font-weight="700" color="#1F2937" line-height="1.2">
+          🎓 Welcome to {{orgName}}!
+        </mj-text>
+        <mj-text align="center" font-size="18px" color="#6B7280" padding-top="8px">
+          Your training account is ready
+        </mj-text>
+        <mj-spacer height="32px" />
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#FFFFFF" padding="0 32px">
+      <mj-column>
+        <mj-text font-size="16px">
+          Hello {{userName}},
+        </mj-text>
+        <mj-text font-size="16px">
+          Welcome to <strong>{{orgName}}</strong>! Your training account has been created and you're ready to begin your learning journey.
+          Below are your login credentials to access your training platform.
+        </mj-text>
+
+        <!-- Login Details Card -->
+        <mj-section background-color="#ECFDF5" border-radius="8px" padding="24px" border="2px solid #059669">
+          <mj-column>
+            <mj-text font-size="18px" font-weight="600" color="#047857" padding-bottom="16px">
+              🔐 Your Login Details
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Login URL:</strong> {{loginUrl}}
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Email:</strong> {{userEmail}}
+            </mj-text>
+            <mj-text font-size="14px" padding="4px 0">
+              <strong>Temporary Password:</strong> {{temporaryPassword}}
+            </mj-text>
+            <mj-text font-size="12px" padding="8px 0" color="#DC2626">
+              <strong>Important:</strong> Please change your password after first login
+            </mj-text>
+          </mj-column>
+        </mj-section>
+
+        <mj-text font-size="16px" padding-top="24px">
+          <strong>What you can do in your training platform:</strong>
+        </mj-text>
+        <mj-text font-size="16px" line-height="1.8">
+          • Access your assigned courses and training materials<br/>
+          • Track your learning progress and achievements<br/>
+          • Complete assessments and earn certificates<br/>
+          • View your training schedule and deadlines<br/>
+          • Update your profile and learning preferences<br/>
+          • Download completion certificates
+        </mj-text>
+
+        <mj-button href="{{loginUrl}}" align="center" background-color="#059669" color="#FFFFFF" font-size="16px" padding="24px 0">
+          Start Your Training Journey
+        </mj-button>
+
+        <mj-text font-size="16px" color="#6B7280" align="center" padding-top="24px">
+          If you have any questions about your training, please contact your administrator or our support team.
+        </mj-text>
+
+        <mj-text font-size="16px" padding-top="32px">
+          Happy learning!<br/>
+          <strong>The {{orgName}} Team</strong>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Footer -->
+    <mj-section background-color="#F9FAFB" padding="32px">
+      <mj-column>
+        <mj-text align="center" font-size="12px" color="#9CA3AF">
+          This is an automated message from {{orgName}} Learning Management System.
+          <br/>You received this because a training account was created for you.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>`,
+        text: `Welcome to {{orgName}} training — your login details
+
+Hello {{userName}},
+
+Welcome to {{orgName}}! Your training account has been created and you're ready to begin your learning journey. Below are your login credentials to access your training platform.
+
+YOUR LOGIN DETAILS:
+Login URL: {{loginUrl}}
+Email: {{userEmail}}
+Temporary Password: {{temporaryPassword}}
+
+IMPORTANT: Please change your password after first login
+
+WHAT YOU CAN DO IN YOUR TRAINING PLATFORM:
+• Access your assigned courses and training materials
+• Track your learning progress and achievements
+• Complete assessments and earn certificates
+• View your training schedule and deadlines
+• Update your profile and learning preferences
+• Download completion certificates
+
+Start your training journey: {{loginUrl}}
+
+If you have any questions about your training, please contact your administrator or our support team.
+
+Happy learning!
+The {{orgName}} Team
+
+This is an automated message from {{orgName}} Learning Management System.
+You received this because a training account was created for you.`,
+        variablesSchema: {
+          type: 'object',
+          required: ['orgName', 'userName', 'userEmail', 'loginUrl', 'temporaryPassword'],
+          properties: {
+            orgName: { type: 'string', description: 'Organization name' },
+            userName: { type: 'string', description: 'User name' },
+            userEmail: { type: 'string', description: 'User email address' },
+            loginUrl: { type: 'string', description: 'Login URL for the training platform' },
+            temporaryPassword: { type: 'string', description: 'Temporary password for first login' }
+          }
+        }
+      },
+
+      // ========================================================================
       // LEARNER TEMPLATES
       // ========================================================================
 
@@ -190,7 +480,7 @@ You received this because an account was created for you.`,
         key: 'course_assigned',
         name: 'Course Assignment Notification',
         category: 'learner',
-        subject: 'New Course Assigned: {{course.title}}',
+        subject: 'You\'ve been assigned: {{courseTitle}}',
         mjml: `
 <mjml>
   <mj-head>
@@ -220,7 +510,7 @@ You received this because an account was created for you.`,
     <mj-section background-color="#FFFFFF" padding="0 32px">
       <mj-column>
         <mj-text font-size="16px">
-          Hello {{user.name}},
+          Hello {{userName}},
         </mj-text>
         <mj-text font-size="16px">
           Great news! A new course has been assigned to you. This is an excellent opportunity to develop your skills and advance your professional knowledge.
