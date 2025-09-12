@@ -1642,8 +1642,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SuperAdmin Email Logs API Endpoints
-  // Get email logs with filtering
+  // SuperAdmin Email Logs API Endpoints - UNIFIED VIEW OF ALL PLATFORM EMAILS
+  // Get email logs with filtering (shows ALL emails: EmailOrchestrator + MailerService)
   app.get('/api/superadmin/email-logs', requireAuth, async (req: any, res) => {
     try {
       const user = await getCurrentUser(req);
@@ -1668,46 +1668,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limitNum = Math.min(parseInt(limit as string), 200); // Cap at 200
       const offset = (pageNum - 1) * limitNum;
 
-      // Build filters for storage query
-      const filters: any = {
-        limit: limitNum,
-        offset: offset
-      };
-
-      if (startDate) {
-        filters.fromDate = new Date(startDate as string);
-      }
-      if (endDate) {
-        filters.toDate = new Date(endDate as string);
-      }
-      if (status) {
-        filters.status = status;
-      }
-      if (templateKey) {
-        filters.templateKey = templateKey;
-      }
-      if (recipient) {
-        filters.toEmail = recipient;
-      }
-      if (triggerEvent) {
-        filters.triggerEvent = triggerEvent;
-      }
-
-      // Get email sends from storage
-      const emailSends = await storage.getEmailSends(filters);
+      // Get BOTH EmailOrchestrator sends AND MailerService logs for comprehensive view
+      const allEmails: any[] = [];
       
-      // For pagination, we need total count - get count without limit/offset
-      const countFilters = { ...filters };
-      delete countFilters.limit;
-      delete countFilters.offset;
-      const allRecords = await storage.getEmailSends(countFilters);
-      const total = allRecords.length;
-
+      // 1. Get emails from EmailOrchestrator (emailSends table) - NEW SYSTEM
+      try {
+        const orchestratorFilters: any = { limit: 1000 }; // Get many for unified sorting
+        if (startDate) orchestratorFilters.fromDate = new Date(startDate as string);
+        if (endDate) orchestratorFilters.toDate = new Date(endDate as string);
+        if (status) orchestratorFilters.status = status;
+        if (templateKey) orchestratorFilters.templateKey = templateKey;
+        if (recipient) orchestratorFilters.toEmail = recipient;
+        if (triggerEvent) orchestratorFilters.triggerEvent = triggerEvent;
+        
+        const emailSends = await storage.getEmailSends(orchestratorFilters);
+        
+        // Transform EmailOrchestrator format to unified format
+        emailSends.forEach((send: any) => {
+          allEmails.push({
+            id: send.id,
+            timestamp: send.createdAt || send.sentAt,
+            toEmail: send.toEmail,
+            fromEmail: send.fromEmail || 'system',
+            subject: send.subject,
+            status: send.status,
+            templateKey: send.templateKey,
+            triggerEvent: send.triggerEvent,
+            provider: send.provider,
+            messageId: send.providerMessageId,
+            errorMessage: send.errorMessage,
+            source: 'EmailOrchestrator (V2)',
+            retryCount: send.retryCount || 0,
+            organisationId: send.organisationId,
+            htmlContent: send.htmlContent,
+            textContent: send.textContent
+          });
+        });
+      } catch (error: any) {
+        console.log('EmailOrchestrator emails not available:', error.message);
+      }
+      
+      // 2. Get emails from MailerService (emailLogs table) - LEGACY SYSTEM
+      try {
+        const mailerEmails = await storage.getEmailLogs({
+          limit: 1000,
+          startDate: startDate ? new Date(startDate as string) : undefined,
+          endDate: endDate ? new Date(endDate as string) : undefined,
+          toEmail: recipient as string,
+          status: status as 'sent' | 'failed'
+        });
+        
+        // Transform MailerService format to unified format
+        mailerEmails.forEach((log: any) => {
+          allEmails.push({
+            id: log.id,
+            timestamp: log.timestamp,
+            toEmail: log.toEmail,
+            fromEmail: log.fromEmail,
+            subject: log.subject,
+            status: log.status,
+            templateKey: log.templateType || 'legacy',
+            triggerEvent: 'LEGACY_MAILER',
+            provider: log.provider,
+            messageId: log.messageId,
+            errorMessage: log.errorShort || log.errorRaw,
+            source: 'MailerService (Legacy)',
+            retryCount: 0,
+            organisationId: log.organisationId,
+            htmlContent: null,
+            textContent: null
+          });
+        });
+      } catch (error: any) {
+        console.log('MailerService emails not available:', error.message);
+      }
+      
+      // 3. Sort all emails by timestamp (newest first)
+      allEmails.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      // 4. Apply pagination to combined results
+      const total = allEmails.length;
+      const paginatedEmails = allEmails.slice(offset, offset + limitNum);
       const totalPages = Math.ceil(total / limitNum);
 
       res.json({
         ok: true,
-        data: emailSends,
+        data: paginatedEmails,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -1717,7 +1763,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error) {
-      console.error('Error fetching email logs:', error);
+      console.error('Error fetching unified email logs:', error);
       res.status(500).json({ 
         ok: false, 
         error: 'Failed to fetch email logs' 
