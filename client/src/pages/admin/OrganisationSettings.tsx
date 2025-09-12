@@ -1092,7 +1092,6 @@ The {{organisationDisplayName}} Team`
                     </div>
                   )}
                 </div>
-              )}
 
             </div>
           )}
