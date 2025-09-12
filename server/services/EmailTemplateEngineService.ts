@@ -14,7 +14,7 @@
 
 import { emailTemplateResolver } from './EmailTemplateResolutionService';
 import { storage } from '../storage';
-import type { EmailTemplateDefaults, EmailTemplateOverrides } from '@shared/schema';
+import type { EmailTemplate, OrgEmailTemplate } from '@shared/schema';
 
 // Variable parsing result interface
 export interface ParsedVariable {
@@ -485,10 +485,10 @@ export class EmailTemplateEngineService {
 
       // Render default template preview
       const defaultPreview = {
-        subject: this.renderTemplate(defaultTemplate.subjectDefault, sampleData, { escapeHtml: false }),
-        html: this.renderTemplate(defaultTemplate.htmlDefault, sampleData, { escapeHtml: true }),
-        text: defaultTemplate.textDefault ? 
-          this.renderTemplate(defaultTemplate.textDefault, sampleData, { escapeHtml: false }) : 
+        subject: this.renderTemplate(defaultTemplate.subject, sampleData, { escapeHtml: false }),
+        html: this.renderTemplate(defaultTemplate.html, sampleData, { escapeHtml: true }),
+        text: defaultTemplate.text ? 
+          this.renderTemplate(defaultTemplate.text, sampleData, { escapeHtml: false }) : 
           null
       };
 
@@ -497,18 +497,18 @@ export class EmailTemplateEngineService {
       if (overrideTemplate && overrideTemplate.isActive) {
         overridePreview = {
           subject: this.renderTemplate(
-            overrideTemplate.subjectOverride ?? defaultTemplate.subjectDefault, 
+            overrideTemplate.subjectOverride ?? defaultTemplate.subject, 
             sampleData, 
             { escapeHtml: false }
           ),
           html: this.renderTemplate(
-            overrideTemplate.htmlOverride ?? defaultTemplate.htmlDefault, 
+            overrideTemplate.htmlOverride ?? defaultTemplate.html, 
             sampleData, 
             { escapeHtml: true }
           ),
-          text: (overrideTemplate.textOverride ?? defaultTemplate.textDefault) ? 
+          text: (overrideTemplate.textOverride ?? defaultTemplate.text) ? 
             this.renderTemplate(
-              (overrideTemplate.textOverride ?? defaultTemplate.textDefault) as string, 
+              (overrideTemplate.textOverride ?? defaultTemplate.text) as string, 
               sampleData, 
               { escapeHtml: false }
             ) : null
@@ -539,33 +539,30 @@ export class EmailTemplateEngineService {
    * @returns Combined validation result
    */
   private validateAllTemplateFields(
-    template: EmailTemplateDefaults | EmailTemplateOverrides, 
+    template: EmailTemplate | OrgEmailTemplate, 
     allowedVariables: VariableSchema
   ): ValidationResult {
     const results: ValidationResult[] = [];
 
-    // Validate subject
-    if ('subjectDefault' in template) {
-      results.push(this.validateTemplate(template.subjectDefault, allowedVariables));
-    }
-    if ('subjectOverride' in template && template.subjectOverride) {
-      results.push(this.validateTemplate(template.subjectOverride, allowedVariables));
-    }
-
-    // Validate HTML
-    if ('htmlDefault' in template) {
-      results.push(this.validateTemplate(template.htmlDefault, allowedVariables));
-    }
-    if ('htmlOverride' in template && template.htmlOverride) {
-      results.push(this.validateTemplate(template.htmlOverride, allowedVariables));
-    }
-
-    // Validate text
-    if ('textDefault' in template && template.textDefault) {
-      results.push(this.validateTemplate(template.textDefault, allowedVariables));
-    }
-    if ('textOverride' in template && template.textOverride) {
-      results.push(this.validateTemplate(template.textOverride, allowedVariables));
+    // Check if this is a platform template (EmailTemplate) or org override (OrgEmailTemplate)
+    if ('subject' in template) {
+      // This is a platform EmailTemplate
+      results.push(this.validateTemplate(template.subject, allowedVariables));
+      results.push(this.validateTemplate(template.html, allowedVariables));
+      if (template.text) {
+        results.push(this.validateTemplate(template.text, allowedVariables));
+      }
+    } else {
+      // This is an OrgEmailTemplate with overrides
+      if (template.subjectOverride) {
+        results.push(this.validateTemplate(template.subjectOverride, allowedVariables));
+      }
+      if (template.htmlOverride) {
+        results.push(this.validateTemplate(template.htmlOverride, allowedVariables));
+      }
+      if (template.textOverride) {
+        results.push(this.validateTemplate(template.textOverride, allowedVariables));
+      }
     }
 
     // Combine results

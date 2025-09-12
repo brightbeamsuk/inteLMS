@@ -5383,8 +5383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             hasSubjectOverride: !!override.subjectOverride,
             hasHtmlOverride: !!override.htmlOverride,
             hasTextOverride: !!override.textOverride,
-            updatedAt: override.updatedAt,
-            updatedBy: override.updatedBy
+            updatedAt: override.updatedAt
           });
         }
       }

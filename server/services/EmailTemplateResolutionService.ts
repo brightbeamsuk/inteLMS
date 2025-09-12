@@ -5,9 +5,9 @@
  * and system defaults, including a 5-minute TTL caching system for performance.
  * 
  * Template Resolution Logic:
- * 1. Check if EmailTemplateOverrides exists for (org_id, template_key) and is_active = true
+ * 1. Check if OrgEmailTemplate exists for (org_id, template_key) and is_active = true
  * 2. If exists, use override fields, falling back to defaults for null fields
- * 3. If no override exists, use EmailTemplateDefaults entirely
+ * 3. If no override exists, use EmailTemplate entirely
  * 4. Return: {subject, html, text, variables_schema}
  * 
  * Caching Strategy:
@@ -18,10 +18,10 @@
 
 import { storage } from "../storage";
 import type { 
-  EmailTemplateDefaults, 
-  EmailTemplateOverrides, 
-  InsertEmailTemplateOverrides,
-  InsertEmailTemplateDefaults
+  EmailTemplate, 
+  OrgEmailTemplate, 
+  InsertOrgEmailTemplate,
+  InsertEmailTemplate
 } from "@shared/schema";
 
 // Cache entry interface
@@ -74,13 +74,13 @@ export class EmailTemplateResolutionService {
 
     try {
       // Step 1: Get default template (required)
-      const defaultTemplate = await storage.getEmailTemplateDefault(templateKey);
+      const defaultTemplate = await storage.getEmailTemplateByKey(templateKey);
       if (!defaultTemplate) {
         throw new Error(`Default template not found for key: ${templateKey}`);
       }
 
       // Step 2: Check for active override
-      const override = await storage.getEmailTemplateOverride(orgId, templateKey);
+      const override = await storage.getOrgEmailTemplateByKey(orgId, templateKey);
       
       let resolvedTemplate: ResolvedTemplate;
 
@@ -88,8 +88,8 @@ export class EmailTemplateResolutionService {
         // Use override with fallback to defaults
         resolvedTemplate = {
           subject: override.subjectOverride ?? defaultTemplate.subject,
-          html: override.htmlOverride ?? defaultTemplate.htmlContent,
-          text: override.textOverride ?? defaultTemplate.textContent,
+          html: override.htmlOverride ?? defaultTemplate.html,
+          text: override.textOverride ?? defaultTemplate.text,
           variablesSchema: defaultTemplate.variablesSchema, // Always use default schema
           source: 'override'
         };
@@ -98,8 +98,8 @@ export class EmailTemplateResolutionService {
         // Use default template entirely
         resolvedTemplate = {
           subject: defaultTemplate.subject,
-          html: defaultTemplate.htmlContent,
-          text: defaultTemplate.textContent,
+          html: defaultTemplate.html,
+          text: defaultTemplate.text,
           variablesSchema: defaultTemplate.variablesSchema,
           source: 'default'
         };
@@ -123,9 +123,9 @@ export class EmailTemplateResolutionService {
    * @param templateKey Template key identifier
    * @returns Default template or null if not found
    */
-  async getDefaultTemplate(templateKey: string): Promise<EmailTemplateDefaults | null> {
+  async getDefaultTemplate(templateKey: string): Promise<EmailTemplate | null> {
     try {
-      const template = await storage.getEmailTemplateDefault(templateKey);
+      const template = await storage.getEmailTemplateByKey(templateKey);
       return template || null;
     } catch (error) {
       console.error(`${this.LOG_PREFIX} Error getting default template ${templateKey}:`, error);
@@ -140,9 +140,9 @@ export class EmailTemplateResolutionService {
    * @param templateKey Template key identifier
    * @returns Override template or null if not found/inactive
    */
-  async getOverride(orgId: string, templateKey: string): Promise<EmailTemplateOverrides | null> {
+  async getOverride(orgId: string, templateKey: string): Promise<OrgEmailTemplate | null> {
     try {
-      const override = await storage.getEmailTemplateOverride(orgId, templateKey);
+      const override = await storage.getOrgEmailTemplateByKey(orgId, templateKey);
       // Return null if no override exists or if it's inactive
       return (override && override.isActive) ? override : null;
     } catch (error) {
@@ -160,11 +160,11 @@ export class EmailTemplateResolutionService {
    */
   async updateDefaultTemplate(
     templateKey: string, 
-    updateData: Partial<InsertEmailTemplateDefaults>
-  ): Promise<EmailTemplateDefaults> {
+    updateData: Partial<InsertEmailTemplate>
+  ): Promise<EmailTemplate> {
     try {
       // Update the default template in storage
-      const result = await storage.updateEmailTemplateDefault(templateKey, updateData);
+      const result = await storage.updateEmailTemplate(templateKey, updateData);
       console.log(`${this.LOG_PREFIX} Updated default template for ${templateKey}`);
 
       // Invalidate cache for this template key across all organizations
@@ -189,11 +189,11 @@ export class EmailTemplateResolutionService {
   async setOverride(
     orgId: string, 
     templateKey: string, 
-    overrideData: Partial<InsertEmailTemplateOverrides>
-  ): Promise<EmailTemplateOverrides> {
+    overrideData: Partial<InsertOrgEmailTemplate>
+  ): Promise<OrgEmailTemplate> {
     try {
       // Use atomic upsert operation to handle unique constraint properly
-      const result = await storage.upsertEmailTemplateOverride(orgId, templateKey, overrideData);
+      const result = await storage.upsertOrgEmailTemplate(orgId, templateKey, overrideData);
       console.log(`${this.LOG_PREFIX} Upserted override for ${orgId}:${templateKey}`);
 
       // Invalidate cache for this specific template
@@ -215,7 +215,7 @@ export class EmailTemplateResolutionService {
    */
   async disableOverride(orgId: string, templateKey: string): Promise<void> {
     try {
-      await storage.disableEmailTemplateOverride(orgId, templateKey);
+      await storage.disableOrgEmailTemplate(orgId, templateKey);
       console.log(`${this.LOG_PREFIX} Disabled override for ${orgId}:${templateKey}`);
 
       // Invalidate cache for this specific template
