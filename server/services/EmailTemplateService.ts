@@ -27,6 +27,13 @@ import type {
   InsertOrgEmailTemplate 
 } from '@shared/schema';
 
+// Import seed service for self-healing functionality
+// Lazy import to avoid circular dependencies
+const getEmailTemplateSeedService = async () => {
+  const { emailTemplateSeedService } = await import('../seeds/emailTemplateSeedService');
+  return emailTemplateSeedService;
+};
+
 // Core interfaces following the specification
 
 export interface ResolvedTemplate {
@@ -71,13 +78,6 @@ export interface TemplateList {
 export interface MjmlCompilationResult {
   html: string;
   errors: Array<{
-    line?: number;
-    column?: number;
-    message: string;
-    tagName?: string;
-    formattedMessage?: string;
-  }>;
-  warnings: Array<{
     line?: number;
     column?: number;
     message: string;
@@ -206,13 +206,6 @@ export class EmailTemplateService {
           message: error.message,
           tagName: error.tagName,
           formattedMessage: error.formattedMessage
-        })),
-        warnings: (result.warnings || []).map((warning: any) => ({
-          line: warning.line,
-          column: warning.column,
-          message: warning.message,
-          tagName: warning.tagName,
-          formattedMessage: warning.formattedMessage
         }))
       };
 
@@ -222,12 +215,7 @@ export class EmailTemplateService {
         throw new MjmlCompilationError(templateKey, compilationResult.errors);
       }
 
-      // Log warnings if any
-      if (compilationResult.warnings.length > 0) {
-        console.warn(`${this.LOG_PREFIX} MJML compilation warnings for '${templateKey}':`, compilationResult.warnings);
-      }
-
-      console.log(`${this.LOG_PREFIX} MJML compiled successfully for '${templateKey}' with ${compilationResult.warnings.length} warnings`);
+      console.log(`${this.LOG_PREFIX} MJML compiled successfully for '${templateKey}'`);
       return compilationResult;
 
     } catch (error) {
@@ -251,12 +239,11 @@ export class EmailTemplateService {
    * 
    * @param mjmlSource MJML source code
    * @param templateKey Template key for error context
-   * @returns Validation result with errors and warnings
+   * @returns Validation result with errors
    */
   async validateMjml(mjmlSource: string, templateKey: string = 'unknown'): Promise<{
     isValid: boolean;
     errors: Array<{ line?: number; column?: number; message: string; }>;
-    warnings: Array<{ line?: number; column?: number; message: string; }>;
   }> {
     console.log(`${this.LOG_PREFIX} Validating MJML for template '${templateKey}'`);
 
@@ -265,16 +252,14 @@ export class EmailTemplateService {
       
       return {
         isValid: true,
-        errors: [],
-        warnings: result.warnings
+        errors: []
       };
 
     } catch (error) {
       if (error instanceof MjmlCompilationError) {
         return {
           isValid: false,
-          errors: error.mjmlErrors,
-          warnings: []
+          errors: error.mjmlErrors
         };
       }
 
@@ -282,8 +267,7 @@ export class EmailTemplateService {
         isValid: false,
         errors: [{
           message: `Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }],
-        warnings: []
+        }]
       };
     }
   }
@@ -466,11 +450,54 @@ export class EmailTemplateService {
       const effectiveTemplate = await storage.getEffectiveEmailTemplate(orgId, key);
       
       if (!effectiveTemplate) {
-        console.error(`${this.LOG_PREFIX} Template '${key}' not found for org '${orgId}'`);
+        console.warn(`${this.LOG_PREFIX} Template '${key}' not found for org '${orgId}' - attempting self-healing`);
+        
+        // Self-healing: Auto-seed missing templates
+        try {
+          const seedService = await getEmailTemplateSeedService();
+          const isSeeded = await seedService.autoSeedMissingTemplates();
+          
+          if (isSeeded) {
+            console.log(`${this.LOG_PREFIX} Self-healing successful - retrying template resolution for '${key}'`);
+            
+            // Retry template resolution after seeding
+            const retryTemplate = await storage.getEffectiveEmailTemplate(orgId, key);
+            
+            if (retryTemplate) {
+              console.log(`${this.LOG_PREFIX} Template '${key}' successfully resolved after self-healing`);
+              const { template, override } = retryTemplate;
+              
+              // Continue with normal resolution logic
+              const hasOverride = override && override.isActive;
+              const source: 'org' | 'platform' = hasOverride ? 'org' : 'platform';
+              
+              return {
+                key: template.key,
+                name: template.name,
+                subject: retryTemplate.effectiveSubject,
+                html: retryTemplate.effectiveHtml,
+                text: retryTemplate.effectiveText,
+                mjml: retryTemplate.effectiveMjml,
+                source,
+                version: {
+                  org: hasOverride ? override.version : null,
+                  platform: template.version
+                },
+                variablesSchema: template.variablesSchema
+              };
+            }
+          }
+          
+          console.error(`${this.LOG_PREFIX} Self-healing failed or template '${key}' still not found after seeding`);
+        } catch (seedError) {
+          console.error(`${this.LOG_PREFIX} Self-healing failed for template '${key}':`, seedError);
+        }
+        
+        // If self-healing failed, throw original error
         throw new TemplateNotFoundError(
           key, 
           orgId,
-          `Template '${key}' not found. Platform default may be missing. Please ensure the template is properly seeded.`
+          `Template '${key}' not found. Platform default may be missing. Self-healing attempted but failed. Please contact support or manually seed templates via SuperAdmin panel.`
         );
       }
 

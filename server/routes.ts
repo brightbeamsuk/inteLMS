@@ -23,6 +23,7 @@ import { stripeWebhookService } from "./services/StripeWebhookService";
 import { emailTemplateEngine } from "./services/EmailTemplateEngineService";
 import { emailTemplateResolver } from "./services/EmailTemplateResolutionService";
 import { EmailTemplateService } from "./services/EmailTemplateService";
+import { emailTemplateSeedService } from "./seeds/emailTemplateSeedService";
 import { z } from "zod";
 
 // Initialize EmailTemplateService for event notifications
@@ -5654,6 +5655,156 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error fetching template overrides:', error);
       res.status(500).json({ 
         message: 'Failed to fetch template overrides',
+        error: error.message 
+      });
+    }
+  });
+
+  // SUPERADMIN EMAIL TEMPLATE SEEDING ENDPOINTS
+
+  // Seed platform email templates (SuperAdmin only)
+  app.post('/api/superadmin/email/templates/seed', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      console.log('🌱 SuperAdmin email template seeding requested by:', user.email);
+
+      const { overwriteExisting = false, specificKeys } = req.body;
+
+      // Run the seeding process
+      const results = await emailTemplateSeedService.seedPlatformTemplates({
+        overwriteExisting,
+        specificKeys
+      });
+
+      if (results.success) {
+        console.log(`✅ Email template seeding completed: ${results.seeded} seeded, ${results.skipped} skipped, ${results.failed} failed`);
+        
+        res.json({
+          success: true,
+          data: {
+            seeded: results.seeded,
+            skipped: results.skipped,
+            failed: results.failed,
+            details: results.details,
+            errors: results.errors
+          },
+          message: `Template seeding completed successfully. ${results.seeded} templates processed.`
+        });
+      } else {
+        console.error('❌ Email template seeding failed:', results.errors);
+        
+        res.status(500).json({
+          success: false,
+          data: {
+            seeded: results.seeded,
+            skipped: results.skipped,
+            failed: results.failed,
+            details: results.details,
+            errors: results.errors
+          },
+          message: 'Template seeding completed with errors'
+        });
+      }
+
+    } catch (error: any) {
+      console.error('❌ Critical error during email template seeding:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Critical error during template seeding',
+        error: error.message 
+      });
+    }
+  });
+
+  // Check missing email templates (SuperAdmin only)
+  app.get('/api/superadmin/email/templates/status', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      // Get current template status
+      const missingKeys = await emailTemplateSeedService.getMissingTemplateKeys();
+      const validationResults = await emailTemplateSeedService.validateSeededTemplates();
+      const allTemplates = await storage.getAllEmailTemplates();
+
+      res.json({
+        success: true,
+        data: {
+          totalTemplates: allTemplates.length,
+          missingTemplates: missingKeys.length,
+          missingKeys,
+          validation: {
+            isValid: validationResults.valid,
+            errors: validationResults.validationErrors
+          },
+          templates: allTemplates.map(t => ({
+            key: t.key,
+            name: t.name,
+            category: t.category,
+            isActive: t.isActive,
+            version: t.version,
+            updatedAt: t.updatedAt
+          }))
+        },
+        message: 'Email template status retrieved successfully'
+      });
+
+    } catch (error: any) {
+      console.error('Error checking email template status:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to check email template status',
+        error: error.message 
+      });
+    }
+  });
+
+  // Auto-heal missing templates (SuperAdmin only)
+  app.post('/api/superadmin/email/templates/auto-heal', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      console.log('🔧 Auto-heal email templates requested by:', user.email);
+
+      // Run auto-healing (only seeds missing templates)
+      const success = await emailTemplateSeedService.autoSeedMissingTemplates();
+
+      if (success) {
+        const missingKeys = await emailTemplateSeedService.getMissingTemplateKeys();
+        
+        res.json({
+          success: true,
+          data: {
+            healingCompleted: true,
+            remainingMissing: missingKeys.length,
+            missingKeys
+          },
+          message: 'Auto-healing completed successfully'
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Auto-healing failed - check server logs for details'
+        });
+      }
+
+    } catch (error: any) {
+      console.error('Error during auto-healing:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Auto-healing failed',
         error: error.message 
       });
     }
