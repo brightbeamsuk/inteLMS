@@ -176,7 +176,7 @@ async function getOrganizationAdminEmails(orgId: string): Promise<string[]> {
       user.status === 'active' && 
       user.email
     );
-    return adminUsers.map(user => user.email);
+    return adminUsers.map(user => user.email!).filter(Boolean);
   } catch (error) {
     console.error('Failed to get organization admin emails:', error);
     return [];
@@ -8699,8 +8699,8 @@ This test was initiated by ${user.email}.
       let created = 0;
       let failed = 0;
       const errors: string[] = [];
-      const createdRegularUsers = [];
-      const createdAdmins = [];
+      const createdRegularUsers: any[] = [];
+      const createdAdmins: any[] = [];
 
       for (const userData of usersData) {
         try {
@@ -10443,7 +10443,7 @@ This test was initiated by ${user.email}.
                 adminEmails,
                 (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
                   adminEmail,
-                  buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                  buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'completed', timeSpent: 0 }),
                   organization.id
                 )
               );
@@ -10454,7 +10454,7 @@ This test was initiated by ${user.email}.
                 adminEmails,
                 (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
                   adminEmail,
-                  buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                  buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'failed', timeSpent: 0 }),
                   organization.id
                 )
               );
@@ -10666,7 +10666,7 @@ This test was initiated by ${user.email}.
                         adminEmails,
                         (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
                           adminEmail,
-                          buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                          buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'completed', timeSpent: 0 }),
                           organization.id
                         )
                       );
@@ -10677,7 +10677,7 @@ This test was initiated by ${user.email}.
                         adminEmails,
                         (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
                           adminEmail,
-                          buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                          buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'failed', timeSpent: 0 }),
                           organization.id
                         )
                       );
