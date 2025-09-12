@@ -4,7 +4,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import { DataLoadFailurePanel, FailurePanel } from "@/components/ui/failure-panel";
-import { Eye, Send, Edit, RefreshCw, X, ChevronRight, Save, AlertCircle } from "lucide-react";
+import { Eye, Send, Edit, RefreshCw, X, ChevronRight, Save, AlertCircle, Type, Code, FileText, Zap, Plus } from "lucide-react";
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
 interface EmailTemplate {
   key: string;
@@ -94,6 +96,47 @@ const sampleVariableData: Record<string, any> = {
   assigned_at: new Date().toLocaleDateString()
 };
 
+// Common email template variables
+const templateVariables = [
+  { label: 'User Name', value: '{{user.name}}', category: 'User' },
+  { label: 'User Email', value: '{{user.email}}', category: 'User' },
+  { label: 'User Full Name', value: '{{user.full_name}}', category: 'User' },
+  { label: 'Organization Name', value: '{{org.name}}', category: 'Organization' },
+  { label: 'Organization Display Name', value: '{{org.display_name}}', category: 'Organization' },
+  { label: 'Admin Name', value: '{{admin.name}}', category: 'Admin' },
+  { label: 'Course Title', value: '{{course.title}}', category: 'Course' },
+  { label: 'Attempt Score', value: '{{attempt.score}}', category: 'Progress' },
+  { label: 'Added By', value: '{{added_by.name}}', category: 'Admin' },
+  { label: 'Assigned By', value: '{{assigned_by.name}}', category: 'Admin' },
+  { label: 'Added Date', value: '{{added_at}}', category: 'Dates' },
+  { label: 'Completed Date', value: '{{completed_at}}', category: 'Dates' },
+  { label: 'Assigned Date', value: '{{assigned_at}}', category: 'Dates' }
+];
+
+// Quill configuration
+const quillModules = {
+  toolbar: {
+    container: [
+      [{ 'header': [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'align': [] }],
+      ['link'],
+      ['clean']
+    ]
+  },
+  clipboard: {
+    matchVisual: false
+  }
+};
+
+const quillFormats = [
+  'header', 'bold', 'italic', 'underline', 'strike',
+  'color', 'background', 'list', 'bullet', 'align',
+  'link'
+];
+
 function SuperAdminEmailTemplatesContent() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showDetailDrawer, setShowDetailDrawer] = useState(false);
@@ -105,7 +148,9 @@ function SuperAdminEmailTemplatesContent() {
   const [previewData, setPreviewData] = useState<PreviewResponse['preview'] | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<EmailTemplate>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
-  const [activeEditTab, setActiveEditTab] = useState<'html' | 'text' | 'mjml'>('html');
+  const [activeEditTab, setActiveEditTab] = useState<'visual' | 'html' | 'text' | 'mjml' | 'preview'>('visual');
+  const [showVariableDropdown, setShowVariableDropdown] = useState(false);
+  const [quillRef, setQuillRef] = useState<ReactQuill | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -281,8 +326,66 @@ function SuperAdminEmailTemplatesContent() {
       isActive: template.isActive
     });
     setEditErrors({});
-    setActiveEditTab('html'); // Reset to HTML tab when opening edit modal
+    setActiveEditTab('visual'); // Reset to Visual tab when opening edit modal
     setShowEditModal(true);
+  };
+
+  // Handle variable insertion
+  const insertVariable = (variable: string) => {
+    if (activeEditTab === 'visual' && quillRef) {
+      const quill = quillRef.getEditor();
+      const range = quill.getSelection();
+      if (range) {
+        quill.insertText(range.index, variable);
+        quill.setSelection(range.index + variable.length, 0);
+      } else {
+        const length = quill.getLength();
+        quill.insertText(length - 1, ' ' + variable);
+        quill.setSelection(length + variable.length, 0);
+      }
+    } else if (activeEditTab === 'html') {
+      const currentHtml = editFormData.html || '';
+      handleEditInputChange('html', currentHtml + variable);
+    } else if (activeEditTab === 'text') {
+      const currentText = editFormData.text || '';
+      handleEditInputChange('text', currentText + variable);
+    }
+    setShowVariableDropdown(false);
+  };
+
+  // Handle rich text editor changes
+  const handleQuillChange = (content: string) => {
+    handleEditInputChange('html', content);
+    // Auto-generate plain text version
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = content;
+    const plainText = tempDiv.textContent || tempDiv.innerText || '';
+    handleEditInputChange('text', plainText.trim());
+  };
+
+  // Generate preview content
+  const generatePreviewContent = () => {
+    let html = editFormData.html || '';
+    
+    // Replace variables with sample data for preview
+    templateVariables.forEach(variable => {
+      const regex = new RegExp(variable.value.replace(/[{}]/g, '\\$&'), 'g');
+      const keys = variable.value.replace(/[{}]/g, '').split('.');
+      let value: any = sampleVariableData;
+      
+      for (const key of keys) {
+        if (value && typeof value === 'object' && key in value) {
+          value = value[key];
+        } else {
+          value = variable.label;
+          break;
+        }
+      }
+      
+      html = html.replace(regex, String(value));
+    });
+    
+    return html;
   };
 
   // Validate edit form
@@ -901,35 +1004,148 @@ function SuperAdminEmailTemplatesContent() {
 
               {/* Right Column - Content */}
               <div className="space-y-4">
-                <div className="tabs tabs-bordered">
-                  <a 
-                    className={`tab ${activeEditTab === 'html' ? 'tab-active' : ''}`} 
-                    data-testid="tab-html"
-                    onClick={() => setActiveEditTab('html')}
-                  >
-                    HTML Content
-                  </a>
-                  <a 
-                    className={`tab ${activeEditTab === 'text' ? 'tab-active' : ''}`} 
-                    data-testid="tab-text"
-                    onClick={() => setActiveEditTab('text')}
-                  >
-                    Text Content
-                  </a>
-                  <a 
-                    className={`tab ${activeEditTab === 'mjml' ? 'tab-active' : ''}`} 
-                    data-testid="tab-mjml"
-                    onClick={() => setActiveEditTab('mjml')}
-                  >
-                    MJML Source
-                  </a>
+                <div className="flex justify-between items-center mb-4">
+                  <div className="tabs tabs-bordered">
+                    <a 
+                      className={`tab gap-2 ${activeEditTab === 'visual' ? 'tab-active' : ''}`} 
+                      data-testid="tab-visual"
+                      onClick={() => setActiveEditTab('visual')}
+                    >
+                      <Type className="w-4 h-4" />
+                      Visual Editor
+                    </a>
+                    <a 
+                      className={`tab gap-2 ${activeEditTab === 'html' ? 'tab-active' : ''}`} 
+                      data-testid="tab-html"
+                      onClick={() => setActiveEditTab('html')}
+                    >
+                      <Code className="w-4 h-4" />
+                      HTML Code
+                    </a>
+                    <a 
+                      className={`tab gap-2 ${activeEditTab === 'text' ? 'tab-active' : ''}`} 
+                      data-testid="tab-text"
+                      onClick={() => setActiveEditTab('text')}
+                    >
+                      <FileText className="w-4 h-4" />
+                      Plain Text
+                    </a>
+                    <a 
+                      className={`tab gap-2 ${activeEditTab === 'preview' ? 'tab-active' : ''}`} 
+                      data-testid="tab-preview"
+                      onClick={() => setActiveEditTab('preview')}
+                    >
+                      <Eye className="w-4 h-4" />
+                      Preview
+                    </a>
+                  </div>
+                  
+                  {/* Variable Insertion Dropdown */}
+                  <div className="dropdown dropdown-end">
+                    <label 
+                      tabIndex={0} 
+                      className="btn btn-outline btn-sm gap-2"
+                      onClick={() => setShowVariableDropdown(!showVariableDropdown)}
+                      data-testid="button-insert-variable"
+                    >
+                      <Zap className="w-4 h-4" />
+                      Insert Variable
+                    </label>
+                    {showVariableDropdown && (
+                      <ul 
+                        tabIndex={0} 
+                        className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 max-h-64 overflow-y-auto z-50"
+                        data-testid="dropdown-variables"
+                      >
+                        {Object.entries(
+                          templateVariables.reduce((groups, variable) => {
+                            const category = variable.category;
+                            if (!groups[category]) groups[category] = [];
+                            groups[category].push(variable);
+                            return groups;
+                          }, {} as Record<string, typeof templateVariables>)
+                        ).map(([category, variables]) => (
+                          <li key={category}>
+                            <div className="menu-title text-xs">{category}</div>
+                            {variables.map((variable) => (
+                              <a
+                                key={variable.value}
+                                onClick={() => insertVariable(variable.value)}
+                                className="text-sm hover:bg-base-200"
+                                data-testid={`variable-${variable.value.replace(/[{}]/g, '')}`}
+                              >
+                                <span className="font-mono text-xs text-primary">{variable.value}</span>
+                                <span className="text-base-content/70">{variable.label}</span>
+                              </a>
+                            ))}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
+
+                {/* Visual Editor Tab */}
+                {activeEditTab === 'visual' && (
+                  <div className="space-y-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-medium">Email Content *</span>
+                      </label>
+                      <div className="border border-base-300 rounded-lg overflow-hidden">
+                        <ReactQuill
+                          ref={setQuillRef}
+                          theme="snow"
+                          value={editFormData.html || ''}
+                          onChange={handleQuillChange}
+                          modules={quillModules}
+                          formats={quillFormats}
+                          placeholder="Start typing your email content here..."
+                          className="min-h-64"
+                          data-testid="editor-visual"
+                        />
+                      </div>
+                      {editErrors.html && (
+                        <label className="label">
+                          <span className="label-text-alt text-error">{editErrors.html}</span>
+                        </label>
+                      )}
+                      <div className="label">
+                        <span className="label-text-alt text-base-content/70">
+                          Use the toolbar above for formatting. Click "Insert Variable" to add dynamic content.
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Quick Variable Buttons */}
+                    <div className="card bg-base-50 border border-base-200">
+                      <div className="card-body p-4">
+                        <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-primary" />
+                          Quick Variables
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {['{{user.name}}', '{{org.name}}', '{{course.title}}', '{{user.email}}'].map((variable) => (
+                            <button
+                              key={variable}
+                              className="btn btn-outline btn-xs"
+                              onClick={() => insertVariable(variable)}
+                              data-testid={`quick-variable-${variable.replace(/[{}]/g, '')}`}
+                            >
+                              {variable}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* HTML Content Tab */}
                 {activeEditTab === 'html' && (
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text font-medium">HTML Content *</span>
+                      <span className="label-text font-medium">HTML Source Code *</span>
                     </label>
                     <textarea
                       className={`textarea textarea-bordered h-64 font-mono text-xs ${editErrors.html ? 'textarea-error' : ''}`}
@@ -944,7 +1160,9 @@ function SuperAdminEmailTemplatesContent() {
                       </label>
                     )}
                     <div className="label">
-                      <span className="label-text-alt">Rich HTML email content with variable support</span>
+                      <span className="label-text-alt text-base-content/70">
+                        Advanced: Edit the raw HTML source code directly. Use the Visual tab for easier editing.
+                      </span>
                     </div>
                   </div>
                 )}
@@ -953,36 +1171,77 @@ function SuperAdminEmailTemplatesContent() {
                 {activeEditTab === 'text' && (
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text font-medium">Plain Text Content</span>
+                      <span className="label-text font-medium">Plain Text Version</span>
                     </label>
                     <textarea
                       className="textarea textarea-bordered h-64 font-mono text-xs"
-                      placeholder="Enter plain text version (optional, but recommended)"
+                      placeholder="Plain text version (auto-generated from visual editor, but you can customize it here)"
                       value={editFormData.text || ''}
                       onChange={(e) => handleEditInputChange('text', e.target.value)}
                       data-testid="textarea-edit-text"
                     />
                     <div className="label">
-                      <span className="label-text-alt">Fallback for email clients that don't support HTML</span>
+                      <span className="label-text-alt text-base-content/70">
+                        This text version is automatically generated from the visual editor but can be customized. 
+                        It's used as a fallback for email clients that don't support HTML.
+                      </span>
                     </div>
                   </div>
                 )}
 
-                {/* MJML Content Tab */}
-                {activeEditTab === 'mjml' && (
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text font-medium">MJML Source</span>
-                    </label>
-                    <textarea
-                      className="textarea textarea-bordered h-64 font-mono text-xs"
-                      placeholder="Enter MJML source (advanced feature)"
-                      value={editFormData.mjml || ''}
-                      onChange={(e) => handleEditInputChange('mjml', e.target.value)}
-                      data-testid="textarea-edit-mjml"
-                    />
-                    <div className="label">
-                      <span className="label-text-alt">MJML will be compiled to HTML automatically</span>
+                {/* Preview Tab */}
+                {activeEditTab === 'preview' && (
+                  <div className="space-y-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text font-medium">Live Preview</span>
+                      </label>
+                      <div className="card bg-base-100 border border-base-300">
+                        <div className="card-body">
+                          <div className="space-y-4">
+                            {/* Subject Preview */}
+                            <div>
+                              <div className="text-xs font-medium text-base-content/60 mb-1">Subject Line:</div>
+                              <div className="bg-base-200 p-3 rounded font-medium">
+                                {editFormData.subject?.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+                                  const keys = key.split('.');
+                                  let value = sampleVariableData;
+                                  for (const k of keys) {
+                                    if (value && typeof value === 'object' && k in value) {
+                                      value = value[k];
+                                    } else {
+                                      return match;
+                                    }
+                                  }
+                                  return String(value);
+                                }) || 'No subject set'}
+                              </div>
+                            </div>
+                            
+                            {/* Email Content Preview */}
+                            <div>
+                              <div className="text-xs font-medium text-base-content/60 mb-1">Email Content:</div>
+                              <div className="border border-base-300 rounded p-4 bg-white min-h-64 max-h-96 overflow-y-auto">
+                                {editFormData.html ? (
+                                  <div 
+                                    className="prose max-w-none"
+                                    dangerouslySetInnerHTML={{ __html: generatePreviewContent() }}
+                                  />
+                                ) : (
+                                  <div className="text-base-content/40 italic text-center py-8">
+                                    No content to preview. Switch to Visual or HTML tab to add content.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="label">
+                        <span className="label-text-alt text-base-content/70">
+                          This preview shows how your email will look with sample data. Variables are replaced with example values.
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}

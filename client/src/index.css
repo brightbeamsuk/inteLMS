@@ -506,3 +506,217 @@
   border-color: var(--accent-color, #ec84b5);
   color: white;
 }
+
+/* React Quill Editor Styling */
+.ql-editor {
+  min-height: 250px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: hsl(var(--bc));
+  background-color: hsl(var(--b1));
+}
+
+.ql-editor.ql-blank::before {
+  color: hsl(var(--bc) / 0.5);
+  font-style: italic;
+}
+
+/* Quill Toolbar Styling */
+.ql-toolbar {
+  border: 1px solid hsl(var(--b3));
+  border-bottom: none;
+  background-color: hsl(var(--b2));
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.ql-container {
+  border: 1px solid hsl(var(--b3));
+  border-top: none;
+  border-radius: 0 0 0.5rem 0.5rem;
+  font-size: 14px;
+}
+
+/* Quill Button Styling */
+.ql-toolbar .ql-formats {
+  margin-right: 12px;
+}
+
+.ql-toolbar button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: hsl(var(--bc) / 0.7);
+  transition: all 0.2s ease;
+}
+
+.ql-toolbar button:hover {
+  background-color: hsl(var(--b3));
+  color: hsl(var(--bc));
+}
+
+.ql-toolbar button.ql-active {
+  background-color: hsl(var(--p));
+  color: hsl(var(--pc));
+}
+
+/* Quill Dropdown Styling */
+.ql-toolbar .ql-picker {
+  color: hsl(var(--bc) / 0.7);
+}
+
+.ql-toolbar .ql-picker-options {
+  background-color: hsl(var(--b1));
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.ql-toolbar .ql-picker-item:hover {
+  background-color: hsl(var(--b2));
+}
+
+/* Custom Variable Button Styling */
+.variable-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--p) / 0.1);
+  color: hsl(var(--p));
+  border: 1px solid hsl(var(--p) / 0.2);
+  transition: all 0.2s ease;
+}
+
+.variable-button:hover {
+  background-color: hsl(var(--p) / 0.2);
+}
+
+/* Email Template Editor Specific Styles */
+.email-template-modal .modal-box {
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 100%;
+}
+
+.email-template-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background-color: hsl(var(--b2));
+  border-radius: 0.5rem;
+}
+
+.email-template-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  color: hsl(var(--bc) / 0.7);
+  cursor: pointer;
+}
+
+.email-template-tab:hover {
+  color: hsl(var(--bc));
+  background-color: hsl(var(--b1));
+}
+
+.email-template-tab.active {
+  background-color: hsl(var(--p));
+  color: hsl(var(--pc));
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.variable-dropdown {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.variable-dropdown .menu-title {
+  position: sticky;
+  top: 0;
+  background-color: hsl(var(--b1));
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: hsl(var(--bc) / 0.6);
+  border-bottom: 1px solid hsl(var(--b3));
+}
+
+/* Quick Variable Buttons */
+.quick-variables-card {
+  background: linear-gradient(to bottom right, hsl(var(--b1)), hsl(var(--b2) / 0.5));
+  border: 1px solid hsl(var(--b3));
+}
+
+.quick-variable-btn {
+  font-size: 0.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid hsl(var(--p));
+  color: hsl(var(--p));
+  background-color: transparent;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  transition: all 0.2s ease;
+}
+
+.quick-variable-btn:hover {
+  background-color: hsl(var(--p));
+  color: hsl(var(--pc));
+}
+
+/* Preview Styling */
+.email-preview {
+  background-color: white;
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.5rem;
+  box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.06);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.email-preview .prose {
+  max-width: none;
+}
+
+.email-preview .prose p {
+  margin-bottom: 1em;
+}
+
+.email-preview .prose h1, 
+.email-preview .prose h2, 
+.email-preview .prose h3 {
+  margin-bottom: 0.5em;
+  margin-top: 1em;
+}
+
+.email-preview .prose ul, 
+.email-preview .prose ol {
+  padding-left: 1.5em;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .email-template-modal .modal-box {
+    max-width: 95vw;
+    padding: 1rem;
+  }
+  
+  .ql-toolbar {
+    font-size: 12px;
+  }
+  
+  .ql-toolbar .ql-formats {
+    margin-right: 8px;
+  }
+}
