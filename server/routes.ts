@@ -6513,13 +6513,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       return res.json({
         ok: true,
+        preview: {
+          subject: renderedTemplate.subject || '',
+          html: html || '',
+          text: renderedTemplate.text || null
+        },
         data: {
           templateKey,
-          rendered: {
-            subject: renderedTemplate.subject || '',
-            html: html || '',
-            text: renderedTemplate.text || null
-          },
           variables: defaultVariables,
           htmlSize,
           truncated: htmlSize > 200000
