@@ -1653,7 +1653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Extract query parameters
       const {
-        startDate,
+        fromDate: startDate,
         endDate,
         status,
         templateKey,
@@ -1712,8 +1712,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const mailerEmails = await storage.getEmailLogs({
           limit: 1000,
-          startDate: startDate ? new Date(startDate as string) : undefined,
-          endDate: endDate ? new Date(endDate as string) : undefined,
+          fromDate: startDate ? new Date(startDate as string) : undefined,
+          toDate: endDate ? new Date(endDate as string) : undefined,
           toEmail: recipient as string,
           status: status as 'sent' | 'failed'
         });

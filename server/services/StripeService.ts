@@ -15,7 +15,7 @@ export class StripeService {
     }
     
     this.stripe = new Stripe(stripeSecretKey, {
-      apiVersion: '2024-06-20',
+      apiVersion: '2025-08-27.basil',
     });
   }
 
@@ -768,7 +768,7 @@ export class StripeService {
       const billingValidation = await this.validateOrganizationBillingState(organisation);
       
       if (!billingValidation.canUpdateSubscription) {
-        throw new Error(`Cannot update subscription for organization ${organisation.id}: ${billingValidation.issues.join(', ')}`);
+        throw new Error(`Cannot update subscription for organization ${organisation.id}: ${billingValidation.issues?.join(', ') || 'billing validation failed'}`);
       }
       
       if (!billingValidation.hasActiveSubscription) {

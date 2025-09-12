@@ -190,11 +190,11 @@ export class EmailOrchestrator {
     });
     
     // Register conditional helpers
-    this.handlebarsEngine.registerHelper('if_eq', function(a: any, b: any, options: any) {
+    this.handlebarsEngine.registerHelper('if_eq', function(this: any, a: any, b: any, options: any) {
       return (a === b) ? options.fn(this) : options.inverse(this);
     });
     
-    this.handlebarsEngine.registerHelper('if_not_eq', function(a: any, b: any, options: any) {
+    this.handlebarsEngine.registerHelper('if_not_eq', function(this: any, a: any, b: any, options: any) {
       return (a !== b) ? options.fn(this) : options.inverse(this);
     });
     
