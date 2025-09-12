@@ -10312,7 +10312,7 @@ This test was initiated by ${user.email}.
                       adminEmails,
                       (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
                         adminEmail,
-                        buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, learner, course, { score: finalScore, status: 'completed', timeSpent: 0 }),
+                        buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: attemptData.scoreRaw || 0, status: 'completed', timeSpent: 0 }),
                         organization.id
                       )
                     );
@@ -10323,7 +10323,7 @@ This test was initiated by ${user.email}.
                       adminEmails,
                       (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
                         adminEmail,
-                        buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, learner, course, { score: finalScore, status: 'failed', timeSpent: 0 }),
+                        buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: attemptData.scoreRaw || 0, status: 'failed', timeSpent: 0 }),
                         organization.id
                       )
                     );

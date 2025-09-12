@@ -87,9 +87,9 @@ export class EmailTemplateResolutionService {
       if (override && override.isActive) {
         // Use override with fallback to defaults
         resolvedTemplate = {
-          subject: override.subjectOverride ?? defaultTemplate.subjectDefault,
-          html: override.htmlOverride ?? defaultTemplate.htmlDefault,
-          text: override.textOverride ?? defaultTemplate.textDefault,
+          subject: override.subjectOverride ?? defaultTemplate.subject,
+          html: override.htmlOverride ?? defaultTemplate.htmlContent,
+          text: override.textOverride ?? defaultTemplate.textContent,
           variablesSchema: defaultTemplate.variablesSchema, // Always use default schema
           source: 'override'
         };
@@ -97,9 +97,9 @@ export class EmailTemplateResolutionService {
       } else {
         // Use default template entirely
         resolvedTemplate = {
-          subject: defaultTemplate.subjectDefault,
-          html: defaultTemplate.htmlDefault,
-          text: defaultTemplate.textDefault,
+          subject: defaultTemplate.subject,
+          html: defaultTemplate.htmlContent,
+          text: defaultTemplate.textContent,
           variablesSchema: defaultTemplate.variablesSchema,
           source: 'default'
         };
