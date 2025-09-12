@@ -1642,6 +1642,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // SuperAdmin Email Logs API Endpoints
+  // Get email logs with filtering
+  app.get('/api/superadmin/email-logs', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      // Extract query parameters
+      const {
+        startDate,
+        endDate,
+        status,
+        templateKey,
+        recipient,
+        triggerEvent,
+        page = '1',
+        limit = '50'
+      } = req.query;
+
+      // Parse pagination parameters
+      const pageNum = parseInt(page as string);
+      const limitNum = Math.min(parseInt(limit as string), 200); // Cap at 200
+      const offset = (pageNum - 1) * limitNum;
+
+      // Build filters for storage query
+      const filters: any = {
+        limit: limitNum,
+        offset: offset
+      };
+
+      if (startDate) {
+        filters.fromDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.toDate = new Date(endDate as string);
+      }
+      if (status) {
+        filters.status = status;
+      }
+      if (templateKey) {
+        filters.templateKey = templateKey;
+      }
+      if (recipient) {
+        filters.toEmail = recipient;
+      }
+      if (triggerEvent) {
+        filters.triggerEvent = triggerEvent;
+      }
+
+      // Get email sends from storage
+      const emailSends = await storage.getEmailSends(filters);
+      
+      // For pagination, we need total count - get count without limit/offset
+      const countFilters = { ...filters };
+      delete countFilters.limit;
+      delete countFilters.offset;
+      const allRecords = await storage.getEmailSends(countFilters);
+      const total = allRecords.length;
+
+      const totalPages = Math.ceil(total / limitNum);
+
+      res.json({
+        ok: true,
+        data: emailSends,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages
+        }
+      });
+
+    } catch (error) {
+      console.error('Error fetching email logs:', error);
+      res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to fetch email logs' 
+      });
+    }
+  });
+
+  // Get specific email log details
+  app.get('/api/superadmin/email-logs/:id', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { id } = req.params;
+
+      // Get email send record
+      const emailSend = await storage.getEmailSend(id);
+      
+      if (!emailSend) {
+        return res.status(404).json({ 
+          ok: false, 
+          error: 'Email log record not found' 
+        });
+      }
+
+      res.json({
+        ok: true,
+        data: emailSend
+      });
+
+    } catch (error) {
+      console.error('Error fetching email log details:', error);
+      res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to fetch email log details' 
+      });
+    }
+  });
+
   // Certificate Template routes
   app.get('/api/certificate-templates', requireAuth, async (req: any, res) => {
     try {
@@ -8752,6 +8869,9 @@ This test was initiated by ${user.email}.
           if (orgId) {
             const organisation = await getOrgById(storage, orgId);
             if (organisation) {
+              // TODO: DEPRECATED - Replace with EmailOrchestrator when EMAIL_TEMPLATES_V2 migration is complete
+              // This legacy emailService.sendWelcomeEmail will be removed in favor of:
+              // await emailOrchestrator.triggerEvent('USER_FAST_ADD', { user: newUser, organisation, password })
               await emailService.sendWelcomeEmail(newUser, organisation, password);
               console.log(`Welcome email sent to admin user: ${newUser.email}`);
             } else {
