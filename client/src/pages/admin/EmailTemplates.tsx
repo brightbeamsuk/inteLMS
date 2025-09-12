@@ -137,11 +137,13 @@ export function AdminEmailTemplates() {
   const { user } = useAuth();
 
   // Fetch organization overrides
-  const { data: orgOverrides = [], isLoading, error } = useQuery<EmailTemplate[]>({
+  const { data: overridesResponse, isLoading, error } = useQuery({
     queryKey: ['/api/email-templates/overrides', user?.organisationId],
     enabled: !!user?.organisationId,
     retry: false,
   });
+  
+  const orgOverrides: EmailTemplate[] = overridesResponse?.data || [];
 
   // Get template data by key - checks for org override first, then default
   const getTemplate = async (templateKey: string): Promise<EmailTemplate | null> => {
