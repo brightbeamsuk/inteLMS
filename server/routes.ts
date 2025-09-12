@@ -29,9 +29,16 @@ import { emailTemplateSeedService } from "./seeds/emailTemplateSeedService";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { emailService } from "./services/emailService";
+import { EmailOrchestrator } from "./services/EmailOrchestrator";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
+
+// Initialize EmailOrchestrator for the new email system
+const emailOrchestrator = new EmailOrchestrator();
+
+// Feature flag for EMAIL_TEMPLATES_V2 system
+const EMAIL_TEMPLATES_V2_ENABLED = process.env.EMAIL_TEMPLATES_V2 === 'true';
 
 // Safe organization lookup wrapper - handles spelling & structure differences
 async function getOrgById(storage: any, id: string) {
@@ -860,6 +867,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const newUser = await storage.createUser(userData);
       
+      // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED) {
+        try {
+          const context = {
+            user: {
+              name: `${newUser.firstName} ${newUser.lastName}`,
+              email: newUser.email,
+              firstName: newUser.firstName,
+              lastName: newUser.lastName,
+              fullName: `${newUser.firstName} ${newUser.lastName}`
+            },
+            addedBy: {
+              name: 'Self Registration'
+            },
+            addedAt: new Date().toISOString(),
+            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+          };
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'USER_FAST_ADD',
+            templateKey: 'new_user_welcome',
+            toEmail: newUser.email,
+            context,
+            organisationId: undefined, // Individual users don't have an org
+            resourceId: newUser.id,
+            priority: 1
+          });
+          
+          console.log(`✅ USER_FAST_ADD email queued for ${newUser.email} (Individual registration)`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue USER_FAST_ADD email:', emailError);
+          // Don't fail registration if email fails
+        }
+      }
+      
       // Log the user in automatically
       req.session.user = newUser;
 
@@ -950,6 +993,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const newAdmin = await storage.createUser(adminUserData);
+      
+      // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED) {
+        try {
+          const context = {
+            user: {
+              name: `${newAdmin.firstName} ${newAdmin.lastName}`,
+              email: newAdmin.email,
+              firstName: newAdmin.firstName,
+              lastName: newAdmin.lastName,
+              fullName: `${newAdmin.firstName} ${newAdmin.lastName}`
+            },
+            org: {
+              name: newOrganisation.name,
+              displayName: newOrganisation.displayName || newOrganisation.name
+            },
+            addedBy: {
+              name: 'System Registration'
+            },
+            addedAt: new Date().toISOString(),
+            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+          };
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'ORG_FAST_ADD',
+            templateKey: 'new_org_welcome',
+            toEmail: newAdmin.email,
+            context,
+            organisationId: newOrganisation.id,
+            resourceId: newOrganisation.id,
+            priority: 1
+          });
+          
+          console.log(`✅ ORG_FAST_ADD email queued for ${newAdmin.email}`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue ORG_FAST_ADD email:', emailError);
+          // Don't fail registration if email fails
+        }
+      }
       
       // Log the admin in automatically
       req.session.user = newAdmin;
@@ -4513,6 +4596,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create assignments for each user and course combination
       const assignments = [];
       for (const courseId of courseIds) {
+        const course = await storage.getCourse(courseId); // Get course details for email context
+        
         for (const orgUser of activeUsers) {
           const assignmentData = {
             courseId,
@@ -4524,11 +4609,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
           const assignment = await storage.createAssignment(assignmentData);
           assignments.push(assignment);
+          
+          // Send course assignment email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+          if (EMAIL_TEMPLATES_V2_ENABLED && course) {
+            try {
+              const organisation = await storage.getOrganisation(orgId);
+              const context = {
+                user: {
+                  name: `${orgUser.firstName} ${orgUser.lastName}`,
+                  email: orgUser.email,
+                  firstName: orgUser.firstName,
+                  lastName: orgUser.lastName,
+                  fullName: `${orgUser.firstName} ${orgUser.lastName}`
+                },
+                course: {
+                  title: course.title,
+                  description: course.description,
+                  estimatedDuration: course.estimatedDuration
+                },
+                org: organisation ? {
+                  name: organisation.name,
+                  displayName: organisation.displayName || organisation.name
+                } : null,
+                assignedBy: {
+                  name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
+                },
+                assignedAt: new Date().toISOString(),
+                courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${courseId}`,
+                supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+              };
+
+              await emailOrchestrator.queue({
+                triggerEvent: 'COURSE_ASSIGNED',
+                templateKey: 'course_assigned',
+                toEmail: orgUser.email,
+                context,
+                organisationId: orgId,
+                resourceId: assignment.id,
+                priority: 2,
+                idempotencyKey: `COURSE_ASSIGNED:${orgUser.email}:${courseId}:${assignment.id}`
+              });
+              
+              console.log(`✅ COURSE_ASSIGNED email queued for ${orgUser.email} (Course: ${course.title})`);
+            } catch (emailError) {
+              console.warn('⚠️ Failed to queue COURSE_ASSIGNED email:', emailError);
+              // Don't fail assignment if email fails
+            }
+          }
         }
       }
 
-      // Send bulk course assignment notification to organization admins
-      if (assignments.length > 0 && orgId) {
+      // LEGACY: Send bulk course assignment notification to organization admins
+      // TODO: Remove this when EMAIL_TEMPLATES_V2 is fully deployed
+      if (!EMAIL_TEMPLATES_V2_ENABLED && assignments.length > 0 && orgId) {
         const organization = await storage.getOrganisation(orgId);
         if (organization) {
           const adminEmails = await getOrganizationAdminEmails(organization.id);
@@ -4614,6 +4747,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         signerName: adminFirstName + ' ' + adminLastName,
         signerTitle: adminJobTitle || 'Learning Manager',
       });
+
+      // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED) {
+        try {
+          const context = {
+            user: {
+              name: `${adminUser.firstName} ${adminUser.lastName}`,
+              email: adminUser.email,
+              firstName: adminUser.firstName,
+              lastName: adminUser.lastName,
+              fullName: `${adminUser.firstName} ${adminUser.lastName}`
+            },
+            org: {
+              name: organisation.name,
+              displayName: organisation.displayName || organisation.name
+            },
+            addedBy: {
+              name: `${user.firstName || 'SuperAdmin'} ${user.lastName || ''}`
+            },
+            addedAt: new Date().toISOString(),
+            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+          };
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'ORG_FAST_ADD',
+            templateKey: 'new_org_welcome',
+            toEmail: adminUser.email,
+            context,
+            organisationId: organisation.id,
+            resourceId: organisation.id,
+            priority: 1
+          });
+          
+          console.log(`✅ ORG_FAST_ADD email queued for ${adminUser.email} (SuperAdmin created)`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue ORG_FAST_ADD email:', emailError);
+          // Don't fail organization creation if email fails
+        }
+      }
 
       res.status(201).json({
         organisation,
@@ -8520,8 +8693,59 @@ This test was initiated by ${user.email}.
 
       const newUser = await storage.createUser(userDataWithPassword);
       
-      // Send welcome email for admin users with their password
-      if (validatedData.role === 'admin' && password) {
+      // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED) {
+        try {
+          // Get organization info for context
+          let orgContext = null;
+          if (newUser.organisationId) {
+            const organisation = await getOrgById(storage, newUser.organisationId);
+            if (organisation) {
+              orgContext = {
+                name: organisation.name,
+                displayName: organisation.displayName || organisation.name
+              };
+            }
+          }
+
+          const context = {
+            user: {
+              name: `${newUser.firstName} ${newUser.lastName}`,
+              email: newUser.email,
+              firstName: newUser.firstName,
+              lastName: newUser.lastName,
+              fullName: `${newUser.firstName} ${newUser.lastName}`
+            },
+            org: orgContext,
+            addedBy: {
+              name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
+            },
+            addedAt: new Date().toISOString(),
+            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app',
+            temporaryPassword: password || undefined // Include password for admin users
+          };
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'USER_FAST_ADD',
+            templateKey: 'new_user_welcome',
+            toEmail: newUser.email,
+            context,
+            organisationId: newUser.organisationId || undefined,
+            resourceId: newUser.id,
+            priority: 1
+          });
+          
+          console.log(`✅ USER_FAST_ADD email queued for ${newUser.email} (Admin/SuperAdmin created)`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue USER_FAST_ADD email:', emailError);
+          // Don't fail user creation if email fails
+        }
+      }
+      
+      // LEGACY: Send welcome email for admin users with their password
+      // TODO: Remove this when EMAIL_TEMPLATES_V2 is fully deployed
+      if (!EMAIL_TEMPLATES_V2_ENABLED && validatedData.role === 'admin' && password) {
         try {
           // For admin users, get their organization ID
           const orgId = newUser.organisationId || validatedData.organisationId;
@@ -8683,8 +8907,57 @@ This test was initiated by ${user.email}.
 
       const assignment = await storage.createAssignment(assignmentData);
       
-      // Send course assignment notification to organization admins
-      if (assignment.organisationId) {
+      // Send course assignment email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED) {
+        try {
+          const organisation = assignment.organisationId ? await storage.getOrganisation(assignment.organisationId) : null;
+          const context = {
+            user: {
+              name: `${targetUser.firstName} ${targetUser.lastName}`,
+              email: targetUser.email,
+              firstName: targetUser.firstName,
+              lastName: targetUser.lastName,
+              fullName: `${targetUser.firstName} ${targetUser.lastName}`
+            },
+            course: {
+              title: course.title,
+              description: course.description,
+              estimatedDuration: course.estimatedDuration
+            },
+            org: organisation ? {
+              name: organisation.name,
+              displayName: organisation.displayName || organisation.name
+            } : null,
+            assignedBy: {
+              name: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email || 'Administrator'
+            },
+            assignedAt: new Date().toISOString(),
+            dueDate: assignmentData.dueDate?.toISOString() || null,
+            courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${courseId}`,
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+          };
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'COURSE_ASSIGNED',
+            templateKey: 'course_assigned',
+            toEmail: targetUser.email,
+            context,
+            organisationId: assignment.organisationId || undefined,
+            resourceId: assignment.id,
+            priority: 2,
+            idempotencyKey: `COURSE_ASSIGNED:${targetUser.email}:${courseId}:${assignment.id}`
+          });
+          
+          console.log(`✅ COURSE_ASSIGNED email queued for ${targetUser.email} (Individual assignment: ${course.title})`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue COURSE_ASSIGNED email:', emailError);
+          // Don't fail assignment if email fails
+        }
+      }
+      
+      // LEGACY: Send course assignment notification to organization admins
+      // TODO: Remove this when EMAIL_TEMPLATES_V2 is fully deployed
+      if (!EMAIL_TEMPLATES_V2_ENABLED && assignment.organisationId) {
         const organization = await storage.getOrganisation(assignment.organisationId);
         if (organization) {
           const adminEmails = await getOrganizationAdminEmails(organization.id);
@@ -10362,8 +10635,64 @@ This test was initiated by ${user.email}.
 
       const assignment = await storage.createAssignment(validatedData);
       
-      // Send course assignment notification to organization admins
-      if (assignment.organisationId && assignment.courseId && assignment.userId) {
+      // Send course assignment email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+      if (EMAIL_TEMPLATES_V2_ENABLED && assignment.organisationId && assignment.courseId && assignment.userId) {
+        try {
+          const [organization, course, targetUser] = await Promise.all([
+            storage.getOrganisation(assignment.organisationId),
+            storage.getCourse(assignment.courseId),
+            storage.getUser(assignment.userId)
+          ]);
+          
+          if (organization && course && targetUser) {
+            const context = {
+              user: {
+                name: `${targetUser.firstName} ${targetUser.lastName}`,
+                email: targetUser.email,
+                firstName: targetUser.firstName,
+                lastName: targetUser.lastName,
+                fullName: `${targetUser.firstName} ${targetUser.lastName}`
+              },
+              course: {
+                title: course.title,
+                description: course.description,
+                estimatedDuration: course.estimatedDuration
+              },
+              org: {
+                name: organization.name,
+                displayName: organization.displayName || organization.name
+              },
+              assignedBy: {
+                name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
+              },
+              assignedAt: new Date().toISOString(),
+              dueDate: assignment.dueDate?.toISOString() || null,
+              courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${assignment.courseId}`,
+              supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
+            };
+
+            await emailOrchestrator.queue({
+              triggerEvent: 'COURSE_ASSIGNED',
+              templateKey: 'course_assigned',
+              toEmail: targetUser.email,
+              context,
+              organisationId: assignment.organisationId,
+              resourceId: assignment.id,
+              priority: 2,
+              idempotencyKey: `COURSE_ASSIGNED:${targetUser.email}:${assignment.courseId}:${assignment.id}`
+            });
+            
+            console.log(`✅ COURSE_ASSIGNED email queued for ${targetUser.email} (Individual assignment v2: ${course.title})`);
+          }
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue COURSE_ASSIGNED email:', emailError);
+          // Don't fail assignment if email fails
+        }
+      }
+      
+      // LEGACY: Send course assignment notification to organization admins
+      // TODO: Remove this when EMAIL_TEMPLATES_V2 is fully deployed
+      if (!EMAIL_TEMPLATES_V2_ENABLED && assignment.organisationId && assignment.courseId && assignment.userId) {
         try {
           const [organization, course, targetUser] = await Promise.all([
             storage.getOrganisation(assignment.organisationId),
