@@ -12396,55 +12396,26 @@ This test was initiated by ${user.email}.
               scormData: scormData,
             });
             
-            // Send course completion/failure notification to organization admins
-            if (assignment.organisationId) {
-              const [organization, course, user] = await Promise.all([
-                storage.getOrganisation(assignment.organisationId),
-                storage.getCourse(assignment.courseId),
-                storage.getUser(userId)
-              ]);
-              
-              if (organization && course && user) {
-                const adminEmails = await getOrganizationAdminEmails(organization.id);
-                
-                if (adminEmails.length > 0) {
-                  const emailData = {
-                    org: formatOrgDataForEmail(organization),
-                    admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
-                    user: formatUserDataForEmail(user, organization),
-                    course: formatCourseDataForEmail(course),
-                    completion: {
-                      score: attemptData.scoreRaw || 0,
-                      status: passed ? 'pass' : 'fail',
-                      completion_date: new Date().toISOString()
-                    }
-                  };
-                  
-                  if (passed) {
-                    // Course Completion event
-                    await sendMultiRecipientNotification(
-                      'Course Completion',
-                      adminEmails,
-                      (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
-                        adminEmail,
-                        buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: attemptData.scoreRaw || 0, status: 'completed', timeSpent: 0 }),
-                        organization.id
-                      )
-                    );
-                  } else {
-                    // Course Failure event  
-                    await sendMultiRecipientNotification(
-                      'Course Failure',
-                      adminEmails,
-                      (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
-                        adminEmail,
-                        buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: attemptData.scoreRaw || 0, status: 'failed', timeSpent: 0 }),
-                        organization.id
-                      )
-                    );
-                  }
-                }
+            // Send course completion/failure notification to organization admins using EmailNotificationService
+            try {
+              if (passed) {
+                await emailNotificationService.notifyLearnerCompletedCourse(
+                  assignment.organisationId,
+                  userId,
+                  assignment.courseId,
+                  completion.id
+                );
+              } else {
+                await emailNotificationService.notifyLearnerFailedCourse(
+                  assignment.organisationId,
+                  userId,
+                  assignment.courseId,
+                  completion.id
+                );
               }
+            } catch (notificationError) {
+              console.error('Error sending course completion/failure notification:', notificationError);
+              // Don't let notification errors break the completion process
             }
           }
         } else if (assignment.status === 'not_started' && (attemptData.progressPercent > 0 || reason === 'commit' || reason === 'finish')) {
@@ -12527,55 +12498,27 @@ This test was initiated by ${user.email}.
         scormData: completionData.sessionData,
       });
       
-      // Send course completion/failure notification to organization admins
-      if (assignment.organisationId) {
-        const [organization, user] = await Promise.all([
-          storage.getOrganisation(assignment.organisationId),
-          storage.getUser(userId)
-        ]);
-        
-        if (organization && user) {
-          const adminEmails = await getOrganizationAdminEmails(organization.id);
-          
-          if (adminEmails.length > 0) {
-            const isPassed = completionData.status === 'passed';
-            const emailData = {
-              org: formatOrgDataForEmail(organization),
-              admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
-              user: formatUserDataForEmail(user, organization),
-              course: formatCourseDataForEmail(course),
-              completion: {
-                score: completionData.score || 0,
-                status: isPassed ? 'pass' : 'fail',
-                completion_date: new Date().toISOString()
-              }
-            };
-            
-            if (isPassed) {
-              // Course Completion event
-              await sendMultiRecipientNotification(
-                'Course Completion',
-                adminEmails,
-                (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
-                  adminEmail,
-                  buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'completed', timeSpent: 0 }),
-                  organization.id
-                )
-              );
-            } else {
-              // Course Failure event  
-              await sendMultiRecipientNotification(
-                'Course Failure',
-                adminEmails,
-                (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
-                  adminEmail,
-                  buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'failed', timeSpent: 0 }),
-                  organization.id
-                )
-              );
-            }
-          }
+      // Send course completion/failure notification to organization admins using EmailNotificationService
+      try {
+        const isPassed = completionData.status === 'passed';
+        if (isPassed) {
+          await emailNotificationService.notifyLearnerCompletedCourse(
+            assignment.organisationId,
+            userId,
+            assignment.courseId,
+            completion.id
+          );
+        } else {
+          await emailNotificationService.notifyLearnerFailedCourse(
+            assignment.organisationId,
+            userId,
+            assignment.courseId,
+            completion.id
+          );
         }
+      } catch (notificationError) {
+        console.error('Error sending course completion/failure notification:', notificationError);
+        // Don't let notification errors break the completion process
       }
 
       // Update assignment status
@@ -12748,56 +12691,24 @@ This test was initiated by ${user.email}.
             console.log(`📋 Creating completion record:`, completionData);
             const completion = await storage.createCompletion(completionData);
             
-            // Send course completion/failure notification to organization admins
+            // Send course completion/failure notification to organization admins using EmailNotificationService
             if (completionData.organisationId && completionData.courseId) {
               try {
-                const [organization, course, user] = await Promise.all([
-                  storage.getOrganisation(completionData.organisationId),
-                  storage.getCourse(completionData.courseId),
-                  storage.getUser(completionData.userId)
-                ]);
-                
-                if (organization && course && user) {
-                  const adminEmails = await getOrganizationAdminEmails(organization.id);
-                  
-                  if (adminEmails.length > 0) {
-                    const isPassed = completionData.status === 'pass';
-                    const emailData = {
-                      org: formatOrgDataForEmail(organization),
-                      admin: formatUserDataForEmail(user, organization), // Use learner as default admin context
-                      user: formatUserDataForEmail(user, organization),
-                      course: formatCourseDataForEmail(course),
-                      completion: {
-                        score: completionData.score || 0,
-                        status: completionData.status,
-                        completion_date: new Date().toISOString()
-                      }
-                    };
-                    
-                    if (isPassed) {
-                      // Course Completion event
-                      await sendMultiRecipientNotification(
-                        'Course Completion',
-                        adminEmails,
-                        (adminEmail) => emailTemplateService.sendLearnerCompletedNotification(
-                          adminEmail,
-                          buildLearnerCompletedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'completed', timeSpent: 0 }),
-                          organization.id
-                        )
-                      );
-                    } else {
-                      // Course Failure event  
-                      await sendMultiRecipientNotification(
-                        'Course Failure',
-                        adminEmails,
-                        (adminEmail) => emailTemplateService.sendLearnerFailedNotification(
-                          adminEmail,
-                          buildLearnerFailedNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, user, course, { score: completionData.score || 0, status: 'failed', timeSpent: 0 }),
-                          organization.id
-                        )
-                      );
-                    }
-                  }
+                const isPassed = completionData.status === 'pass';
+                if (isPassed) {
+                  await emailNotificationService.notifyLearnerCompletedCourse(
+                    completionData.organisationId,
+                    completionData.userId,
+                    completionData.courseId,
+                    completion.id
+                  );
+                } else {
+                  await emailNotificationService.notifyLearnerFailedCourse(
+                    completionData.organisationId,
+                    completionData.userId,
+                    completionData.courseId,
+                    completion.id
+                  );
                 }
               } catch (emailError) {
                 console.error('Error sending completion/failure notification:', emailError);
