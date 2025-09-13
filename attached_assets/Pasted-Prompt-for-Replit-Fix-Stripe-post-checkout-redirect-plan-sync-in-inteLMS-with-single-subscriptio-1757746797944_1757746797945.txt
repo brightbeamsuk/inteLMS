@@ -1,0 +1,201 @@
+Prompt for Replit: Fix Stripe post-checkout redirect + plan sync in inteLMS (with single-subscription rule)
+
+Context
+
+We use Stripe Checkout to upgrade plans and adjust “User Licensed Seats”.
+
+After payment, Stripe currently redirects to a blank “Not Found” page.
+
+We need clean redirects back to the LMS Billing page with success/failure banners, and tight plan/seat sync with Stripe.
+
+New requirement: One active Stripe subscription per organisation. If none exists, create it. If one exists, update it (do not create another).
+
+Goal
+
+On successful Stripe Checkout: redirect to /billing with a green confirmation banner and show updated plan/seats.
+
+On cancelled/failed Checkout: redirect to /billing with a red error banner and keep existing plan/seats unchanged.
+
+Keep LMS fully in sync with Stripe.
+
+Enforce a single active subscription per organisation.
+
+Do NOT change
+
+Existing email/API settings.
+
+Existing Stripe API keys or webhook secrets (.env).
+
+A) Checkout redirect URLs
+
+When creating the Checkout Session, use:
+
+success_url = https://<OUR_LMS_DOMAIN>/billing?status=success&csid={CHECKOUT_SESSION_ID}
+
+cancel_url = https://<OUR_LMS_DOMAIN>/billing?status=cancelled
+
+Always set metadata to link to our tenant and intent:
+
+org_id, user_id, intended_plan_id, intended_seats.
+
+If upgrading seats or plan and the org already has an active Stripe subscription, pass the existing subscription id into Checkout so it amends that subscription (no new subscription is created). Also set the quantity for seat increases.
+
+B) Front-end route + UI
+
+Ensure SPA route /billing always resolves (no 404) and the server falls back to index.html for deep links.
+
+/billing reads status and optional csid:
+
+status=success → green banner: “Your plan has been updated and payment completed.”
+
+status=cancelled or status=failed → red banner: “Payment was not successful. Please try again.”
+
+If csid present, call the verification endpoint (Section C) to confirm state and refresh billing data (plan, seats, next billing date).
+
+C) Back-end verification endpoint
+
+Add GET /api/billing/verify-checkout?csid=....
+
+Server retrieves the Checkout Session, then the related Subscription & Invoice.
+
+If paid/successful:
+
+Update our DB with stripe_customer_id, stripe_subscription_id, plan_id, licensed_seats, status, current_period_end.
+
+If incomplete/failed/cancelled: return failure; do not change plan/seats.
+
+Return concise JSON for the billing page.
+
+D) Webhook handling (source of truth)
+
+Single webhook at POST /api/stripe/webhook, verify signature, process idempotently (dedupe on event.id).
+
+Handle:
+
+checkout.session.completed → mark pending update using metadata.
+
+invoice.paid (authoritative success) → update DB plan/quantity/status/period end from the Subscription.
+
+invoice.payment_failed → mark failure; no DB changes to plan/seats.
+
+customer.subscription.updated → mirror plan/quantity/status changes.
+
+customer.subscription.deleted → mark LMS subscription cancelled (now or at period end).
+
+E) Fix the “Not Found”
+
+Define /billing in the front-end router and ensure server SPA fallback so /billing never 404s.
+
+F) Database updates
+
+Keep these fields accurate on every success:
+
+org_id, stripe_customer_id, stripe_subscription_id, plan_id, licensed_seats, status (active/trialing/past_due/canceled), current_period_end, updated_at.
+
+On failure/cancel: no changes to plan/quantity; log error.
+
+NEW: G) Single-subscription rule (create if none, update if exists)
+
+Objective: For each organisation, maintain one and only one active Stripe subscription.
+
+Server-side logic before creating a Checkout Session:
+
+Look up organisation record by org_id. If we don’t yet have a stripe_customer_id:
+
+Create (or retrieve) a Stripe Customer for this org and save stripe_customer_id.
+
+Check for an existing active Stripe subscription for this stripe_customer_id:
+
+Query Stripe for subscriptions of this customer with status in ['trialing','active','past_due','unpaid'].
+
+Also check our DB for an existing stripe_subscription_id linked to this org with an active-like status.
+
+Branch:
+
+If none exists → Create a new subscription via Stripe Checkout (mode: subscription) using our target price/plan and the requested quantity (licensed seats). Save the resulting stripe_subscription_id on success.
+
+If one exists → Update the existing subscription via Checkout by passing the subscription id into the Checkout Session so Checkout amends that subscription (e.g., price change and/or quantity change). Do not create a second subscription.
+
+Always include metadata (org_id, user_id, intended_plan_id, intended_seats) and a client_reference_id for traceability.
+
+Webhook guardrails:
+
+In the webhook handler, when receiving checkout.session.completed, invoice.paid, or customer.subscription.updated:
+
+Use customer + subscription from the event to map back to the same org (by stripe_customer_id or stored mapping).
+
+If a race condition ever attempts to attach a second active subscription:
+
+Prefer the most recent paid subscription.
+
+Cancel the redundant older one in Stripe (immediately or at period end, according to our business rule), and update the DB so only one active remains.
+
+Ensure idempotency: store processed event.ids and safely upsert the single stripe_subscription_id for that org.
+
+DB constraint (enforcement):
+
+Add a unique partial index or application-level constraint to enforce one active subscription per org_id.
+
+Example: (org_id, status IN ['trialing','active','past_due','unpaid']) unique.
+
+If the DB doesn’t support partial indexes, enforce in application logic with a pre-save check and transaction.
+
+Data hygiene / migration (one-off):
+
+Add a small migration script to:
+
+Scan for orgs with >1 active-like Stripe subscriptions.
+
+Keep the newest paid subscription as canonical; cancel others (immediately or at period end per policy).
+
+Update DB to reference the single canonical stripe_subscription_id.
+
+H) Edge cases
+
+3-D Secure / delayed payment → treat checkout.session.completed as pending; finalise on invoice.paid.
+
+Proration → accept Stripe defaults; mirror final values.
+
+Concurrency / double-clicks → rely on webhook idempotency and event.id dedupe; only one active subscription survives.
+
+Previously cancelled-at-period-end → if user upgrades, update that same subscription (reactivated by Stripe if applicable), not a new one.
+
+I) Testing checklist
+
+Org with no subscription → start Checkout, pay → lands at /billing?status=success&csid=…; DB has one active subscription with correct plan/quantity/dates.
+
+Org with active subscription → increase seats and pay → quantity updates on the same subscription (no new sub created).
+
+Cancel Checkout → lands at /billing?status=cancelled; no DB changes.
+
+Simulate invoice.payment_failed → red banner; no plan/seat changes.
+
+Manually change subscription in Stripe (plan or quantity) → LMS reflects via webhook.
+
+Attempt to trigger two overlapping upgrades → only one active subscription remains; duplicates are prevented/collapsed.
+
+Acceptance criteria
+
+No more “Not Found” after Stripe redirect; /billing always loads.
+
+Success path shows confirmation and reflects updated plan/seats.
+
+Failure/cancel path shows an error and keeps previous plan/seats.
+
+Exactly one active subscription per organisation is enforced:
+
+New orgs get a new subscription.
+
+Existing orgs update their existing subscription (no duplicates).
+
+LMS and Stripe stay in sync after every change.
+
+Processing is idempotent and robust to retries/races.
+
+Keep environment/config
+
+Keep existing Stripe keys, webhook secret, domain config, and plan/price mapping.
+
+Reuse current tenant/user identification.
+
+Please implement all of the above and replace any previous redirect/subscription handling with this single, canonical flow.
