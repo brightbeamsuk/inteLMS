@@ -84,63 +84,200 @@ interface BillingPreview {
   };
 }
 
+interface CheckoutVerificationResult {
+  success: boolean;
+  message?: string;
+  planName?: string;
+  userCount?: number;
+  subscriptionId?: string;
+  billingAmount?: number;
+  currency?: string;
+  status?: string;
+  organisation?: any;
+}
+
+interface BannerState {
+  show: boolean;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  details?: any;
+  dismissible: boolean;
+  autoHide: boolean;
+}
+
 export function AdminBilling() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   
-  // Handle Stripe checkout return
+  // Banner state
+  const [banner, setBanner] = useState<BannerState | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  
+  // Auto-hide banner effect
   useEffect(() => {
-    // Check for URL parameters first
+    if (banner?.autoHide && banner.show) {
+      const timer = setTimeout(() => {
+        setBanner(prev => prev ? { ...prev, show: false } : null);
+      }, 12000); // 12 seconds auto-hide
+      
+      return () => clearTimeout(timer);
+    }
+  }, [banner]);
+  
+  // Verification mutation
+  const verifyCheckoutMutation = useMutation({
+    mutationFn: async (csid: string): Promise<CheckoutVerificationResult> => {
+      const response = await fetch(`/api/billing/verify-checkout?csid=${csid}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to verify checkout session');
+      }
+      
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      setIsVerifying(false);
+      
+      if (data.success) {
+        setBanner({
+          show: true,
+          type: 'success',
+          title: 'Payment Successful!',
+          message: `Your subscription has been successfully updated${data.planName ? ` to ${data.planName}` : ''}.`,
+          details: data,
+          dismissible: true,
+          autoHide: true
+        });
+        
+        // Refresh billing data
+        queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
+      } else {
+        setBanner({
+          show: true,
+          type: 'error',
+          title: 'Verification Failed',
+          message: data.message || 'Unable to verify your payment. Please contact support.',
+          dismissible: true,
+          autoHide: false
+        });
+      }
+    },
+    onError: (error: Error) => {
+      setIsVerifying(false);
+      setBanner({
+        show: true,
+        type: 'error',
+        title: 'Verification Error',
+        message: error.message || 'Failed to verify checkout session. Please contact support.',
+        dismissible: true,
+        autoHide: false
+      });
+    }
+  });
+  
+  // Handle URL parameters for checkout returns
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    const csid = urlParams.get('csid');
+    
+    // Handle new status-based parameters
+    if (status) {
+      switch (status) {
+        case 'success':
+          if (csid) {
+            // Show loading and verify checkout session
+            setIsVerifying(true);
+            setBanner({
+              show: true,
+              type: 'info',
+              title: 'Verifying Payment...',
+              message: 'Please wait while we confirm your subscription changes.',
+              dismissible: false,
+              autoHide: false
+            });
+            
+            // Start verification
+            verifyCheckoutMutation.mutate(csid);
+          } else {
+            setBanner({
+              show: true,
+              type: 'success',
+              title: 'Payment Successful!',
+              message: 'Your subscription has been updated successfully.',
+              dismissible: true,
+              autoHide: true
+            });
+          }
+          break;
+          
+        case 'cancelled':
+          setBanner({
+            show: true,
+            type: 'warning',
+            title: 'Payment Cancelled',
+            message: 'Your payment was cancelled. No changes have been made to your subscription.',
+            dismissible: true,
+            autoHide: true
+          });
+          break;
+          
+        case 'failed':
+          setBanner({
+            show: true,
+            type: 'error',
+            title: 'Payment Failed',
+            message: 'Your payment could not be processed. Please try again or contact support.',
+            dismissible: true,
+            autoHide: false
+          });
+          break;
+      }
+      
+      // Clear URL parameters after processing
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+    
+    // Legacy parameter handling for backward compatibility
     const urlSuccess = urlParams.get('success');
     const urlCancelled = urlParams.get('cancelled');
     const urlSessionId = urlParams.get('session_id');
     const urlSetup = urlParams.get('setup');
     
-    // Check for stored return info from localStorage
-    const storedReturn = localStorage.getItem('stripe-return');
-    let returnInfo = null;
-    
-    if (storedReturn) {
-      try {
-        returnInfo = JSON.parse(storedReturn);
-        // Clear stored return info
-        localStorage.removeItem('stripe-return');
-      } catch (e) {
-        console.error('Failed to parse stored return info:', e);
-      }
-    }
-    
-    // Use URL parameters if available, otherwise use stored info
-    const success = urlSuccess === 'true' || returnInfo?.success;
-    const cancelled = urlCancelled === 'true' || returnInfo?.cancelled;
-    const sessionId = urlSessionId || returnInfo?.sessionId;
-    const setup = urlSetup || returnInfo?.setup;
-    
-    if (success && setup === 'complete') {
-      toast({
-        title: "Subscription Setup Complete!",
-        description: "Your billing has been successfully configured. Your subscription is now active.",
+    if (urlSuccess === 'true' && urlSetup === 'complete') {
+      setBanner({
+        show: true,
+        type: 'success',
+        title: 'Subscription Setup Complete!',
+        message: 'Your billing has been successfully configured. Your subscription is now active.',
+        dismissible: true,
+        autoHide: true
       });
       
-      // Refresh all billing-related data
       queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
-      
-      // Clear URL parameters to prevent showing the message again
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (cancelled && setup === 'cancelled') {
-      toast({
-        title: "Setup Cancelled",
-        description: "Subscription setup was cancelled. You can try again anytime.",
-        variant: "default",
+    } else if (urlCancelled === 'true' && urlSetup === 'cancelled') {
+      setBanner({
+        show: true,
+        type: 'warning',
+        title: 'Setup Cancelled',
+        message: 'Subscription setup was cancelled. You can try again anytime.',
+        dismissible: true,
+        autoHide: true
       });
       
-      // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [toast, queryClient, user?.organisationId]);
+  }, [verifyCheckoutMutation, queryClient, user?.organisationId]);
   
   // Local state
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
@@ -497,10 +634,81 @@ export function AdminBilling() {
     });
   };
 
-  // Removed checkout verification loading overlay - using direct updates
-
+  // Banner component
+  const renderBanner = () => {
+    if (!banner || !banner.show) return null;
+    
+    const alertClass = {
+      success: 'alert-success',
+      error: 'alert-error', 
+      warning: 'alert-warning',
+      info: 'alert-info'
+    }[banner.type];
+    
+    const iconClass = {
+      success: 'fas fa-check-circle',
+      error: 'fas fa-exclamation-triangle',
+      warning: 'fas fa-exclamation-circle', 
+      info: 'fas fa-info-circle'
+    }[banner.type];
+    
+    return (
+      <div className={`alert ${alertClass} mb-6 shadow-lg`} data-testid={`banner-${banner.type}`}>
+        <div className="flex items-center gap-3">
+          {isVerifying ? (
+            <span className="loading loading-spinner loading-sm"></span>
+          ) : (
+            <i className={`${iconClass} text-lg`}></i>
+          )}
+          <div className="flex-1">
+            <h3 className="font-bold text-base" data-testid="banner-title">{banner.title}</h3>
+            <div className="text-sm opacity-90" data-testid="banner-message">{banner.message}</div>
+            {banner.details && banner.type === 'success' && (
+              <div className="text-xs mt-2 opacity-80">
+                {banner.details.planName && <div>Plan: {banner.details.planName}</div>}
+                {banner.details.userCount && <div>Licensed Users: {banner.details.userCount}</div>}
+                {banner.details.subscriptionId && (
+                  <div className="font-mono text-xs">ID: {banner.details.subscriptionId}</div>
+                )}
+              </div>
+            )}
+          </div>
+          {banner.dismissible && (
+            <button 
+              className="btn btn-ghost btn-sm btn-circle"
+              onClick={() => setBanner(prev => prev ? { ...prev, show: false } : null)}
+              data-testid="banner-dismiss"
+            >
+              <i className="fas fa-times"></i>
+            </button>
+          )}
+        </div>
+        {banner.type === 'error' && (
+          <div className="mt-3 flex gap-2">
+            <button 
+              className="btn btn-sm btn-outline"
+              onClick={() => setBanner(prev => prev ? { ...prev, show: false } : null)}
+              data-testid="banner-close"
+            >
+              Close
+            </button>
+            <button 
+              className="btn btn-sm btn-primary"
+              onClick={() => window.location.href = 'mailto:support@intellms.app'}
+              data-testid="banner-contact-support"
+            >
+              Contact Support
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+  
   return (
     <div>
+      {/* Checkout Status Banner */}
+      {renderBanner()}
       {/* Breadcrumbs */}
       <div className="text-sm breadcrumbs mb-6">
         <ul>
