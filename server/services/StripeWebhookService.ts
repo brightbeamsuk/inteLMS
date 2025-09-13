@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import { storage } from '../storage';
 import type { Organisation, Plan, InsertWebhookEvent } from '../../shared/schema';
 import { nanoid } from 'nanoid';
+import { billingLockService } from './BillingLockService.js';
 
 export class StripeWebhookService {
   private stripe: Stripe;
@@ -62,13 +63,17 @@ export class StripeWebhookService {
 
   /**
    * Process Stripe webhook event with persistent idempotency protection and transaction safety
+   * Includes webhook event ordering validation and stale event detection
    */
   async processWebhookEvent(event: Stripe.Event): Promise<{ success: boolean; message: string }> {
     const correlationId = `webhook-${event.id}-${nanoid(8)}`;
+    const eventTimestamp = new Date(event.created * 1000);
+    
     console.log(`📨 Processing webhook event [${correlationId}]:`, {
       type: event.type,
       id: event.id,
-      created: new Date(event.created * 1000).toISOString()
+      created: eventTimestamp.toISOString(),
+      age_seconds: Math.floor((Date.now() - eventTimestamp.getTime()) / 1000)
     });
 
     // Persistent idempotency check using database storage
@@ -76,6 +81,23 @@ export class StripeWebhookService {
     if (isAlreadyProcessed) {
       console.log(`⚠️  Event ${event.id} already processed (found in database), skipping`);
       return { success: true, message: 'Event already processed' };
+    }
+
+    // Webhook event ordering validation and stale event detection
+    const orderingResult = await this.validateEventOrdering(event, correlationId);
+    if (!orderingResult.shouldProcess) {
+      console.warn(`⚠️  Event ${event.id} rejected due to ordering validation [${correlationId}]:`, orderingResult.reason);
+      
+      // Record the rejected event for monitoring
+      await storage.recordWebhookEvent({
+        stripeEventId: event.id,
+        eventType: event.type,
+        success: false,
+        errorMessage: `Event ordering validation failed: ${orderingResult.reason}`,
+        correlationId
+      });
+      
+      return { success: true, message: `Event rejected: ${orderingResult.reason}` };
     }
 
     // Process webhook event with retries for transient failures
@@ -108,12 +130,30 @@ export class StripeWebhookService {
           case 'invoice.payment_failed':
             result = await this.handleInvoicePaymentFailed(event, correlationId);
             break;
+          case 'payment_intent.requires_action':
+            result = await this.handlePaymentIntentRequiresAction(event, correlationId);
+            break;
+          case 'payment_intent.succeeded':
+            result = await this.handlePaymentIntentSucceeded(event, correlationId);
+            break;
+          case 'payment_intent.payment_failed':
+            result = await this.handlePaymentIntentFailed(event, correlationId);
+            break;
+          case 'setup_intent.succeeded':
+            result = await this.handleSetupIntentSucceeded(event, correlationId);
+            break;
+          case 'checkout.session.expired':
+            result = await this.handleCheckoutSessionExpired(event, correlationId);
+            break;
+          case 'customer.subscription.trial_will_end':
+            result = await this.handleTrialWillEnd(event, correlationId);
+            break;
           default:
             console.log(`🤷 Unhandled webhook event type: ${event.type}`);
             result = { success: true, message: `Event type ${event.type} not processed` };
         }
 
-        // If processing succeeded, record the webhook event and return
+        // If processing succeeded, record the webhook event and update timestamp
         if (result.success) {
           try {
             await storage.recordWebhookEvent({
@@ -123,6 +163,9 @@ export class StripeWebhookService {
               errorMessage: null,
               correlationId
             });
+            
+            // Update last processed timestamp for event ordering
+            await this.updateLastProcessedTimestamp(event, correlationId);
           } catch (recordError) {
             console.error(`Failed to record successful webhook event [${correlationId}]:`, recordError);
             // Continue anyway - processing was successful
@@ -716,6 +759,302 @@ export class StripeWebhookService {
   }
 
   /**
+   * Handle payment_intent.requires_action webhook (3DS authentication required)
+   */
+  private async handlePaymentIntentRequiresAction(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    
+    console.log(`🔐 Payment intent requires action (3DS) [${correlationId}]:`, {
+      paymentIntentId: paymentIntent.id,
+      customerId: paymentIntent.customer,
+      status: paymentIntent.status,
+      nextAction: paymentIntent.next_action?.type,
+      metadata: paymentIntent.metadata
+    });
+
+    // Find organization from payment intent metadata
+    const orgId = paymentIntent.metadata?.org_id;
+    if (!orgId) {
+      return {
+        success: false,
+        message: 'No org_id in payment intent metadata for 3DS authentication'
+      };
+    }
+
+    const organisation = await storage.getOrganisation(orgId);
+    if (!organisation) {
+      return {
+        success: false,
+        message: `Organization not found for org_id: ${orgId}`
+      };
+    }
+
+    // Update organization status to pending 3DS
+    await storage.updateOrganisationBilling(organisation.id, {
+      billingStatus: 'pending_3ds',
+      lastBillingSync: new Date(),
+    });
+
+    console.log(`✅ 3DS authentication pending for org ${organisation.name} [${correlationId}]`);
+
+    return {
+      success: true,
+      message: `3DS authentication required for organization ${organisation.name}`
+    };
+  }
+
+  /**
+   * Handle payment_intent.succeeded webhook (3DS authentication completed)
+   */
+  private async handlePaymentIntentSucceeded(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    
+    console.log(`✅ Payment intent succeeded [${correlationId}]:`, {
+      paymentIntentId: paymentIntent.id,
+      customerId: paymentIntent.customer,
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency,
+      metadata: paymentIntent.metadata
+    });
+
+    // Check if this payment is associated with a subscription setup
+    if (paymentIntent.invoice) {
+      console.log(`Payment for invoice ${paymentIntent.invoice}, subscription billing will handle this [${correlationId}]`);
+      return {
+        success: true,
+        message: 'Payment succeeded - will be handled by invoice.paid webhook'
+      };
+    }
+
+    // Handle standalone payment intent (like setup fees or one-time charges)
+    const orgId = paymentIntent.metadata?.org_id;
+    if (orgId) {
+      const organisation = await storage.getOrganisation(orgId);
+      if (organisation) {
+        // Update billing status if currently pending 3DS
+        if (organisation.billingStatus === 'pending_3ds') {
+          await storage.updateOrganisationBilling(organisation.id, {
+            billingStatus: 'active',
+            lastBillingSync: new Date(),
+          });
+          
+          console.log(`✅ Organization ${organisation.name} activated after 3DS completion [${correlationId}]`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: `Payment succeeded for amount ${paymentIntent.amount / 100} ${paymentIntent.currency.toUpperCase()}`
+    };
+  }
+
+  /**
+   * Handle payment_intent.payment_failed webhook
+   */
+  private async handlePaymentIntentFailed(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    
+    console.log(`❌ Payment intent failed [${correlationId}]:`, {
+      paymentIntentId: paymentIntent.id,
+      customerId: paymentIntent.customer,
+      lastPaymentError: paymentIntent.last_payment_error?.message,
+      metadata: paymentIntent.metadata
+    });
+
+    const orgId = paymentIntent.metadata?.org_id;
+    if (orgId) {
+      const organisation = await storage.getOrganisation(orgId);
+      if (organisation) {
+        // Update billing status to reflect payment failure
+        await storage.updateOrganisationBilling(organisation.id, {
+          billingStatus: 'payment_failed',
+          lastBillingSync: new Date(),
+        });
+        
+        console.log(`❌ Organization ${organisation.name} marked as payment failed [${correlationId}]`);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Payment failed: ${paymentIntent.last_payment_error?.message || 'Unknown error'}`
+    };
+  }
+
+  /**
+   * Handle setup_intent.succeeded webhook (payment method setup completed)
+   */
+  private async handleSetupIntentSucceeded(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const setupIntent = event.data.object as Stripe.SetupIntent;
+    
+    console.log(`🔧 Setup intent succeeded [${correlationId}]:`, {
+      setupIntentId: setupIntent.id,
+      customerId: setupIntent.customer,
+      paymentMethodId: setupIntent.payment_method,
+      metadata: setupIntent.metadata
+    });
+
+    // If this setup intent has subscription update metadata, process the subscription change
+    const metadata = setupIntent.metadata || {};
+    if (metadata.action === 'update_existing_subscription' && metadata.target_subscription_id) {
+      try {
+        // Now that payment method is set up, update the subscription
+        const subscriptionId = metadata.target_subscription_id;
+        const newPriceId = metadata.new_price_id;
+        const newQuantity = metadata.new_quantity;
+
+        if (newPriceId) {
+          const updateParams: any = {
+            items: [{
+              id: (await this.stripe.subscriptions.retrieve(subscriptionId)).items.data[0].id,
+              price: newPriceId,
+            }],
+            proration_behavior: 'create_prorations',
+          };
+
+          if (newQuantity) {
+            updateParams.items[0].quantity = parseInt(newQuantity);
+          }
+
+          await this.stripe.subscriptions.update(subscriptionId, updateParams);
+          
+          console.log(`✅ Subscription ${subscriptionId} updated after setup intent completion [${correlationId}]`);
+        }
+      } catch (error) {
+        console.error(`Failed to update subscription after setup intent [${correlationId}]:`, error);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Setup intent completed successfully'
+    };
+  }
+
+  /**
+   * Handle checkout.session.expired webhook
+   */
+  private async handleCheckoutSessionExpired(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const session = event.data.object as Stripe.Checkout.Session;
+    
+    console.log(`⏰ Checkout session expired [${correlationId}]:`, {
+      sessionId: session.id,
+      customerId: session.customer,
+      metadata: session.metadata,
+      created: new Date(session.created * 1000),
+      expiresAt: new Date(session.expires_at * 1000)
+    });
+
+    const metadata = session.metadata || {};
+    const orgId = metadata.org_id;
+
+    if (orgId) {
+      const organisation = await storage.getOrganisation(orgId);
+      if (organisation && organisation.billingStatus === 'incomplete') {
+        // Reset billing status if it was left in incomplete state
+        await storage.updateOrganisationBilling(organisation.id, {
+          billingStatus: 'setup_required',
+          lastBillingSync: new Date(),
+        });
+        
+        console.log(`🔄 Organization ${organisation.name} reset from incomplete to setup_required after session expiry [${correlationId}]`);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Checkout session ${session.id} expired - organization status updated if needed`
+    };
+  }
+
+  /**
+   * Handle customer.subscription.trial_will_end webhook
+   */
+  private async handleTrialWillEnd(event: Stripe.Event, correlationId: string): Promise<{ success: boolean; message: string }> {
+    const subscription = event.data.object as Stripe.Subscription;
+    
+    console.log(`⚠️  Trial will end soon [${correlationId}]:`, {
+      subscriptionId: subscription.id,
+      customerId: subscription.customer,
+      trialEnd: new Date((subscription as any).trial_end * 1000),
+      status: subscription.status
+    });
+
+    // Find organization
+    const organisation = await this.findOrganizationByCustomerId(subscription.customer as string);
+    if (!organisation) {
+      return {
+        success: false,
+        message: `Organization not found for customer ID: ${subscription.customer}`
+      };
+    }
+
+    // Update organization to reflect trial ending soon
+    await storage.updateOrganisationBilling(organisation.id, {
+      billingStatus: 'trial_ending',
+      lastBillingSync: new Date(),
+    });
+
+    console.log(`⚠️  Trial ending notification processed for org ${organisation.name} [${correlationId}]`);
+
+    return {
+      success: true,
+      message: `Trial ending notification processed for organization ${organisation.name}`
+    };
+  }
+
+  /**
+   * Enhanced subscription data extraction with better error handling
+   */
+  private extractSubscriptionData(subscription: Stripe.Subscription) {
+    try {
+      const item = subscription.items.data[0];
+      if (!item) {
+        console.warn(`Subscription ${subscription.id} has no items`);
+        return {
+          subscriptionId: subscription.id,
+          subscriptionItemId: null,
+          priceId: null,
+          quantity: 0,
+          status: subscription.status,
+          currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+          currentPeriodEnd: new Date((subscription as any).current_period_end * 1000)
+        };
+      }
+
+      return {
+        subscriptionId: subscription.id,
+        subscriptionItemId: item.id || null,
+        priceId: item.price?.id || null,
+        quantity: item.quantity || 1,
+        status: subscription.status,
+        currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000)
+      };
+    } catch (error) {
+      console.error(`Error extracting subscription data for ${subscription.id}:`, error);
+      throw new Error(`Failed to extract subscription data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Validate webhook event timestamp to prevent stale updates
+   */
+  private validateEventTimestamp(event: Stripe.Event, maxAgeMinutes: number = 60): boolean {
+    const eventTime = new Date(event.created * 1000);
+    const now = new Date();
+    const ageMinutes = (now.getTime() - eventTime.getTime()) / (1000 * 60);
+    
+    if (ageMinutes > maxAgeMinutes) {
+      console.warn(`⚠️  Webhook event ${event.id} is ${ageMinutes.toFixed(1)} minutes old (max: ${maxAgeMinutes})`);
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
    * Map Stripe subscription status to our billing status enum
    */
   private mapStripeToBillingStatus(stripeStatus: string): 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused' {
@@ -740,6 +1079,130 @@ export class StripeWebhookService {
       default:
         console.warn(`Unknown Stripe status: ${stripeStatus}, defaulting to 'unpaid'`);
         return 'unpaid';
+    }
+  }
+
+  /**
+   * Validate webhook event ordering and detect stale events
+   * Implements event ordering validation using event.created timestamps
+   * Drops stale/out-of-order events to prevent data inconsistencies
+   */
+  private async validateEventOrdering(
+    event: Stripe.Event,
+    correlationId: string
+  ): Promise<{
+    shouldProcess: boolean;
+    reason?: string;
+    lastProcessedTimestamp?: number;
+  }> {
+    try {
+      const eventTimestamp = event.created;
+      const maxStaleAgeHours = 24; // Reject events older than 24 hours
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const eventAgeHours = (currentTimestamp - eventTimestamp) / 3600;
+
+      // Check if event is too old (stale)
+      if (eventAgeHours > maxStaleAgeHours) {
+        return {
+          shouldProcess: false,
+          reason: `Event is too old (${eventAgeHours.toFixed(1)} hours old, max ${maxStaleAgeHours} hours)`
+        };
+      }
+
+      // Extract resource ID for ordering validation
+      const resourceId = this.extractResourceId(event);
+      if (!resourceId) {
+        // No resource ID means we can't validate ordering - process it
+        console.log(`⚠️  No resource ID found for event ordering validation [${correlationId}], processing anyway`);
+        return { shouldProcess: true };
+      }
+
+      // Get last processed timestamp for this resource
+      const lastProcessedTimestamp = await storage.getLastWebhookTimestamp(event.type, resourceId);
+      
+      if (lastProcessedTimestamp) {
+        // Check if this event is older than the last processed event (out of order)
+        if (eventTimestamp <= lastProcessedTimestamp) {
+          return {
+            shouldProcess: false,
+            reason: `Out-of-order event (timestamp: ${eventTimestamp}, last processed: ${lastProcessedTimestamp})`,
+            lastProcessedTimestamp
+          };
+        }
+        
+        // Check for gaps in event sequence (potential missing events)
+        const timeDifference = eventTimestamp - lastProcessedTimestamp;
+        if (timeDifference > 3600) { // More than 1 hour gap
+          console.warn(`⚠️  Large time gap detected between events [${correlationId}]:`, {
+            resourceId,
+            eventType: event.type,
+            timeDifference: `${Math.floor(timeDifference / 60)} minutes`,
+            lastTimestamp: lastProcessedTimestamp,
+            currentTimestamp: eventTimestamp
+          });
+        }
+      }
+
+      // Event passes ordering validation
+      return { shouldProcess: true, lastProcessedTimestamp };
+
+    } catch (error) {
+      console.error(`💥 Event ordering validation failed [${correlationId}]:`, error);
+      // On validation error, allow processing to continue (fail-open)
+      return { shouldProcess: true, reason: 'Validation error - processing anyway' };
+    }
+  }
+
+  /**
+   * Extract resource ID from webhook event for ordering validation
+   * Returns subscription ID, customer ID, or other relevant resource identifier
+   */
+  private extractResourceId(event: Stripe.Event): string | null {
+    const data = event.data.object as any;
+    
+    // Priority order: subscription > customer > payment_intent > setup_intent
+    if (data.subscription) {
+      return typeof data.subscription === 'string' ? data.subscription : data.subscription.id;
+    }
+    
+    if (data.customer) {
+      return typeof data.customer === 'string' ? data.customer : data.customer.id;
+    }
+    
+    if (data.id && (data.object === 'subscription' || data.object === 'customer' || 
+                   data.object === 'payment_intent' || data.object === 'setup_intent')) {
+      return data.id;
+    }
+    
+    // For checkout sessions, use the session ID
+    if (event.type.startsWith('checkout.session.') && data.id) {
+      return data.id;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Update last processed timestamp for webhook event ordering
+   * Called after successful event processing
+   */
+  private async updateLastProcessedTimestamp(
+    event: Stripe.Event,
+    correlationId: string
+  ): Promise<void> {
+    try {
+      const resourceId = this.extractResourceId(event);
+      if (resourceId) {
+        await storage.updateLastWebhookTimestamp(event.type, resourceId, event.created);
+        console.log(`📝 Updated last processed timestamp [${correlationId}]:`, {
+          eventType: event.type,
+          resourceId,
+          timestamp: event.created
+        });
+      }
+    } catch (error) {
+      console.error(`💥 Failed to update last processed timestamp [${correlationId}]:`, error);
+      // Don't fail the webhook for timestamp update issues
     }
   }
 }

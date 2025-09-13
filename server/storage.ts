@@ -24,6 +24,7 @@ import {
   emailLogs,
   emailSends, // NEW: Email orchestrator sends tracking
   emailSettingsLock, // NEW: Email settings lock table
+  billingLocks, // NEW: Billing/subscription distributed lock table
   supportTickets,
   supportTicketResponses,
   webhookEvents,
@@ -78,6 +79,8 @@ import {
   type InsertEmailSend,
   type EmailSettingsLock, // NEW: Email settings lock type
   type InsertEmailSettingsLock,
+  type BillingLock, // NEW: Billing distributed lock type
+  type InsertBillingLock,
   type SupportTicket,
   type InsertSupportTicket,
   type SupportTicketResponse,
@@ -351,6 +354,26 @@ export interface IStorage {
   getEmailSettingsLock(lockType: string, resourceId: string): Promise<EmailSettingsLock | undefined>;
   deleteEmailSettingsLock(id: string): Promise<void>;
   cleanupExpiredEmailLocks(): Promise<number>;
+
+  // Billing distributed lock operations - critical for enterprise-grade concurrency protection
+  acquireBillingLock(lockType: string, resourceId: string, lockedBy: string, options?: {
+    lockReason?: string;
+    timeoutMs?: number;
+    correlationId?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{ success: boolean; lock?: BillingLock; waitTime?: number; queuePosition?: number }>;
+  renewBillingLock(lockId: string, additionalTimeMs?: number): Promise<{ success: boolean; lock?: BillingLock }>;
+  releaseBillingLock(lockId: string): Promise<void>;
+  getBillingLock(lockType: string, resourceId: string): Promise<BillingLock | undefined>;
+  getBillingLockById(lockId: string): Promise<BillingLock | undefined>;
+  cleanupExpiredBillingLocks(): Promise<number>;
+  getBillingLockQueue(lockType: string, resourceId: string): Promise<BillingLock[]>;
+  getActiveBillingLocks(filters?: { 
+    lockType?: string; 
+    resourceId?: string; 
+    lockedBy?: string;
+    correlationId?: string; 
+  }): Promise<BillingLock[]>;
 
   // Support ticket operations
   createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
@@ -1724,6 +1747,218 @@ export class DatabaseStorage implements IStorage {
       .delete(emailSettingsLock)
       .where(sql`${emailSettingsLock.expiresAt} <= NOW()`);
     return result.rowCount || 0;
+  }
+
+  // Billing distributed lock operations - enterprise-grade concurrency protection
+  async acquireBillingLock(
+    lockType: string, 
+    resourceId: string, 
+    lockedBy: string, 
+    options: {
+      lockReason?: string;
+      timeoutMs?: number;
+      correlationId?: string;
+      metadata?: Record<string, any>;
+    } = {}
+  ): Promise<{ success: boolean; lock?: BillingLock; waitTime?: number; queuePosition?: number }> {
+    const {
+      lockReason = 'billing_operation',
+      timeoutMs = 300000, // 5 minutes default
+      correlationId,
+      metadata
+    } = options;
+
+    const expiresAt = new Date(Date.now() + timeoutMs);
+    const maxWaitTime = Math.min(timeoutMs, 60000); // Max 1 minute wait
+    const startTime = Date.now();
+    const maxRetries = 10;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries && (Date.now() - startTime) < maxWaitTime) {
+      try {
+        // First, cleanup any expired locks to prevent false blocking
+        await this.cleanupExpiredBillingLocks();
+
+        // Check if there's an existing active lock
+        const existingLock = await this.getBillingLock(lockType, resourceId);
+        if (existingLock) {
+          // Calculate queue position by counting active locks ahead of us
+          const queuePosition = await this.getBillingLockQueuePosition(lockType, resourceId);
+          const waitTime = Date.now() - startTime;
+          
+          // If we've been waiting too long, return failure
+          if (waitTime >= maxWaitTime) {
+            return { 
+              success: false, 
+              waitTime, 
+              queuePosition 
+            };
+          }
+
+          // Wait before retrying (exponential backoff with jitter)
+          const baseDelay = Math.min(1000 * Math.pow(1.5, retryCount), 5000);
+          const jitter = Math.random() * 1000;
+          await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+          retryCount++;
+          continue;
+        }
+
+        // Try to acquire the lock atomically
+        const lockData = {
+          lockType,
+          resourceId,
+          lockedBy,
+          lockReason,
+          expiresAt,
+          queuePosition: 0, // Primary lock holder
+          correlationId: correlationId || `billing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          metadata: metadata ? JSON.stringify(metadata) : null
+        };
+
+        const [lock] = await db.insert(billingLocks).values(lockData).returning();
+        
+        const waitTime = Date.now() - startTime;
+        return { 
+          success: true, 
+          lock, 
+          waitTime,
+          queuePosition: 0 
+        };
+
+      } catch (error: any) {
+        // Handle unique constraint violation (concurrent lock attempt)
+        if (error.code === '23505' || error.message?.includes('unique_billing_lock')) {
+          retryCount++;
+          
+          // Exponential backoff with jitter
+          const baseDelay = Math.min(500 * Math.pow(1.2, retryCount), 2000);
+          const jitter = Math.random() * 500;
+          await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+          continue;
+        }
+        
+        // For other errors, rethrow
+        throw error;
+      }
+    }
+
+    // Failed to acquire lock within timeout
+    const finalQueuePosition = await this.getBillingLockQueuePosition(lockType, resourceId);
+    return { 
+      success: false, 
+      waitTime: Date.now() - startTime,
+      queuePosition: finalQueuePosition 
+    };
+  }
+
+  async renewBillingLock(lockId: string, additionalTimeMs: number = 300000): Promise<{ success: boolean; lock?: BillingLock }> {
+    try {
+      const newExpiresAt = new Date(Date.now() + additionalTimeMs);
+      const renewedAt = new Date();
+      
+      const [lock] = await db
+        .update(billingLocks)
+        .set({ 
+          expiresAt: newExpiresAt,
+          renewedAt: renewedAt
+        })
+        .where(and(
+          eq(billingLocks.id, lockId),
+          sql`${billingLocks.expiresAt} > NOW()` // Only renew if still active
+        ))
+        .returning();
+
+      if (!lock) {
+        return { success: false };
+      }
+
+      return { success: true, lock };
+    } catch (error) {
+      console.error('Failed to renew billing lock:', error);
+      return { success: false };
+    }
+  }
+
+  async releaseBillingLock(lockId: string): Promise<void> {
+    await db.delete(billingLocks).where(eq(billingLocks.id, lockId));
+  }
+
+  async getBillingLock(lockType: string, resourceId: string): Promise<BillingLock | undefined> {
+    const [lock] = await db
+      .select()
+      .from(billingLocks)
+      .where(and(
+        eq(billingLocks.lockType, lockType),
+        eq(billingLocks.resourceId, resourceId),
+        sql`${billingLocks.expiresAt} > NOW()`
+      ));
+    return lock;
+  }
+
+  async getBillingLockById(lockId: string): Promise<BillingLock | undefined> {
+    const [lock] = await db.select().from(billingLocks).where(eq(billingLocks.id, lockId));
+    return lock;
+  }
+
+  async cleanupExpiredBillingLocks(): Promise<number> {
+    const result = await db
+      .delete(billingLocks)
+      .where(sql`${billingLocks.expiresAt} <= NOW()`);
+    return result.rowCount || 0;
+  }
+
+  async getBillingLockQueue(lockType: string, resourceId: string): Promise<BillingLock[]> {
+    return await db
+      .select()
+      .from(billingLocks)
+      .where(and(
+        eq(billingLocks.lockType, lockType),
+        eq(billingLocks.resourceId, resourceId),
+        sql`${billingLocks.expiresAt} > NOW()`
+      ))
+      .orderBy(asc(billingLocks.queuePosition), asc(billingLocks.acquiredAt));
+  }
+
+  async getActiveBillingLocks(filters: { 
+    lockType?: string; 
+    resourceId?: string; 
+    lockedBy?: string;
+    correlationId?: string; 
+  } = {}): Promise<BillingLock[]> {
+    const conditions: any[] = [sql`${billingLocks.expiresAt} > NOW()`];
+    
+    if (filters.lockType) {
+      conditions.push(eq(billingLocks.lockType, filters.lockType));
+    }
+    if (filters.resourceId) {
+      conditions.push(eq(billingLocks.resourceId, filters.resourceId));
+    }
+    if (filters.lockedBy) {
+      conditions.push(eq(billingLocks.lockedBy, filters.lockedBy));
+    }
+    if (filters.correlationId) {
+      conditions.push(eq(billingLocks.correlationId, filters.correlationId));
+    }
+
+    return await db
+      .select()
+      .from(billingLocks)
+      .where(and(...conditions))
+      .orderBy(desc(billingLocks.acquiredAt));
+  }
+
+  // Helper method to get queue position for a potential lock acquisition
+  private async getBillingLockQueuePosition(lockType: string, resourceId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(billingLocks)
+      .where(and(
+        eq(billingLocks.lockType, lockType),
+        eq(billingLocks.resourceId, resourceId),
+        sql`${billingLocks.expiresAt} > NOW()`
+      ));
+    
+    return (result?.count || 0) + 1; // Position in queue (1-indexed)
   }
 
   // Support ticket operations

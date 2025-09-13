@@ -1,12 +1,13 @@
 import Stripe from 'stripe';
 import type { Plan, InsertPlan, Organisation } from '../../shared/schema.js';
 import { nanoid } from 'nanoid';
+import { billingLockService } from './BillingLockService.js';
 
 export class StripeService {
   private stripe: Stripe;
   
-  // Application-level mutex for preventing race conditions in subscription operations
-  private subscriptionLocks = new Map<string, Promise<any>>();
+  // DEPRECATED: Replaced with database-backed distributed locking via BillingLockService
+  // private subscriptionLocks = new Map<string, Promise<any>>();
   
   constructor() {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -37,62 +38,41 @@ export class StripeService {
   }
 
   /**
-   * Acquire a mutex lock for subscription operations to prevent race conditions
-   * Returns a promise that resolves when the lock is acquired
+   * DEPRECATED: Replaced with distributed locking via BillingLockService
+   * Use billingLockService.withLock() or billingLockService.acquireLock() instead
    */
   private async acquireSubscriptionLock(orgId: string, operation: string): Promise<void> {
-    const lockKey = `${orgId}-${operation}`;
+    console.warn(`DEPRECATED: acquireSubscriptionLock called for ${orgId}-${operation}. Use BillingLockService instead.`);
     
-    // If a lock already exists, wait for it to complete
-    const existingLock = this.subscriptionLocks.get(lockKey);
-    if (existingLock) {
-      console.log(`Waiting for existing lock: ${lockKey}`);
-      try {
-        await existingLock;
-      } catch (error) {
-        // Ignore errors from previous operations, we'll try again
-        console.log(`Previous lock failed, proceeding: ${lockKey}`);
-      }
-    }
-
-    // Create a new lock promise (placeholder)
-    let lockResolve: () => void;
-    let lockReject: (error: any) => void;
-    
-    const lockPromise = new Promise<void>((resolve, reject) => {
-      lockResolve = resolve;
-      lockReject = reject;
+    // For backward compatibility, use distributed lock
+    const lockResult = await billingLockService.acquireLock('subscription_modify', orgId, {
+      lockReason: operation,
+      timeoutMs: 300000, // 5 minutes
+      correlationId: `legacy-${orgId}-${operation}-${Date.now()}`
     });
-
-    this.subscriptionLocks.set(lockKey, lockPromise);
     
-    // Store the resolve/reject functions on the promise for later use
-    (lockPromise as any)._resolve = lockResolve!;
-    (lockPromise as any)._reject = lockReject!;
+    if (!lockResult.success) {
+      throw new Error(`Failed to acquire lock for ${orgId}-${operation} after ${lockResult.waitTime}ms`);
+    }
     
-    console.log(`Lock acquired: ${lockKey}`);
+    // Store lock ID for release
+    (this as any)._currentLockId = lockResult.lock?.id;
   }
 
   /**
-   * Release a mutex lock for subscription operations
-   * Always resolves to prevent unhandled promise rejections
+   * DEPRECATED: Replaced with distributed locking via BillingLockService
+   * Use billingLockService.releaseLock() instead
    */
   private releaseSubscriptionLock(orgId: string, operation: string, success: boolean = true, error?: any): void {
-    const lockKey = `${orgId}-${operation}`;
-    const lockPromise = this.subscriptionLocks.get(lockKey);
+    console.warn(`DEPRECATED: releaseSubscriptionLock called for ${orgId}-${operation}. Use BillingLockService instead.`);
     
-    if (lockPromise) {
-      this.subscriptionLocks.delete(lockKey);
-      
-      // Always resolve to prevent unhandled promise rejections
-      // Log error for debugging but don't reject the promise
-      if (!success && error) {
-        console.error(`Lock operation failed for ${lockKey}:`, error);
-      }
-      
-      (lockPromise as any)._resolve();
-      
-      console.log(`Lock released: ${lockKey} (success: ${success})`);
+    // Release the current lock
+    const lockId = (this as any)._currentLockId;
+    if (lockId) {
+      billingLockService.releaseLock(lockId).catch(err => {
+        console.error(`Failed to release lock ${lockId}:`, err);
+      });
+      delete (this as any)._currentLockId;
     }
   }
 
@@ -301,7 +281,132 @@ export class StripeService {
   }
 
   /**
-   * Create a production-safe checkout session with single-subscription enforcement
+   * Handle 3D Secure payment authentication flow
+   * Called when a payment_intent.requires_action webhook is received
+   */
+  async handle3DSAuthentication(paymentIntentId: string, organisationId: string): Promise<{
+    requiresAction: boolean;
+    clientSecret?: string;
+    nextAction?: any;
+    status: string;
+  }> {
+    try {
+      console.log(`Handling 3DS authentication for payment intent ${paymentIntentId}, org ${organisationId}`);
+
+      const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+
+      const result = {
+        requiresAction: paymentIntent.status === 'requires_action',
+        status: paymentIntent.status,
+        clientSecret: paymentIntent.client_secret || undefined,
+        nextAction: paymentIntent.next_action || undefined,
+      };
+
+      // Update organization status to reflect pending 3DS
+      if (paymentIntent.status === 'requires_action') {
+        await this.updateOrganizationFor3DS(organisationId, paymentIntentId, 'pending_3ds');
+      }
+
+      console.log(`3DS authentication status for org ${organisationId}:`, result);
+      return result;
+
+    } catch (error) {
+      console.error(`Error handling 3DS authentication for ${paymentIntentId}:`, error);
+      throw new Error(`3DS authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Update organization status for 3DS processing
+   */
+  private async updateOrganizationFor3DS(organisationId: string, paymentIntentId: string, status: string): Promise<void> {
+    try {
+      const { storage } = await import('../storage');
+      
+      await storage.updateOrganisationBilling(organisationId, {
+        billingStatus: status,
+        lastBillingSync: new Date(),
+      });
+
+      console.log(`Updated org ${organisationId} billing status to ${status} for payment intent ${paymentIntentId}`);
+    } catch (error) {
+      console.error(`Failed to update org billing status for 3DS:`, error);
+      // Don't throw here - this is a best-effort status update
+    }
+  }
+
+  /**
+   * Handle subscription reactivation scenarios
+   * Manages transitions from canceled/past_due to active status
+   */
+  async reactivateSubscription(
+    subscriptionId: string, 
+    organisationId: string,
+    reason: string = 'payment_succeeded'
+  ): Promise<{ success: boolean; message: string; subscription?: Stripe.Subscription }> {
+    await this.acquireSubscriptionLock(organisationId, 'reactivation');
+
+    try {
+      console.log(`Reactivating subscription ${subscriptionId} for org ${organisationId}, reason: ${reason}`);
+
+      const subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price']
+      });
+
+      const validReactivationStatuses = ['canceled', 'past_due', 'unpaid', 'incomplete'];
+      if (!validReactivationStatuses.includes(subscription.status)) {
+        this.releaseSubscriptionLock(organisationId, 'reactivation', false);
+        return {
+          success: false,
+          message: `Cannot reactivate subscription in status: ${subscription.status}`
+        };
+      }
+
+      // For canceled subscriptions, we may need to create a new subscription instead
+      if (subscription.status === 'canceled') {
+        console.log(`Subscription ${subscriptionId} is canceled - may need new subscription instead`);
+        this.releaseSubscriptionLock(organisationId, 'reactivation', false);
+        return {
+          success: false,
+          message: `Subscription is canceled - create new subscription instead of reactivating`
+        };
+      }
+
+      // Update organization billing status
+      const { storage } = await import('../storage');
+      const subscriptionData = this.extractSubscriptionData(subscription);
+
+      await storage.updateOrganisationBilling(organisationId, {
+        stripeSubscriptionId: subscription.id,
+        stripeSubscriptionItemId: subscriptionData.subscriptionItemId,
+        billingStatus: 'active',
+        activeUserCount: subscriptionData.quantity,
+        currentPeriodEnd: subscriptionData.currentPeriodEnd,
+        lastBillingSync: new Date(),
+      });
+
+      console.log(`Successfully reactivated subscription ${subscriptionId} for org ${organisationId}`);
+      this.releaseSubscriptionLock(organisationId, 'reactivation', true);
+
+      return {
+        success: true,
+        message: `Subscription reactivated successfully`,
+        subscription
+      };
+
+    } catch (error) {
+      console.error(`Error reactivating subscription ${subscriptionId}:`, error);
+      this.releaseSubscriptionLock(organisationId, 'reactivation', false, error);
+      
+      return {
+        success: false,
+        message: `Reactivation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  /**
+   * Enhanced checkout session creation with 3DS support and robust error handling
    * Automatically handles both new subscriptions and subscription updates
    */
   async createCheckoutSession(
@@ -1204,6 +1309,447 @@ export class StripeService {
   }
 
   /**
+   * Enhanced proration calculator with comprehensive billing period handling
+   * Handles mid-cycle changes, seat adjustments, and complex billing scenarios
+   */
+  async calculateEnhancedProration(
+    currentPlan: Plan | null,
+    newPlan: Plan,
+    organisation: Organisation,
+    newUserCount: number,
+    effectiveDate?: Date
+  ): Promise<{
+    immediate_charge: number;
+    credit_amount: number;
+    net_amount: number;
+    proration_details: Array<{
+      type: 'credit' | 'charge';
+      description: string;
+      amount: number;
+      period_start: Date;
+      period_end: Date;
+      daily_rate: number;
+      days_used: number;
+    }>;
+    billing_period: {
+      current_period_start: Date;
+      current_period_end: Date;
+      days_remaining: number;
+      total_days: number;
+    };
+    warning?: string;
+  }> {
+    try {
+      const subscriptionId = this.normalizeStripeId(organisation.stripeSubscriptionId);
+      const effectiveDateTime = effectiveDate || new Date();
+      
+      console.log(`Calculating enhanced proration for org ${organisation.id}:`, {
+        currentPlan: currentPlan?.id || 'none',
+        newPlan: newPlan.id,
+        newUserCount,
+        effectiveDate: effectiveDateTime,
+        subscriptionId
+      });
+
+      // Get current subscription details if exists
+      let currentSubscription: Stripe.Subscription | null = null;
+      let billingPeriod = {
+        current_period_start: new Date(),
+        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days default
+        days_remaining: 30,
+        total_days: 30
+      };
+
+      if (subscriptionId) {
+        try {
+          currentSubscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+            expand: ['items.data.price']
+          });
+
+          billingPeriod = {
+            current_period_start: new Date((currentSubscription as any).current_period_start * 1000),
+            current_period_end: new Date((currentSubscription as any).current_period_end * 1000),
+            days_remaining: Math.ceil(((currentSubscription as any).current_period_end * 1000 - effectiveDateTime.getTime()) / (1000 * 60 * 60 * 24)),
+            total_days: Math.ceil(((currentSubscription as any).current_period_end * 1000 - (currentSubscription as any).current_period_start * 1000) / (1000 * 60 * 60 * 24))
+          };
+        } catch (error) {
+          console.warn(`Could not retrieve subscription ${subscriptionId} for proration:`, error);
+        }
+      }
+
+      const prorationDetails: Array<{
+        type: 'credit' | 'charge';
+        description: string;
+        amount: number;
+        period_start: Date;
+        period_end: Date;
+        daily_rate: number;
+        days_used: number;
+      }> = [];
+
+      let totalCredit = 0;
+      let totalCharge = 0;
+
+      // Calculate credit for unused portion of current plan
+      if (currentPlan && currentSubscription && billingPeriod.days_remaining > 0) {
+        const currentItem = currentSubscription.items.data[0];
+        const currentQuantity = currentItem?.quantity || organisation.activeUserCount || 1;
+        const currentUnitAmount = currentItem?.price?.unit_amount || currentPlan.unitAmount;
+        
+        const dailyRate = currentUnitAmount / billingPeriod.total_days;
+        const creditAmount = Math.round(dailyRate * billingPeriod.days_remaining * currentQuantity);
+
+        if (creditAmount > 0) {
+          prorationDetails.push({
+            type: 'credit',
+            description: `Credit for unused ${currentPlan.name} (${currentQuantity} seats)`,
+            amount: creditAmount,
+            period_start: effectiveDateTime,
+            period_end: billingPeriod.current_period_end,
+            daily_rate: dailyRate,
+            days_used: billingPeriod.days_remaining
+          });
+          totalCredit += creditAmount;
+        }
+      }
+
+      // Calculate charge for new plan
+      const newQuantity = newPlan.billingModel === 'per_seat' ? 
+        Math.max(newUserCount, newPlan.minSeats || 1) : 1;
+      
+      if (billingPeriod.days_remaining > 0) {
+        const dailyRate = newPlan.unitAmount / billingPeriod.total_days;
+        const chargeAmount = Math.round(dailyRate * billingPeriod.days_remaining * newQuantity);
+
+        if (chargeAmount > 0) {
+          prorationDetails.push({
+            type: 'charge',
+            description: `Charge for new ${newPlan.name} (${newQuantity} seats)`,
+            amount: chargeAmount,
+            period_start: effectiveDateTime,
+            period_end: billingPeriod.current_period_end,
+            daily_rate: dailyRate,
+            days_used: billingPeriod.days_remaining
+          });
+          totalCharge += chargeAmount;
+        }
+      }
+
+      const netAmount = totalCharge - totalCredit;
+      let warning: string | undefined;
+
+      // Add warnings for complex scenarios
+      if (billingPeriod.days_remaining < 1) {
+        warning = 'Change will take effect at the next billing cycle';
+      } else if (netAmount < 0 && Math.abs(netAmount) > totalCharge * 0.5) {
+        warning = 'Large credit will be applied - verify this is expected';
+      } else if (currentPlan && newPlan.billingModel !== currentPlan.billingModel) {
+        warning = 'Changing billing models - proration may not be exact';
+      }
+
+      console.log(`Enhanced proration calculated:`, {
+        totalCredit,
+        totalCharge,
+        netAmount,
+        daysRemaining: billingPeriod.days_remaining,
+        prorationDetails: prorationDetails.length
+      });
+
+      return {
+        immediate_charge: Math.max(netAmount, 0),
+        credit_amount: totalCredit,
+        net_amount: netAmount,
+        proration_details: prorationDetails,
+        billing_period: billingPeriod,
+        warning
+      };
+
+    } catch (error) {
+      console.error('Error calculating enhanced proration:', error);
+      throw new Error(`Failed to calculate proration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Database consistency validator - ensures Stripe and database are synchronized
+   * Detects and reports inconsistencies that need manual intervention
+   */
+  async validateDatabaseConsistency(organisationId: string): Promise<{
+    consistent: boolean;
+    issues: Array<{
+      severity: 'error' | 'warning' | 'info';
+      type: 'subscription' | 'customer' | 'billing_status' | 'seats' | 'plan';
+      message: string;
+      database_value: any;
+      stripe_value: any;
+      recommended_action: string;
+    }>;
+    last_sync: Date | null;
+    stripe_data: {
+      customer_exists: boolean;
+      subscription_exists: boolean;
+      subscription_status: string | null;
+      subscription_items_count: number;
+      current_period_end: Date | null;
+    };
+  }> {
+    const issues: Array<{
+      severity: 'error' | 'warning' | 'info';
+      type: 'subscription' | 'customer' | 'billing_status' | 'seats' | 'plan';
+      message: string;
+      database_value: any;
+      stripe_value: any;
+      recommended_action: string;
+    }> = [];
+
+    try {
+      console.log(`Validating database consistency for org ${organisationId}`);
+
+      const { storage } = await import('../storage');
+      const organisation = await storage.getOrganisation(organisationId);
+      
+      if (!organisation) {
+        return {
+          consistent: false,
+          issues: [{
+            severity: 'error',
+            type: 'subscription',
+            message: 'Organization not found in database',
+            database_value: null,
+            stripe_value: null,
+            recommended_action: 'Check organization ID and database connection'
+          }],
+          last_sync: null,
+          stripe_data: {
+            customer_exists: false,
+            subscription_exists: false,
+            subscription_status: null,
+            subscription_items_count: 0,
+            current_period_end: null
+          }
+        };
+      }
+
+      const stripeData = {
+        customer_exists: false,
+        subscription_exists: false,
+        subscription_status: null as string | null,
+        subscription_items_count: 0,
+        current_period_end: null as Date | null
+      };
+
+      // Validate Stripe customer
+      const customerId = this.normalizeStripeId(organisation.stripeCustomerId);
+      if (customerId) {
+        try {
+          const customer = await this.stripe.customers.retrieve(customerId);
+          stripeData.customer_exists = !customer.deleted;
+        } catch (error: any) {
+          if (error.code === 'resource_missing') {
+            issues.push({
+              severity: 'error',
+              type: 'customer',
+              message: 'Customer ID exists in database but not found in Stripe',
+              database_value: customerId,
+              stripe_value: null,
+              recommended_action: 'Remove customer ID from database or recreate customer in Stripe'
+            });
+          }
+        }
+      } else if (organisation.billingStatus !== 'setup_required') {
+        issues.push({
+          severity: 'warning',
+          type: 'customer',
+          message: 'No Stripe customer ID but billing is configured',
+          database_value: null,
+          stripe_value: null,
+          recommended_action: 'Create Stripe customer or reset billing status'
+        });
+      }
+
+      // Validate Stripe subscription
+      const subscriptionId = this.normalizeStripeId(organisation.stripeSubscriptionId);
+      if (subscriptionId) {
+        try {
+          const subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+            expand: ['items.data.price']
+          });
+
+          stripeData.subscription_exists = true;
+          stripeData.subscription_status = subscription.status;
+          stripeData.subscription_items_count = subscription.items.data.length;
+          stripeData.current_period_end = new Date((subscription as any).current_period_end * 1000);
+
+          // Check subscription status consistency
+          const mappedStatus = this.mapStripeToBillingStatus(subscription.status);
+          if (organisation.billingStatus !== mappedStatus) {
+            issues.push({
+              severity: 'warning',
+              type: 'billing_status',
+              message: 'Billing status mismatch between database and Stripe',
+              database_value: organisation.billingStatus,
+              stripe_value: mappedStatus,
+              recommended_action: 'Update database billing status to match Stripe'
+            });
+          }
+
+          // Check subscription items
+          if (subscription.items.data.length === 0) {
+            issues.push({
+              severity: 'error',
+              type: 'subscription',
+              message: 'Subscription exists but has no items',
+              database_value: 'subscription exists',
+              stripe_value: 'no items',
+              recommended_action: 'Add subscription item or cancel subscription'
+            });
+          } else if (subscription.items.data.length > 1) {
+            issues.push({
+              severity: 'warning',
+              type: 'subscription',
+              message: 'Subscription has multiple items - may cause issues',
+              database_value: 1,
+              stripe_value: subscription.items.data.length,
+              recommended_action: 'Consolidate to single subscription item'
+            });
+          } else {
+            const item = subscription.items.data[0];
+            
+            // Check subscription item ID consistency
+            const dbItemId = this.normalizeStripeId(organisation.stripeSubscriptionItemId);
+            if (dbItemId && dbItemId !== item.id) {
+              issues.push({
+                severity: 'error',
+                type: 'subscription',
+                message: 'Subscription item ID mismatch',
+                database_value: dbItemId,
+                stripe_value: item.id,
+                recommended_action: 'Update database with correct subscription item ID'
+              });
+            }
+
+            // Check seat count consistency
+            if (item.quantity !== organisation.activeUserCount) {
+              issues.push({
+                severity: 'warning',
+                type: 'seats',
+                message: 'Seat count mismatch between database and Stripe',
+                database_value: organisation.activeUserCount,
+                stripe_value: item.quantity,
+                recommended_action: 'Sync seat counts between systems'
+              });
+            }
+          }
+
+        } catch (error: any) {
+          if (error.code === 'resource_missing') {
+            issues.push({
+              severity: 'error',
+              type: 'subscription',
+              message: 'Subscription ID exists in database but not found in Stripe',
+              database_value: subscriptionId,
+              stripe_value: null,
+              recommended_action: 'Remove subscription data from database or recreate subscription'
+            });
+          }
+        }
+      } else if (['active', 'trialing', 'past_due'].includes(organisation.billingStatus)) {
+        issues.push({
+          severity: 'error',
+          type: 'subscription',
+          message: 'Organization marked as having active subscription but no subscription ID',
+          database_value: organisation.billingStatus,
+          stripe_value: null,
+          recommended_action: 'Update billing status or create subscription'
+        });
+      }
+
+      // Check plan consistency
+      if (organisation.planId) {
+        const plans = await storage.getPlans();
+        const plan = plans.find(p => p.id === organisation.planId);
+        if (!plan) {
+          issues.push({
+            severity: 'warning',
+            type: 'plan',
+            message: 'Organization references non-existent plan',
+            database_value: organisation.planId,
+            stripe_value: null,
+            recommended_action: 'Update to valid plan ID or recreate plan'
+          });
+        }
+      }
+
+      const consistent = issues.filter(issue => issue.severity === 'error').length === 0;
+
+      console.log(`Database consistency check complete for org ${organisationId}:`, {
+        consistent,
+        errorCount: issues.filter(i => i.severity === 'error').length,
+        warningCount: issues.filter(i => i.severity === 'warning').length,
+        infoCount: issues.filter(i => i.severity === 'info').length
+      });
+
+      return {
+        consistent,
+        issues,
+        last_sync: organisation.lastBillingSync,
+        stripe_data: stripeData
+      };
+
+    } catch (error) {
+      console.error(`Error validating database consistency for org ${organisationId}:`, error);
+      
+      return {
+        consistent: false,
+        issues: [{
+          severity: 'error',
+          type: 'subscription',
+          message: `Consistency check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          database_value: null,
+          stripe_value: null,
+          recommended_action: 'Check system logs and retry validation'
+        }],
+        last_sync: null,
+        stripe_data: {
+          customer_exists: false,
+          subscription_exists: false,
+          subscription_status: null,
+          subscription_items_count: 0,
+          current_period_end: null
+        }
+      };
+    }
+  }
+
+  /**
+   * Map Stripe subscription status to billing status with enhanced error handling
+   */
+  private mapStripeToBillingStatus(stripeStatus: string): 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused' {
+    switch (stripeStatus) {
+      case 'active':
+        return 'active';
+      case 'past_due':
+        return 'past_due';
+      case 'canceled':
+      case 'cancelled':
+        return 'canceled';
+      case 'unpaid':
+        return 'unpaid';
+      case 'incomplete':
+        return 'incomplete';
+      case 'incomplete_expired':
+        return 'incomplete_expired';
+      case 'trialing':
+        return 'trialing';
+      case 'paused':
+        return 'paused';
+      default:
+        console.warn(`Unknown Stripe status: ${stripeStatus}, defaulting to 'unpaid'`);
+        return 'unpaid';
+    }
+  }
+
+  /**
    * Preview subscription changes without applying them using stripe.invoices.upcoming
    * Shows accurate proration amounts and next billing totals
    */
@@ -1357,6 +1903,430 @@ export class StripeService {
     } catch (error) {
       console.error('Error previewing subscription change:', error);
       throw new Error(`Failed to preview subscription change: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Enhanced plan limits validator - ensures compliance with plan restrictions
+   * Validates user counts, feature access, and usage limits
+   */
+  async validatePlanLimits(
+    plan: Plan,
+    organisation: Organisation,
+    requestedUserCount: number,
+    operation: 'create' | 'update' | 'validate'
+  ): Promise<{
+    valid: boolean;
+    violations: Array<{
+      type: 'seat_limit' | 'feature_limit' | 'usage_limit' | 'billing_limit';
+      message: string;
+      current_value: number;
+      limit_value: number;
+      severity: 'error' | 'warning';
+    }>;
+    recommendations: string[];
+    adjusted_user_count: number;
+  }> {
+    const violations: Array<{
+      type: 'seat_limit' | 'feature_limit' | 'usage_limit' | 'billing_limit';
+      message: string;
+      current_value: number;
+      limit_value: number;
+      severity: 'error' | 'warning';
+    }> = [];
+    const recommendations: string[] = [];
+
+    try {
+      console.log(`Validating plan limits for org ${organisation.id}:`, {
+        planId: plan.id,
+        requestedUserCount,
+        operation,
+        currentSeats: organisation.activeUserCount
+      });
+
+      // Validate minimum seat requirements
+      const minSeats = plan.minSeats || 1;
+      let adjustedUserCount = requestedUserCount;
+
+      if (requestedUserCount < minSeats) {
+        violations.push({
+          type: 'seat_limit',
+          message: `Plan ${plan.name} requires minimum ${minSeats} seats`,
+          current_value: requestedUserCount,
+          limit_value: minSeats,
+          severity: 'error'
+        });
+        adjustedUserCount = minSeats;
+        recommendations.push(`Increase seat count to ${minSeats} to meet plan requirements`);
+      }
+
+      // Validate maximum seat restrictions (if plan has limits)
+      const maxSeats = plan.maxSeats;
+      if (maxSeats && requestedUserCount > maxSeats) {
+        violations.push({
+          type: 'seat_limit',
+          message: `Plan ${plan.name} allows maximum ${maxSeats} seats`,
+          current_value: requestedUserCount,
+          limit_value: maxSeats,
+          severity: 'error'
+        });
+        adjustedUserCount = maxSeats;
+        recommendations.push(`Reduce seat count to ${maxSeats} or upgrade to higher tier plan`);
+      }
+
+      // Validate billing model constraints
+      if (plan.billingModel === 'flat_subscription' && requestedUserCount > 1) {
+        violations.push({
+          type: 'billing_limit',
+          message: `Flat subscription plans don't support multiple seats`,
+          current_value: requestedUserCount,
+          limit_value: 1,
+          severity: 'warning'
+        });
+        recommendations.push('Consider upgrading to per-seat billing model for multiple users');
+      }
+
+      // Check for downgrade restrictions during active period
+      if (operation === 'update' && organisation.activeUserCount > requestedUserCount) {
+        const currentPeriodEnd = organisation.currentPeriodEnd;
+        if (currentPeriodEnd && currentPeriodEnd > new Date()) {
+          const daysRemaining = Math.ceil((currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          
+          if (daysRemaining > 14) { // More than 2 weeks remaining
+            violations.push({
+              type: 'usage_limit',
+              message: `Seat reduction during active billing period (${daysRemaining} days remaining)`,
+              current_value: requestedUserCount,
+              limit_value: organisation.activeUserCount,
+              severity: 'warning'
+            });
+            recommendations.push('Consider waiting until next billing cycle to avoid proration charges');
+          }
+        }
+      }
+
+      // Validate feature compatibility
+      const { storage } = await import('../storage');
+      const planFeatures = await storage.getPlanFeaturesByPlanId(plan.id);
+      
+      // Check if organization is already using features that would be restricted
+      if (operation === 'update') {
+        for (const feature of planFeatures) {
+          if (feature.limit !== null && feature.limit < (organisation as any)[`${feature.featureKey}Usage`]) {
+            violations.push({
+              type: 'feature_limit',
+              message: `Current ${feature.featureName} usage exceeds plan limit`,
+              current_value: (organisation as any)[`${feature.featureKey}Usage`] || 0,
+              limit_value: feature.limit,
+              severity: 'warning'
+            });
+            recommendations.push(`Reduce ${feature.featureName} usage or choose plan with higher limits`);
+          }
+        }
+      }
+
+      const hasErrors = violations.some(v => v.severity === 'error');
+      const valid = !hasErrors;
+
+      console.log(`Plan limit validation complete:`, {
+        valid,
+        errorCount: violations.filter(v => v.severity === 'error').length,
+        warningCount: violations.filter(v => v.severity === 'warning').length,
+        adjustedUserCount
+      });
+
+      return {
+        valid,
+        violations,
+        recommendations,
+        adjusted_user_count: adjustedUserCount
+      };
+
+    } catch (error) {
+      console.error(`Error validating plan limits for org ${organisation.id}:`, error);
+      
+      return {
+        valid: false,
+        violations: [{
+          type: 'usage_limit',
+          message: `Plan validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          current_value: requestedUserCount,
+          limit_value: 0,
+          severity: 'error'
+        }],
+        recommendations: ['Contact support for assistance with plan validation'],
+        adjusted_user_count: requestedUserCount
+      };
+    }
+  }
+
+  /**
+   * Enhanced error recovery system with comprehensive retry and logging
+   * Handles transient failures and provides detailed recovery guidance
+   */
+  async executeWithErrorRecovery<T>(
+    operation: string,
+    organisationId: string,
+    operationFn: () => Promise<T>,
+    options: {
+      maxRetries?: number;
+      retryDelayMs?: number;
+      criticalOperation?: boolean;
+      fallbackFn?: () => Promise<T | null>;
+    } = {}
+  ): Promise<{
+    success: boolean;
+    result?: T;
+    error?: string;
+    recovery_attempts: number;
+    recovery_log: Array<{
+      attempt: number;
+      timestamp: Date;
+      error: string;
+      action_taken: string;
+    }>;
+  }> {
+    const {
+      maxRetries = 3,
+      retryDelayMs = 1000,
+      criticalOperation = false,
+      fallbackFn
+    } = options;
+
+    const recoveryLog: Array<{
+      attempt: number;
+      timestamp: Date;
+      error: string;
+      action_taken: string;
+    }> = [];
+
+    console.log(`🔄 Starting error recovery operation: ${operation} for org ${organisationId}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await operationFn();
+        
+        if (recoveryLog.length > 0) {
+          console.log(`✅ Operation ${operation} succeeded after ${attempt - 1} recovery attempts`);
+        }
+
+        return {
+          success: true,
+          result,
+          recovery_attempts: recoveryLog.length,
+          recovery_log: recoveryLog
+        };
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const timestamp = new Date();
+        
+        console.error(`❌ Attempt ${attempt}/${maxRetries} failed for ${operation}:`, errorMessage);
+
+        // Categorize error types for specific recovery strategies
+        let actionTaken = 'Will retry with exponential backoff';
+        let shouldRetry = attempt < maxRetries;
+
+        if (errorMessage.includes('rate_limit')) {
+          actionTaken = 'Rate limit hit - increasing retry delay';
+          await this.delay(retryDelayMs * Math.pow(2, attempt));
+        } else if (errorMessage.includes('resource_missing')) {
+          actionTaken = 'Resource not found - no retry needed';
+          shouldRetry = false;
+        } else if (errorMessage.includes('idempotency_key')) {
+          actionTaken = 'Idempotency conflict - operation may have succeeded';
+          shouldRetry = false;
+        } else if (errorMessage.includes('card_declined') || errorMessage.includes('payment_failed')) {
+          actionTaken = 'Payment failure - no retry needed';
+          shouldRetry = false;
+        } else {
+          // Generic network/API error - retry with backoff
+          await this.delay(retryDelayMs * attempt);
+        }
+
+        recoveryLog.push({
+          attempt,
+          timestamp,
+          error: errorMessage,
+          action_taken: actionTaken
+        });
+
+        // If critical operation and we've failed all retries, try fallback
+        if (!shouldRetry && criticalOperation && fallbackFn && attempt === maxRetries) {
+          try {
+            console.log(`🚨 Critical operation failed - attempting fallback for ${operation}`);
+            const fallbackResult = await fallbackFn();
+            
+            if (fallbackResult !== null) {
+              recoveryLog.push({
+                attempt: attempt + 1,
+                timestamp: new Date(),
+                error: 'Fallback succeeded',
+                action_taken: 'Used fallback mechanism'
+              });
+
+              return {
+                success: true,
+                result: fallbackResult,
+                recovery_attempts: recoveryLog.length,
+                recovery_log: recoveryLog
+              };
+            }
+          } catch (fallbackError) {
+            recoveryLog.push({
+              attempt: attempt + 1,
+              timestamp: new Date(),
+              error: fallbackError instanceof Error ? fallbackError.message : 'Fallback failed',
+              action_taken: 'Fallback mechanism failed'
+            });
+          }
+        }
+
+        if (!shouldRetry) {
+          break;
+        }
+      }
+    }
+
+    // All attempts failed
+    console.error(`💥 Operation ${operation} failed after ${maxRetries} attempts`);
+
+    return {
+      success: false,
+      error: recoveryLog[recoveryLog.length - 1]?.error || 'Operation failed',
+      recovery_attempts: recoveryLog.length,
+      recovery_log: recoveryLog
+    };
+  }
+
+  /**
+   * Utility method for implementing delays with jitter
+   */
+  private async delay(ms: number): Promise<void> {
+    // Add jitter to prevent thundering herd
+    const jitter = Math.random() * 0.3; // Up to 30% jitter
+    const delayMs = ms * (1 + jitter);
+    return new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+
+  /**
+   * Enhanced subscription lock management with deadlock prevention
+   * Provides more granular locking with timeout and health checking
+   */
+  async acquireEnhancedSubscriptionLock(
+    organisationId: string, 
+    operation: string,
+    timeoutMs: number = 30000
+  ): Promise<{
+    acquired: boolean;
+    lockId: string;
+    expiresAt: Date;
+    queuePosition?: number;
+  }> {
+    const lockId = `${organisationId}-${operation}-${Date.now()}-${Math.random()}`;
+    const expiresAt = new Date(Date.now() + timeoutMs);
+    
+    try {
+      console.log(`🔐 Acquiring enhanced lock for org ${organisationId}, operation: ${operation}`);
+
+      // Check if lock already exists
+      const existingLock = this.subscriptionLocks.get(organisationId);
+      if (existingLock) {
+        const waitTime = existingLock.expiresAt.getTime() - Date.now();
+        
+        if (waitTime > 0) {
+          console.log(`⏳ Lock exists for org ${organisationId}, waiting up to ${waitTime}ms`);
+          
+          // Wait for existing lock to expire or be released
+          const waitPromise = new Promise<boolean>((resolve) => {
+            const checkInterval = setInterval(() => {
+              const currentLock = this.subscriptionLocks.get(organisationId);
+              if (!currentLock || currentLock.expiresAt < new Date()) {
+                clearInterval(checkInterval);
+                resolve(true);
+              } else if (Date.now() >= expiresAt.getTime()) {
+                clearInterval(checkInterval);
+                resolve(false); // Timeout
+              }
+            }, 100); // Check every 100ms
+          });
+
+          const acquired = await waitPromise;
+          if (!acquired) {
+            return {
+              acquired: false,
+              lockId,
+              expiresAt,
+              queuePosition: 1
+            };
+          }
+        }
+      }
+
+      // Acquire new lock
+      this.subscriptionLocks.set(organisationId, {
+        lockId,
+        operation,
+        acquiredAt: new Date(),
+        expiresAt,
+        threadId: `thread-${Date.now()}`
+      });
+
+      console.log(`✅ Enhanced lock acquired for org ${organisationId}, lockId: ${lockId}`);
+
+      return {
+        acquired: true,
+        lockId,
+        expiresAt
+      };
+
+    } catch (error) {
+      console.error(`❌ Failed to acquire enhanced lock for org ${organisationId}:`, error);
+      
+      return {
+        acquired: false,
+        lockId,
+        expiresAt
+      };
+    }
+  }
+
+  /**
+   * Release enhanced subscription lock with validation
+   */
+  async releaseEnhancedSubscriptionLock(
+    organisationId: string,
+    lockId: string,
+    success: boolean,
+    error?: any
+  ): Promise<boolean> {
+    try {
+      const existingLock = this.subscriptionLocks.get(organisationId);
+      
+      if (!existingLock) {
+        console.warn(`⚠️  Attempting to release non-existent lock for org ${organisationId}`);
+        return false;
+      }
+
+      if (existingLock.lockId !== lockId) {
+        console.warn(`⚠️  Lock ID mismatch for org ${organisationId}: expected ${lockId}, found ${existingLock.lockId}`);
+        return false;
+      }
+
+      this.subscriptionLocks.delete(organisationId);
+      
+      console.log(`🔓 Enhanced lock released for org ${organisationId}:`, {
+        lockId,
+        success,
+        duration: Date.now() - existingLock.acquiredAt.getTime(),
+        operation: existingLock.operation
+      });
+
+      return true;
+
+    } catch (error) {
+      console.error(`❌ Failed to release enhanced lock for org ${organisationId}:`, error);
+      return false;
     }
   }
 

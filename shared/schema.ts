@@ -670,6 +670,28 @@ export const emailSettingsLock = pgTable("email_settings_lock", {
   unique("unique_email_lock").on(table.lockType, table.resourceId),
 ]);
 
+// Billing/subscription distributed lock table - prevents concurrent billing operations
+export const billingLocks = pgTable("billing_locks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lockType: varchar("lock_type").notNull(), // 'subscription_modify', 'checkout_complete', 'plan_change', 'usage_sync'
+  resourceId: varchar("resource_id").notNull(), // organisation id, subscription id, or customer id
+  lockedBy: varchar("locked_by").notNull(), // process/server id + operation id
+  lockReason: varchar("lock_reason"), // e.g., 'subscription_update', 'proration_calculation', 'plan_change'
+  expiresAt: timestamp("expires_at").notNull(), // auto-expire locks after configurable timeout (default 5 minutes)
+  acquiredAt: timestamp("acquired_at").defaultNow(),
+  renewedAt: timestamp("renewed_at"), // for lock renewals during long operations
+  queuePosition: integer("queue_position"), // for ordered operation processing
+  correlationId: varchar("correlation_id"), // for tracing and debugging
+  metadata: jsonb("metadata"), // additional context for lock (operation details, retry count)
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_billing_lock_resource").on(table.lockType, table.resourceId),
+  index("idx_billing_lock_expires").on(table.expiresAt),
+  index("idx_billing_lock_queue").on(table.lockType, table.resourceId, table.queuePosition),
+  index("idx_billing_lock_correlation").on(table.correlationId),
+  unique("unique_billing_lock").on(table.lockType, table.resourceId),
+]);
+
 // DEPRECATED - OLD EMAIL TEMPLATE DEFAULTS TABLE (REPLACED BY NEW ROBUST SCHEMA)
 // This table has been replaced by the new 'emailTemplates' table with MJML support
 // TODO: Remove this table after data migration
@@ -1212,6 +1234,12 @@ export const insertEmailSettingsLockSchema = createInsertSchema(emailSettingsLoc
   createdAt: true,
 });
 
+export const insertBillingLockSchema = createInsertSchema(billingLocks).omit({
+  id: true,
+  acquiredAt: true,
+  createdAt: true,
+});
+
 // Email template system insert schemas
 // DEPRECATED - OLD EMAIL TEMPLATE INSERT SCHEMAS (TO BE REMOVED)
 // export const insertEmailTemplateDefaultsSchema = createInsertSchema(emailTemplateDefaults).omit({
@@ -1349,6 +1377,10 @@ export type EmailSend = typeof emailSends.$inferSelect;
 
 export type InsertEmailSettingsLock = z.infer<typeof insertEmailSettingsLockSchema>;
 export type EmailSettingsLock = typeof emailSettingsLock.$inferSelect;
+
+// Billing lock types
+export type InsertBillingLock = z.infer<typeof insertBillingLockSchema>;
+export type BillingLock = typeof billingLocks.$inferSelect;
 
 // Support ticket types
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
