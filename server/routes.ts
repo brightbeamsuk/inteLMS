@@ -9184,16 +9184,24 @@ This test was initiated by ${user.email}.
 
       const newUser = await storage.createUser(userDataWithPassword);
       
-      // Send admin notification if creating an admin user
-      if (newUser.role === 'admin' && newUser.organisationId) {
+      // Send notifications for new user creation
+      if (newUser.organisationId) {
         try {
-          await emailNotificationService.notifyNewAdminAdded(
-            newUser.organisationId,
-            newUser.id,
-            user.id
-          );
+          if (newUser.role === 'admin') {
+            await emailNotificationService.notifyNewAdminAdded(
+              newUser.organisationId,
+              newUser.id,
+              user.id
+            );
+          } else if (newUser.role === 'user') {
+            await emailNotificationService.notifyNewUserAdded(
+              newUser.organisationId,
+              newUser.id,
+              user.id
+            );
+          }
         } catch (error) {
-          console.error('[User Creation] Failed to send admin notification:', error);
+          console.error('[User Creation] Failed to send user notification:', error);
           // Don't break user creation flow on notification failure
         }
       }
@@ -10762,35 +10770,34 @@ This test was initiated by ${user.email}.
       if (user.organisationId && (createdRegularUsers.length > 0 || createdAdmins.length > 0)) {
         const organization = await storage.getOrganisation(user.organisationId);
         if (organization) {
-          const adminEmails = await getOrganizationAdminEmails(organization.id);
-          
-          if (adminEmails.length > 0) {
-            // Send notification for new regular users
-            if (createdRegularUsers.length > 0) {
-              // For bulk imports, send a summary notification about the first user as example
-              await sendMultiRecipientNotification(
-                'Bulk User Import - New Users Added',
-                adminEmails,
-                (adminEmail) => emailTemplateService.sendNewUserNotification(
-                  adminEmail,
-                  buildNewUserNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, createdRegularUsers[0], user),
-                  organization.id
-                )
+          // Send notification for new regular users using EmailNotificationService
+          if (createdRegularUsers.length > 0) {
+            try {
+              // For bulk imports, send a summary notification about the bulk user creation
+              await emailNotificationService.notifyBulkUserAdded(
+                organization.id,
+                createdRegularUsers,
+                user.id
               );
+              console.log(`[Bulk Import] Queued bulk user notification for ${createdRegularUsers.length} users`);
+            } catch (error) {
+              console.error('[Bulk Import] Failed to send user notification:', error);
+              // Don't break the import flow on notification failure
             }
-            
-            // Send notification for new admin users using EmailNotificationService
-            if (createdAdmins.length > 0) {
-              try {
-                await emailNotificationService.notifyBulkAdminAdded(
-                  organization.id,
-                  createdAdmins.map(admin => admin.id),
-                  user.id
-                );
-              } catch (error) {
-                console.error('[Bulk Import] Failed to send admin notification:', error);
-                // Don't break the import flow on notification failure
-              }
+          }
+          
+          // Send notification for new admin users using EmailNotificationService
+          if (createdAdmins.length > 0) {
+            try {
+              await emailNotificationService.notifyBulkAdminAdded(
+                organization.id,
+                createdAdmins.map(admin => admin.id),
+                user.id
+              );
+              console.log(`[Bulk Import] Queued bulk admin notification for ${createdAdmins.length} admins`);
+            } catch (error) {
+              console.error('[Bulk Import] Failed to send admin notification:', error);
+              // Don't break the import flow on notification failure
             }
           }
         }

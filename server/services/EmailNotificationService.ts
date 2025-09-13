@@ -486,6 +486,73 @@ export class EmailNotificationService {
   }
 
   /**
+   * Notify when multiple regular users are added via bulk import
+   */
+  async notifyBulkUserAdded(organizationId: string, createdUsers: any[], addedByUserId?: string): Promise<void> {
+    try {
+      // Get organization details
+      const organization = await storage.getOrganisation(organizationId);
+      if (!organization) {
+        console.error('[EmailNotificationService] Organization not found:', organizationId);
+        return;
+      }
+
+      // Get added by user details (optional)
+      let addedBy = null;
+      if (addedByUserId) {
+        addedBy = await storage.getUser(addedByUserId);
+      }
+
+      // Use first user as example for template
+      const exampleUser = createdUsers[0];
+      
+      const context: TemplateRenderContext = {
+        org: {
+          name: organization.name,
+          displayName: organization.displayName
+        },
+        user: {
+          name: exampleUser.firstName ? `${exampleUser.firstName} ${exampleUser.lastName || ''}`.trim() : exampleUser.email!,
+          email: exampleUser.email!,
+          firstName: exampleUser.firstName || '',
+          lastName: exampleUser.lastName || '',
+          fullName: exampleUser.firstName ? `${exampleUser.firstName} ${exampleUser.lastName || ''}`.trim() : exampleUser.email!
+        },
+        addedBy: addedBy ? {
+          name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
+        } : {
+          name: 'System'
+        },
+        addedAt: new Date().toLocaleDateString(),
+        bulk: {
+          count: createdUsers.length,
+          isMultiple: createdUsers.length > 1
+        }
+      };
+
+      // Exclude all newly created users from notifications
+      const createdUserIds = createdUsers.map(user => user.id);
+
+      // Create deterministic resourceId for reliable de-duplication
+      const sortedUserIds = createdUserIds.sort().join(',');
+      const userIdsHash = Buffer.from(sortedUserIds).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 16);
+      const resourceId = `bulk-users-${organizationId}-${userIdsHash}-${addedByUserId || 'system'}`;
+
+      await this.sendToAdmins({
+        organizationId,
+        templateKey: 'admin.new_user_added',
+        triggerEvent: 'USER_FAST_ADD',
+        context,
+        resourceId,
+        excludeUserIds: createdUserIds
+      });
+
+    } catch (error) {
+      console.error('[EmailNotificationService] Failed to notify bulk user added:', error);
+    }
+  }
+
+  /**
    * Notify when a learner fails a course
    */
   async notifyLearnerFailedCourse(organizationId: string, userId: string, courseId: string, attemptId: string): Promise<void> {
