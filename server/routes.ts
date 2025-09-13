@@ -2574,6 +2574,278 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/billing/verify-checkout - Verify checkout sessions and update organization billing
+  app.get('/api/billing/verify-checkout', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Access denied - admin only' 
+        });
+      }
+
+      const { csid } = req.query;
+      if (!csid || typeof csid !== 'string') {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Missing or invalid checkout session ID (csid)' 
+        });
+      }
+
+      // Get user's organization
+      if (!user.organisationId) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'User is not associated with an organisation' 
+        });
+      }
+
+      const organisation = await storage.getOrganisation(user.organisationId);
+      if (!organisation) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Organisation not found' 
+        });
+      }
+
+      // Initialize Stripe service
+      const { getStripeService } = await import('./services/StripeService.js');
+      const stripeService = getStripeService();
+
+      // Retrieve checkout session from Stripe
+      let checkoutSession;
+      try {
+        checkoutSession = await stripeService.getCheckoutSession(csid, {
+          expand: ['subscription', 'invoice']
+        });
+      } catch (error: any) {
+        console.error('Error retrieving checkout session:', error);
+        return res.status(404).json({ 
+          success: false,
+          message: 'Checkout session not found or expired' 
+        });
+      }
+
+      // Verify session belongs to this organization
+      const orgIdFromMetadata = checkoutSession.metadata?.org_id;
+      if (orgIdFromMetadata !== organisation.id) {
+        console.warn(`Security: Checkout session org mismatch. Session: ${orgIdFromMetadata}, User org: ${organisation.id}`);
+        return res.status(403).json({ 
+          success: false,
+          message: 'Access denied - checkout session does not belong to your organization' 
+        });
+      }
+
+      const sessionStatus = checkoutSession.status;
+      const paymentStatus = checkoutSession.payment_status;
+      
+      // Handle different session modes and statuses
+      if (checkoutSession.mode === 'payment') {
+        // One-time payment mode (not typically used for subscriptions)
+        if (sessionStatus === 'complete' && paymentStatus === 'paid') {
+          return res.json({
+            success: true,
+            status: 'completed',
+            message: 'Payment completed successfully',
+            session: {
+              id: checkoutSession.id,
+              status: sessionStatus,
+              payment_status: paymentStatus
+            }
+          });
+        }
+        
+        return res.json({
+          success: false,
+          status: sessionStatus === 'open' ? 'pending' : 'failed',
+          message: sessionStatus === 'open' ? 'Payment pending' : 'Payment failed',
+          session: {
+            id: checkoutSession.id,
+            status: sessionStatus,
+            payment_status: paymentStatus
+          }
+        });
+      }
+
+      // Handle subscription mode (new subscriptions)
+      if (checkoutSession.mode === 'subscription') {
+        if (sessionStatus !== 'complete') {
+          return res.json({
+            success: false,
+            status: sessionStatus === 'open' ? 'pending' : 'failed',
+            message: sessionStatus === 'open' ? 'Subscription setup pending' : 'Subscription setup failed',
+            session: {
+              id: checkoutSession.id,
+              status: sessionStatus,
+              payment_status: paymentStatus
+            }
+          });
+        }
+
+        // Subscription created successfully
+        const subscription = checkoutSession.subscription;
+        if (!subscription || typeof subscription === 'string') {
+          return res.status(500).json({ 
+            success: false,
+            message: 'Subscription data not properly loaded from checkout session' 
+          });
+        }
+
+        // Extract metadata for database update
+        const metadata = checkoutSession.metadata || {};
+        const planId = metadata.plan_id;
+        const intendedSeats = metadata.intended_seats ? parseInt(metadata.intended_seats) : 1;
+
+        if (!planId) {
+          console.error('Missing plan_id in checkout session metadata');
+          return res.status(500).json({ 
+            success: false,
+            message: 'Invalid checkout session - missing plan information' 
+          });
+        }
+
+        // Update organization billing information
+        try {
+          await storage.updateOrganisationBilling(organisation.id, {
+            stripeCustomerId: subscription.customer as string,
+            stripeSubscriptionId: subscription.id,
+            planId: planId,
+            billingStatus: subscription.status as any,
+            activeUserCount: intendedSeats,
+            lastBillingSync: new Date(),
+          });
+
+          console.log(`✅ Organization ${organisation.id} billing updated: subscription ${subscription.id}, plan ${planId}, seats ${intendedSeats}`);
+        } catch (dbError: any) {
+          console.error('Database update error:', dbError);
+          return res.status(500).json({ 
+            success: false,
+            message: 'Failed to update organization billing information' 
+          });
+        }
+
+        return res.json({
+          success: true,
+          status: 'completed',
+          message: 'Subscription created and organization updated successfully',
+          subscription: {
+            id: subscription.id,
+            status: subscription.status,
+            plan_id: planId,
+            licensed_seats: intendedSeats,
+            current_period_end: new Date((subscription as any).current_period_end * 1000).toISOString()
+          }
+        });
+      }
+
+      // Handle setup mode (existing subscription updates)
+      if (checkoutSession.mode === 'setup') {
+        if (sessionStatus !== 'complete') {
+          return res.json({
+            success: false,
+            status: sessionStatus === 'open' ? 'pending' : 'failed',
+            message: sessionStatus === 'open' ? 'Payment method setup pending' : 'Payment method setup failed',
+            session: {
+              id: checkoutSession.id,
+              status: sessionStatus,
+              payment_status: paymentStatus
+            }
+          });
+        }
+
+        // Setup completed - now apply subscription changes based on metadata
+        const metadata = checkoutSession.metadata || {};
+        const newPriceId = metadata.new_price_id;
+        const newQuantity = metadata.new_quantity ? parseInt(metadata.new_quantity) : undefined;
+        const targetSubscriptionId = metadata.target_subscription_id;
+        const planId = metadata.plan_id;
+
+        if (!targetSubscriptionId || !newPriceId || !planId) {
+          console.error('Missing required metadata for setup mode update:', { targetSubscriptionId, newPriceId, planId });
+          return res.status(500).json({ 
+            success: false,
+            message: 'Invalid setup session - missing subscription update information' 
+          });
+        }
+
+        try {
+          // Update the subscription with new price/quantity
+          const stripe = stripeService['stripe'];
+          const subscription = await stripe.subscriptions.retrieve(targetSubscriptionId);
+          
+          if (subscription.items.data.length === 0) {
+            throw new Error('Subscription has no items to update');
+          }
+
+          const subscriptionItemId = subscription.items.data[0].id;
+
+          const updateData: any = {
+            items: [{
+              id: subscriptionItemId,
+              price: newPriceId,
+            }],
+            proration_behavior: 'always_invoice',
+          };
+
+          // Add quantity for non-metered plans
+          if (newQuantity !== undefined && metadata.billing_model !== 'metered_per_active_user') {
+            updateData.items[0].quantity = newQuantity;
+          }
+
+          const updatedSubscription = await stripe.subscriptions.update(
+            targetSubscriptionId,
+            updateData
+          );
+
+          // Update organization billing information
+          await storage.updateOrganisationBilling(organisation.id, {
+            planId: planId,
+            billingStatus: updatedSubscription.status as any,
+            activeUserCount: newQuantity || subscription.items.data[0].quantity || 1,
+            lastBillingSync: new Date(),
+          });
+
+          console.log(`✅ Organization ${organisation.id} subscription updated: ${targetSubscriptionId} to plan ${planId}`);
+
+          return res.json({
+            success: true,
+            status: 'completed',
+            message: 'Subscription updated successfully',
+            subscription: {
+              id: updatedSubscription.id,
+              status: updatedSubscription.status,
+              plan_id: planId,
+              licensed_seats: newQuantity || subscription.items.data[0].quantity || 1,
+              current_period_end: new Date(updatedSubscription.current_period_end * 1000).toISOString()
+            }
+          });
+
+        } catch (updateError: any) {
+          console.error('Subscription update error:', updateError);
+          return res.status(500).json({ 
+            success: false,
+            message: 'Failed to update subscription: ' + updateError.message 
+          });
+        }
+      }
+
+      // Unknown mode
+      return res.status(400).json({ 
+        success: false,
+        message: `Unsupported checkout session mode: ${checkoutSession.mode}` 
+      });
+
+    } catch (error: any) {
+      console.error('Error verifying checkout session:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Internal server error while verifying checkout', 
+        error: error.message 
+      });
+    }
+  });
+
   // Comprehensive Stripe Webhook Handler with signature verification
   app.post('/api/webhooks/stripe', async (req: any, res) => {
     const signature = req.headers['stripe-signature'] as string;
