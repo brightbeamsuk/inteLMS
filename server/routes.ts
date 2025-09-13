@@ -2824,7 +2824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: updatedSubscription.status,
               plan_id: planId,
               licensed_seats: newQuantity || subscription.items.data[0].quantity || 1,
-              current_period_end: new Date(updatedSubscription.current_period_end * 1000).toISOString()
+              current_period_end: updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000).toISOString() : null
             }
           });
 
