@@ -545,7 +545,8 @@ export class StripeService {
       }
 
       // Step 6: Create the checkout session with idempotency protection
-      const idempotencyKey = this.generateDeterministicIdempotencyKey(organisation.id, `checkout-${baseMetadata.checkout_type}`);
+      // Include plan ID and user count to ensure different requests get different keys
+      const idempotencyKey = this.generateDeterministicIdempotencyKey(organisation.id, `checkout-${baseMetadata.checkout_type}-${plan.id}-${userCount}`);
       
       const session = await this.stripe.checkout.sessions.create(sessionData, {
         idempotencyKey,
