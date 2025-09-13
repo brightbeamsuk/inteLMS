@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import type { Organisation, Plan, InsertWebhookEvent } from '../../shared/schema';
 import { nanoid } from 'nanoid';
 import { billingLockService } from './BillingLockService.js';
+import { emailNotificationService } from './EmailNotificationService';
 
 export class StripeWebhookService {
   private stripe: Stripe;
@@ -357,8 +358,27 @@ export class StripeWebhookService {
       updateData.activeUserCount = intendedSeats;
     }
 
+    // Capture previous plan before update for notification
+    const previousPlanId = organisation.planId;
+
     // Update organization with checkout session data
     await storage.updateOrganisationBilling(organisation.id, updateData);
+
+    // Send plan updated notification to organization admins (checkout session completed)
+    if (plan && plan.id !== previousPlanId) {
+      try {
+        await emailNotificationService.notifyPlanUpdated(
+          organisation.id,
+          previousPlanId,
+          plan.id,
+          undefined // No specific user for webhook updates (system update)
+        );
+        console.log(`📧 Plan update notification sent for org ${organisation.name} [${correlationId}]: ${previousPlanId} → ${plan.id} (checkout session)`);
+      } catch (error) {
+        console.error(`[Checkout Session Webhook] Failed to send plan update notification [${correlationId}]:`, error);
+        // Don't break the webhook processing for notification failures
+      }
+    }
 
     console.log(`✅ Checkout session processed for org ${organisation.name} [${correlationId}]:`, {
       orgId: organisation.id,
@@ -422,8 +442,27 @@ export class StripeWebhookService {
       updateData.planId = plan.id;
     }
 
+    // Capture previous plan before update for notification
+    const previousPlanId = organisation.planId;
+
     // Update organization with complete subscription details
     await storage.updateOrganisationBilling(organisation.id, updateData);
+
+    // Send plan updated notification to organization admins (subscription created)
+    if (plan && plan.id !== previousPlanId) {
+      try {
+        await emailNotificationService.notifyPlanUpdated(
+          organisation.id,
+          previousPlanId,
+          plan.id,
+          undefined // No specific user for webhook updates (system update)
+        );
+        console.log(`📧 Plan update notification sent for org ${organisation.name} [${correlationId}]: ${previousPlanId} → ${plan.id} (subscription created)`);
+      } catch (error) {
+        console.error(`[Subscription Created Webhook] Failed to send plan update notification [${correlationId}]:`, error);
+        // Don't break the webhook processing for notification failures
+      }
+    }
 
     // Log the state transition
     console.log(`✅ Subscription created and org updated [${correlationId}]:`, {
@@ -509,6 +548,22 @@ export class StripeWebhookService {
 
     // Update organization with all changes from Stripe
     await storage.updateOrganisationBilling(organisation.id, updateData);
+
+    // Send plan updated notification to organization admins (Stripe webhook)
+    if (currentPlanId !== plan?.id) {
+      try {
+        await emailNotificationService.notifyPlanUpdated(
+          organisation.id,
+          currentPlanId,
+          plan?.id,
+          undefined // No specific user for webhook updates (system update)
+        );
+        console.log(`📧 Plan update notification sent for org ${organisation.name} [${correlationId}]: ${currentPlanId} → ${plan?.id}`);
+      } catch (error) {
+        console.error(`[Stripe Webhook] Failed to send plan update notification [${correlationId}]:`, error);
+        // Don't break the webhook processing for notification failures
+      }
+    }
 
     console.log(`✅ Subscription updated and org synced [${correlationId}]:`, {
       orgId: organisation.id,

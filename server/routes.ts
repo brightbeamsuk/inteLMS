@@ -711,6 +711,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? session.customer 
             : session.customer?.id;
             
+          // Get current organization data to capture previous plan
+          const orgBeforeUpdate = await storage.getOrganisation(metadata.org_id);
+          const previousPlanId = orgBeforeUpdate?.planId;
+          
           await storage.updateOrganisationBilling(metadata.org_id, {
             planId: metadata.plan_id, // Fix: Include plan ID update
             stripeSubscriptionId: subscriptionId,
@@ -719,6 +723,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             activeUserCount: parseInt(metadata.userCount || '1'),
             lastBillingSync: new Date(),
           });
+          
+          // Send plan updated notification to organization admins (checkout success)
+          if (metadata.plan_id && metadata.plan_id !== previousPlanId) {
+            try {
+              const userId = req.session?.user?.id; // May be null if user logged out
+              await emailNotificationService.notifyPlanUpdated(
+                metadata.org_id,
+                previousPlanId,
+                metadata.plan_id,
+                userId // Pass undefined if no session user (system update)
+              );
+            } catch (error) {
+              console.error('[Checkout Success] Failed to send plan update notification:', error);
+              // Don't break the checkout flow for notification failures
+            }
+          }
           
           // Get updated organisation data
           const updatedOrg = await storage.getOrganisation(metadata.org_id);
@@ -2080,12 +2100,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Update organization billing to reflect the changes
+      const previousPlanId = organisation.planId; // Capture before update
       await storage.updateOrganisationBilling(organisationId, {
         planId: plan.id,
         activeUserCount: userCount || 1,
         billingStatus: 'active',
         lastBillingSync: new Date()
       });
+
+      // Send plan updated notification to organization admins (change plan API)
+      if (plan.id !== previousPlanId) {
+        try {
+          await emailNotificationService.notifyPlanUpdated(
+            organisationId,
+            previousPlanId,
+            plan.id,
+            user.id
+          );
+        } catch (error) {
+          console.error('[Change Plan API] Failed to send plan update notification:', error);
+          // Don't break the plan update flow for notification failures
+        }
+      }
 
       res.json({
         success: true,
@@ -2201,28 +2237,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastBillingSync: new Date()
       });
       
-      // Send plan updated notification to organization admins
-      const adminEmails = await getOrganizationAdminEmails(organisation.id);
-      await sendMultiRecipientNotification(
-        'Plan Updated',
-        adminEmails,
-        (adminEmail) => emailTemplateService.sendPlanUpdatedNotification(
-          adminEmail,
-          buildPlanUpdatedNotificationData(
-            organisation,
-            { name: adminEmail.split('@')[0], email: adminEmail }, // Admin placeholder since we only have email
-            {
-              name: plan.name,
-              oldPrice: previousPlan?.unitAmount ? previousPlan.unitAmount / 100 : 0,
-              newPrice: plan.unitAmount ? plan.unitAmount / 100 : 0,
-              billingCadence: plan.cadence || 'monthly',
-              effectiveDate: new Date().toISOString()
-            },
-            user
-          ),
-          organisation.id
-        )
-      );
+      // Send plan updated notification to organization admins using EmailNotificationService
+      try {
+        await emailNotificationService.notifyPlanUpdated(
+          organisation.id,
+          previousPlan?.id,
+          plan.id,
+          user.id
+        );
+      } catch (error) {
+        console.error('[Plan Update] Failed to send admin notification:', error);
+        // Don't break the plan update flow for notification failures
+      }
       
       res.json({
         success: true,
@@ -2487,8 +2513,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         idempotencyKey
       );
 
+      // Get previous plan ID for notification context
+      const previousPlanId = organisation.planId;
+
       // Update our database
       await storage.updateOrganisation(orgId, { planId });
+
+      // Send plan updated notification to organization admins (Admin billing change)
+      if (planId !== previousPlanId) {
+        try {
+          await emailNotificationService.notifyPlanUpdated(
+            orgId,
+            previousPlanId,
+            planId,
+            user.id
+          );
+        } catch (error) {
+          console.error('[Admin Billing Change] Failed to send plan update notification:', error);
+          // Don't break the plan update flow for notification failures
+        }
+      }
 
       res.json({
         success: true,
@@ -3152,31 +3196,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastBillingSync: new Date(),
       });
       
-      // Send plan updated notification to organization admins
+      // Send plan updated notification to organization admins using EmailNotificationService
       if (planId && planId !== organisation.planId) {
-        const newPlan = await storage.getPlan(planId);
-        if (newPlan) {
-          const adminEmails = await getOrganizationAdminEmails(id);
-          await sendMultiRecipientNotification(
-            'Plan Updated',
-            adminEmails,
-            (adminEmail) => emailTemplateService.sendPlanUpdatedNotification(
-              adminEmail,
-              buildPlanUpdatedNotificationData(
-                organisation,
-                { name: adminEmail.split('@')[0], email: adminEmail }, // Admin placeholder since we only have email
-                {
-                  name: newPlan.name,
-                  oldPrice: previousPlan?.unitAmount ? previousPlan.unitAmount / 100 : 0,
-                  newPrice: newPlan.unitAmount ? newPlan.unitAmount / 100 : 0,
-                  billingCadence: newPlan.cadence || 'monthly',
-                  effectiveDate: new Date().toISOString()
-                },
-                user
-              ),
-              id
-            )
+        try {
+          await emailNotificationService.notifyPlanUpdated(
+            id,
+            previousPlan?.id,
+            planId,
+            user.id
           );
+        } catch (error) {
+          console.error('[SuperAdmin Plan Update] Failed to send admin notification:', error);
+          // Don't break the plan update flow for notification failures
         }
       }
 
@@ -5391,8 +5422,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Get current organization data to capture previous plan before update
+      const orgBeforeUpdate = await storage.getOrganisation(id);
+      const previousPlanId = orgBeforeUpdate?.planId;
+
       // Update the organisation with the new plan
       const updatedOrganisation = await storage.updateOrganisation(id, { planId: finalPlanId });
+      
+      // Send plan updated notification to organization admins (SuperAdmin manual update)
+      if (finalPlanId !== previousPlanId) {
+        try {
+          await emailNotificationService.notifyPlanUpdated(
+            id,
+            previousPlanId,
+            finalPlanId,
+            user.id
+          );
+        } catch (error) {
+          console.error('[SuperAdmin Manual Update] Failed to send plan update notification:', error);
+          // Don't break the plan update flow for notification failures
+        }
+      }
       
       res.json({
         message: 'Subscription updated successfully',
