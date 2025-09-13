@@ -31,7 +31,8 @@ export class EmailNotificationService {
    */
   private async getOrganizationAdmins(organizationId: string): Promise<Array<{id: string, email: string, firstName?: string, lastName?: string}>> {
     try {
-      const admins = await storage.getOrganizationUsers(organizationId, { role: 'admin', status: 'active' });
+      const allUsers = await storage.getUsersByOrganisation(organizationId);
+      const admins = allUsers.filter(user => user.role === 'admin' && user.status === 'active' && user.email);
       return admins.map(admin => ({
         id: admin.id,
         email: admin.email!,
@@ -105,7 +106,7 @@ export class EmailNotificationService {
       }
 
       // Get new admin details
-      const newAdmin = await storage.getUserById(newAdminUserId);
+      const newAdmin = await storage.getUser(newAdminUserId);
       if (!newAdmin) {
         console.error('[EmailNotificationService] New admin user not found:', newAdminUserId);
         return;
@@ -114,7 +115,7 @@ export class EmailNotificationService {
       // Get added by user details (optional)
       let addedBy = null;
       if (addedByUserId) {
-        addedBy = await storage.getUserById(addedByUserId);
+        addedBy = await storage.getUser(addedByUserId);
       }
 
       const context: TemplateRenderContext = {
@@ -122,19 +123,21 @@ export class EmailNotificationService {
           name: organization.name,
           displayName: organization.displayName
         },
-        new_admin: {
+        user: {
           name: newAdmin.firstName ? `${newAdmin.firstName} ${newAdmin.lastName || ''}`.trim() : newAdmin.email!,
           email: newAdmin.email!,
-          full_name: newAdmin.firstName ? `${newAdmin.firstName} ${newAdmin.lastName || ''}`.trim() : newAdmin.email!
+          firstName: newAdmin.firstName || '',
+          lastName: newAdmin.lastName || '',
+          fullName: newAdmin.firstName ? `${newAdmin.firstName} ${newAdmin.lastName || ''}`.trim() : newAdmin.email!
         },
-        added_by: addedBy ? {
+        addedBy: addedBy ? {
           name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!,
-          full_name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
+          fullName: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
         } : {
           name: 'System',
-          full_name: 'System'
+          fullName: 'System'
         },
-        added_at: new Date().toLocaleDateString()
+        addedAt: new Date().toLocaleDateString()
       };
 
       await this.sendToAdmins({
@@ -163,7 +166,7 @@ export class EmailNotificationService {
       }
 
       // Get new user details
-      const newUser = await storage.getUserById(newUserId);
+      const newUser = await storage.getUser(newUserId);
       if (!newUser) {
         console.error('[EmailNotificationService] New user not found:', newUserId);
         return;
@@ -172,7 +175,7 @@ export class EmailNotificationService {
       // Get added by user details (optional)
       let addedBy = null;
       if (addedByUserId) {
-        addedBy = await storage.getUserById(addedByUserId);
+        addedBy = await storage.getUser(addedByUserId);
       }
 
       const context: TemplateRenderContext = {
@@ -187,14 +190,14 @@ export class EmailNotificationService {
           lastName: newUser.lastName || '',
           fullName: newUser.firstName ? `${newUser.firstName} ${newUser.lastName || ''}`.trim() : newUser.email!
         },
-        added_by: addedBy ? {
+        addedBy: addedBy ? {
           name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!,
-          full_name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
+          fullName: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
         } : {
           name: 'System',
-          full_name: 'System'
+          fullName: 'System'
         },
-        added_at: new Date().toLocaleDateString()
+        addedAt: new Date().toLocaleDateString()
       };
 
       await this.sendToAdmins({
@@ -223,14 +226,14 @@ export class EmailNotificationService {
       }
 
       // Get user details
-      const user = await storage.getUserById(userId);
+      const user = await storage.getUser(userId);
       if (!user) {
         console.error('[EmailNotificationService] User not found:', userId);
         return;
       }
 
       // Get course details
-      const course = await storage.getCourseById(courseId);
+      const course = await storage.getCourse(courseId);
       if (!course) {
         console.error('[EmailNotificationService] Course not found:', courseId);
         return;
@@ -239,7 +242,7 @@ export class EmailNotificationService {
       // Get assigned by user details (optional)
       let assignedBy = null;
       if (assignedByUserId) {
-        assignedBy = await storage.getUserById(assignedByUserId);
+        assignedBy = await storage.getUser(assignedByUserId);
       }
 
       const context: TemplateRenderContext = {
@@ -295,16 +298,16 @@ export class EmailNotificationService {
       let oldPlan = null;
       let newPlan = null;
       if (oldPlanId) {
-        oldPlan = await storage.getPlanById(oldPlanId);
+        oldPlan = await storage.getPlan(oldPlanId);
       }
       if (newPlanId) {
-        newPlan = await storage.getPlanById(newPlanId);
+        newPlan = await storage.getPlan(newPlanId);
       }
 
       // Get changed by user details (optional)
       let changedBy = null;
       if (changedByUserId) {
-        changedBy = await storage.getUserById(changedByUserId);
+        changedBy = await storage.getUser(changedByUserId);
       }
 
       const context: TemplateRenderContext = {
@@ -351,21 +354,21 @@ export class EmailNotificationService {
       }
 
       // Get user details
-      const user = await storage.getUserById(userId);
+      const user = await storage.getUser(userId);
       if (!user) {
         console.error('[EmailNotificationService] User not found:', userId);
         return;
       }
 
       // Get course details
-      const course = await storage.getCourseById(courseId);
+      const course = await storage.getCourse(courseId);
       if (!course) {
         console.error('[EmailNotificationService] Course not found:', courseId);
         return;
       }
 
       // Get completion details
-      const completion = await storage.getCompletionById(completionId);
+      const completion = await storage.getCompletion(completionId);
       
       const context: TemplateRenderContext = {
         org: {
@@ -416,14 +419,14 @@ export class EmailNotificationService {
       }
 
       // Get user details
-      const user = await storage.getUserById(userId);
+      const user = await storage.getUser(userId);
       if (!user) {
         console.error('[EmailNotificationService] User not found:', userId);
         return;
       }
 
       // Get course details
-      const course = await storage.getCourseById(courseId);
+      const course = await storage.getCourse(courseId);
       if (!course) {
         console.error('[EmailNotificationService] Course not found:', courseId);
         return;
@@ -432,7 +435,7 @@ export class EmailNotificationService {
       // Get attempt details (try to get from SCORM attempts table)
       let attempt = null;
       try {
-        attempt = await storage.getScormAttemptById(attemptId);
+        attempt = await storage.getScormAttempt(attemptId);
       } catch (error) {
         console.warn('[EmailNotificationService] Could not get attempt details:', error);
       }
