@@ -285,6 +285,23 @@ export function AdminBilling() {
       return await response.json();
     },
     onSuccess: (data) => {
+      // Check if response requires Stripe Checkout redirect
+      if (data.checkout && data.checkoutUrl) {
+        // Close modal first
+        setShowPlanChangeModal(false);
+        setSelectedPlan(null);
+        
+        toast({
+          title: "Redirecting to Stripe Checkout",
+          description: "Setting up your subscription...",
+        });
+        
+        // Redirect to Stripe Checkout
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      
+      // Regular plan change success
       setShowPlanChangeModal(false);
       setSelectedPlan(null);
       
@@ -334,6 +351,19 @@ export function AdminBilling() {
       return await response.json();
     },
     onSuccess: (data) => {
+      // Check if response requires Stripe Checkout redirect
+      if (data.checkout && data.checkoutUrl) {
+        toast({
+          title: "Redirecting to Stripe Checkout",
+          description: "Setting up your subscription...",
+        });
+        
+        // Redirect to Stripe Checkout
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      
+      // Regular subscription update success
       // Refresh the organisation data to show updated billing
       queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
