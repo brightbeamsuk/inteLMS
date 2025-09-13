@@ -132,6 +132,9 @@ export function AdminOrganisationSettings() {
     apiRegion: '', // SES
   });
 
+  // Custom email provider toggle state
+  const [useCustomEmailProvider, setUseCustomEmailProvider] = useState(false);
+
   const [showTestEmailModal, setShowTestEmailModal] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [testResult, setTestResult] = useState<any>(null);
@@ -399,6 +402,10 @@ The {{organisationDisplayName}} Team`
   // Check if custom email templates feature is enabled
   const emailTemplatesFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_email_templates');
   const hasEmailTemplatesAccess = emailTemplatesFeature?.enabled || false;
+
+  // Check if custom email provider feature is enabled
+  const customEmailProviderFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_email_provider');
+  const hasCustomEmailProviderAccess = customEmailProviderFeature?.enabled || false;
 
   // Check if custom branding colors feature is enabled
   const customBrandingFeature = planFeatures.find((feature: any) => feature.featureId === 'custom_branding_colors');
@@ -879,8 +886,9 @@ The {{organisationDisplayName}} Team`
             ))}
           </div>
 
-          {/* Branding Tab */}
-          {activeTab === 0 && (
+          {/* Tab Content */}
+            {/* Branding Tab */}
+            {activeTab === 0 && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Branding & Appearance</h3>
               
@@ -1285,8 +1293,60 @@ The {{organisationDisplayName}} Team`
                 </div>
               </div>
               
-              {/* Provider Selection */}
-              <div className="form-control">
+              {/* Custom Email Provider Toggle */}
+              <div className="space-y-4">
+                {hasCustomEmailProviderAccess ? (
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input 
+                        type="checkbox" 
+                        className="toggle" 
+                        checked={useCustomEmailProvider}
+                        onChange={(e) => setUseCustomEmailProvider(e.target.checked)}
+                        data-testid="toggle-custom-email-provider"
+                        style={{
+                          '--tglbg': useCustomEmailProvider ? '#4ade80' : '#d1d5db',
+                          backgroundColor: useCustomEmailProvider ? '#4ade80' : '#d1d5db',
+                        } as React.CSSProperties}
+                      />
+                      <span className="label-text">
+                        <strong>Use Custom Email Provider</strong>
+                        <div className="text-sm text-base-content/60">
+                          Configure your own email provider instead of using system defaults
+                        </div>
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="alert alert-info">
+                    <i className="fas fa-info-circle"></i>
+                    <div>
+                      <div className="font-bold">System Default Email Provider</div>
+                      <div className="text-sm">
+                        Your plan uses system default email settings. Contact support to upgrade for custom email provider access.
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Status Indication */}
+                <div className="alert alert-sm">
+                  <i className={`fas ${useCustomEmailProvider && hasCustomEmailProviderAccess ? 'fa-cogs' : 'fa-shield-alt'}`}></i>
+                  <div className="text-sm">
+                    <strong>Current Status:</strong> {
+                      hasCustomEmailProviderAccess && useCustomEmailProvider 
+                        ? 'Using Custom Email Provider Configuration' 
+                        : 'Using System Default Email Provider'
+                    }
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Email Provider Configuration - only show when enabled */}
+              {hasCustomEmailProviderAccess && useCustomEmailProvider && (
+                <div className="space-y-6">
+                  {/* Provider Selection */}
+                  <div className="form-control">
                 <label className="label">
                   <span className="label-text font-semibold">Email Provider</span>
                 </label>
@@ -1959,9 +2019,13 @@ The {{organisationDisplayName}} Team`
               </div>
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Add Administrator Modal */}
-          {showAddAdminModal && (
+      {/* Modals */}
+      {}
+        {/* Add Administrator Modal */}
+        {showAddAdminModal && (
             <div className="modal modal-open">
               <div className="modal-box max-w-2xl">
                 <div className="flex justify-between items-center mb-4">
@@ -2343,8 +2407,7 @@ The {{organisationDisplayName}} Team`
             featureDescription="Your current plan allows 1 administrator account. Upgrade to add unlimited administrator accounts and empower your team with full administrative access."
             featureIcon="fas fa-users-crown"
           />
-        </div>
-      </div>
+      </>
     </div>
   );
 }
