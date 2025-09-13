@@ -89,6 +89,38 @@ export function AdminBilling() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   
+  // Handle Stripe checkout return
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    const cancelled = urlParams.get('cancelled');
+    const sessionId = urlParams.get('session_id');
+    const setup = urlParams.get('setup');
+    
+    if (success && setup === 'complete') {
+      toast({
+        title: "Subscription Setup Complete!",
+        description: "Your billing has been successfully configured. Your subscription is now active.",
+      });
+      
+      // Refresh all billing-related data
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', user?.organisationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/license-check'] });
+      
+      // Clear URL parameters to prevent showing the message again
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (cancelled && setup === 'cancelled') {
+      toast({
+        title: "Setup Cancelled",
+        description: "Subscription setup was cancelled. You can try again anytime.",
+        variant: "default",
+      });
+      
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [toast, queryClient, user?.organisationId]);
+  
   // Local state
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
@@ -296,8 +328,8 @@ export function AdminBilling() {
           description: "Setting up your subscription...",
         });
         
-        // Redirect to Stripe Checkout
-        window.location.href = data.checkoutUrl;
+        // Open Stripe Checkout in a new tab
+        window.open(data.checkoutUrl, '_blank');
         return;
       }
       
@@ -358,8 +390,8 @@ export function AdminBilling() {
           description: "Setting up your subscription...",
         });
         
-        // Redirect to Stripe Checkout
-        window.location.href = data.checkoutUrl;
+        // Open Stripe Checkout in a new tab
+        window.open(data.checkoutUrl, '_blank');
         return;
       }
       
