@@ -1,0 +1,47 @@
+Goal:
+Make the LMS send the correct email for each named template, every time the matching event happens. All of these emails are notifications to the organisation’s Admins (not to learners). Use Superadmin templates as defaults, but if an organisation/Admin has created an override, send their override instead.
+
+Global rules
+
+Recipients: send to all active Admin users of the relevant organisation (use their account emails).
+
+Template resolution:
+
+If the organisation has an override for this template and it’s enabled, use the override (subject/body).
+
+Otherwise use the Superadmin default template.
+
+De-dupe: send once per event (avoid duplicates for the same event id).
+
+Timing: send immediately after the event is confirmed successful (e.g., user created, assignment saved, plan update applied, completion/failed status finalised).
+
+Template triggers (plain English)
+
+New Admin Added
+Trigger this when a new Admin account is successfully created in an organisation (by Superadmin or by an org Admin) and marked active. Send to that organisation’s Admin emails.
+
+New User Added
+Trigger this when a new standard user/learner is successfully added to an organisation (account created and linked to the org). Send to that organisation’s Admin emails.
+
+Course Assigned
+Trigger this when an Admin assigns a course to a learner and the assignment is saved (new assignment record created).
+Do not trigger on simple edits that don’t create a new assignment. Send to that organisation’s Admin emails.
+
+Plan Updated (Admin/Organisation)
+Trigger this when the organisation’s subscription/plan actually changes (upgrade, downgrade, price change, seats change) and the change is confirmed/applied. Send to that organisation’s Admin emails.
+
+Learner Completion Course
+Trigger this when a learner’s latest attempt is marked as “completed/passed” by the LMS (e.g., SCORM/xAPI status becomes passed/completed). Send to that organisation’s Admin emails.
+
+Learner Course Failed
+Trigger this when a learner’s latest attempt is marked as “failed” by the LMS (e.g., SCORM/xAPI status becomes failed after final grading). Send to that organisation’s Admin emails.
+
+Reminder about defaults vs overrides
+
+The Email Templates set in Superadmin are the default/fallback for the whole platform.
+
+If an organisation/Admin has created an override for any template (subject and/or body), the system must send their override for that organisation only.
+
+If an override is missing or disabled, fall back to the Superadmin default.
+
+Implement exactly as written above. Do not change unrelated code.
