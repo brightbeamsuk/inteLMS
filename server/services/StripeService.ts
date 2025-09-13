@@ -465,7 +465,8 @@ export class StripeService {
       };
 
       // Use environment-appropriate URLs
-      const baseUrl = process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.replit.app` : 'http://localhost:5000';
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : 'http://localhost:5000';
+      console.log(`Using baseUrl: ${baseUrl} (REPLIT_DEV_DOMAIN: ${process.env.REPLIT_DEV_DOMAIN})`);
       
       // Step 4: Create line item - don't include quantity for metered plans
       const lineItem: any = {
@@ -547,6 +548,8 @@ export class StripeService {
       // Step 6: Create the checkout session with idempotency protection
       // Include plan ID and user count to ensure different requests get different keys
       const idempotencyKey = this.generateDeterministicIdempotencyKey(organisation.id, `checkout-${baseMetadata.checkout_type}-${plan.id}-${userCount}`);
+      
+      console.log(`Checkout session URLs - Success: ${sessionData.success_url}, Cancel: ${sessionData.cancel_url}`);
       
       const session = await this.stripe.checkout.sessions.create(sessionData, {
         idempotencyKey,
