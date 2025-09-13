@@ -295,7 +295,7 @@ export class EmailNotificationService {
   /**
    * Notify when a course is assigned to a learner
    */
-  async notifyCourseAssigned(organizationId: string, userId: string, courseId: string, assignedByUserId?: string): Promise<void> {
+  async notifyCourseAssigned(organizationId: string, courseId: string, userId: string, assignedByUserId: string): Promise<void> {
     try {
       // Get organization details
       const organization = await storage.getOrganisation(organizationId);
@@ -318,10 +318,11 @@ export class EmailNotificationService {
         return;
       }
 
-      // Get assigned by user details (optional)
-      let assignedBy = null;
-      if (assignedByUserId) {
-        assignedBy = await storage.getUser(assignedByUserId);
+      // Get assigned by user details
+      const assignedBy = await storage.getUser(assignedByUserId);
+      if (!assignedBy) {
+        console.error('[EmailNotificationService] Assigned by user not found:', assignedByUserId);
+        return;
       }
 
       const context: TemplateRenderContext = {
@@ -340,20 +341,20 @@ export class EmailNotificationService {
           title: course.title,
           description: course.description || ''
         },
-        assignedBy: assignedBy ? {
-          name: assignedBy.firstName ? `${assignedBy.firstName} ${assignedBy.lastName || ''}`.trim() : assignedBy.email!
-        } : {
-          name: 'System'
+        assignedBy: {
+          name: assignedBy.firstName ? `${assignedBy.firstName} ${assignedBy.lastName || ''}`.trim() : assignedBy.email!,
+          fullName: assignedBy.firstName ? `${assignedBy.firstName} ${assignedBy.lastName || ''}`.trim() : assignedBy.email!
         },
         assignedAt: new Date().toLocaleDateString()
       };
 
       await this.sendToAdmins({
         organizationId,
-        templateKey: 'admin.new_course_assigned',
+        templateKey: 'admin.course_assigned',
         triggerEvent: 'COURSE_ASSIGNED',
         context,
-        resourceId: `assigned-${userId}-${courseId}`
+        resourceId: `assigned-${userId}-${courseId}`,
+        excludeUserIds: [userId] // Exclude the assigned user from notifications
       });
 
     } catch (error) {

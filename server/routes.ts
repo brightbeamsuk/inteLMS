@@ -5101,49 +5101,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const assignment = await storage.createAssignment(assignmentData);
           assignments.push(assignment);
           
-          // Send course assignment email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
+          // Send course assignment email using EmailNotificationService if EMAIL_TEMPLATES_V2 is enabled
           if (EMAIL_TEMPLATES_V2_ENABLED && course) {
             try {
-              const organisation = await storage.getOrganisation(orgId);
-              const context = {
-                user: {
-                  name: `${orgUser.firstName} ${orgUser.lastName}`,
-                  email: orgUser.email || undefined,
-                  firstName: orgUser.firstName || undefined,
-                  lastName: orgUser.lastName || undefined,
-                  fullName: `${orgUser.firstName} ${orgUser.lastName}`
-                },
-                course: {
-                  title: course.title,
-                  description: course.description,
-                  estimatedDuration: course.estimatedDuration
-                },
-                org: organisation ? {
-                  name: organisation.name,
-                  displayName: organisation.displayName || organisation.name
-                } : null,
-                assignedBy: {
-                  name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
-                },
-                assignedAt: new Date().toISOString(),
-                courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${courseId}`,
-                supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
-              };
-
-              await emailOrchestrator.queue({
-                triggerEvent: 'COURSE_ASSIGNED',
-                templateKey: 'course_assigned',
-                toEmail: orgUser.email!,
-                context,
-                organisationId: orgId,
-                resourceId: assignment.id,
-                priority: 2,
-                idempotencyKey: `COURSE_ASSIGNED:${orgUser.email}:${courseId}:${assignment.id}`
-              });
+              await emailNotificationService.notifyCourseAssigned(
+                orgId,
+                courseId,
+                orgUser.id,
+                user.id
+              );
               
-              console.log(`✅ COURSE_ASSIGNED email queued for ${orgUser.email} (Course: ${course.title})`);
+              console.log(`✅ COURSE_ASSIGNED notification queued for organization admins (User: ${orgUser.email}, Course: ${course.title})`);
             } catch (emailError) {
-              console.warn('⚠️ Failed to queue COURSE_ASSIGNED email:', emailError);
+              console.warn('⚠️ Failed to queue COURSE_ASSIGNED notification:', emailError);
               // Don't fail assignment if email fails
             }
           }
