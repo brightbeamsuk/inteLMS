@@ -30,6 +30,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { emailService } from "./services/emailService";
 import { EmailOrchestrator } from "./services/EmailOrchestrator";
+import { emailNotificationService } from "./services/EmailNotificationService";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -9183,6 +9184,20 @@ This test was initiated by ${user.email}.
 
       const newUser = await storage.createUser(userDataWithPassword);
       
+      // Send admin notification if creating an admin user
+      if (newUser.role === 'admin' && newUser.organisationId) {
+        try {
+          await emailNotificationService.notifyNewAdminAdded(
+            newUser.organisationId,
+            newUser.id,
+            user.id
+          );
+        } catch (error) {
+          console.error('[User Creation] Failed to send admin notification:', error);
+          // Don't break user creation flow on notification failure
+        }
+      }
+      
       // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
       if (EMAIL_TEMPLATES_V2_ENABLED) {
         try {
@@ -9551,22 +9566,16 @@ This test was initiated by ${user.email}.
 
       const updatedUser = await storage.updateUser(userId, { role: 'admin' });
       
-      // Send new admin added notification to organization admins
-      const organization = await storage.getOrganisation(targetUser.organisationId!);
-      if (organization) {
-        const adminEmails = await getOrganizationAdminEmails(organization.id);
-        // Exclude the newly promoted admin from notification recipients
-        const recipientEmails = adminEmails.filter(email => email !== updatedUser.email);
-        
-        await sendMultiRecipientNotification(
-          'New Admin Added',
-          recipientEmails,
-          (adminEmail) => emailTemplateService.sendNewAdminNotification(
-            adminEmail,
-            buildNewAdminNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, updatedUser, currentUser),
-            organization.id
-          )
+      // Send new admin added notification using EmailNotificationService
+      try {
+        await emailNotificationService.notifyNewAdminAdded(
+          targetUser.organisationId!,
+          updatedUser.id,
+          currentUser.id
         );
+      } catch (error) {
+        console.error('[User Promotion] Failed to send admin notification:', error);
+        // Don't break promotion flow on notification failure
       }
       
       res.json({ message: 'User promoted to admin successfully', user: updatedUser });
@@ -10770,18 +10779,18 @@ This test was initiated by ${user.email}.
               );
             }
             
-            // Send notification for new admin users
+            // Send notification for new admin users using EmailNotificationService
             if (createdAdmins.length > 0) {
-              const recipientEmails = adminEmails.filter(email => email !== createdAdmins[0].email);
-              await sendMultiRecipientNotification(
-                'Bulk User Import - New Admins Added',
-                recipientEmails,
-                (adminEmail) => emailTemplateService.sendNewAdminNotification(
-                  adminEmail,
-                  buildNewAdminNotificationData(organization, { name: adminEmail.split('@')[0], email: adminEmail }, createdAdmins[0], user),
-                  organization.id
-                )
-              );
+              try {
+                await emailNotificationService.notifyBulkAdminAdded(
+                  organization.id,
+                  createdAdmins.map(admin => admin.id),
+                  user.id
+                );
+              } catch (error) {
+                console.error('[Bulk Import] Failed to send admin notification:', error);
+                // Don't break the import flow on notification failure
+              }
             }
           }
         }

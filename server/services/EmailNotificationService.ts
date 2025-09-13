@@ -54,14 +54,18 @@ export class EmailNotificationService {
     triggerEvent: 'ORG_FAST_ADD' | 'USER_FAST_ADD' | 'COURSE_ASSIGNED' | 'COURSE_COMPLETED' | 'COURSE_FAILED' | 'PLAN_UPDATED';
     context: TemplateRenderContext;
     resourceId: string; // For de-duplication
+    excludeUserIds?: string[]; // Optional list of user IDs to exclude from notifications
   }): Promise<void> {
-    const { organizationId, templateKey, triggerEvent, context, resourceId } = params;
+    const { organizationId, templateKey, triggerEvent, context, resourceId, excludeUserIds = [] } = params;
     
     // Get all active admin users
-    const admins = await this.getOrganizationAdmins(organizationId);
+    const allAdmins = await this.getOrganizationAdmins(organizationId);
+    
+    // Filter out excluded users (e.g., newly added admins shouldn't notify themselves)
+    const admins = allAdmins.filter(admin => !excludeUserIds.includes(admin.id));
     
     if (admins.length === 0) {
-      console.warn('[EmailNotificationService] No active admin users found for organization:', organizationId);
+      console.warn('[EmailNotificationService] No active admin users found for organization after exclusions:', organizationId);
       return;
     }
 
@@ -145,11 +149,86 @@ export class EmailNotificationService {
         templateKey: 'admin.new_admin_added',
         triggerEvent: 'ORG_FAST_ADD',
         context,
-        resourceId: `new-admin-${newAdminUserId}`
+        resourceId: `new-admin-${newAdminUserId}`,
+        excludeUserIds: [newAdminUserId] // Exclude the newly added admin from notifications
       });
 
     } catch (error) {
       console.error('[EmailNotificationService] Failed to notify new admin added:', error);
+    }
+  }
+
+  /**
+   * Notify when multiple new admins are added to an organization (bulk import)
+   */
+  async notifyBulkAdminAdded(organizationId: string, newAdminUserIds: string[], addedByUserId?: string): Promise<void> {
+    try {
+      // Don't send bulk notifications for single admin creation - use regular method instead
+      if (newAdminUserIds.length <= 1) {
+        if (newAdminUserIds.length === 1) {
+          await this.notifyNewAdminAdded(organizationId, newAdminUserIds[0], addedByUserId);
+        }
+        return;
+      }
+
+      // Get organization details
+      const organization = await storage.getOrganisation(organizationId);
+      if (!organization) {
+        console.error('[EmailNotificationService] Organization not found:', organizationId);
+        return;
+      }
+
+      // Get added by user details (optional)
+      let addedBy = null;
+      if (addedByUserId) {
+        addedBy = await storage.getUser(addedByUserId);
+      }
+
+      // Get details of the first admin as an example for the template
+      const firstNewAdmin = await storage.getUser(newAdminUserIds[0]);
+      if (!firstNewAdmin) {
+        console.error('[EmailNotificationService] First new admin user not found:', newAdminUserIds[0]);
+        return;
+      }
+
+      const context: TemplateRenderContext = {
+        org: {
+          name: organization.name,
+          displayName: organization.displayName
+        },
+        user: {
+          name: firstNewAdmin.firstName ? `${firstNewAdmin.firstName} ${firstNewAdmin.lastName || ''}`.trim() : firstNewAdmin.email!,
+          email: firstNewAdmin.email!,
+          firstName: firstNewAdmin.firstName || '',
+          lastName: firstNewAdmin.lastName || '',
+          fullName: firstNewAdmin.firstName ? `${firstNewAdmin.firstName} ${firstNewAdmin.lastName || ''}`.trim() : firstNewAdmin.email!
+        },
+        bulk: {
+          count: newAdminUserIds.length,
+          isMultiple: true,
+          exampleEmail: firstNewAdmin.email!
+        },
+        addedBy: addedBy ? {
+          name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!,
+          fullName: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
+        } : {
+          name: 'System',
+          fullName: 'System'
+        },
+        addedAt: new Date().toLocaleDateString()
+      };
+
+      await this.sendToAdmins({
+        organizationId,
+        templateKey: 'admin.new_admin_added',
+        triggerEvent: 'ORG_FAST_ADD',
+        context,
+        resourceId: `bulk-admin-${newAdminUserIds.join('-')}`,
+        excludeUserIds: newAdminUserIds // Exclude all newly added admins from notifications
+      });
+
+    } catch (error) {
+      console.error('[EmailNotificationService] Failed to notify bulk admin added:', error);
     }
   }
 
