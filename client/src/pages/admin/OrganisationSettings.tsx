@@ -842,17 +842,18 @@ The {{organisationDisplayName}} Team`
   const tabs = buildTabs();
 
   return (
-    <div>
-      {/* Breadcrumbs */}
-      <div className="text-sm breadcrumbs mb-6">
-        <ul>
-          <li><a data-testid="link-admin">Admin</a></li>
-          <li className="font-semibold" data-testid="text-current-page">Organisation Settings</li>
-        </ul>
-      </div>
+    <>
+      <div>
+        {/* Breadcrumbs */}
+        <div className="text-sm breadcrumbs mb-6">
+          <ul>
+            <li><a data-testid="link-admin">Admin</a></li>
+            <li className="font-semibold" data-testid="text-current-page">Organisation Settings</li>
+          </ul>
+        </div>
 
-      {/* Page Header */}
-      <div className="flex justify-between items-center mb-6">
+        {/* Page Header */}
+        <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold" data-testid="text-page-title">Organisation Settings</h1>
         <button 
           className={`btn btn-primary ${saveOrganizationMutation.isPending ? 'loading' : ''}`}
@@ -2023,9 +2024,8 @@ The {{organisationDisplayName}} Team`
       </div>
 
       {/* Modals */}
-      {}
-        {/* Add Administrator Modal */}
-        {showAddAdminModal && (
+      {/* Add Administrator Modal */}
+      {showAddAdminModal && (
             <div className="modal modal-open">
               <div className="modal-box max-w-2xl">
                 <div className="flex justify-between items-center mb-4">
@@ -2134,8 +2134,8 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
-          {/* Test Email Modal */}
-          {showTestEmailModal && (
+      {/* Test Email Modal */}
+      {showTestEmailModal && (
             <div className="modal modal-open">
               <div className="modal-box">
                 <div className="flex justify-between items-center mb-4">
@@ -2196,8 +2196,8 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
-          {/* Test Result Modal - Provider-Agnostic Diagnostics */}
-          {showTestResultModal && testResult && (
+      {/* Test Result Modal - Provider-Agnostic Diagnostics */}
+      {showTestResultModal && testResult && (
             <div className="modal modal-open">
               <div className="modal-box w-11/12 max-w-3xl">
                 <div className="flex justify-between items-center mb-4">
@@ -2399,15 +2399,14 @@ The {{organisationDisplayName}} Team`
             </div>
           )}
 
-          {/* Upgrade Modal for Admin Limits */}
-          <FeatureUpgradeModal
+      {/* Upgrade Modal for Admin Limits */}
+      <FeatureUpgradeModal
             isOpen={showUpgradeModal}
             onClose={() => setShowUpgradeModal(false)}
             featureName="Unlimited Admin Accounts"
             featureDescription="Your current plan allows 1 administrator account. Upgrade to add unlimited administrator accounts and empower your team with full administrative access."
             featureIcon="fas fa-users-crown"
           />
-      </>
-    </div>
+    </>
   );
 }
