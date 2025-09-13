@@ -341,8 +341,8 @@ export class StripeService {
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [lineItem],
-        success_url: successUrl || `${baseUrl}/stripe-return?session_id={CHECKOUT_SESSION_ID}&success=true&setup=complete`,
-        cancel_url: cancelUrl || `${baseUrl}/stripe-return?cancelled=true&setup=cancelled`,
+        success_url: successUrl || `${baseUrl}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true&setup=complete`,
+        cancel_url: cancelUrl || `${baseUrl}/admin/billing?cancelled=true&setup=cancelled`,
         metadata: {
           org_id: organisation.id,
           plan_id: plan.id,
