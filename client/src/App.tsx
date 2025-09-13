@@ -16,6 +16,7 @@ import { UserLayout } from "@/components/Layout/UserLayout";
 // Page components
 import { Landing } from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
+import StripeReturn from "@/pages/StripeReturn";
 
 // SuperAdmin pages
 import { SuperAdminDashboard } from "@/pages/superadmin/Dashboard";
@@ -345,6 +346,11 @@ function Router() {
             <UserSupport />
           </UserLayout>
         </ProtectedRoute>
+      </Route>
+
+      {/* Stripe return handler - unprotected */}
+      <Route path="/stripe-return">
+        <StripeReturn />
       </Route>
 
       {/* Default route - redirect based on role */}

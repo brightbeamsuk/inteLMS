@@ -91,11 +91,32 @@ export function AdminBilling() {
   
   // Handle Stripe checkout return
   useEffect(() => {
+    // Check for URL parameters first
     const urlParams = new URLSearchParams(window.location.search);
-    const success = urlParams.get('success');
-    const cancelled = urlParams.get('cancelled');
-    const sessionId = urlParams.get('session_id');
-    const setup = urlParams.get('setup');
+    const urlSuccess = urlParams.get('success');
+    const urlCancelled = urlParams.get('cancelled');
+    const urlSessionId = urlParams.get('session_id');
+    const urlSetup = urlParams.get('setup');
+    
+    // Check for stored return info from localStorage
+    const storedReturn = localStorage.getItem('stripe-return');
+    let returnInfo = null;
+    
+    if (storedReturn) {
+      try {
+        returnInfo = JSON.parse(storedReturn);
+        // Clear stored return info
+        localStorage.removeItem('stripe-return');
+      } catch (e) {
+        console.error('Failed to parse stored return info:', e);
+      }
+    }
+    
+    // Use URL parameters if available, otherwise use stored info
+    const success = urlSuccess === 'true' || returnInfo?.success;
+    const cancelled = urlCancelled === 'true' || returnInfo?.cancelled;
+    const sessionId = urlSessionId || returnInfo?.sessionId;
+    const setup = urlSetup || returnInfo?.setup;
     
     if (success && setup === 'complete') {
       toast({
