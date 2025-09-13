@@ -7572,10 +7572,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Check if custom email provider feature is available
-      const hasCustomEmailProviderAccess = await hasFeatureAccess(organisationId, 'custom_email_provider');
-      if (!hasCustomEmailProviderAccess) {
-        return res.status(403).json({ message: 'Custom email provider feature not available for your plan' });
+      // Check if custom email templates feature is available
+      const hasEmailTemplatesAccess = await hasFeatureAccess(organisationId, 'custom_email_templates');
+      if (!hasEmailTemplatesAccess) {
+        return res.status(403).json({ message: 'Custom email templates feature not available for your plan' });
       }
 
       const {
