@@ -2047,12 +2047,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { getStripeService } = await import('./services/StripeService.js');
       const stripeService = getStripeService();
 
-      // Update subscription directly - no checkout session needed for safety
-      const subscriptionResult = await stripeService.updateExistingSubscription(
-        plan,
-        organisation,
-        userCount || 1
-      );
+      // Check if organization has active subscription
+      const billingValidation = await stripeService.validateOrganizationBillingState(organisation);
+      
+      let subscriptionResult;
+      
+      if (!billingValidation.hasActiveSubscription) {
+        // Create new subscription via Stripe Checkout
+        const checkoutSession = await stripeService.createCheckoutSession(
+          plan,
+          organisation,
+          userCount || 1
+        );
+        
+        // Return checkout URL for frontend to redirect
+        return res.json({
+          success: true,
+          checkout: true,
+          checkoutUrl: checkoutSession.url,
+          sessionId: checkoutSession.sessionId,
+          message: 'Redirecting to Stripe Checkout to create subscription',
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        // Update existing subscription
+        subscriptionResult = await stripeService.updateExistingSubscription(
+          plan,
+          organisation,
+          userCount || 1
+        );
+      }
 
       // Update organization billing to reflect the changes
       await storage.updateOrganisationBilling(organisationId, {
@@ -2136,12 +2160,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { getStripeService } = await import('./services/StripeService.js');
       const stripeService = getStripeService();
       
-      // Update subscription directly - no checkout session needed for safety
-      const subscriptionResult = await stripeService.updateExistingSubscription(
-        plan, 
-        organisation, 
-        userCount || 1
-      );
+      // Check if organization has active subscription
+      const billingValidation = await stripeService.validateOrganizationBillingState(organisation);
+      
+      let subscriptionResult;
+      
+      if (!billingValidation.hasActiveSubscription) {
+        // Create new subscription via Stripe Checkout
+        const checkoutSession = await stripeService.createCheckoutSession(
+          plan,
+          organisation,
+          userCount || 1
+        );
+        
+        // Return checkout URL for frontend to redirect
+        return res.json({
+          success: true,
+          checkout: true,
+          checkoutUrl: checkoutSession.url,
+          sessionId: checkoutSession.sessionId,
+          message: 'Redirecting to Stripe Checkout to create subscription',
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        // Update existing subscription
+        subscriptionResult = await stripeService.updateExistingSubscription(
+          plan, 
+          organisation, 
+          userCount || 1
+        );
+      }
       
       // Update organization billing to reflect the changes
       const previousPlan = await storage.getPlan(organisation.planId || '');

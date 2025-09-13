@@ -299,6 +299,84 @@ export class StripeService {
   }
 
   /**
+   * Create a production-safe checkout session for new subscriptions
+   */
+  async createCheckoutSession(
+    plan: Plan, 
+    organisation: Organisation, 
+    userCount: number = 1,
+    successUrl?: string,
+    cancelUrl?: string
+  ): Promise<{ url: string; sessionId: string }> {
+    // Validate billing state before creating checkout
+    const billingValidation = await this.validateOrganizationBillingState(organisation);
+    
+    if (!billingValidation.canCreateSubscription) {
+      throw new Error(`Cannot create checkout session: ${billingValidation.issues.join(', ')}`);
+    }
+    
+    if (billingValidation.hasActiveSubscription) {
+      throw new Error('Organization already has an active subscription. Use update methods instead.');
+    }
+
+    try {
+      if (!plan.stripePriceId) {
+        throw new Error('Plan must have a Stripe Price ID to create checkout session');
+      }
+
+      // Create line item - don't include quantity for metered plans
+      const lineItem: any = {
+        price: plan.stripePriceId,
+      };
+      
+      // Only add quantity for non-metered plans
+      if (plan.billingModel !== 'metered_per_active_user') {
+        lineItem.quantity = userCount || this.getQuantityForPlan(plan);
+      }
+
+      // Use environment-appropriate URLs
+      const baseUrl = process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.replit.app` : 'http://localhost:5000';
+
+      const sessionData: Stripe.Checkout.SessionCreateParams = {
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [lineItem],
+        success_url: successUrl || `${baseUrl}/admin/billing?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: cancelUrl || `${baseUrl}/admin/billing?cancelled=true`,
+        metadata: {
+          org_id: organisation.id,
+          plan_id: plan.id,
+          billing_model: plan.billingModel,
+          cadence: plan.cadence,
+          userCount: userCount.toString(),
+          initiator: 'lms',
+        },
+      };
+
+      // Add trial if specified
+      if (plan.trialDays && plan.trialDays > 0) {
+        sessionData.subscription_data = {
+          trial_period_days: plan.trialDays,
+        };
+      }
+
+      const session = await this.stripe.checkout.sessions.create(sessionData);
+      
+      if (!session.url) {
+        throw new Error('Checkout session created but no URL returned');
+      }
+
+      return {
+        url: session.url,
+        sessionId: session.id,
+      };
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      throw new Error(`Failed to create checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Create a test checkout session for a plan (DEVELOPMENT/TESTING ONLY)
    * 
    * CRITICAL: This method is ONLY for development and testing purposes.
@@ -307,7 +385,7 @@ export class StripeService {
   async createTestCheckoutSession(plan: Plan, organisationId: string): Promise<{ url: string; sessionId: string }> {
     // PRODUCTION SAFETY: Block this method in production environment
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('createTestCheckoutSession is blocked in production to prevent double-charging. Use createSingleSubscription for production subscription creation.');
+      throw new Error('createTestCheckoutSession is blocked in production to prevent double-charging. Use createCheckoutSession for production subscription creation.');
     }
     
     try {
