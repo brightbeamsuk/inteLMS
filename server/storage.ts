@@ -119,8 +119,10 @@ export interface IStorage {
     planId?: string;
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
+    stripeSubscriptionItemId?: string;
     billingStatus?: string;
     activeUserCount?: number;
+    currentPeriodEnd?: Date;
     lastBillingSync?: Date;
   }): Promise<Organisation>;
   syncOrganisationUsage(id: string): Promise<{
@@ -532,8 +534,10 @@ export class DatabaseStorage implements IStorage {
     planId?: string;
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
+    stripeSubscriptionItemId?: string;
     billingStatus?: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused';
     activeUserCount?: number;
+    currentPeriodEnd?: Date;
     lastBillingSync?: Date;
   }): Promise<Organisation> {
     const [organisation] = await db

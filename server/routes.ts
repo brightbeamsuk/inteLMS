@@ -2705,14 +2705,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Update organization billing information
+        // Extract subscription item ID and period end for comprehensive update
+        const subscriptionItem = subscription.items?.data?.[0];
+        const subscriptionItemId = subscriptionItem?.id || undefined;
+        const currentPeriodEnd = (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined;
+
+        // Update organization billing information with all fields
         try {
           await storage.updateOrganisationBilling(organisation.id, {
             stripeCustomerId: subscription.customer as string,
             stripeSubscriptionId: subscription.id,
+            stripeSubscriptionItemId: subscriptionItemId,
             planId: planId,
             billingStatus: subscription.status as any,
             activeUserCount: intendedSeats,
+            currentPeriodEnd: currentPeriodEnd,
             lastBillingSync: new Date(),
           });
 

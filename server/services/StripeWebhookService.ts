@@ -367,8 +367,10 @@ export class StripeWebhookService {
     const updateData: Parameters<typeof storage.updateOrganisationBilling>[1] = {
       stripeCustomerId: subscription.customer as string,
       stripeSubscriptionId: subscriptionId,
+      stripeSubscriptionItemId: subscriptionItemId,
       billingStatus: this.mapStripeToBillingStatus(status),
       activeUserCount: quantity,
+      currentPeriodEnd: currentPeriodEnd,
       lastBillingSync: new Date(),
     };
 
@@ -447,8 +449,10 @@ export class StripeWebhookService {
     const updateData: Parameters<typeof storage.updateOrganisationBilling>[1] = {
       stripeCustomerId: subscription.customer as string,
       stripeSubscriptionId: subscriptionId,
+      stripeSubscriptionItemId: subscriptionItemId,
       billingStatus: newStatus,
       activeUserCount: quantity,
+      currentPeriodEnd: currentPeriodEnd,
       lastBillingSync: new Date(),
     };
 
@@ -599,7 +603,9 @@ export class StripeWebhookService {
     // If we have subscription data, use it as source of truth
     if (subscriptionData) {
       updateData.stripeSubscriptionId = subscriptionData.subscriptionId;
+      updateData.stripeSubscriptionItemId = subscriptionData.subscriptionItemId;
       updateData.activeUserCount = subscriptionData.quantity;
+      updateData.currentPeriodEnd = subscriptionData.currentPeriodEnd;
 
       // Find plan by price ID
       if (subscriptionData.priceId) {

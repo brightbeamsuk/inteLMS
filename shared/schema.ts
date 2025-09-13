@@ -185,7 +185,8 @@ export const organisations = pgTable("organisations", {
   stripeSubscriptionId: varchar("stripe_subscription_id"), // Current Stripe Subscription ID
   stripeSubscriptionItemId: varchar("stripe_subscription_item_id"), // Stripe Subscription Item ID for the plan line
   billingStatus: billingStatusEnum("billing_status"), // Current billing status
-  activeUserCount: integer("active_user_count").default(0), // For tracking usage
+  activeUserCount: integer("active_user_count").default(0), // For tracking usage (licensed_seats)
+  currentPeriodEnd: timestamp("current_period_end"), // Subscription current period end date
   lastBillingSync: timestamp("last_billing_sync"), // Last time usage was synced to Stripe
   
   createdAt: timestamp("created_at").defaultNow(),
