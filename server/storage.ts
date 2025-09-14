@@ -25,6 +25,7 @@ import {
   emailSends, // NEW: Email orchestrator sends tracking
   emailSettingsLock, // NEW: Email settings lock table
   billingLocks, // NEW: Billing/subscription distributed lock table
+  orgNotificationSettings, // Organization notification settings
   emailProviderConfigs, // Email provider configurations
   supportTickets,
   supportTicketResponses,
@@ -92,7 +93,7 @@ import {
   type InsertWebhookEvent,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -543,6 +544,62 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteOrganisation(id: string): Promise<void> {
+    // Cascade delete all organization-related data in correct order
+    // to avoid foreign key constraint violations
+    
+    // 1. Delete SCORM attempts first (they depend on assignments/users)
+    await db.delete(scormAttempts).where(eq(scormAttempts.organisationId, id));
+    
+    // 2. Delete completions (they depend on assignments)
+    await db.delete(completions).where(eq(completions.organisationId, id));
+    
+    // 3. Delete certificates (they depend on completions/users)
+    await db.delete(certificates).where(eq(certificates.organisationId, id));
+    
+    // 4. Delete assignments (they depend on users)
+    await db.delete(assignments).where(eq(assignments.organisationId, id));
+    
+    // 5. Delete organisation-specific email and settings data
+    await db.delete(orgEmailTemplates).where(eq(orgEmailTemplates.orgId, id));
+    await db.delete(emailLogs).where(eq(emailLogs.organisationId, id));
+    await db.delete(emailSends).where(eq(emailSends.organisationId, id));
+    await db.delete(emailProviderConfigs).where(eq(emailProviderConfigs.orgId, id));
+    
+    // 5a. Delete organisation notification settings
+    await db.delete(orgNotificationSettings).where(eq(orgNotificationSettings.orgId, id));
+    
+    // 5b. Delete billing locks for this organisation
+    await db.delete(billingLocks).where(eq(billingLocks.resourceId, id));
+    
+    // 6. Delete support tickets and responses
+    const orgTickets = await db.select({ id: supportTickets.id }).from(supportTickets).where(eq(supportTickets.organisationId, id));
+    for (const ticket of orgTickets) {
+      await db.delete(supportTicketResponses).where(eq(supportTicketResponses.ticketId, ticket.id));
+    }
+    await db.delete(supportTickets).where(eq(supportTickets.organisationId, id));
+    
+    // 7. Delete audit logs
+    await db.delete(auditLogs).where(eq(auditLogs.organisationId, id));
+    
+    // 8. Delete organisation course folder access
+    await db.delete(organisationCourseFolders).where(eq(organisationCourseFolders.organisationId, id));
+    
+    // 9. Delete organisation settings
+    await db.delete(organisationSettings).where(eq(organisationSettings.organisationId, id));
+    
+    // 10. Delete certificate templates owned by this organisation
+    await db.delete(certificateTemplates).where(eq(certificateTemplates.organisationId, id));
+    
+    // 11. Delete todo items for users in this organisation
+    const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.organisationId, id));
+    for (const user of orgUsers) {
+      await db.delete(todoItems).where(eq(todoItems.userId, user.id));
+    }
+    
+    // 12. Delete users (this is critical for email reuse)
+    await db.delete(users).where(eq(users.organisationId, id));
+    
+    // 13. Finally delete the organisation itself
     await db.delete(organisations).where(eq(organisations.id, id));
   }
 
