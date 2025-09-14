@@ -133,8 +133,7 @@ export const emailTriggerEventEnum = pgEnum('email_trigger_event', [
 
 // Email send status enum for orchestrator
 export const emailSendStatusEnum = pgEnum('email_send_status', [
-  'queued',      // Queued for sending
-  'sending',     // Currently being sent
+  'pending',     // Pending for sending
   'sent',        // Successfully sent
   'failed',      // Permanently failed after retries
   'retrying'     // Temporarily failed, will retry

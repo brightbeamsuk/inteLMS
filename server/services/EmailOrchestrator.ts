@@ -386,7 +386,7 @@ export class EmailOrchestrator {
         htmlContent: rendered.htmlContent,
         textContent: rendered.textContent || null,
         templateVariables: params.context,
-        status: 'queued',
+        status: 'pending',
         retryCount: 0,
         fromEmail,
         fromName,
