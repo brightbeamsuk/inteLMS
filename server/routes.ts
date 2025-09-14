@@ -5222,6 +5222,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedOrgData = insertOrganisationSchema.parse(orgData);
       const organisation = await storage.createOrganisation(validatedOrgData);
       
+      // Generate a temporary password for the admin user
+      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+      let tempPassword = '';
+      for (let i = 0; i < 8; i++) {
+        tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      console.log(`Generated temporary password for admin ${adminEmail}: ${tempPassword}`);
+
+      // Hash the temporary password
+      const saltRounds = 10;
+      const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+
       // Create admin user for the organisation
       const adminUserData = {
         email: adminEmail,
@@ -5233,6 +5245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         jobTitle: adminJobTitle || null,
         department: adminDepartment || null,
         allowCertificateDownload: true,
+        passwordHash: passwordHash,
       };
 
       const adminUser = await storage.createUser(adminUserData);
@@ -5267,9 +5280,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
           };
 
+          // Include the temporary password in the context
+          context.temporaryPassword = tempPassword;
+
           await emailOrchestrator.queue({
             triggerEvent: 'ORG_FAST_ADD',
-            templateKey: 'new_org_welcome',
+            templateKey: 'new_user_welcome',
             toEmail: adminUser.email!,
             context,
             organisationId: organisation.id,
@@ -5277,7 +5293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             priority: 1
           });
           
-          console.log(`✅ ORG_FAST_ADD email queued for ${adminUser.email} (SuperAdmin created)`);
+          console.log(`✅ ORG_FAST_ADD email queued for ${adminUser.email} (SuperAdmin created with password)`);
         } catch (emailError) {
           console.warn('⚠️ Failed to queue ORG_FAST_ADD email:', emailError);
           // Don't fail organization creation if email fails
