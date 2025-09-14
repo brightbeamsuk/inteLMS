@@ -68,12 +68,22 @@ export interface TemplateRenderContext {
   // Event-specific variables
   addedBy?: {
     name?: string;
+    fullName?: string;
   };
   assignedBy?: {
     name?: string;
+    fullName?: string;
   };
   changedBy?: {
     name?: string;
+    fullName?: string;
+  };
+  
+  // Bulk operation context
+  bulk?: {
+    count?: number;
+    isMultiple?: boolean;
+    exampleEmail?: string;
   };
   
   // Date/time variables

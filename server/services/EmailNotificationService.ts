@@ -582,7 +582,7 @@ export class EmailNotificationService {
       // Get attempt details (try to get from SCORM attempts table)
       let attempt = null;
       try {
-        attempt = await storage.getScormAttempt(attemptId);
+        attempt = await storage.getScormAttemptByAttemptId(attemptId);
       } catch (error) {
         console.warn('[EmailNotificationService] Could not get attempt details:', error);
       }
@@ -604,7 +604,7 @@ export class EmailNotificationService {
           description: course.description || ''
         },
         attempt: {
-          score: attempt?.score?.toString() || 'N/A',
+          score: attempt?.scoreRaw?.toString() || 'N/A',
           passed: false
         },
         completedAt: new Date().toLocaleDateString()
