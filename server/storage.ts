@@ -25,6 +25,7 @@ import {
   emailSends, // NEW: Email orchestrator sends tracking
   emailSettingsLock, // NEW: Email settings lock table
   billingLocks, // NEW: Billing/subscription distributed lock table
+  emailProviderConfigs, // Email provider configurations
   supportTickets,
   supportTicketResponses,
   webhookEvents,
@@ -81,6 +82,8 @@ import {
   type InsertEmailSettingsLock,
   type BillingLock, // NEW: Billing distributed lock type
   type InsertBillingLock,
+  type EmailProviderConfigs, // Email provider configurations
+  type InsertEmailProviderConfigs,
   type SupportTicket,
   type InsertSupportTicket,
   type SupportTicketResponse,
@@ -354,6 +357,14 @@ export interface IStorage {
   getEmailSettingsLock(lockType: string, resourceId: string): Promise<EmailSettingsLock | undefined>;
   deleteEmailSettingsLock(id: string): Promise<void>;
   cleanupExpiredEmailLocks(): Promise<number>;
+
+  // Email provider config operations
+  createEmailProviderConfig(config: InsertEmailProviderConfigs): Promise<EmailProviderConfigs>;
+  getEmailProviderConfig(id: string): Promise<EmailProviderConfigs | undefined>;
+  getEmailProviderConfigByOrg(orgId: string): Promise<EmailProviderConfigs | undefined>;
+  updateEmailProviderConfig(id: string, config: Partial<InsertEmailProviderConfigs>): Promise<EmailProviderConfigs>;
+  upsertEmailProviderConfig(orgId: string, config: Partial<InsertEmailProviderConfigs>): Promise<EmailProviderConfigs>;
+  deleteEmailProviderConfig(id: string): Promise<void>;
 
   // Billing distributed lock operations - critical for enterprise-grade concurrency protection
   acquireBillingLock(lockType: string, resourceId: string, lockedBy: string, options?: {
@@ -1747,6 +1758,68 @@ export class DatabaseStorage implements IStorage {
       .delete(emailSettingsLock)
       .where(sql`${emailSettingsLock.expiresAt} <= NOW()`);
     return result.rowCount || 0;
+  }
+
+  // Email provider config operations
+  async createEmailProviderConfig(configData: InsertEmailProviderConfigs): Promise<EmailProviderConfigs> {
+    const [config] = await db.insert(emailProviderConfigs).values(configData).returning();
+    return config;
+  }
+
+  async getEmailProviderConfig(id: string): Promise<EmailProviderConfigs | undefined> {
+    const [config] = await db.select().from(emailProviderConfigs).where(eq(emailProviderConfigs.id, id));
+    return config;
+  }
+
+  async getEmailProviderConfigByOrg(orgId: string): Promise<EmailProviderConfigs | undefined> {
+    const [config] = await db
+      .select()
+      .from(emailProviderConfigs)
+      .where(and(
+        eq(emailProviderConfigs.orgId, orgId),
+        eq(emailProviderConfigs.isDefaultForOrg, true)
+      ))
+      .orderBy(desc(emailProviderConfigs.updatedAt));
+    return config;
+  }
+
+  async updateEmailProviderConfig(id: string, configData: Partial<InsertEmailProviderConfigs>): Promise<EmailProviderConfigs> {
+    const [config] = await db
+      .update(emailProviderConfigs)
+      .set({ ...configData, updatedAt: new Date() })
+      .where(eq(emailProviderConfigs.id, id))
+      .returning();
+    return config;
+  }
+
+  async upsertEmailProviderConfig(orgId: string, configData: Partial<InsertEmailProviderConfigs>): Promise<EmailProviderConfigs> {
+    // Validate required fields are present
+    if (!configData.provider || !configData.configJson || !configData.updatedBy) {
+      throw new Error('Missing required fields: provider, configJson, and updatedBy are required');
+    }
+
+    // First, set all existing configs for this org to not be default
+    await db
+      .update(emailProviderConfigs)
+      .set({ isDefaultForOrg: false, updatedAt: new Date() })
+      .where(eq(emailProviderConfigs.orgId, orgId));
+
+    // Then create the new config as the default
+    const [config] = await db
+      .insert(emailProviderConfigs)
+      .values({
+        orgId,
+        provider: configData.provider,
+        configJson: configData.configJson,
+        updatedBy: configData.updatedBy,
+        isDefaultForOrg: true,
+      })
+      .returning();
+    return config;
+  }
+
+  async deleteEmailProviderConfig(id: string): Promise<void> {
+    await db.delete(emailProviderConfigs).where(eq(emailProviderConfigs.id, id));
   }
 
   // Billing distributed lock operations - enterprise-grade concurrency protection

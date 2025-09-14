@@ -24,6 +24,27 @@ interface EditTemplateData {
   textContent: string;
 }
 
+interface EmailProviderConfig {
+  id?: string;
+  organisationId: string;
+  provider: string;
+  apiKey: string; // Will be masked (••••••••••••••••) when returned from server
+  fromEmail: string;
+  fromName: string;
+  enabled: boolean;
+  hasApiKey?: boolean; // Indicates if API key is configured (without exposing the actual key)
+  isDefaultForOrg?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface EmailConfigFormData {
+  provider: string;
+  apiKey: string;
+  fromEmail: string;
+  fromName: string;
+}
+
 // Template definitions with metadata - ALL templates are admin notifications
 const templateDefinitions = {
   admin: [
@@ -132,6 +153,17 @@ export function AdminEmailTemplates() {
     textContent: ''
   });
 
+  // Email provider configuration state
+  const [useCustomEmail, setUseCustomEmail] = useState(false);
+  const [emailConfigData, setEmailConfigData] = useState<EmailConfigFormData>({
+    provider: 'sendgrid_api',
+    apiKey: '',
+    fromEmail: '',
+    fromName: ''
+  });
+  const [testConfigEmailAddress, setTestConfigEmailAddress] = useState('');
+  const [showEmailConfigTest, setShowEmailConfigTest] = useState(false);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -144,6 +176,30 @@ export function AdminEmailTemplates() {
   });
   
   const orgOverrides: EmailTemplate[] = overridesResponse?.data || [];
+
+  // Fetch organization email provider configuration
+  const { data: emailConfigResponse, isLoading: isLoadingEmailConfig } = useQuery<{data: EmailProviderConfig}>({
+    queryKey: ['/api/admin/email-provider-config', user?.organisationId],
+    queryFn: () => fetch(`/api/admin/email-provider-config/${user?.organisationId}`).then(res => res.json()),
+    enabled: !!user?.organisationId,
+    retry: false,
+  });
+
+  const emailConfig = emailConfigResponse?.data;
+
+  // Initialize email config state when data loads
+  useEffect(() => {
+    if (emailConfig) {
+      setUseCustomEmail(emailConfig.enabled);
+      setEmailConfigData({
+        provider: emailConfig.provider,
+        // Don't populate API key from server - it's masked for security
+        apiKey: '',
+        fromEmail: emailConfig.fromEmail,
+        fromName: emailConfig.fromName
+      });
+    }
+  }, [emailConfig]);
 
   // Get template data by key - checks for org override first, then default
   const getTemplate = async (templateKey: string): Promise<EmailTemplate | null> => {
@@ -258,6 +314,61 @@ export function AdminEmailTemplates() {
     }
   });
 
+  // Save email provider configuration mutation
+  const saveEmailConfigMutation = useMutation({
+    mutationFn: async (data: EmailConfigFormData & { enabled: boolean }) => {
+      const response = await apiRequest('POST', '/api/admin/email-provider-config', {
+        ...data,
+        organisationId: user?.organisationId
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/email-provider-config', user?.organisationId] });
+      toast({
+        title: "Success",
+        description: "Email provider configuration saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save email provider configuration",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Test email provider configuration mutation
+  const testEmailConfigMutation = useMutation({
+    mutationFn: async ({ testEmail, config }: { testEmail: string; config: EmailConfigFormData }) => {
+      const response = await apiRequest('POST', '/api/admin/test-email-config', {
+        ...config,
+        testEmail,
+        organisationId: user?.organisationId
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: data.success ? "Success" : "Test Failed",
+        description: data.success 
+          ? "Test email sent successfully! Your configuration is working." 
+          : data.error || "Failed to send test email",
+        variant: data.success ? "default" : "destructive",
+      });
+      setShowEmailConfigTest(false);
+      setTestConfigEmailAddress('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to test email configuration",
+        variant: "destructive",
+      });
+    }
+  });
+
   // Handle create/edit template
   const handleEditTemplate = async (templateKey: string) => {
     const template = await getTemplate(templateKey);
@@ -319,6 +430,69 @@ export function AdminEmailTemplates() {
     return orgOverrides.some(t => t.templateKey === templateKey);
   };
 
+  // Handle custom email toggle
+  const handleCustomEmailToggle = (enabled: boolean) => {
+    setUseCustomEmail(enabled);
+    if (enabled) {
+      // Save immediately when enabling
+      saveEmailConfigMutation.mutate({
+        ...emailConfigData,
+        enabled: true
+      });
+    } else {
+      // Save immediately when disabling
+      saveEmailConfigMutation.mutate({
+        ...emailConfigData,
+        enabled: false
+      });
+    }
+  };
+
+  // Handle save email configuration
+  const handleSaveEmailConfig = () => {
+    if (!emailConfigData.apiKey || !emailConfigData.fromEmail || !emailConfigData.fromName) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailConfigData.fromEmail)) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    saveEmailConfigMutation.mutate({
+      ...emailConfigData,
+      enabled: useCustomEmail
+    });
+  };
+
+  // Handle test email configuration
+  const handleTestEmailConfig = () => {
+    if (!testConfigEmailAddress) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a test email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    testEmailConfigMutation.mutate({
+      testEmail: testConfigEmailAddress,
+      config: emailConfigData
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="container mx-auto p-6">
@@ -356,6 +530,129 @@ export function AdminEmailTemplates() {
         <p className="text-base-content/70" data-testid="text-description">
           Customize email templates for your organization. Create overrides of system defaults or use the platform defaults.
         </p>
+      </div>
+
+      {/* Email Delivery Settings Section */}
+      <div className="card bg-base-100 border border-base-300 shadow-sm mb-6" data-testid="card-email-delivery-settings">
+        <div className="card-body">
+          <h2 className="card-title text-xl mb-4" data-testid="heading-email-delivery">
+            <i className="fas fa-cog"></i>
+            Email Delivery Settings
+          </h2>
+          
+          {/* Custom Email Toggle */}
+          <div className="form-control mb-4">
+            <label className="label cursor-pointer justify-start gap-4">
+              <input 
+                type="checkbox" 
+                className="toggle toggle-primary" 
+                checked={useCustomEmail}
+                onChange={(e) => handleCustomEmailToggle(e.target.checked)}
+                disabled={saveEmailConfigMutation.isPending}
+                data-testid="toggle-custom-email"
+              />
+              <div>
+                <span className="label-text font-medium">Use Custom Email API</span>
+                <div className="text-sm text-base-content/70 mt-1">
+                  Send emails using your own email provider instead of system default
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Status Message or Configuration Form */}
+          {!useCustomEmail ? (
+            <div className="alert alert-info" data-testid="alert-system-default">
+              <i className="fas fa-info-circle"></i>
+              <span>Using system default email provider</span>
+            </div>
+          ) : (
+            <div className="space-y-4" data-testid="form-email-config">
+              {/* Provider Selection */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">Email Provider *</span>
+                </label>
+                <select 
+                  className="select select-bordered w-full"
+                  value={emailConfigData.provider}
+                  onChange={(e) => setEmailConfigData(prev => ({ ...prev, provider: e.target.value }))}
+                  data-testid="select-provider"
+                >
+                  <option value="sendgrid_api">SendGrid</option>
+                  <option value="smtp_generic" disabled>SMTP (Coming Soon)</option>
+                </select>
+              </div>
+
+              {/* API Key */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">API Key *</span>
+                </label>
+                <input
+                  type="password"
+                  className="input input-bordered w-full"
+                  placeholder="Enter your SendGrid API key..."
+                  value={emailConfigData.apiKey}
+                  onChange={(e) => setEmailConfigData(prev => ({ ...prev, apiKey: e.target.value }))}
+                  data-testid="input-api-key"
+                />
+              </div>
+
+              {/* From Email */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">From Email *</span>
+                </label>
+                <input
+                  type="email"
+                  className="input input-bordered w-full"
+                  placeholder="noreply@yourcompany.com"
+                  value={emailConfigData.fromEmail}
+                  onChange={(e) => setEmailConfigData(prev => ({ ...prev, fromEmail: e.target.value }))}
+                  data-testid="input-from-email"
+                />
+              </div>
+
+              {/* From Name */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">From Name *</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  placeholder="Your Company Name"
+                  value={emailConfigData.fromName}
+                  onChange={(e) => setEmailConfigData(prev => ({ ...prev, fromName: e.target.value }))}
+                  data-testid="input-from-name"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 pt-4">
+                <button 
+                  className={`btn btn-primary ${saveEmailConfigMutation.isPending ? 'loading' : ''}`}
+                  onClick={handleSaveEmailConfig}
+                  disabled={saveEmailConfigMutation.isPending}
+                  data-testid="button-save-email-config"
+                >
+                  {saveEmailConfigMutation.isPending ? 'Saving...' : 'Save Settings'}
+                  {!saveEmailConfigMutation.isPending && <i className="fas fa-save ml-2"></i>}
+                </button>
+                <button 
+                  className="btn btn-outline"
+                  onClick={() => setShowEmailConfigTest(true)}
+                  disabled={!emailConfigData.apiKey || !emailConfigData.fromEmail}
+                  data-testid="button-test-email-config"
+                >
+                  <i className="fas fa-paper-plane"></i>
+                  Test Configuration
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Header with info about template overrides */}
@@ -716,6 +1013,59 @@ export function AdminEmailTemplates() {
                 data-testid="button-send-test"
               >
                 {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test Email Configuration Modal */}
+      {showEmailConfigTest && (
+        <div className="modal modal-open" data-testid="modal-test-email-config">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4" data-testid="heading-test-config-modal">
+              Test Email Configuration
+            </h3>
+            
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text">Test Email Address</span>
+              </label>
+              <input
+                type="email"
+                className="input input-bordered w-full"
+                placeholder="Enter email address to test..."
+                value={testConfigEmailAddress}
+                onChange={(e) => setTestConfigEmailAddress(e.target.value)}
+                data-testid="input-test-config-email"
+              />
+            </div>
+
+            <div className="alert alert-info mb-4" data-testid="alert-test-config-info">
+              <i className="fas fa-info-circle"></i>
+              <span>
+                This will send a test email using your configured {emailConfigData.provider} settings to verify the connection.
+              </span>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-ghost"
+                onClick={() => {
+                  setShowEmailConfigTest(false);
+                  setTestConfigEmailAddress('');
+                }}
+                data-testid="button-cancel-test-config"
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn btn-primary ${testEmailConfigMutation.isPending ? 'loading' : ''}`}
+                onClick={handleTestEmailConfig}
+                disabled={!testConfigEmailAddress || testEmailConfigMutation.isPending}
+                data-testid="button-send-test-config"
+              >
+                {testEmailConfigMutation.isPending ? 'Sending...' : 'Send Test Email'}
               </button>
             </div>
           </div>

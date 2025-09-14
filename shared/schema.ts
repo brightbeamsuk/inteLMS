@@ -744,7 +744,7 @@ export const orgNotificationSettings = pgTable("org_notification_settings", {
 export const emailProviderConfigs = pgTable("email_provider_configs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id"), // nullable FK to Organisation; null = platform default
-  provider: varchar("provider").notNull(), // 'smtp', 'brevo', 'sendgrid', etc.
+  provider: emailProviderEnum("provider").notNull(), // Use enum for type safety and consistency
   configJson: jsonb("config_json").notNull(), // Provider-specific configuration object
   isDefaultForOrg: boolean("is_default_for_org").default(false),
   updatedAt: timestamp("updated_at").defaultNow(),

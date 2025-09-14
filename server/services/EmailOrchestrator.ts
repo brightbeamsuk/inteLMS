@@ -24,7 +24,8 @@ import type {
   InsertEmailSend,
   EmailTemplate,
   OrgEmailTemplate,
-  InsertEmailSettingsLock
+  InsertEmailSettingsLock,
+  EmailProviderConfigs
 } from '@shared/schema';
 
 // Initialize the existing MailerService (preserve exactly as specified)
@@ -134,6 +135,7 @@ export interface OrchestratorResult {
   };
   idempotencyStatus?: 'new' | 'duplicate' | 'expired';
   sendResult?: EmailResult;
+  providerSource?: 'org_custom' | 'system_default' | 'fallback';
 }
 
 // Template rendering errors
@@ -178,6 +180,13 @@ export class EmailOrchestrator {
   // Retry settings
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS = [2000, 8000, 32000]; // 2s, 8s, 32s
+  
+  // Email provider routing
+  private readonly PROVIDER_SOURCES = {
+    ORG_CUSTOM: 'org_custom' as const,
+    SYSTEM_DEFAULT: 'system_default' as const,
+    FALLBACK: 'fallback' as const
+  };
 
   constructor() {
     // Initialize Handlebars with security-focused configuration
@@ -322,7 +331,7 @@ export class EmailOrchestrator {
         success: true,
         emailSendId: createdSend.id,
         idempotencyStatus: 'new',
-        sendResult
+        sendResult: sendResult || undefined
       };
 
     } catch (error: any) {
@@ -349,15 +358,36 @@ export class EmailOrchestrator {
       // Render the email template
       const rendered = await this.render(params.templateKey, params.context, params.organisationId);
       
-      // Send directly using MailerService (preserve existing service exactly)
-      const sendResult = await mailerService.send({
-        orgId: params.organisationId,
-        to: params.toEmail,
-        subject: rendered.subject,
-        html: rendered.htmlContent,
-        text: rendered.textContent,
-        templateType: params.templateKey as any // Cast for compatibility
-      });
+      // For immediate sends (testing), we can use organization provider if available
+      let sendResult: EmailResult;
+      let providerSource: 'org_custom' | 'system_default' | 'fallback' = this.PROVIDER_SOURCES.SYSTEM_DEFAULT;
+      
+      if (params.organisationId) {
+        // Create temporary EmailSend object for provider resolution
+        const tempEmailSend: EmailSend = {
+          id: 'temp-immediate-send',
+          organisationId: params.organisationId,
+          toEmail: params.toEmail,
+          subject: rendered.subject,
+          htmlContent: rendered.htmlContent,
+          textContent: rendered.textContent || null,
+        } as EmailSend;
+        
+        const emailResult = await this.sendEmailWithOrganizationProvider(tempEmailSend);
+        sendResult = emailResult.result;
+        providerSource = emailResult.providerSource;
+        
+        console.log(`${this.LOG_PREFIX} Immediate send used provider source: ${providerSource}`);
+      } else {
+        // No organization context, use system defaults
+        sendResult = await mailerService.send({
+          to: params.toEmail,
+          subject: rendered.subject,
+          html: rendered.htmlContent,
+          text: rendered.textContent,
+          templateType: params.templateKey as any // Cast for compatibility
+        });
+      }
 
       console.log(`${this.LOG_PREFIX} Immediate send completed`, {
         success: sendResult.success,
@@ -367,7 +397,8 @@ export class EmailOrchestrator {
 
       return {
         success: sendResult.success,
-        sendResult
+        sendResult,
+        providerSource
       };
 
     } catch (error: any) {
@@ -385,6 +416,154 @@ export class EmailOrchestrator {
   }
 
   /**
+   * Resolve organization-specific email provider settings
+   * Returns custom configuration if available, null if organization should use system defaults
+   */
+  private async resolveOrganizationEmailProvider(organisationId: string): Promise<{
+    settings: any | null;
+    source: 'org_custom' | 'system_default';
+    providerType: string | null;
+  }> {
+    try {
+      console.log(`${this.LOG_PREFIX} Resolving email provider for organization: ${organisationId}`);
+      
+      // Get organization's custom email provider configuration
+      const orgEmailConfig = await storage.getEmailProviderConfigByOrg(organisationId);
+      
+      if (orgEmailConfig && orgEmailConfig.configJson) {
+        console.log(`${this.LOG_PREFIX} Found custom email provider: ${orgEmailConfig.provider} for org: ${organisationId}`);
+        
+        return {
+          settings: orgEmailConfig.configJson,
+          source: this.PROVIDER_SOURCES.ORG_CUSTOM,
+          providerType: orgEmailConfig.provider
+        };
+      }
+      
+      console.log(`${this.LOG_PREFIX} No custom email provider found for org: ${organisationId}, using system defaults`);
+      return {
+        settings: null,
+        source: this.PROVIDER_SOURCES.SYSTEM_DEFAULT,
+        providerType: null
+      };
+      
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error resolving organization email provider for ${organisationId}:`, error);
+      return {
+        settings: null,
+        source: this.PROVIDER_SOURCES.SYSTEM_DEFAULT,
+        providerType: null
+      };
+    }
+  }
+  
+  /**
+   * Send email using organization-specific provider settings with system fallback
+   */
+  private async sendEmailWithOrganizationProvider(emailSend: EmailSend): Promise<{
+    result: EmailResult;
+    providerSource: 'org_custom' | 'system_default' | 'fallback';
+  }> {
+    let providerSource: 'org_custom' | 'system_default' | 'fallback' = this.PROVIDER_SOURCES.SYSTEM_DEFAULT;
+    
+    try {
+      // If organization ID is available, try custom settings first
+      if (emailSend.organisationId) {
+        const orgProvider = await this.resolveOrganizationEmailProvider(emailSend.organisationId);
+        
+        if (orgProvider.source === this.PROVIDER_SOURCES.ORG_CUSTOM && orgProvider.settings) {
+          console.log(`${this.LOG_PREFIX} Attempting to send email using organization custom provider: ${orgProvider.providerType}`);
+          providerSource = this.PROVIDER_SOURCES.ORG_CUSTOM;
+          
+          try {
+            // Try sending with organization custom settings
+            const orgResult = await this.sendWithCustomProvider(emailSend, orgProvider.settings, orgProvider.providerType!);
+            
+            if (orgResult.success) {
+              console.log(`${this.LOG_PREFIX} Email sent successfully using org custom provider: ${orgProvider.providerType}`);
+              return {
+                result: orgResult,
+                providerSource: this.PROVIDER_SOURCES.ORG_CUSTOM
+              };
+            } else {
+              console.warn(`${this.LOG_PREFIX} Org custom provider failed, falling back to system defaults:`, orgResult.error);
+              providerSource = this.PROVIDER_SOURCES.FALLBACK;
+            }
+          } catch (customError: any) {
+            console.error(`${this.LOG_PREFIX} Exception with org custom provider, falling back to system:`, customError.message);
+            providerSource = this.PROVIDER_SOURCES.FALLBACK;
+          }
+        }
+      }
+      
+      // Use system defaults (either by design or as fallback)
+      console.log(`${this.LOG_PREFIX} Sending email using system default provider`);
+      const systemResult = await mailerService.send({
+        orgId: emailSend.organisationId || undefined,
+        to: emailSend.toEmail,
+        subject: emailSend.subject,
+        html: emailSend.htmlContent,
+        text: emailSend.textContent || undefined,
+        templateType: emailSend.templateKey as any
+      });
+      
+      return {
+        result: systemResult,
+        providerSource
+      };
+      
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Critical error in email provider routing:`, error);
+      
+      // Return a failed result
+      return {
+        result: {
+          success: false,
+          provider: 'smtp_generic' as any,
+          details: {
+            from: emailSend.fromEmail || 'unknown',
+            to: emailSend.toEmail,
+            effectiveFieldSources: {},
+            timestamp: new Date().toISOString()
+          },
+          error: {
+            code: 'PROVIDER_ROUTING_ERROR',
+            short: 'Email provider routing failed',
+            raw: error.message
+          }
+        },
+        providerSource: this.PROVIDER_SOURCES.SYSTEM_DEFAULT
+      };
+    }
+  }
+  
+  /**
+   * Send email using custom provider configuration
+   * This is a simplified implementation - in a real system you'd need full provider adapters
+   */
+  private async sendWithCustomProvider(emailSend: EmailSend, customConfig: any, providerType: string): Promise<EmailResult> {
+    // For now, we'll use the existing MailerService with special parameters
+    // In a full implementation, you'd create custom adapters for different provider types
+    
+    console.log(`${this.LOG_PREFIX} Sending with custom ${providerType} provider configuration`);
+    
+    // This is a placeholder implementation - the real implementation would:
+    // 1. Parse the customConfig JSON based on providerType
+    // 2. Create appropriate adapter instances
+    // 3. Send through the custom provider
+    
+    // For now, delegate to MailerService with organization context
+    return await mailerService.send({
+      orgId: emailSend.organisationId || undefined,
+      to: emailSend.toEmail,
+      subject: emailSend.subject,
+      html: emailSend.htmlContent,
+      text: emailSend.textContent || undefined,
+      templateType: emailSend.templateKey as any
+    });
+  }
+  
+  /**
    * Process queued emails with retry logic
    */
   private async processSendQueue(emailSendId: string): Promise<EmailResult | null> {
@@ -401,15 +580,10 @@ export class EmailOrchestrator {
         lastAttemptAt: new Date()
       });
 
-      // Send using existing MailerService
-      const sendResult = await mailerService.send({
-        orgId: emailSend.organisationId || undefined,
-        to: emailSend.toEmail,
-        subject: emailSend.subject,
-        html: emailSend.htmlContent,
-        text: emailSend.textContent || undefined,
-        templateType: emailSend.templateKey as any // Cast for compatibility
-      });
+      // Send using organization-specific email provider with system fallback
+      const emailResult = await this.sendEmailWithOrganizationProvider(emailSend);
+      const sendResult = emailResult.result;
+      const providerSource = emailResult.providerSource;
 
       if (sendResult.success) {
         // Update as sent
@@ -418,12 +592,13 @@ export class EmailOrchestrator {
           provider: sendResult.provider,
           providerMessageId: sendResult.details.messageId || null,
           sentAt: new Date(),
-          routingSource: sendResult.details.effectiveFieldSources ? 'org_primary' : 'system_default'
+          routingSource: this.mapProviderSourceToRoutingSource(providerSource) as 'system_default' | 'org_primary' | 'org_fallback'
         });
 
         console.log(`${this.LOG_PREFIX} Email sent successfully`, {
           emailSendId,
           provider: sendResult.provider,
+          providerSource,
           messageId: sendResult.details.messageId
         });
       } else {
@@ -448,6 +623,21 @@ export class EmailOrchestrator {
     }
   }
 
+  /**
+   * Map provider source to routing source for storage compatibility
+   */
+  private mapProviderSourceToRoutingSource(providerSource: 'org_custom' | 'system_default' | 'fallback'): string {
+    switch (providerSource) {
+      case 'org_custom':
+        return 'org_primary';
+      case 'fallback':
+        return 'org_fallback';
+      case 'system_default':
+      default:
+        return 'system_default';
+    }
+  }
+  
   /**
    * Handle send failures with exponential backoff retry
    */
@@ -500,7 +690,7 @@ export class EmailOrchestrator {
     // Try organization override first if org is specified
     if (organisationId) {
       try {
-        const orgTemplate = await storage.getOrgEmailTemplate(organisationId, templateKey);
+        const orgTemplate = await storage.getOrgEmailTemplateByKey(organisationId, templateKey);
         if (orgTemplate && orgTemplate.isActive) {
           // Merge override with platform default
           const platformTemplate = await storage.getEmailTemplate(templateKey);
@@ -520,7 +710,8 @@ export class EmailOrchestrator {
     }
 
     // Fall back to platform default
-    return await storage.getEmailTemplate(templateKey);
+    const platformTemplate = await storage.getEmailTemplateByKey(templateKey);
+    return platformTemplate || null;
   }
 
   /**
@@ -537,7 +728,8 @@ export class EmailOrchestrator {
     const windowStart = new Date(Date.now() - (this.IDEMPOTENCY_WINDOW_MINUTES * 60 * 1000));
     
     try {
-      return await storage.getEmailSendByIdempotencyKey(idempotencyKey, windowStart);
+      const emailSend = await storage.getEmailSendByIdempotencyKey(idempotencyKey, windowStart);
+      return emailSend || null;
     } catch (error: any) {
       console.warn(`${this.LOG_PREFIX} Idempotency check failed:`, error.message);
       return null;

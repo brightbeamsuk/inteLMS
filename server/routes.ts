@@ -18,7 +18,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
@@ -730,9 +730,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const userId = req.session?.user?.id; // May be null if user logged out
               await emailNotificationService.notifyPlanUpdated(
                 metadata.org_id,
-                previousPlanId,
+                previousPlanId ?? undefined,
                 metadata.plan_id,
-                userId // Pass undefined if no session user (system update)
+                userId ?? undefined // Pass undefined if no session user (system update)
               );
             } catch (error) {
               console.error('[Checkout Success] Failed to send plan update notification:', error);
@@ -1735,12 +1735,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           limit: 1000,
           fromDate: startDate ? new Date(startDate as string) : undefined,
           toDate: endDate ? new Date(endDate as string) : undefined,
-          toEmail: recipient as string,
           status: status as 'sent' | 'failed'
         });
         
+        // Filter by recipient if specified (client-side filtering since interface doesn't support toEmail)
+        const filteredMailerEmails = recipient 
+          ? mailerEmails.filter((email: any) => email.toEmail === recipient)
+          : mailerEmails;
+        
         // Transform MailerService format to unified format
-        mailerEmails.forEach((log: any) => {
+        filteredMailerEmails.forEach((log: any) => {
           allEmails.push({
             id: log.id,
             timestamp: log.timestamp,
@@ -2113,7 +2117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await emailNotificationService.notifyPlanUpdated(
             organisationId,
-            previousPlanId,
+            previousPlanId ?? undefined,
             plan.id,
             user.id
           );
@@ -2524,7 +2528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await emailNotificationService.notifyPlanUpdated(
             orgId,
-            previousPlanId,
+            previousPlanId ?? undefined,
             planId,
             user.id
           );
@@ -2869,7 +2873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: updatedSubscription.status,
               plan_id: planId,
               licensed_seats: newQuantity || subscription.items.data[0].quantity || 1,
-              current_period_end: updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000).toISOString() : null
+              current_period_end: (updatedSubscription as any).current_period_end ? new Date((updatedSubscription as any).current_period_end * 1000).toISOString() : null
             }
           });
 
@@ -5434,7 +5438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await emailNotificationService.notifyPlanUpdated(
             id,
-            previousPlanId,
+            previousPlanId ?? undefined,
             finalPlanId,
             user.id
           );
@@ -8655,6 +8659,254 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================================================================
+  // EMAIL PROVIDER CONFIG MANAGEMENT ENDPOINTS - Organization-specific email configuration
+  // ========================================================================================
+
+  // Get organization's email provider configuration
+  app.get('/api/admin/email-provider-config/:organisationId', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      const { organisationId } = req.params;
+
+      // Validate admin access
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin privileges required' });
+      }
+
+      // Admin can only access their own organization
+      if (user.organisationId !== organisationId) {
+        return res.status(403).json({ message: 'Access denied - can only access your own organization' });
+      }
+
+      // Get organization's email provider config
+      const config = await storage.getEmailProviderConfigByOrg(organisationId);
+
+      if (!config) {
+        return res.json({
+          success: true,
+          data: {
+            organisationId: organisationId,
+            provider: 'sendgrid_api',
+            apiKey: '',
+            fromEmail: '',
+            fromName: '',
+            enabled: false,
+            hasApiKey: false
+          },
+          message: 'No custom email configuration found - using system default'
+        });
+      }
+
+      // Return config status without exposing sensitive data (API keys)
+      const configJson = config.configJson as any;
+      
+      res.json({
+        success: true,
+        data: {
+          id: config.id,
+          organisationId: config.orgId,
+          provider: config.provider,
+          // Never return actual API keys - only masked status
+          apiKey: configJson?.apiKey ? '••••••••••••••••' : '',
+          fromEmail: configJson?.fromEmail || '',
+          fromName: configJson?.fromName || '',
+          enabled: true, // If config exists, it's enabled
+          hasApiKey: !!configJson?.apiKey,
+          isDefaultForOrg: config.isDefaultForOrg,
+          updatedAt: config.updatedAt
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching email provider config:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch email provider configuration'
+      });
+    }
+  });
+
+  // Save organization's email provider configuration
+  app.post('/api/admin/email-provider-config', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+
+      // Validate admin access
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin privileges required' });
+      }
+
+      if (!user.organisationId) {
+        return res.status(400).json({ message: 'Admin user not associated with an organization' });
+      }
+
+      // Transform frontend flat structure to backend configJson structure
+      const { provider, apiKey, fromEmail, fromName, enabled } = req.body;
+      
+      if (!provider || !apiKey || !fromEmail || !fromName) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required fields: provider, apiKey, fromEmail, fromName'
+        });
+      }
+
+      // Build provider-specific configJson
+      const configJson = {
+        apiKey,
+        fromEmail,
+        fromName
+      };
+
+      // Validate request body with proper schema structure
+      const validation = insertEmailProviderConfigsSchema.safeParse({
+        provider,
+        configJson,
+        orgId: user.organisationId,
+        updatedBy: user.id
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid configuration data',
+          errors: validation.error.errors
+        });
+      }
+
+      const configData = validation.data;
+
+      // Additional validation for required fields based on provider
+      if (configData.provider === 'sendgrid_api') {
+        const config = configData.configJson as any;
+        if (!config?.apiKey || !config?.fromEmail) {
+          return res.status(400).json({
+            success: false,
+            message: 'SendGrid configuration requires apiKey and fromEmail'
+          });
+        }
+      }
+
+      // Upsert the configuration (creates new or updates existing)
+      const savedConfig = await storage.upsertEmailProviderConfig(user.organisationId, configData);
+
+      res.json({
+        success: true,
+        message: 'Email provider configuration saved successfully',
+        config: {
+          id: savedConfig.id,
+          provider: savedConfig.provider,
+          isDefaultForOrg: savedConfig.isDefaultForOrg,
+          updatedAt: savedConfig.updatedAt
+        }
+      });
+    } catch (error) {
+      console.error('Error saving email provider config:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to save email provider configuration'
+      });
+    }
+  });
+
+  // Test email provider configuration
+  app.post('/api/admin/test-email-config', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+
+      // Validate admin access
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied - admin privileges required' });
+      }
+
+      if (!user.organisationId) {
+        return res.status(400).json({ message: 'Admin user not associated with an organization' });
+      }
+
+      // Define test configuration validation schema
+      const testConfigSchema = z.object({
+        provider: z.enum(['smtp_generic', 'sendgrid_api', 'brevo_api', 'mailgun_api', 'postmark_api', 'mailjet_api', 'sparkpost_api']),
+        apiKey: z.string().min(1, 'API key is required'),
+        fromEmail: z.string().email('Invalid fromEmail address format'),
+        fromName: z.string().min(1, 'From name is required'),
+        testEmail: z.string().email('Invalid test email address format')
+      });
+
+      // Validate request body with Zod
+      const validation = testConfigSchema.safeParse(req.body);
+      
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid configuration data',
+          errors: validation.error.errors
+        });
+      }
+
+      const { provider, apiKey, fromEmail, fromName, testEmail } = validation.data;
+
+      console.log(`📧 Testing Email Config: ${provider} for org ${user.organisationId} by ${user.email}`);
+
+      // Create test configuration without saving to database
+      const testConfig = {
+        provider,
+        fromEmail,
+        fromName,
+        apiKey
+      };
+
+      // Use the mailer service to test the configuration
+      try {
+        const testResult = await mailerService.send({
+          to: testEmail,
+          subject: 'Email Configuration Test - inteLMS',
+          html: `
+            <h2>Email Configuration Test Successful! ✅</h2>
+            <p>Congratulations! Your email configuration is working correctly.</p>
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <strong>Configuration Details:</strong><br>
+              Provider: ${provider}<br>
+              From Email: ${fromEmail}<br>
+              From Name: ${fromName}<br>
+              Test sent at: ${new Date().toISOString()}
+            </div>
+            <p><em>This is an automated test email from inteLMS.</em></p>
+          `,
+          text: `Email Configuration Test Successful!\n\nYour email configuration for ${provider} is working correctly.\n\nProvider: ${provider}\nFrom Email: ${fromEmail}\nFrom Name: ${fromName}\nTest sent at: ${new Date().toISOString()}\n\nThis is an automated test email from inteLMS.`,
+          templateType: 'system_test',
+          // customSettings property doesn't exist in EmailSendParams - removed
+        });
+
+        if (testResult.success) {
+          res.json({
+            success: true,
+            message: 'Test email sent successfully! Check your inbox.',
+            provider,
+            sentAt: new Date().toISOString()
+          });
+        } else {
+          res.json({
+            success: false,
+            message: 'Failed to send test email',
+            error: testResult.error || 'Unknown error occurred'
+          });
+        }
+      } catch (emailError: any) {
+        console.error('Email test failed:', emailError);
+        res.json({
+          success: false,
+          message: 'Email configuration test failed',
+          error: emailError.message || 'Unknown error occurred'
+        });
+      }
+    } catch (error) {
+      console.error('Error testing email config:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to test email configuration'
+      });
+    }
+  });
+
+  // ========================================================================================
   // COMPREHENSIVE EMAIL TEST ENDPOINT - Provider-Agnostic Email Testing
   // Supports: SMTP Generic, SendGrid, Brevo, Mailgun, Postmark, Mailjet, SparkPost
   // ========================================================================================
@@ -9244,12 +9496,12 @@ This test was initiated by ${user.email}.
           const context = {
             user: {
               name: `${newUser.firstName} ${newUser.lastName}`,
-              email: newUser.email,
-              firstName: newUser.firstName,
-              lastName: newUser.lastName,
+              email: newUser.email ?? undefined,
+              firstName: newUser.firstName ?? undefined,
+              lastName: newUser.lastName ?? undefined,
               fullName: `${newUser.firstName} ${newUser.lastName}`
             },
-            org: orgContext,
+            org: orgContext ?? undefined,
             addedBy: {
               name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
             },
@@ -9259,15 +9511,18 @@ This test was initiated by ${user.email}.
             temporaryPassword: password || undefined // Include password for admin users
           };
 
-          await emailOrchestrator.queue({
-            triggerEvent: 'USER_FAST_ADD',
-            templateKey: 'new_user_welcome',
-            toEmail: newUser.email,
-            context,
-            organisationId: newUser.organisationId || undefined,
-            resourceId: newUser.id,
-            priority: 1
-          });
+          // Only queue email if user has a valid email address
+          if (newUser.email) {
+            await emailOrchestrator.queue({
+              triggerEvent: 'USER_FAST_ADD',
+              templateKey: 'new_user_welcome',
+              toEmail: newUser.email,
+              context,
+              organisationId: newUser.organisationId || undefined,
+              resourceId: newUser.id,
+              priority: 1
+            });
+          }
           
           console.log(`✅ USER_FAST_ADD email queued for ${newUser.email} (Admin/SuperAdmin created)`);
         } catch (emailError) {
@@ -9288,7 +9543,15 @@ This test was initiated by ${user.email}.
               // TODO: DEPRECATED - Replace with EmailOrchestrator when EMAIL_TEMPLATES_V2 migration is complete
               // This legacy emailService.sendWelcomeEmail will be removed in favor of:
               // await emailOrchestrator.triggerEvent('USER_FAST_ADD', { user: newUser, organisation, password })
-              await emailService.sendWelcomeEmail(newUser, organisation, password);
+              // NOTE: sendWelcomeEmail method doesn't exist on emailService - using mailerService instead
+              if (newUser.email) {
+                await mailerService.send({
+                  to: newUser.email,
+                  subject: 'Welcome to your LMS - Account Created',
+                  html: `<p>Your account has been created. Email: ${newUser.email}, Password: ${password}</p>`,
+                  templateType: 'admin_welcome'
+                });
+              }
               console.log(`Welcome email sent to admin user: ${newUser.email}`);
             } else {
               console.log(`No organization found for admin user: ${newUser.email}`);
@@ -9450,39 +9713,41 @@ This test was initiated by ${user.email}.
           const context = {
             user: {
               name: `${targetUser.firstName} ${targetUser.lastName}`,
-              email: targetUser.email,
-              firstName: targetUser.firstName,
-              lastName: targetUser.lastName,
+              email: targetUser.email ?? undefined,
+              firstName: targetUser.firstName ?? undefined,
+              lastName: targetUser.lastName ?? undefined,
               fullName: `${targetUser.firstName} ${targetUser.lastName}`
             },
             course: {
               title: course.title,
-              description: course.description,
+              description: course.description ?? undefined,
               estimatedDuration: course.estimatedDuration
             },
             org: organisation ? {
               name: organisation.name,
               displayName: organisation.displayName || organisation.name
-            } : null,
+            } : undefined,
             assignedBy: {
               name: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email || 'Administrator'
             },
             assignedAt: new Date().toISOString(),
-            dueDate: assignmentData.dueDate?.toISOString() || null,
+            dueDate: assignmentData.dueDate?.toISOString() || undefined,
             courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${courseId}`,
             supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
           };
 
-          await emailOrchestrator.queue({
-            triggerEvent: 'COURSE_ASSIGNED',
-            templateKey: 'course_assigned',
-            toEmail: targetUser.email,
-            context,
-            organisationId: assignment.organisationId || undefined,
-            resourceId: assignment.id,
-            priority: 2,
-            idempotencyKey: `COURSE_ASSIGNED:${targetUser.email}:${courseId}:${assignment.id}`
-          });
+          // Only queue email if user has a valid email address
+          if (targetUser.email) {
+            await emailOrchestrator.queue({
+              triggerEvent: 'COURSE_ASSIGNED',
+              templateKey: 'course_assigned',
+              toEmail: targetUser.email,
+              context,
+              organisationId: assignment.organisationId || undefined,
+              priority: 2,
+              resourceId: `COURSE_ASSIGNED:${targetUser.email}:${courseId}:${assignment.id}`
+            });
+          }
           
           console.log(`✅ COURSE_ASSIGNED email queued for ${targetUser.email} (Individual assignment: ${course.title})`);
         } catch (emailError) {
@@ -11177,14 +11442,14 @@ This test was initiated by ${user.email}.
             const context = {
               user: {
                 name: `${targetUser.firstName} ${targetUser.lastName}`,
-                email: targetUser.email,
-                firstName: targetUser.firstName,
-                lastName: targetUser.lastName,
+                email: targetUser.email ?? undefined,
+                firstName: targetUser.firstName ?? undefined,
+                lastName: targetUser.lastName ?? undefined,
                 fullName: `${targetUser.firstName} ${targetUser.lastName}`
               },
               course: {
                 title: course.title,
-                description: course.description,
+                description: course.description ?? undefined,
                 estimatedDuration: course.estimatedDuration
               },
               org: {
@@ -11195,21 +11460,23 @@ This test was initiated by ${user.email}.
                 name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
               },
               assignedAt: new Date().toISOString(),
-              dueDate: assignment.dueDate?.toISOString() || null,
+              dueDate: assignment.dueDate?.toISOString() || undefined,
               courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${assignment.courseId}`,
               supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app'
             };
 
-            await emailOrchestrator.queue({
-              triggerEvent: 'COURSE_ASSIGNED',
-              templateKey: 'course_assigned',
-              toEmail: targetUser.email,
-              context,
-              organisationId: assignment.organisationId,
-              resourceId: assignment.id,
-              priority: 2,
-              idempotencyKey: `COURSE_ASSIGNED:${targetUser.email}:${assignment.courseId}:${assignment.id}`
-            });
+            // Only queue email if user has a valid email address
+            if (targetUser.email) {
+              await emailOrchestrator.queue({
+                triggerEvent: 'COURSE_ASSIGNED',
+                templateKey: 'course_assigned',
+                toEmail: targetUser.email,
+                context,
+                organisationId: assignment.organisationId,
+                priority: 2,
+                resourceId: `COURSE_ASSIGNED:${targetUser.email}:${assignment.courseId}:${assignment.id}`
+              });
+            }
             
             console.log(`✅ COURSE_ASSIGNED email queued for ${targetUser.email} (Individual assignment v2: ${course.title})`);
           }
