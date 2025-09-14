@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CoursePlayer } from "@/components/scorm/CoursePlayer";
+import { useAuth } from "@/hooks/useAuth";
 
 // SCORM 2004 (3rd Ed.) attempt state interface
 interface AttemptState {
@@ -445,7 +446,11 @@ function CourseStatus({ assignment }: { assignment: Assignment }) {
     staleTime: 0,
   });
 
-  const state = attemptState || { status: 'not_started' };
+  const state = attemptState || { 
+    status: 'not_started' as const, 
+    hasOpenAttempt: false, 
+    canResume: false 
+  };
   
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -687,9 +692,15 @@ export function UserCourses() {
                         {assignment.passmark}% pass mark
                       </div>
                       {assignment.dueDate && (
-                        <div data-testid={`text-course-due-${assignment.id}`}>
+                        <div 
+                          data-testid={`text-course-due-${assignment.id}`}
+                          className={new Date(assignment.dueDate) < new Date() ? 'text-red-500 font-semibold' : ''}
+                        >
                           <i className="fas fa-calendar mr-1"></i>
                           Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                          {new Date(assignment.dueDate) < new Date() && (
+                            <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-1 rounded">OVERDUE</span>
+                          )}
                         </div>
                       )}
                       {assignment.completedAt && assignment.score !== undefined && (

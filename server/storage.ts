@@ -166,6 +166,11 @@ export interface IStorage {
   getAssignmentsByUser(userId: string): Promise<Assignment[]>;
   getAssignmentsByOrganisation(organisationId: string): Promise<Assignment[]>;
   getAssignmentsByCourse(courseId: string): Promise<Assignment[]>;
+  getExistingAssignment(courseId: string, userId: string): Promise<Assignment | undefined>;
+  findDuplicateAssignments(): Promise<{ courseId: string; userId: string; count: number; duplicateIds: string[] }[]>;
+  removeDuplicateAssignments(): Promise<{ duplicatesRemoved: number; duplicateGroups: number }>;
+  findDuplicateAssignmentsByOrganisation(organisationId: string): Promise<{ courseId: string; userId: string; count: number; duplicateIds: string[] }[]>;
+  removeDuplicateAssignmentsByOrganisation(organisationId: string): Promise<{ duplicatesRemoved: number; duplicateGroups: number }>;
 
   // Completion operations
   getCompletion(id: string): Promise<Completion | undefined>;
@@ -789,6 +794,134 @@ export class DatabaseStorage implements IStorage {
 
   async getAssignmentsByCourse(courseId: string): Promise<Assignment[]> {
     return await db.select().from(assignments).where(eq(assignments.courseId, courseId)).orderBy(desc(assignments.assignedAt));
+  }
+
+  async getExistingAssignment(courseId: string, userId: string): Promise<Assignment | undefined> {
+    const [assignment] = await db
+      .select()
+      .from(assignments)
+      .where(and(eq(assignments.courseId, courseId), eq(assignments.userId, userId)));
+    return assignment;
+  }
+
+  async findDuplicateAssignments(): Promise<{ courseId: string; userId: string; count: number; duplicateIds: string[] }[]> {
+    // GLOBAL duplicate search - SUPERADMIN only
+    // Find duplicate assignments (same courseId + userId combination)
+    const duplicateGroups = await db
+      .select({
+        courseId: assignments.courseId,
+        userId: assignments.userId,
+        count: count(assignments.id).as('count'),
+      })
+      .from(assignments)
+      .groupBy(assignments.courseId, assignments.userId)
+      .having(sql`count(${assignments.id}) > 1`);
+
+    // Get the actual assignment IDs for each duplicate group
+    const result = [];
+    for (const group of duplicateGroups) {
+      const duplicateAssignments = await db
+        .select({
+          id: assignments.id,
+          assignedAt: assignments.assignedAt,
+        })
+        .from(assignments)
+        .where(and(eq(assignments.courseId, group.courseId), eq(assignments.userId, group.userId)))
+        .orderBy(asc(assignments.assignedAt)); // Earliest first
+
+      result.push({
+        courseId: group.courseId,
+        userId: group.userId,
+        count: group.count,
+        duplicateIds: duplicateAssignments.slice(1).map(a => a.id) // Keep first (earliest), remove rest
+      });
+    }
+
+    return result;
+  }
+
+  async findDuplicateAssignmentsByOrganisation(organisationId: string): Promise<{ courseId: string; userId: string; count: number; duplicateIds: string[] }[]> {
+    // ORGANIZATION-SCOPED duplicate search - ADMIN safe
+    // Find duplicate assignments within a specific organization
+    const duplicateGroups = await db
+      .select({
+        courseId: assignments.courseId,
+        userId: assignments.userId,
+        count: count(assignments.id).as('count'),
+      })
+      .from(assignments)
+      .where(eq(assignments.organisationId, organisationId))
+      .groupBy(assignments.courseId, assignments.userId)
+      .having(sql`count(${assignments.id}) > 1`);
+
+    // Get the actual assignment IDs for each duplicate group
+    const result = [];
+    for (const group of duplicateGroups) {
+      const duplicateAssignments = await db
+        .select({
+          id: assignments.id,
+          assignedAt: assignments.assignedAt,
+        })
+        .from(assignments)
+        .where(and(eq(assignments.courseId, group.courseId), eq(assignments.userId, group.userId)))
+        .orderBy(asc(assignments.assignedAt)); // Earliest first
+
+      result.push({
+        courseId: group.courseId,
+        userId: group.userId,
+        count: group.count,
+        duplicateIds: duplicateAssignments.slice(1).map(a => a.id) // Keep first (earliest), remove rest
+      });
+    }
+
+    return result;
+  }
+
+  async removeDuplicateAssignments(): Promise<{ duplicatesRemoved: number; duplicateGroups: number }> {
+    // GLOBAL cleanup - SUPERADMIN only
+    const duplicateGroups = await this.findDuplicateAssignments();
+    let totalRemoved = 0;
+
+    for (const group of duplicateGroups) {
+      if (group.duplicateIds.length > 0) {
+        // Delete duplicate assignments (keeping the earliest one)
+        await db
+          .delete(assignments)
+          .where(sql`${assignments.id} = ANY(${group.duplicateIds})`);
+        
+        totalRemoved += group.duplicateIds.length;
+      }
+    }
+
+    return {
+      duplicatesRemoved: totalRemoved,
+      duplicateGroups: duplicateGroups.length
+    };
+  }
+
+  async removeDuplicateAssignmentsByOrganisation(organisationId: string): Promise<{ duplicatesRemoved: number; duplicateGroups: number }> {
+    // ORGANIZATION-SCOPED cleanup - ADMIN safe
+    const duplicateGroups = await this.findDuplicateAssignmentsByOrganisation(organisationId);
+    let totalRemoved = 0;
+
+    for (const group of duplicateGroups) {
+      if (group.duplicateIds.length > 0) {
+        // Delete duplicate assignments (keeping the earliest one) - only within the organization
+        await db
+          .delete(assignments)
+          .where(and(
+            sql`${assignments.id} = ANY(${group.duplicateIds})`,
+            eq(assignments.organisationId, organisationId) // Double-check organization boundary
+          ));
+        
+        totalRemoved += group.duplicateIds.length;
+      }
+    }
+
+    return {
+      duplicatesRemoved: totalRemoved,
+      duplicateGroups: duplicateGroups.length
+    };
   }
 
   // Completion operations

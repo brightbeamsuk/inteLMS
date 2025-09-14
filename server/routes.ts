@@ -9694,6 +9694,7 @@ This test was initiated by ${user.email}.
         }
       }
 
+      // RACE CONDITION FIX: Create assignment data first, then handle duplicate constraint
       const assignmentData = {
         courseId,
         userId,
@@ -9704,7 +9705,26 @@ This test was initiated by ${user.email}.
         notificationsEnabled: notificationsEnabled || true
       };
 
-      const assignment = await storage.createAssignment(assignmentData);
+      let assignment;
+      try {
+        // Try to create the assignment - database unique constraint will prevent duplicates
+        assignment = await storage.createAssignment(assignmentData);
+      } catch (error: any) {
+        // Handle unique constraint violation (duplicate assignment)
+        if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+          console.log(`🔄 Duplicate assignment detected for user ${userId} and course ${courseId}, checking existing assignment`);
+          const existingAssignment = await storage.getExistingAssignment(courseId, userId);
+          if (existingAssignment) {
+            return res.status(409).json({ 
+              message: `This user is already assigned to ${course.title}. Cannot assign duplicate courses.`,
+              error: 'DUPLICATE_ASSIGNMENT',
+              existingAssignmentId: existingAssignment.id
+            });
+          }
+        }
+        // Re-throw other errors
+        throw error;
+      }
       
       // Send course assignment email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
       if (EMAIL_TEMPLATES_V2_ENABLED) {
@@ -9779,6 +9799,107 @@ This test was initiated by ${user.email}.
     } catch (error) {
       console.error('Error creating assignment:', error);
       res.status(500).json({ message: 'Failed to create assignment' });
+    }
+  });
+
+  // Clean up duplicate assignments (SUPERADMIN ONLY - global operation)
+  app.delete('/api/assignments/duplicates', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      
+      // SECURITY: Restrict to SUPERADMIN only - this is a GLOBAL operation that affects ALL organizations
+      if (!currentUser || currentUser.role !== 'superadmin') {
+        return res.status(403).json({ 
+          message: 'Access denied - SuperAdmin privileges required',
+          reason: 'Duplicate cleanup is a global system operation'
+        });
+      }
+
+      // Find and remove duplicate assignments
+      const duplicateGroups = await storage.findDuplicateAssignments();
+      
+      if (duplicateGroups.length === 0) {
+        return res.json({ 
+          message: 'No duplicate assignments found',
+          duplicatesRemoved: 0,
+          duplicateGroups: 0
+        });
+      }
+
+      // Remove duplicate assignments (keeping earliest ones)
+      const result = await storage.removeDuplicateAssignments();
+      
+      console.log(`✅ Duplicate cleanup completed: ${result.duplicatesRemoved} duplicates removed from ${result.duplicateGroups} groups`);
+      
+      res.json({ 
+        message: `Successfully removed ${result.duplicatesRemoved} duplicate assignments from ${result.duplicateGroups} groups`,
+        duplicatesRemoved: result.duplicatesRemoved,
+        duplicateGroups: result.duplicateGroups,
+        details: duplicateGroups.map(group => ({
+          courseId: group.courseId,
+          userId: group.userId,
+          duplicatesFound: group.count,
+          duplicatesRemoved: group.duplicateIds.length
+        }))
+      });
+    } catch (error) {
+      console.error('Error cleaning up duplicate assignments:', error);
+      res.status(500).json({ message: 'Failed to clean up duplicate assignments' });
+    }
+  });
+
+  // Clean up duplicate assignments within organization (ADMIN safe - organization-scoped)
+  app.delete('/api/assignments/duplicates/organization', requireAuth, async (req: any, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      
+      if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // For admin users, use their organization. For superadmin, allow specifying organization
+      const organisationId = currentUser.role === 'superadmin' && req.query.organisationId 
+        ? req.query.organisationId as string 
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ 
+          message: 'Organization ID required',
+          reason: 'Cannot determine target organization for cleanup operation'
+        });
+      }
+
+      // Find and remove duplicate assignments within the organization
+      const duplicateGroups = await storage.findDuplicateAssignmentsByOrganisation(organisationId);
+      
+      if (duplicateGroups.length === 0) {
+        return res.json({ 
+          message: 'No duplicate assignments found in this organization',
+          duplicatesRemoved: 0,
+          duplicateGroups: 0
+        });
+      }
+
+      // Remove duplicate assignments within the organization (keeping earliest ones)
+      const result = await storage.removeDuplicateAssignmentsByOrganisation(organisationId);
+      
+      console.log(`✅ Organization-scoped duplicate cleanup completed for org ${organisationId}: ${result.duplicatesRemoved} duplicates removed from ${result.duplicateGroups} groups`);
+      
+      res.json({ 
+        message: `Successfully removed ${result.duplicatesRemoved} duplicate assignments from ${result.duplicateGroups} groups in your organization`,
+        duplicatesRemoved: result.duplicatesRemoved,
+        duplicateGroups: result.duplicateGroups,
+        organisationId,
+        details: duplicateGroups.map(group => ({
+          courseId: group.courseId,
+          userId: group.userId,
+          duplicatesFound: group.count,
+          duplicatesRemoved: group.duplicateIds.length
+        }))
+      });
+    } catch (error) {
+      console.error('Error cleaning up organization duplicate assignments:', error);
+      res.status(500).json({ message: 'Failed to clean up duplicate assignments' });
     }
   });
 

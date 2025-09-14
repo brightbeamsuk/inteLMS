@@ -17,6 +17,7 @@ interface User {
   jobTitle?: string;
   department?: string;
   allowCertificateDownload: boolean;
+  profileImageUrl?: string;
 }
 
 interface LicenseInfo {
@@ -26,6 +27,33 @@ interface LicenseInfo {
   isAtLimit: boolean;
   hasActiveSubscription: boolean;
   organisationName: string;
+}
+
+interface Assignment {
+  id: string;
+  courseId: string;
+  userId: string;
+  organisationId: string;
+  status: string;
+  dueDate?: string;
+  assignedBy: string;
+  assignedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  notificationsEnabled: boolean;
+  courseTitle?: string;
+  courseDescription?: string;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  description?: string;
+  coverImageUrl?: string;
+  estimatedDuration: number;
+  passmark: number;
+  status: string;
+  organisationId: string;
 }
 
 export function AdminUsers() {
@@ -86,13 +114,13 @@ export function AdminUsers() {
   });
 
   // Fetch user assignments for the selected user
-  const { data: userAssignments = [], isLoading: assignmentsLoading } = useQuery({
+  const { data: userAssignments = [], isLoading: assignmentsLoading } = useQuery<Assignment[]>({
     queryKey: ['/api/assignments/user', selectedUser?.id],
     enabled: !!selectedUser?.id && showUserModal,
   });
 
   // Fetch available courses
-  const { data: availableCourses = [], isLoading: coursesLoading } = useQuery({
+  const { data: availableCourses = [], isLoading: coursesLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses'],
     enabled: showAssignCoursesModal,
   });
@@ -225,28 +253,70 @@ export function AdminUsers() {
   const assignCoursesMutation = useMutation({
     mutationFn: async (data: { userId: string; courseIds: string[] }) => {
       const assignments = [];
+      const duplicates = [];
+      const errors = [];
+      
       for (const courseId of data.courseIds) {
-        const assignment = await apiRequest('POST', '/api/assignments', {
-          courseId,
-          userId: data.userId,
-          organisationId: currentUser?.organisationId,
-          assignedBy: currentUser?.id,
-          status: 'not_started',
-          dueDate: null,
-          notificationsEnabled: true
-        });
-        assignments.push(assignment);
+        try {
+          const assignment = await apiRequest('POST', '/api/assignments', {
+            courseId,
+            userId: data.userId,
+            organisationId: currentUser?.organisationId,
+            assignedBy: currentUser?.id,
+            status: 'not_started',
+            dueDate: null,
+            notificationsEnabled: true
+          });
+          assignments.push(assignment);
+        } catch (error: any) {
+          if (error.error === 'DUPLICATE_ASSIGNMENT') {
+            duplicates.push({
+              courseId,
+              message: error.message
+            });
+          } else {
+            errors.push({
+              courseId,
+              message: error.message || 'Failed to assign course'
+            });
+          }
+        }
       }
-      return assignments;
+      
+      return { assignments, duplicates, errors };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/assignments/user'] });
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/assignments/user', selectedUser?.id] });
       setShowAssignCoursesModal(false);
       setSelectedCourseIds([]);
-      toast({
-        title: "Success",
-        description: `Successfully assigned ${selectedCourseIds.length} course(s)`,
-      });
+      
+      const { assignments, duplicates, errors } = result;
+      
+      // Show success message for successful assignments
+      if (assignments.length > 0) {
+        toast({
+          title: "Success",
+          description: `Successfully assigned ${assignments.length} course(s)`,
+        });
+      }
+      
+      // Show warning for duplicates
+      if (duplicates.length > 0) {
+        toast({
+          title: "Duplicate Assignments Detected",
+          description: `${duplicates.length} course(s) were already assigned to this user`,
+          variant: "destructive",
+        });
+      }
+      
+      // Show error for other failures
+      if (errors.length > 0) {
+        toast({
+          title: "Assignment Errors",
+          description: `Failed to assign ${errors.length} course(s)`,
+          variant: "destructive",
+        });
+      }
     },
     onError: () => {
       toast({

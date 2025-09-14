@@ -257,7 +257,10 @@ export const assignments = pgTable("assignments", {
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   notificationsEnabled: boolean("notifications_enabled").default(true),
-});
+}, (table) => ({
+  // UNIQUE CONSTRAINT: Prevent duplicate assignments for same user+course combination
+  uniqueUserCourse: unique("assignments_user_course_unique").on(table.userId, table.courseId),
+}));
 
 // Course completions table
 export const completions = pgTable("completions", {
