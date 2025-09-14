@@ -107,7 +107,16 @@ export const emailTemplateTypeEnum = pgEnum('email_template_type', [
   'staff_training_expired',
   'weekly_training_summary',
   'smtp_test',
-  'system_test'
+  'system_test',
+  // EmailOrchestrator template keys
+  'new_user_welcome',
+  'admin.new_user_added',
+  'admin.new_admin_added',
+  'new_org_welcome',
+  'course_assigned_notification',
+  'course_completion_notification',
+  'course_failure_notification',
+  'plan_updated_notification'
 ]);
 
 // Email routing source enum for tracking which route was used
