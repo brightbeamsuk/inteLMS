@@ -23,6 +23,34 @@ interface Organisation {
   updatedAt: string;
 }
 
+interface OrganisationStats {
+  adminUsers: number;
+  activeUsers: number;
+  coursesAssigned: number;
+}
+
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  status: string;
+  jobTitle?: string;
+  department?: string;
+  lastLoginAt?: string;
+  activeAssignments?: number;
+  completedAssignments?: number;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  description?: string;
+  estimatedDuration?: string;
+  courseType?: string;
+}
+
 export function SuperAdminOrganisations() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<Organisation | null>(null);
@@ -60,10 +88,24 @@ export function SuperAdminOrganisations() {
     adminLastName: "",
     adminJobTitle: "",
     adminDepartment: "",
+    // Course category access
+    selectedCategoryIds: [] as string[],
   });
 
   const { data: organisations = [], isLoading } = useQuery<Organisation[]>({
     queryKey: ['/api/organisations'],
+  });
+
+  // Fetch course folders/categories for selection
+  interface CourseFolder {
+    id: string;
+    name: string;
+    description?: string;
+    color?: string;
+  }
+
+  const { data: courseFolders = [], isLoading: foldersLoading } = useQuery<CourseFolder[]>({
+    queryKey: ['/api/course-folders'],
   });
 
   // Filter organizations based on status
@@ -72,7 +114,7 @@ export function SuperAdminOrganisations() {
   const displayedOrganisations = showArchived ? archivedOrganisations : activeOrganisations;
 
   // Get organisation stats when details modal is open
-  const { data: orgStats, isLoading: statsLoading } = useQuery({
+  const { data: orgStats, isLoading: statsLoading } = useQuery<OrganisationStats>({
     queryKey: ['/api/organisations', selectedOrg?.id, 'stats'],
     enabled: !!selectedOrg && showDetailsModal,
   });
@@ -215,6 +257,7 @@ export function SuperAdminOrganisations() {
       adminLastName: "",
       adminJobTitle: "",
       adminDepartment: "",
+      selectedCategoryIds: [],
     });
   };
 
@@ -706,6 +749,76 @@ export function SuperAdminOrganisations() {
                   onChange={(e) => setFormData(prev => ({ ...prev, adminDepartment: e.target.value }))}
                   data-testid="input-admin-department"
                 />
+              </div>
+
+              {/* Course Categories Section */}
+              <div className="divider">
+                <span className="text-lg font-semibold">📚 Course Category Access</span>
+              </div>
+              
+              <div className="alert alert-info">
+                <i className="fas fa-info-circle"></i>
+                <span>Select which course categories this organisation should have access to. Only courses in selected categories will be visible to their admins and users.</span>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Available Course Categories</span>
+                </label>
+                {foldersLoading ? (
+                  <div className="flex justify-center py-4">
+                    <span className="loading loading-spinner loading-md"></span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-base-300 rounded p-3">
+                    {courseFolders.length === 0 ? (
+                      <div className="text-center text-base-content/70 col-span-full py-4">
+                        <i className="fas fa-folder-open text-2xl mb-2"></i>
+                        <p>No course categories available</p>
+                        <p className="text-sm">Create course categories first to grant access</p>
+                      </div>
+                    ) : (
+                      courseFolders.map((folder) => (
+                        <label key={folder.id} className="flex items-center gap-2 cursor-pointer hover:bg-base-200 p-2 rounded">
+                          <input
+                            type="checkbox"
+                            className="checkbox checkbox-primary"
+                            checked={formData.selectedCategoryIds.includes(folder.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  selectedCategoryIds: [...prev.selectedCategoryIds, folder.id]
+                                }));
+                              } else {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  selectedCategoryIds: prev.selectedCategoryIds.filter(id => id !== folder.id)
+                                }));
+                              }
+                            }}
+                            data-testid={`checkbox-category-${folder.id}`}
+                          />
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded"
+                              style={{ backgroundColor: folder.color || '#3b82f6' }}
+                            ></div>
+                            <span className="text-sm font-medium">{folder.name}</span>
+                            {folder.description && (
+                              <span className="text-xs text-base-content/60">- {folder.description}</span>
+                            )}
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+                <label className="label">
+                  <span className="label-text-alt">
+                    Selected: {formData.selectedCategoryIds.length} of {courseFolders.length} categories
+                  </span>
+                </label>
               </div>
 
               <div className="modal-action">
@@ -1239,11 +1352,11 @@ function ManageAdminsModal({ organisation, onClose }: { organisation: Organisati
   const queryClient = useQueryClient();
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<any>(null);
   
-  const { data: users = [], isLoading } = useQuery({
+  const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['/api/organisations', organisation.id, 'users'],
   });
 
-  const adminUsers = users.filter((user: any) => user.role === 'admin');
+  const adminUsers = users.filter((user) => user.role === 'admin');
 
   // Reset Password Mutation
   const resetPasswordMutation = useMutation({
@@ -1335,7 +1448,7 @@ function ManageAdminsModal({ organisation, onClose }: { organisation: Organisati
                   </td>
                 </tr>
               ) : (
-                adminUsers.map((user: any) => (
+                adminUsers.map((user) => (
                   <tr key={user.id} data-testid={`row-admin-${user.id}`}>
                     <td>
                       <div className="font-bold">{user.firstName} {user.lastName}</div>
@@ -1452,11 +1565,11 @@ function ManageAdminsModal({ organisation, onClose }: { organisation: Organisati
 
 // Manage Users Modal Component
 function ManageUsersModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
-  const { data: users = [], isLoading } = useQuery({
+  const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['/api/organisations', organisation.id, 'users'],
   });
 
-  const regularUsers = users.filter((user: any) => user.role === 'user');
+  const regularUsers = users.filter((user) => user.role === 'user');
 
   return (
     <dialog className="modal modal-open">
@@ -1491,7 +1604,7 @@ function ManageUsersModal({ organisation, onClose }: { organisation: Organisatio
                   </td>
                 </tr>
               ) : (
-                regularUsers.map((user: any) => (
+                regularUsers.map((user) => (
                   <tr key={user.id} data-testid={`row-user-${user.id}`}>
                     <td>
                       <div className="font-bold">{user.firstName} {user.lastName}</div>
@@ -1546,7 +1659,7 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: courses = [], isLoading } = useQuery({
+  const { data: courses = [], isLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses/all'],
   });
 
@@ -1576,7 +1689,7 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
       setSelectedCourses([]);
       setSelectAll(false);
     } else {
-      setSelectedCourses(courses.map((course: any) => course.id));
+      setSelectedCourses(courses.map((course) => course.id));
       setSelectAll(true);
     }
   };
@@ -1637,7 +1750,7 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
             </div>
           ) : (
             <div className="space-y-2">
-              {courses.map((course: any) => (
+              {courses.map((course) => (
                 <div key={course.id} className="form-control">
                   <label className="label cursor-pointer justify-start gap-4" data-testid={`label-course-${course.id}`}>
                     <input 

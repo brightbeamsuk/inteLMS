@@ -5316,12 +5316,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Extract admin user data from request body
-      const { adminEmail, adminFirstName, adminLastName, adminJobTitle, adminDepartment, ...orgData } = req.body;
+      // Extract admin user data and selectedCategoryIds from request body
+      const { adminEmail, adminFirstName, adminLastName, adminJobTitle, adminDepartment, selectedCategoryIds, ...orgData } = req.body;
       
       // Validate required admin fields
       if (!adminEmail || !adminFirstName || !adminLastName) {
         return res.status(400).json({ message: 'Admin user details are required' });
+      }
+
+      // Validate selectedCategoryIds if provided
+      if (selectedCategoryIds && !Array.isArray(selectedCategoryIds)) {
+        return res.status(400).json({ message: 'selectedCategoryIds must be an array' });
       }
 
       // Validate email format
@@ -5375,6 +5380,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         signerTitle: adminJobTitle || 'Learning Manager',
       });
 
+      // Grant access to selected course categories
+      let grantedCategoriesCount = 0;
+      if (selectedCategoryIds && Array.isArray(selectedCategoryIds) && selectedCategoryIds.length > 0) {
+        for (const folderId of selectedCategoryIds) {
+          try {
+            // Validate that the folder exists before granting access
+            const folder = await storage.getCourseFolder(folderId);
+            if (folder) {
+              await storage.grantOrganisationFolderAccess({
+                organisationId: organisation.id,
+                folderId: folderId,
+                grantedBy: user.id,
+              });
+              grantedCategoriesCount++;
+              console.log(`✅ Granted course category access: ${folder.name} (${folderId}) to organisation ${organisation.displayName}`);
+            } else {
+              console.warn(`⚠️ Folder ${folderId} not found, skipping access grant`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to grant access to folder ${folderId}:`, error);
+          }
+        }
+        console.log(`📚 Organisation ${organisation.displayName} granted access to ${grantedCategoriesCount} course categories`);
+      } else {
+        console.log(`📚 Organisation ${organisation.displayName} created with no specific course category access (will see no courses)`);
+      }
+
       // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
       if (EMAIL_TEMPLATES_V2_ENABLED) {
         try {
@@ -5426,6 +5458,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           firstName: adminUser.firstName,
           lastName: adminUser.lastName,
           role: adminUser.role,
+        },
+        courseCategoryAccess: {
+          totalSelected: selectedCategoryIds ? selectedCategoryIds.length : 0,
+          granted: grantedCategoriesCount
         }
       });
     } catch (error) {
@@ -11379,11 +11415,42 @@ This test was initiated by ${user.email}.
     try {
       const user = await getCurrentUser(req);
       
-      // For admins doing course assignment, only return active courses
+      // For admins doing course assignment, only return active courses from allowed categories
       if (user?.role === 'admin') {
+        if (!user.organisationId) {
+          return res.status(403).json({ message: 'Admin user must belong to an organization' });
+        }
+
+        // Get organization's allowed course folders/categories
+        const allowedFolders = await storage.getOrganisationFolderAccess(user.organisationId);
+        const allowedFolderIds = allowedFolders.map(folder => folder.id);
+
+        // Get all courses and filter by organization's category access
         const courses = await storage.getAllCourses();
-        const activeCourses = courses.filter(course => course.status === 'published');
-        res.json(activeCourses);
+        const filteredCourses = courses.filter(course => {
+          // Only show published courses
+          if (course.status !== 'published') {
+            return false;
+          }
+          
+          // If no specific folder access is granted, show no courses
+          if (allowedFolderIds.length === 0) {
+            return false;
+          }
+          
+          // Show courses that are in the organization's allowed categories
+          // If course has no folder (folderId is null), don't show it unless organization has access to 'uncategorized'
+          if (course.folderId) {
+            return allowedFolderIds.includes(course.folderId);
+          } else {
+            // Handle uncategorized courses - only show if organization has been granted general access
+            // For now, we'll exclude uncategorized courses to maintain strict category-based access
+            return false;
+          }
+        });
+
+        console.log(`📚 Admin ${user.email} (Org: ${user.organisationId}) can access ${filteredCourses.length} courses from ${allowedFolderIds.length} allowed categories`);
+        res.json(filteredCourses);
       } else {
         // For SuperAdmin, fetch all courses (published and archived)
         const courses = await storage.getAllCourses();
