@@ -408,7 +408,7 @@ export interface IStorage {
   }): Promise<SupportTicket[]>;
   updateSupportTicket(id: string, ticket: Partial<InsertSupportTicket>): Promise<SupportTicket>;
   deleteSupportTicket(id: string): Promise<void>;
-  getUnreadTicketCount(filters?: { organisationId?: string; assignedTo?: string }): Promise<number>;
+  getUnreadTicketCount(filters?: { organisationId?: string; assignedTo?: string; createdBy?: string }): Promise<number>;
 
   // Support ticket response operations
   createSupportTicketResponse(response: InsertSupportTicketResponse): Promise<SupportTicketResponse>;
@@ -2313,8 +2313,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(supportTickets).where(eq(supportTickets.id, id));
   }
 
-  async getUnreadTicketCount(filters: { organisationId?: string; assignedTo?: string } = {}): Promise<number> {
-    const { organisationId, assignedTo } = filters;
+  async getUnreadTicketCount(filters: { organisationId?: string; assignedTo?: string; createdBy?: string } = {}): Promise<number> {
+    const { organisationId, assignedTo, createdBy } = filters;
 
     let query = db.select({ count: count() }).from(supportTickets);
 
@@ -2324,6 +2324,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (assignedTo) {
       conditions.push(eq(supportTickets.assignedTo, assignedTo));
+    }
+    if (createdBy) {
+      conditions.push(eq(supportTickets.createdBy, createdBy));
     }
 
     const [result] = await query.where(and(...conditions));
