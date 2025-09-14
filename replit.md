@@ -4,6 +4,7 @@ This is a white-label Learning Management System (LMS) web application built wit
 
 # Recent Changes
 
+- **Category-Based Course Access System (September 14, 2025)**: Implemented selective course category access during organization creation. SuperAdmins now choose specific course categories/folders when creating organizations, replacing automatic access to all courses. Features multiselect interface with visual category selection and strict access control filtering.
 - **Custom Email API Implementation (September 14, 2025)**: Added organization-specific email provider configuration allowing admins to use their own email services (SendGrid, SMTP, etc.) instead of system defaults
 - **Email Template Synchronization**: Ensured admin templates display current superadmin defaults with proper cascade logic (org override → superadmin default)  
 - **Enhanced EmailOrchestrator**: Updated to use organization-specific email settings when available with fallback to system defaults
