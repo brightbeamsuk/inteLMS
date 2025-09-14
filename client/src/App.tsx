@@ -4,9 +4,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { PasswordChangeModal } from "@/components/PasswordChangeModal";
 
 // Layout components
 import { SuperAdminLayout } from "@/components/Layout/SuperAdminLayout";
@@ -54,6 +55,7 @@ import { UserSupport } from "@/pages/user/Support";
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const { toast } = useToast();
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -80,7 +82,30 @@ function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode;
         window.location.href = redirectPath;
       }, 500);
     }
+
+    // Check if password change is required
+    if (!isLoading && isAuthenticated && user?.requiresPasswordChange) {
+      setShowPasswordChangeModal(true);
+    }
   }, [isAuthenticated, isLoading, user, requiredRole, toast]);
+
+  const handlePasswordChangeSuccess = (updatedUser: any) => {
+    // Update the user data in the query cache
+    queryClient.setQueryData(["/api/auth/user"], updatedUser);
+    setShowPasswordChangeModal(false);
+    
+    toast({
+      title: "Welcome!",
+      description: "Your password has been changed successfully. You can now access the application.",
+      variant: "default",
+    });
+    
+    // Redirect to appropriate dashboard based on user role
+    const redirectPath = updatedUser.role === 'admin' ? '/admin' : updatedUser.role === 'user' ? '/user' : '/superadmin';
+    setTimeout(() => {
+      window.location.href = redirectPath;
+    }, 1000);
+  };
 
   if (isLoading) {
     return (
@@ -92,6 +117,21 @@ function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode;
 
   if (!isAuthenticated) {
     return null;
+  }
+
+  // Show password change modal if required - blocks all access
+  if (user?.requiresPasswordChange || showPasswordChangeModal) {
+    return (
+      <>
+        <PasswordChangeModal
+          isOpen={true}
+          onSuccess={handlePasswordChangeSuccess}
+          userEmail={user?.email || ""}
+        />
+        {/* Block all other content */}
+        <div className="min-h-screen bg-base-100" />
+      </>
+    );
   }
 
   if (requiredRole && user?.role !== requiredRole) {

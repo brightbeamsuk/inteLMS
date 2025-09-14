@@ -164,6 +164,7 @@ export const users = pgTable("users", {
   phone: varchar("phone"),
   bio: text("bio"),
   allowCertificateDownload: boolean("allow_certificate_download").default(false),
+  requiresPasswordChange: boolean("requires_password_change").default(false), // Flag to force password change on next login
   lastActive: timestamp("last_active"),
   // Stripe fields for individual billing (PAYG or per-user mapping)
   stripeCustomerId: varchar("stripe_customer_id"), // Individual Stripe Customer ID for PAYG users

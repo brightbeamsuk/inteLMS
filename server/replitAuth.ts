@@ -128,6 +128,9 @@ export async function setupAuth(app: Express) {
   ) => {
     try {
       const claims = tokens.claims();
+      if (!claims) {
+        return verified(new Error("Invalid token claims"));
+      }
       const user = {};
       updateUserSession(user, tokens);
       await upsertUser(claims);

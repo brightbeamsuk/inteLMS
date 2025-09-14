@@ -31,6 +31,8 @@ import bcrypt from "bcryptjs";
 import { emailService } from "./services/emailService";
 import { EmailOrchestrator } from "./services/EmailOrchestrator";
 import { emailNotificationService } from "./services/EmailNotificationService";
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -818,6 +820,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ 
           message: "Login successful",
           user: demoAccount.user,
+          requiresPasswordChange: demoAccount.user.requiresPasswordChange || false,
           redirectUrl: demoAccount.user.role === 'superadmin' ? '/superadmin' 
             : demoAccount.user.role === 'admin' ? '/admin'
             : '/user'
@@ -859,6 +862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ 
         message: "Login successful",
         user: user,
+        requiresPasswordChange: user.requiresPasswordChange || false,
         redirectUrl: user.role === 'superadmin' ? '/superadmin' 
           : user.role === 'admin' ? '/admin'
           : '/user'
@@ -866,6 +870,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  // Change password endpoint for users with temporary passwords
+  app.post('/api/auth/change-password', async (req: any, res) => {
+    try {
+      const { currentPassword, newPassword, confirmPassword } = req.body;
+      
+      // Check if user is logged in
+      if (!req.session?.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      // Validate inputs
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        return res.status(400).json({ message: 'All fields are required' });
+      }
+      
+      if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: 'New passwords do not match' });
+      }
+      
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+      }
+      
+      // Get current user from database
+      const user = await storage.getUser(req.session.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Verify current password
+      if (!user.passwordHash) {
+        return res.status(400).json({ message: 'User has no password set' });
+      }
+      
+      const currentPasswordMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!currentPasswordMatch) {
+        return res.status(400).json({ message: 'Current password is incorrect' });
+      }
+      
+      // Don't allow setting the same password
+      const samePassword = await bcrypt.compare(newPassword, user.passwordHash);
+      if (samePassword) {
+        return res.status(400).json({ message: 'New password must be different from current password' });
+      }
+      
+      // Hash the new password
+      const saltRounds = 10;
+      const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+      
+      // Update user password and clear requiresPasswordChange flag directly in database
+      await db.update(users)
+        .set({ 
+          passwordHash: newPasswordHash,
+          requiresPasswordChange: false,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+      
+      // Update session with new user data
+      const updatedUser = await storage.getUser(user.id);
+      req.session.user = updatedUser;
+      
+      console.log(`✅ Password changed successfully for user: ${user.email}`);
+      
+      return res.json({ 
+        message: 'Password changed successfully',
+        user: updatedUser
+      });
+      
+    } catch (error) {
+      console.error('Change password error:', error);
+      res.status(500).json({ message: 'Failed to change password' });
     }
   });
 
@@ -5284,6 +5363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         department: adminDepartment || null,
         allowCertificateDownload: true,
         passwordHash: passwordHash,
+        requiresPasswordChange: true, // Force password change on first login
       };
 
       const adminUser = await storage.createUser(adminUserData);
@@ -9520,6 +9600,9 @@ This test was initiated by ${user.email}.
         }
         const saltRounds = 10;
         userDataWithPassword.passwordHash = await bcrypt.hash(actualPassword, saltRounds);
+        
+        // Set requiresPasswordChange to true if this is a generated password (no password was provided originally)
+        userDataWithPassword.requiresPasswordChange = !password; // true if password was auto-generated
       }
       
       // Store the password for email context (use actualPassword instead of original password)
