@@ -6,6 +6,7 @@ import { useLocation } from "wouter";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { ImageUpload } from "@/components/ImageUpload";
 import type { UploadResult } from "@uppy/core";
+import type { CourseFolder } from "@shared/schema";
 
 interface Organisation {
   id: string;
@@ -61,7 +62,7 @@ export function SuperAdminOrganisations() {
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
   const [showManageAdminsModal, setShowManageAdminsModal] = useState(false);
   const [showManageUsersModal, setShowManageUsersModal] = useState(false);
-  const [showAssignCoursesModal, setShowAssignCoursesModal] = useState(false);
+  const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<Organisation>>({});
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [archiveConfirmText, setArchiveConfirmText] = useState("");
@@ -918,10 +919,10 @@ export function SuperAdminOrganisations() {
               </button>
               <button 
                 className="btn btn-sm btn-outline" 
-                onClick={() => setShowAssignCoursesModal(true)}
-                data-testid="button-assign-courses"
+                onClick={() => setShowManageCategoriesModal(true)}
+                data-testid="button-manage-categories"
               >
-                <i className="fas fa-graduation-cap"></i> Assign Courses
+                <i className="fas fa-folder"></i> Manage Categories
               </button>
               <button 
                 className="btn btn-sm btn-secondary" 
@@ -1203,11 +1204,11 @@ export function SuperAdminOrganisations() {
         />
       )}
 
-      {/* Assign Courses Modal */}
-      {showAssignCoursesModal && selectedOrg && (
-        <AssignCoursesModal 
+      {/* Manage Categories Modal */}
+      {showManageCategoriesModal && selectedOrg && (
+        <ManageCategoriesModal 
           organisation={selectedOrg}
-          onClose={() => setShowAssignCoursesModal(false)}
+          onClose={() => setShowManageCategoriesModal(false)}
         />
       )}
 
@@ -1652,33 +1653,69 @@ function ManageUsersModal({ organisation, onClose }: { organisation: Organisatio
   );
 }
 
-// Assign Courses Modal Component
-function AssignCoursesModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
-  const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+// Manage Categories Modal Component
+function ManageCategoriesModal({ organisation, onClose }: { organisation: Organisation; onClose: () => void }) {
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: courses = [], isLoading } = useQuery<Course[]>({
-    queryKey: ['/api/courses/all'],
+  // Fetch all available categories/course folders
+  const { data: allCategories = [], isLoading: categoriesLoading } = useQuery<CourseFolder[]>({
+    queryKey: ['/api/course-folders'],
   });
 
-  const assignCoursesMutation = useMutation({
-    mutationFn: async (courseIds: string[]) => {
-      const response = await apiRequest('POST', `/api/organisations/${organisation.id}/assign-courses`, { courseIds });
+  // Fetch current organization folder access
+  const { data: currentAccess = [], isLoading: accessLoading } = useQuery<any[]>({
+    queryKey: ['/api/organisations', organisation.id, 'folder-access'],
+  });
+
+  // Initialize selected categories based on current access
+  useState(() => {
+    if (currentAccess.length > 0) {
+      const accessedIds = currentAccess.map(access => access.folderId);
+      setSelectedCategoryIds(accessedIds);
+      setSelectAll(accessedIds.length === allCategories.length);
+    }
+  });
+
+  // Mutation to grant category access
+  const grantAccessMutation = useMutation({
+    mutationFn: async (categoryIds: string[]) => {
+      const response = await apiRequest('POST', `/api/organisations/${organisation.id}/folder-access`, { 
+        folderIds: categoryIds 
+      });
       return await response.json();
     },
     onSuccess: (data) => {
       toast({
         title: "Success!",
-        description: data.message,
+        description: data.message || "Category access updated successfully",
       });
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
       onClose();
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to assign courses",
+        description: error.message || "Failed to update category access",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation to remove category access
+  const removeAccessMutation = useMutation({
+    mutationFn: async (categoryId: string) => {
+      await apiRequest('DELETE', `/api/organisations/${organisation.id}/folder-access/${categoryId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove category access",
         variant: "destructive",
       });
     },
@@ -1686,56 +1723,87 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
 
   const handleSelectAll = () => {
     if (selectAll) {
-      setSelectedCourses([]);
+      setSelectedCategoryIds([]);
       setSelectAll(false);
     } else {
-      setSelectedCourses(courses.map((course) => course.id));
+      setSelectedCategoryIds(allCategories.map((category) => category.id));
       setSelectAll(true);
     }
   };
 
-  const handleCourseToggle = (courseId: string) => {
-    setSelectedCourses(prev => {
-      const updated = prev.includes(courseId)
-        ? prev.filter(id => id !== courseId)
-        : [...prev, courseId];
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategoryIds(prev => {
+      const updated = prev.includes(categoryId)
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId];
       
-      setSelectAll(updated.length === courses.length);
+      setSelectAll(updated.length === allCategories.length);
       return updated;
     });
   };
 
-  const handleSubmit = () => {
-    if (selectedCourses.length === 0) {
-      toast({
-        title: "Validation Error",
-        description: "Please select at least one course to assign",
-        variant: "destructive",
-      });
-      return;
-    }
+  const handleSubmit = async () => {
+    // Determine which categories to grant access to (newly selected)
+    const currentAccessIds = currentAccess.map(access => access.folderId);
+    const toGrant = selectedCategoryIds.filter(id => !currentAccessIds.includes(id));
+    const toRemove = currentAccessIds.filter(id => !selectedCategoryIds.includes(id));
 
-    assignCoursesMutation.mutate(selectedCourses);
+    try {
+      // Remove access for unselected categories
+      for (const categoryId of toRemove) {
+        await removeAccessMutation.mutateAsync(categoryId);
+      }
+
+      // Grant access for newly selected categories
+      if (toGrant.length > 0) {
+        await grantAccessMutation.mutateAsync(toGrant);
+      } else if (toRemove.length > 0) {
+        // Only show success if we removed categories and didn't grant any
+        toast({
+          title: "Success!",
+          description: "Category access updated successfully",
+        });
+        queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
+        onClose();
+      } else {
+        // No changes made
+        toast({
+          title: "No Changes",
+          description: "No category access changes were made",
+        });
+        onClose();
+      }
+    } catch (error) {
+      // Error handling is done by the mutations
+    }
   };
+
+  const isLoading = categoriesLoading || accessLoading;
+  const currentAccessIds = currentAccess.map(access => access.folderId);
 
   return (
     <dialog className="modal modal-open">
       <div className="modal-box max-w-4xl">
-        <h3 className="font-bold text-lg mb-4" data-testid="text-assign-courses-title">
-          Assign Courses - {organisation.displayName}
+        <h3 className="font-bold text-lg mb-4" data-testid="text-manage-categories-title">
+          Manage Categories - {organisation.displayName}
         </h3>
+        
+        <div className="alert alert-info mb-4">
+          <i className="fas fa-info-circle"></i>
+          <span>Select which course categories this organization should have access to. Users will only see courses from the selected categories.</span>
+        </div>
         
         <div className="mb-4">
           <button 
             className="btn btn-sm btn-outline"
             onClick={handleSelectAll}
-            data-testid="button-select-all-courses"
+            data-testid="button-select-all-categories"
           >
             <i className="fas fa-check-square"></i>
             {selectAll ? 'Unselect All' : 'Select All'}
           </button>
           <span className="ml-2 text-sm text-base-content/60">
-            {selectedCourses.length} of {courses.length} courses selected
+            {selectedCategoryIds.length} of {allCategories.length} categories selected
           </span>
         </div>
 
@@ -1744,28 +1812,40 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
             <div className="text-center py-8">
               <span className="loading loading-spinner loading-lg"></span>
             </div>
-          ) : courses.length === 0 ? (
+          ) : allCategories.length === 0 ? (
             <div className="text-center py-8 text-base-content/60">
-              No courses available
+              No categories available
             </div>
           ) : (
             <div className="space-y-2">
-              {courses.map((course) => (
-                <div key={course.id} className="form-control">
-                  <label className="label cursor-pointer justify-start gap-4" data-testid={`label-course-${course.id}`}>
+              {allCategories.map((category) => (
+                <div key={category.id} className="form-control">
+                  <label className="label cursor-pointer justify-start gap-4 p-4 border border-base-300 rounded-lg hover:bg-base-200" data-testid={`label-category-${category.id}`}>
                     <input 
                       type="checkbox"
                       className="checkbox checkbox-primary"
-                      checked={selectedCourses.includes(course.id)}
-                      onChange={() => handleCourseToggle(course.id)}
-                      data-testid={`checkbox-course-${course.id}`}
+                      checked={selectedCategoryIds.includes(category.id)}
+                      onChange={() => handleCategoryToggle(category.id)}
+                      data-testid={`checkbox-category-${category.id}`}
                     />
+                    <div 
+                      className="w-4 h-4 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: category.color || '#6b7280' }}
+                      data-testid={`color-indicator-${category.id}`}
+                    ></div>
                     <div className="flex-1">
-                      <div className="font-bold">{course.title}</div>
-                      <div className="text-sm opacity-70">{course.description}</div>
+                      <div className="font-bold" data-testid={`text-category-name-${category.id}`}>{category.name}</div>
+                      {category.description && (
+                        <div className="text-sm opacity-70" data-testid={`text-category-description-${category.id}`}>
+                          {category.description}
+                        </div>
+                      )}
                       <div className="text-xs opacity-50 mt-1">
-                        Duration: {course.estimatedDuration || 'N/A'} | 
-                        Type: {course.courseType || 'SCORM'}
+                        {currentAccessIds.includes(category.id) ? (
+                          <span className="badge badge-success badge-xs">Currently Active</span>
+                        ) : (
+                          <span className="badge badge-ghost badge-xs">Not Active</span>
+                        )}
                       </div>
                     </div>
                   </label>
@@ -1779,20 +1859,20 @@ function AssignCoursesModal({ organisation, onClose }: { organisation: Organisat
           <button 
             className="btn"
             onClick={onClose}
-            data-testid="button-cancel-assign-courses"
+            data-testid="button-cancel-manage-categories"
           >
             Cancel
           </button>
           <button 
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={assignCoursesMutation.isPending || selectedCourses.length === 0}
-            data-testid="button-confirm-assign-courses"
+            disabled={grantAccessMutation.isPending || removeAccessMutation.isPending}
+            data-testid="button-confirm-manage-categories"
           >
-            {assignCoursesMutation.isPending ? (
+            {(grantAccessMutation.isPending || removeAccessMutation.isPending) ? (
               <span className="loading loading-spinner loading-sm"></span>
             ) : (
-              `Assign ${selectedCourses.length} Course${selectedCourses.length !== 1 ? 's' : ''}`
+              `Update Categories`
             )}
           </button>
         </div>
