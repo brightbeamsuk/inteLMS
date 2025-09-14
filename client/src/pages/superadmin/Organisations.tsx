@@ -98,12 +98,6 @@ export function SuperAdminOrganisations() {
   });
 
   // Fetch course folders/categories for selection
-  interface CourseFolder {
-    id: string;
-    name: string;
-    description?: string;
-    color?: string;
-  }
 
   const { data: courseFolders = [], isLoading: foldersLoading } = useQuery<CourseFolder[]>({
     queryKey: ['/api/course-folders'],
