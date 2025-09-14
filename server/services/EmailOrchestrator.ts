@@ -217,6 +217,49 @@ export class EmailOrchestrator {
     this.handlebarsEngine.registerHelper('if_not_eq', function(this: any, a: any, b: any, options: any) {
       return (a !== b) ? options.fn(this) : options.inverse(this);
     });
+
+    // Register date formatting helper
+    this.handlebarsEngine.registerHelper('formatDate', (date: any, format?: string) => {
+      try {
+        const dateObj = date instanceof Date ? date : new Date(date);
+        if (isNaN(dateObj.getTime())) {
+          return '[Invalid Date]';
+        }
+        
+        // Simple date formatting
+        if (format === 'short') {
+          return dateObj.toLocaleDateString();
+        } else if (format === 'long') {
+          return dateObj.toLocaleString();
+        } else if (format === 'iso') {
+          return dateObj.toISOString();
+        } else {
+          // Default format
+          return dateObj.toLocaleDateString();
+        }
+      } catch (error) {
+        return '[Date Error]';
+      }
+    });
+
+    // Register other common helpers
+    this.handlebarsEngine.registerHelper('uppercase', (str: any) => {
+      if (typeof str !== 'string') {
+        return String(str).toUpperCase();
+      }
+      return str.toUpperCase();
+    });
+
+    this.handlebarsEngine.registerHelper('lowercase', (str: any) => {
+      if (typeof str !== 'string') {
+        return String(str).toLowerCase();
+      }
+      return str.toLowerCase();
+    });
+
+    this.handlebarsEngine.registerHelper('default', (value: any, defaultValue: any) => {
+      return value || defaultValue || '';
+    });
     
     console.log(`${this.LOG_PREFIX} Initialized with security helpers`);
   }
@@ -305,6 +348,30 @@ export class EmailOrchestrator {
         };
       }
 
+      // Get email provider settings to set proper from fields
+      let fromEmail = params.context.fromEmail;
+      let fromName = params.context.fromName;
+      let replyTo = params.context.supportEmail;
+
+      // If from fields not provided in context, get from system settings
+      if (!fromEmail || !fromName) {
+        try {
+          const systemSettings = await storage.getSystemEmailSettings();
+          if (systemSettings) {
+            fromEmail = fromEmail || systemSettings.fromEmail;
+            fromName = fromName || systemSettings.fromName;
+            replyTo = replyTo || systemSettings.replyTo || systemSettings.fromEmail;
+          }
+        } catch (error) {
+          console.warn(`${this.LOG_PREFIX} Failed to get system email settings:`, error);
+        }
+      }
+
+      // Fallback to hardcoded defaults if still missing
+      fromEmail = fromEmail || 'noreply@intellms.app';
+      fromName = fromName || 'inteLMS Platform';
+      replyTo = replyTo || fromEmail;
+
       // Render the email template
       const rendered = await this.render(params.templateKey, params.context, params.organisationId);
       
@@ -321,9 +388,9 @@ export class EmailOrchestrator {
         templateVariables: params.context,
         status: 'queued',
         retryCount: 0,
-        fromEmail: params.context.fromEmail || null,
-        fromName: params.context.fromName || null,
-        replyTo: params.context.supportEmail || null
+        fromEmail,
+        fromName,
+        replyTo
       };
 
       const createdSend = await storage.createEmailSend(emailSend);
