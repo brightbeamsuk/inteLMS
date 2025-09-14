@@ -9444,15 +9444,32 @@ This test was initiated by ${user.email}.
         }
       }
 
-      // Hash password if provided (for admin users)
+      // Generate password and hash it
       let userDataWithPassword: any = { ...validatedData };
-      if (password && validatedData.role === 'admin') {
-        if (password.length < 6) {
+      let actualPassword = password;
+      
+      // If no password provided, generate a temporary one
+      if (!actualPassword) {
+        // Generate a secure temporary password
+        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+        actualPassword = '';
+        for (let i = 0; i < 8; i++) {
+          actualPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        console.log(`Generated temporary password for ${validatedData.email}: ${actualPassword}`);
+      }
+      
+      // Hash the password (either provided or generated)
+      if (actualPassword) {
+        if (actualPassword.length < 6) {
           return res.status(400).json({ message: 'Password must be at least 6 characters long' });
         }
         const saltRounds = 10;
-        userDataWithPassword.passwordHash = await bcrypt.hash(password, saltRounds);
+        userDataWithPassword.passwordHash = await bcrypt.hash(actualPassword, saltRounds);
       }
+      
+      // Store the password for email context (use actualPassword instead of original password)
+      const passwordForEmail = actualPassword;
 
       const newUser = await storage.createUser(userDataWithPassword);
       
@@ -9508,7 +9525,7 @@ This test was initiated by ${user.email}.
             addedAt: new Date().toISOString(),
             loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
             supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app',
-            temporaryPassword: password || undefined // Include password for admin users
+            temporaryPassword: passwordForEmail || undefined // Include temporary password for all users
           };
 
           // Only queue email if user has a valid email address
