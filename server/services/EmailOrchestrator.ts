@@ -652,9 +652,8 @@ export class EmailOrchestrator {
         return null;
       }
 
-      // Update status to sending
+      // Update attempt timestamp (status stays pending until sent/failed)
       await storage.updateEmailSend(emailSendId, {
-        status: 'sending',
         lastAttemptAt: new Date()
       });
 

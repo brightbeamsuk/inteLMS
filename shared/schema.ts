@@ -625,7 +625,7 @@ export const emailSends = pgTable("email_sends", {
   templateVariables: jsonb("template_variables"), // Variables passed to template engine
   
   // Send status and retry logic
-  status: emailSendStatusEnum("status").notNull().default('queued'),
+  status: emailSendStatusEnum("status").notNull().default('pending'),
   provider: emailProviderEnum("provider"),
   providerMessageId: varchar("provider_message_id"),
   
