@@ -5281,7 +5281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
 
           // Include the temporary password in the context
-          context.temporaryPassword = tempPassword;
+          (context as any).temporaryPassword = tempPassword;
 
           await emailOrchestrator.queue({
             triggerEvent: 'ORG_FAST_ADD',
@@ -12321,7 +12321,7 @@ This test was initiated by ${user.email}.
           isActive: false,
           suspendData: null, // Clear suspend data
           location: null,    // Clear location
-          completedAt: new Date()
+          finishedAt: new Date()
         });
         console.log(`🗑️ Attempt ${targetAttempt.attemptId} marked as abandoned`);
       }
@@ -12329,8 +12329,6 @@ This test was initiated by ${user.email}.
       // Reset assignment to not_started state (idempotent operation)
       await storage.updateAssignment(assignmentId, {
         status: 'not_started',
-        progress: 0,
-        score: null,
         startedAt: null,
         completedAt: null
       });
