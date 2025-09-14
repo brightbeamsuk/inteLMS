@@ -17,6 +17,8 @@ class ScormAPI {
     this.errorStrings = this.getErrorStrings();
     this.commitRetries = 0;
     this.maxRetries = 3;
+    this.discardMode = false; // NEW: Flag to prevent commits when discarding
+    this.exitHandlers = []; // NEW: Track exit handlers for cleanup
     
     // SCORM data store with proper defaults
     this.data = {
@@ -136,8 +138,12 @@ class ScormAPI {
       }
     }
 
-    // Final commit
-    this.LMSCommit('');
+    // Final commit (skip if discarding)
+    if (!this.discardMode) {
+      this.LMSCommit('');
+    } else {
+      console.log('🗑️ DISCARD MODE: Skipping final LMSCommit in LMSFinish');
+    }
     
     this.isTerminated = true;
     this.isInitialized = false;
@@ -200,6 +206,13 @@ class ScormAPI {
     if (!this.isInitialized) {
       this.setError('112');
       return 'false';
+    }
+
+    // DISCARD MODE: Skip commit but return success
+    if (this.discardMode) {
+      console.log('🗑️ DISCARD MODE: Skipping LMSCommit');
+      this.setError('0');
+      return 'true';
     }
 
     return this.commitWithRetry('1.2', 'commit');
@@ -271,8 +284,12 @@ class ScormAPI {
       }
     }
 
-    // Final commit
-    this.Commit('');
+    // Final commit (skip if discarding)
+    if (!this.discardMode) {
+      this.Commit('');
+    } else {
+      console.log('🗑️ DISCARD MODE: Skipping final Commit in Terminate');
+    }
     
     this.isTerminated = true;
     this.isInitialized = false;
@@ -334,6 +351,13 @@ class ScormAPI {
     if (!this.isInitialized) {
       this.setError('142');
       return 'false';
+    }
+
+    // DISCARD MODE: Skip commit but return success
+    if (this.discardMode) {
+      console.log('🗑️ DISCARD MODE: Skipping Commit');
+      this.setError('0');
+      return 'true';
     }
 
     return this.commitWithRetry('2004', 'commit');
@@ -475,6 +499,13 @@ class ScormAPI {
   }
 
   async commitWithRetry(standard, reason) {
+    // DISCARD MODE: Skip all commits
+    if (this.discardMode) {
+      console.log('🗑️ DISCARD MODE: Skipping commitWithRetry');
+      this.setError('0');
+      return 'true';
+    }
+
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         // Update session time before commit
@@ -624,7 +655,7 @@ class ScormAPI {
   // Setup beforeunload handler for commit & exit safety
   setupExitHandler() {
     const handleBeforeUnload = () => {
-      if (this.isInitialized && !this.isTerminated) {
+      if (this.isInitialized && !this.isTerminated && !this.discardMode) {
         console.log('🚪 Page unloading - auto-commit and terminate');
         if (this.data['cmi.core.lesson_status'] || this.data['cmi.completion_status']) {
           this.commitWithRetry(
@@ -632,16 +663,93 @@ class ScormAPI {
             'finish'
           );
         }
+      } else if (this.discardMode) {
+        console.log('🗑️ DISCARD MODE: Skipping auto-save on page unload');
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('pagehide', handleBeforeUnload);
     
+    // Store handlers for removal during discard
+    this.exitHandlers = [handleBeforeUnload];
+    
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handleBeforeUnload);
     };
+  }
+
+  // NEW: Remove auto-save handlers when discarding
+  removeAutoSaveHandlers() {
+    console.log('🗑️ Removing auto-save handlers for discard');
+    this.exitHandlers.forEach(handler => {
+      window.removeEventListener('beforeunload', handler);
+      window.removeEventListener('pagehide', handler);
+    });
+    this.exitHandlers = [];
+  }
+
+  // NEW: Discard and exit method
+  async discardAndExit({ assignmentId, attemptId }) {
+    console.log('🗑️ DISCARD AND EXIT:', { assignmentId, attemptId });
+    
+    // Set discard mode to prevent further commits
+    this.discardMode = true;
+    console.log('🗑️ Discard mode enabled - all commits will be skipped');
+    
+    // Remove auto-save handlers to prevent accidental saves
+    this.removeAutoSaveHandlers();
+    
+    try {
+      // Call backend discard endpoint
+      const response = await fetch('/api/scorm/attempts/discard', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          assignmentId,
+          attemptId
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Discard API call failed:', errorText);
+        throw new Error(`Discard failed: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Discard successful:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('💥 Error during discard:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Save and exit method (commits then closes)
+  async saveAndExit({ assignmentId, attemptId }) {
+    console.log('💾 SAVE AND EXIT:', { assignmentId, attemptId });
+    
+    try {
+      // Perform final commit
+      const standard = (this.data['cmi.completion_status'] !== undefined || this.data['cmi.success_status'] !== undefined) ? '2004' : '1.2';
+      const commitResult = await this.commitWithRetry(standard, 'commit');
+      
+      if (commitResult === 'true') {
+        console.log('✅ Save successful before exit');
+        return { success: true, saved: true };
+      } else {
+        console.error('❌ Save failed before exit');
+        throw new Error('Commit failed');
+      }
+    } catch (error) {
+      console.error('💥 Error during save and exit:', error);
+      throw error;
+    }
   }
 }
 
@@ -688,6 +796,10 @@ function exposeScormAPI(assignmentId, learnerId, learnerName, onDataChange) {
       GetLastError: scormAPI.GetLastError,
       GetErrorString: scormAPI.GetErrorString,
       GetDiagnostic: scormAPI.GetDiagnostic,
+      
+      // NEW: Discard and save methods for CoursePlayer
+      discardAndExit: scormAPI.discardAndExit.bind(scormAPI),
+      saveAndExit: scormAPI.saveAndExit.bind(scormAPI),
       
       // Internal reference to the ScormAPI instance
       _scormAPI: scormAPI

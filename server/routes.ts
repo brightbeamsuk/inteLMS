@@ -12248,6 +12248,78 @@ This test was initiated by ${user.email}.
     }
   });
 
+  // NEW: POST /api/scorm/attempts/discard - Discard attempt and reset assignment
+  app.post('/api/scorm/attempts/discard', requireAuth, async (req: any, res) => {
+    try {
+      const { assignmentId, attemptId } = req.body;
+      const userId = req.session.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      if (!assignmentId) {
+        return res.status(400).json({ message: 'assignmentId is required' });
+      }
+
+      console.log(`🗑️ DISCARD REQUEST: Assignment ${assignmentId}, Attempt ${attemptId}, User ${userId}`);
+
+      // Verify assignment ownership
+      const assignment = await storage.getAssignment(assignmentId);
+      if (!assignment || assignment.userId !== userId) {
+        return res.status(403).json({ message: 'Assignment not found or access denied' });
+      }
+
+      // Find the attempt to discard (latest active if attemptId not specified)
+      let targetAttempt;
+      if (attemptId) {
+        targetAttempt = await storage.getScormAttemptByAttemptId(attemptId);
+        if (!targetAttempt || targetAttempt.userId !== userId || targetAttempt.assignmentId !== assignmentId) {
+          return res.status(403).json({ message: 'Attempt not found or access denied' });
+        }
+      } else {
+        targetAttempt = await storage.getActiveScormAttempt(userId, assignmentId);
+      }
+
+      if (targetAttempt) {
+        // Mark attempt as abandoned (keep for audit trail)
+        await storage.updateScormAttempt(targetAttempt.attemptId, {
+          status: 'abandoned',
+          isActive: false,
+          suspendData: null, // Clear suspend data
+          location: null,    // Clear location
+          completedAt: new Date()
+        });
+        console.log(`🗑️ Attempt ${targetAttempt.attemptId} marked as abandoned`);
+      }
+
+      // Reset assignment to not_started state (idempotent operation)
+      await storage.updateAssignment(assignmentId, {
+        status: 'not_started',
+        progress: 0,
+        score: null,
+        startedAt: null,
+        completedAt: null
+      });
+      console.log(`🔄 Assignment ${assignmentId} reset to not_started`);
+
+      res.json({
+        success: true,
+        message: 'Progress discarded and assignment reset',
+        assignmentId,
+        attemptId: targetAttempt?.attemptId,
+        status: 'not_started'
+      });
+
+    } catch (error) {
+      console.error('Error discarding SCORM attempt:', error);
+      res.status(500).json({ 
+        message: 'Failed to discard attempt', 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
   // COMPREHENSIVE SCORM runtime result endpoint - handles commit and finish events
   app.post('/api/scorm/result', requireAuth, async (req: any, res) => {
     try {
@@ -12268,6 +12340,21 @@ This test was initiated by ${user.email}.
 
       if (!scormData) {
         return res.status(400).json({ message: 'Missing SCORM data' });
+      }
+
+      // NEW: Check if attempt is abandoned - ignore writes for abandoned attempts
+      if (attemptId) {
+        const attempt = await storage.getScormAttemptByAttemptId(attemptId);
+        if (attempt && attempt.status === 'abandoned') {
+          console.log(`🗑️ IGNORED: Write to abandoned attempt ${attemptId}`);
+          return res.json({
+            success: true,
+            ignored: true,
+            message: 'Write ignored - attempt was abandoned',
+            attemptId,
+            reason
+          });
+        }
       }
 
       console.log(`📊 Processing SCORM ${standard} result (${reason}):`, {

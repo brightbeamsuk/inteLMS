@@ -21,6 +21,11 @@ interface ScormAttemptState {
   'cmi.core.session_time': string;
   'cmi.core.student_id': string;
   'cmi.core.student_name': string;
+  'cmi.core.exit': string;
+  'cmi.suspend_data': string;
+  'cmi.entry': string;
+  'cmi.mode': string;
+  'cmi.credit': string;
   
   // SCORM 2004 CMI values
   'cmi.completion_status': string;
@@ -33,6 +38,11 @@ interface ScormAttemptState {
   'cmi.session_time': string;
   'cmi.learner_id': string;
   'cmi.learner_name': string;
+  'cmi.exit': string;
+  'cmi.progress_measure': string;
+  
+  // Allow string indexing for dynamic access
+  [key: string]: string;
 }
 
 export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, onClose, startFresh = false }: CoursePlayerProps) {
@@ -76,7 +86,14 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
     'cmi.location': '',
     'cmi.session_time': 'PT0H0M0S',
     'cmi.learner_id': '',
-    'cmi.learner_name': ''
+    'cmi.learner_name': '',
+    'cmi.exit': '',
+    'cmi.progress_measure': '',
+    'cmi.core.exit': '',
+    'cmi.suspend_data': '',
+    'cmi.entry': '',
+    'cmi.mode': '',
+    'cmi.credit': ''
   });
   const startTimeRef = useRef<number>(Date.now());
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -307,42 +324,62 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
   };
 
   const handleDontSaveExit = async () => {
+    console.log('🗑️ Don\'t save clicked - discarding progress');
+    console.log(`📚 Assignment ID: ${assignmentId}`);
+    console.log(`🎯 Attempt ID: ${attemptId}`);
+    
     try {
-      if (!hasCommittedData) {
-        // No commits happened - revert assignment to "not_started"
-        await apiRequest('POST', `/api/assignments/${assignmentId}/reset-status`);
-        toast({
-          title: "Progress discarded",
-          description: "Course has been reset to Not Started.",
-        });
+      // Set discard mode in SCORM API to prevent further commits
+      const api_1484_11 = (window as any).API_1484_11;
+      const api = (window as any).API;
+      
+      if (api_1484_11?.discardAndExit) {
+        console.log('🎯 Using SCORM 2004 API discardAndExit');
+        await api_1484_11.discardAndExit({ assignmentId, attemptId });
+      } else if (api?.discardAndExit) {
+        console.log('🎯 Using SCORM 1.2 API discardAndExit');
+        await api.discardAndExit({ assignmentId, attemptId });
       } else {
-        // Commits already exist - keep "In Progress" to avoid losing saved progress
-        toast({
-          title: "Progress preserved",
-          description: "Your saved progress has been kept.",
+        console.log('🎯 No SCORM API discard method found, calling backend directly');
+        // Fallback: call backend discard endpoint directly
+        const response = await apiRequest('POST', '/api/scorm/attempts/discard', {
+          assignmentId,
+          attemptId
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Discard failed:', errorText);
+          throw new Error(`Discard failed: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Discard response:', result);
       }
+      
+      toast({
+        title: "Progress discarded",
+        description: "Course has been reset to Not Started.",
+      });
+      
       setShowExitModal(false);
       
       // Send update message to refresh course status
       window.parent?.postMessage({ 
         type: 'ATTEMPT_UPDATED', 
-        courseId: courseId
+        courseId: courseId,
+        status: 'NOT_STARTED',
+        progressPct: 0
       }, '*');
       
       onClose();
     } catch (error) {
-      console.error('Failed to handle exit:', error);
-      // Still allow exit even if status update fails
-      setShowExitModal(false);
-      
-      // Send update message to refresh course status
-      window.parent?.postMessage({ 
-        type: 'ATTEMPT_UPDATED', 
-        courseId: courseId
-      }, '*');
-      
-      onClose();
+      console.error('❌ Failed to discard progress:', error);
+      toast({
+        title: "Failed to discard",
+        description: "Could not reset course. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -564,7 +601,7 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
               }
             }
           } catch (latestError) {
-            console.log(`⚠️ Server latest attempt failed, will check localStorage:`, latestError?.message);
+            console.log(`⚠️ Server latest attempt failed, will check localStorage:`, (latestError as Error)?.message);
           }
           
           // 2) Check localStorage fallback if no server data (per specification)
@@ -637,8 +674,8 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
             setAttemptId(newAttemptId);
           }
         } catch (attemptError) {
-          console.error('⚠️ Failed to start attempt, using generated ID:', attemptError?.message || attemptError);
-          addDebugLog(`⚠️ Failed to start attempt: ${attemptError?.message || 'Unknown error'}`);
+          console.error('⚠️ Failed to start attempt, using generated ID:', (attemptError as Error)?.message || attemptError);
+          addDebugLog(`⚠️ Failed to start attempt: ${(attemptError as Error)?.message || 'Unknown error'}`);
           setAttemptId(newAttemptId);
           
           // Apply local data if server failed
@@ -1292,9 +1329,15 @@ export function CoursePlayer({ assignmentId, courseId, courseTitle, onComplete, 
       <div className="modal modal-open">
         <div className="modal-box">
           <h3 className="font-bold text-lg mb-4">Save your progress?</h3>
-          <p className="text-base-content/80 mb-6">
+          <p className="text-base-content/80 mb-4">
             You're about to exit the course. What would you like to do with your progress?
           </p>
+          <div className="alert alert-warning mb-4">
+            <i className="fas fa-exclamation-triangle"></i>
+            <span className="text-sm">
+              <strong>Don't Save</strong> will permanently reset this course to Not Started and discard all progress.
+            </span>
+          </div>
           
           <div className="modal-action flex gap-3">
             <button 
