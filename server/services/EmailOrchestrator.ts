@@ -19,6 +19,7 @@
 import Handlebars from 'handlebars';
 import { storage } from '../storage';
 import { MailerService, type EmailResult } from './MailerService';
+import { emailTemplateResolver } from './EmailTemplateResolutionService';
 import type { 
   EmailSend,
   InsertEmailSend,
@@ -684,34 +685,42 @@ export class EmailOrchestrator {
   }
 
   /**
-   * Get effective template (org override or platform default)
+   * Get effective template using centralized EmailTemplateResolutionService
+   * 
+   * This ensures consistency with admin template views and proper caching.
+   * Uses the same resolution logic: org override → superadmin default.
    */
   private async getEffectiveTemplate(templateKey: string, organisationId?: string): Promise<EmailTemplate | null> {
-    // Try organization override first if org is specified
-    if (organisationId) {
-      try {
-        const orgTemplate = await storage.getOrgEmailTemplateByKey(organisationId, templateKey);
-        if (orgTemplate && orgTemplate.isActive) {
-          // Merge override with platform default
-          const platformTemplate = await storage.getEmailTemplate(templateKey);
-          if (platformTemplate) {
-            return {
-              ...platformTemplate,
-              subject: orgTemplate.subjectOverride || platformTemplate.subject,
-              html: orgTemplate.htmlOverride || platformTemplate.html,
-              text: orgTemplate.textOverride || platformTemplate.text,
-              version: orgTemplate.version
-            };
-          }
-        }
-      } catch (error: any) {
-        console.warn(`${this.LOG_PREFIX} Failed to load org template override:`, error.message);
+    try {
+      if (organisationId) {
+        // Use centralized template resolution service for org-specific templates
+        const resolvedTemplate = await emailTemplateResolver.getEffectiveTemplate(organisationId, templateKey);
+        
+        // Convert resolved template back to EmailTemplate format
+        return {
+          id: '', // Not needed for rendering
+          key: templateKey,
+          name: templateKey,
+          subject: resolvedTemplate.subject,
+          html: resolvedTemplate.html,
+          mjml: '', // Not needed for rendering
+          text: resolvedTemplate.text,
+          variablesSchema: resolvedTemplate.variablesSchema,
+          category: 'admin' as const, // Default category
+          version: 1, // Default version
+          isActive: true,
+          createdAt: null,
+          updatedAt: null
+        };
+      } else {
+        // For system-level templates, get default template directly
+        const defaultTemplate = await emailTemplateResolver.getDefaultTemplate(templateKey);
+        return defaultTemplate;
       }
+    } catch (error: any) {
+      console.warn(`${this.LOG_PREFIX} Failed to resolve template '${templateKey}' for org '${organisationId}':`, error.message);
+      return null;
     }
-
-    // Fall back to platform default
-    const platformTemplate = await storage.getEmailTemplateByKey(templateKey);
-    return platformTemplate || null;
   }
 
   /**

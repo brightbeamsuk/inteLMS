@@ -179,7 +179,7 @@ You received this because an organisation account was created for you.`,
       {
         key: 'new_user_welcome',
         name: 'New User Welcome',
-        category: 'user',
+        category: 'learner',
         subject: 'Welcome to {{orgName}} training — your login details',
         mjml: `
 <mjml>
