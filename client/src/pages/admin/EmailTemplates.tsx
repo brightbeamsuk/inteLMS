@@ -339,6 +339,28 @@ export function AdminEmailTemplates() {
     }
   });
 
+  // Disable/Delete email provider configuration mutation
+  const disableEmailConfigMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('DELETE', `/api/admin/email-provider-config/${user?.organisationId}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/email-provider-config', user?.organisationId] });
+      toast({
+        title: "Success",
+        description: "Custom email configuration disabled. Now using system default.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to disable email configuration",
+        variant: "destructive",
+      });
+    }
+  });
+
   // Test email provider configuration mutation
   const testEmailConfigMutation = useMutation({
     mutationFn: async ({ testEmail, config }: { testEmail: string; config: EmailConfigFormData }) => {
@@ -433,18 +455,31 @@ export function AdminEmailTemplates() {
   // Handle custom email toggle
   const handleCustomEmailToggle = (enabled: boolean) => {
     setUseCustomEmail(enabled);
+    
     if (enabled) {
-      // Save immediately when enabling
-      saveEmailConfigMutation.mutate({
-        ...emailConfigData,
-        enabled: true
+      // Just show the form - user will save manually
+      toast({
+        title: "Custom Email Configuration",
+        description: "Configure your email settings below and click 'Save Settings' to enable custom email delivery.",
       });
     } else {
-      // Save immediately when disabling
-      saveEmailConfigMutation.mutate({
-        ...emailConfigData,
-        enabled: false
+      // Reset form data and disable custom config
+      setEmailConfigData({
+        provider: 'sendgrid_api',
+        apiKey: '',
+        fromEmail: '',
+        fromName: ''
       });
+      
+      // If there was an existing custom config, disable it
+      if (emailConfig && emailConfig.enabled) {
+        disableEmailConfigMutation.mutate();
+      } else {
+        toast({
+          title: "System Default Email",
+          description: "Now using system default email provider.",
+        });
+      }
     }
   };
 
