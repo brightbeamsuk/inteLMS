@@ -2,6 +2,17 @@
 
 This is a white-label Learning Management System (LMS) web application built with a full-stack TypeScript architecture. The platform supports multi-tenant organizations with role-based access control (SuperAdmin, Admin, User), SCORM course delivery, and automated certificate generation. The system is designed as a SaaS platform where multiple organizations can operate independently while sharing the same infrastructure.
 
+# Recent Changes
+
+- **Custom Email API Implementation (September 14, 2025)**: Added organization-specific email provider configuration allowing admins to use their own email services (SendGrid, SMTP, etc.) instead of system defaults
+- **Email Template Synchronization**: Ensured admin templates display current superadmin defaults with proper cascade logic (org override → superadmin default)  
+- **Enhanced EmailOrchestrator**: Updated to use organization-specific email settings when available with fallback to system defaults
+- Completed comprehensive email notification system with 6 automated triggers (New Admin Added, New User Added, Course Assigned, Plan Updated, Learner Completed Course, Learner Failed Course)
+- Implemented production-ready EmailOrchestrator architecture with template resolution, idempotency, and retry logic
+- Added Email Templates management interface for both SuperAdmin and Admin roles with preview/testing capabilities
+- Integrated authentication system with Replit Auth using OpenID Connect
+- Comprehensive multi-tenant data isolation ensuring organizations only access their own data
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -69,10 +80,13 @@ Custom **ScormService** handles:
 
 **EmailService** architecture supports:
 
+- **Organization-Specific Providers**: Admins can configure custom email APIs (SendGrid, SMTP) for their organization
+- **Centralized Template Management**: SuperAdmin defaults sync to admin views with override capabilities
 - **Assignment Notifications**: Automated emails when courses are assigned
 - **Reminder System**: Scheduled reminders for approaching due dates
 - **Completion Notifications**: Success/failure notifications with score reporting
 - **Welcome Emails**: User onboarding with temporary password delivery
+- **Email Provider Routing**: Intelligent routing between organization custom settings and system defaults
 
 ## Certificate Generation
 
