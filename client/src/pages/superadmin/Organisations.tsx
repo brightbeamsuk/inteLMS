@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -1665,26 +1665,53 @@ function ManageCategoriesModal({ organisation, onClose }: { organisation: Organi
   });
 
   // Initialize selected categories based on current access
-  useState(() => {
+  useEffect(() => {
     if (currentAccess.length > 0) {
       const accessedIds = currentAccess.map(access => access.folderId);
       setSelectedCategoryIds(accessedIds);
       setSelectAll(accessedIds.length === allCategories.length);
     }
-  });
+  }, [currentAccess, allCategories]);
 
-  // Mutation to grant category access
-  const grantAccessMutation = useMutation({
-    mutationFn: async (categoryIds: string[]) => {
-      const response = await apiRequest('POST', `/api/organisations/${organisation.id}/folder-access`, { 
-        folderIds: categoryIds 
-      });
-      return await response.json();
+  // Mutation to update category access (handles both adding and removing)
+  const updateCategoriesMutation = useMutation({
+    mutationFn: async (newCategoryIds: string[]) => {
+      const currentAccessIds = currentAccess.map(access => access.folderId);
+      
+      // Categories to add (in new list but not in current)
+      const toAdd = newCategoryIds.filter(id => !currentAccessIds.includes(id));
+      
+      // Categories to remove (in current but not in new list)
+      const toRemove = currentAccessIds.filter(id => !newCategoryIds.includes(id));
+      
+      // Grant access to new categories (one by one)
+      for (const folderId of toAdd) {
+        await apiRequest('POST', `/api/organisations/${organisation.id}/folder-access`, { 
+          folderId 
+        });
+      }
+      
+      // Remove access from categories (one by one) 
+      for (const folderId of toRemove) {
+        await apiRequest('DELETE', `/api/organisations/${organisation.id}/folder-access/${folderId}`);
+      }
+      
+      return { added: toAdd.length, removed: toRemove.length };
     },
     onSuccess: (data) => {
+      const { added, removed } = data;
+      let message = "Categories updated successfully";
+      if (added > 0 && removed > 0) {
+        message = `Added ${added} and removed ${removed} categories`;
+      } else if (added > 0) {
+        message = `Added ${added} category${added > 1 ? 'ies' : ''}`;
+      } else if (removed > 0) {
+        message = `Removed ${removed} category${removed > 1 ? 'ies' : ''}`;
+      }
+      
       toast({
         title: "Success!",
-        description: data.message || "Category access updated successfully",
+        description: message,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
       onClose();
@@ -1698,22 +1725,6 @@ function ManageCategoriesModal({ organisation, onClose }: { organisation: Organi
     },
   });
 
-  // Mutation to remove category access
-  const removeAccessMutation = useMutation({
-    mutationFn: async (categoryId: string) => {
-      await apiRequest('DELETE', `/api/organisations/${organisation.id}/folder-access/${categoryId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to remove category access",
-        variant: "destructive",
-      });
-    },
-  });
 
   const handleSelectAll = () => {
     if (selectAll) {
@@ -1736,40 +1747,25 @@ function ManageCategoriesModal({ organisation, onClose }: { organisation: Organi
     });
   };
 
-  const handleSubmit = async () => {
-    // Determine which categories to grant access to (newly selected)
+  const handleSubmit = () => {
     const currentAccessIds = currentAccess.map(access => access.folderId);
-    const toGrant = selectedCategoryIds.filter(id => !currentAccessIds.includes(id));
-    const toRemove = currentAccessIds.filter(id => !selectedCategoryIds.includes(id));
-
-    try {
-      // Remove access for unselected categories
-      for (const categoryId of toRemove) {
-        await removeAccessMutation.mutateAsync(categoryId);
-      }
-
-      // Grant access for newly selected categories
-      if (toGrant.length > 0) {
-        await grantAccessMutation.mutateAsync(toGrant);
-      } else if (toRemove.length > 0) {
-        // Only show success if we removed categories and didn't grant any
-        toast({
-          title: "Success!",
-          description: "Category access updated successfully",
-        });
-        queryClient.invalidateQueries({ queryKey: ['/api/organisations', organisation.id, 'folder-access'] });
-        onClose();
-      } else {
-        // No changes made
-        toast({
-          title: "No Changes",
-          description: "No category access changes were made",
-        });
-        onClose();
-      }
-    } catch (error) {
-      // Error handling is done by the mutations
+    
+    // Check if there are any changes
+    const hasChanges = 
+      selectedCategoryIds.length !== currentAccessIds.length ||
+      selectedCategoryIds.some(id => !currentAccessIds.includes(id)) ||
+      currentAccessIds.some(id => !selectedCategoryIds.includes(id));
+      
+    if (!hasChanges) {
+      toast({
+        title: "No Changes",
+        description: "No category access changes were made",
+      });
+      onClose();
+      return;
     }
+
+    updateCategoriesMutation.mutate(selectedCategoryIds);
   };
 
   const isLoading = categoriesLoading || accessLoading;
@@ -1860,10 +1856,10 @@ function ManageCategoriesModal({ organisation, onClose }: { organisation: Organi
           <button 
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={grantAccessMutation.isPending || removeAccessMutation.isPending}
+            disabled={updateCategoriesMutation.isPending}
             data-testid="button-confirm-manage-categories"
           >
-            {(grantAccessMutation.isPending || removeAccessMutation.isPending) ? (
+            {updateCategoriesMutation.isPending ? (
               <span className="loading loading-spinner loading-sm"></span>
             ) : (
               `Update Categories`
