@@ -824,7 +824,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      return res.status(401).json({ message: "Invalid credentials" });
+      // Check for regular users in the database
+      console.log(`🔐 Attempting to authenticate regular user: ${email}`);
+      const user = await storage.getUserByEmail(email);
+      
+      if (!user) {
+        console.log(`❌ User not found: ${email}`);
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      if (!user.passwordHash) {
+        console.log(`❌ User ${email} has no password set`);
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Compare the provided password with the stored hash
+      const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+      
+      if (!passwordMatch) {
+        console.log(`❌ Password mismatch for user: ${email}`);
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Check if user account is active
+      if (user.status !== 'active') {
+        console.log(`❌ User account not active: ${email} (status: ${user.status})`);
+        return res.status(401).json({ message: "Account is not active" });
+      }
+      
+      // Authentication successful - create session
+      console.log(`✅ Authentication successful for user: ${email} (role: ${user.role})`);
+      req.session.user = user;
+      
+      return res.json({ 
+        message: "Login successful",
+        user: user,
+        redirectUrl: user.role === 'superadmin' ? '/superadmin' 
+          : user.role === 'admin' ? '/admin'
+          : '/user'
+      });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Login failed" });
