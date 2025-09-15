@@ -249,7 +249,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
             <div className="flex-1">
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-1">
-                  <Shield className="w-5 h-5 text-primary" />
+                  <Shield className="w-5 h-5 text-primary" aria-hidden="true" />
                 </div>
                 <div>
                   <h2 id="cookie-banner-title" className="text-lg font-semibold text-gray-900 mb-2">
@@ -261,7 +261,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                     as they are essential for the website to function.
                   </p>
                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Info className="w-3 h-3" />
+                    <Info className="w-3 h-3" aria-hidden="true" />
                     <span>Required by UK PECR regulations. Your choice will be remembered for 12 months.</span>
                   </div>
                 </div>
@@ -275,8 +275,9 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                 className="btn btn-outline btn-sm"
                 onClick={() => setShowCustomization(true)}
                 data-testid="button-customize-cookies"
+                aria-describedby="cookie-banner-description"
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="w-4 h-4" aria-hidden="true" />
                 Customise
               </button>
               <button
@@ -285,6 +286,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                 onClick={handleRejectAll}
                 disabled={isStoring}
                 data-testid="button-reject-cookies"
+                aria-describedby="cookie-banner-description"
               >
                 Reject All
               </button>
@@ -294,6 +296,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                 onClick={handleAcceptAll}
                 disabled={isStoring}
                 data-testid="button-accept-cookies"
+                aria-describedby="cookie-banner-description"
               >
                 {isStoring ? 'Saving...' : 'Accept All'}
               </button>
@@ -306,10 +309,13 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
           <div 
             className="absolute bottom-full left-0 right-0 bg-white border border-gray-200 shadow-lg z-50 max-h-96 overflow-y-auto"
             data-testid="cookie-customization-panel"
+            role="region"
+            aria-labelledby="customization-panel-title"
+            aria-live="polite"
           >
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Cookie Preferences</h3>
+                <h3 id="customization-panel-title" className="text-lg font-semibold text-gray-900">Cookie Preferences</h3>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm btn-circle"
@@ -317,7 +323,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                   aria-label="Close customization panel"
                   data-testid="button-close-customization"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
 
@@ -329,7 +335,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                         <h4 className="font-medium text-gray-900 capitalize mb-1">
                           {category === 'strictlyNecessary' ? 'Strictly Necessary' : category} Cookies
                         </h4>
-                        <p className="text-sm text-gray-600 mb-2">
+                        <p id={`cookie-desc-${category}`} className="text-sm text-gray-600 mb-2">
                           {getCookieDescription(category)}
                         </p>
                         <p className="text-xs text-gray-500">
@@ -344,7 +350,13 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
                           disabled={category === 'strictlyNecessary'}
                           onChange={(e) => updateCookieConsent(category, e.target.checked)}
                           data-testid={`toggle-${category}-cookies`}
+                          id={`cookie-toggle-${category}`}
+                          aria-describedby={`cookie-desc-${category}`}
+                          {...(category === 'strictlyNecessary' ? { 'aria-label': 'Strictly necessary cookies - always enabled for essential website functionality' } : {})}
                         />
+                        <label htmlFor={`cookie-toggle-${category}`} className="sr-only">
+                          {category === 'strictlyNecessary' ? 'Strictly Necessary' : category} cookies
+                        </label>
                       </div>
                     </div>
                   </div>

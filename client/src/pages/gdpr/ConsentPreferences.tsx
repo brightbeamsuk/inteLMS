@@ -207,21 +207,22 @@ export function ConsentPreferences() {
   const getConsentStatusBadge = (status: string) => {
     switch (status) {
       case 'granted':
-        return <div className="badge badge-success gap-2"><CheckCircle className="w-3 h-3" />Granted</div>;
+        return <div className="badge badge-success gap-2" role="status" aria-label="Consent status: Granted"><CheckCircle className="w-3 h-3" aria-hidden="true" />Granted</div>;
       case 'withdrawn':
-        return <div className="badge badge-error gap-2"><XCircle className="w-3 h-3" />Withdrawn</div>;
+        return <div className="badge badge-error gap-2" role="status" aria-label="Consent status: Withdrawn"><XCircle className="w-3 h-3" aria-hidden="true" />Withdrawn</div>;
       case 'denied':
-        return <div className="badge badge-warning gap-2"><XCircle className="w-3 h-3" />Denied</div>;
+        return <div className="badge badge-warning gap-2" role="status" aria-label="Consent status: Denied"><XCircle className="w-3 h-3" aria-hidden="true" />Denied</div>;
       default:
-        return <div className="badge badge-ghost gap-2"><AlertCircle className="w-3 h-3" />Unknown</div>;
+        return <div className="badge badge-ghost gap-2" role="status" aria-label="Consent status: Unknown"><AlertCircle className="w-3 h-3" aria-hidden="true" />Unknown</div>;
     }
   };
 
   if (consentLoading || historyLoading || policyVersionLoading) {
     return (
       <div className="container mx-auto p-6">
-        <div className="flex justify-center">
-          <span className="loading loading-spinner loading-lg"></span>
+        <div className="flex justify-center" role="status" aria-live="polite">
+          <span className="loading loading-spinner loading-lg" aria-label="Loading consent preferences"></span>
+          <span className="sr-only">Loading your consent preferences, please wait...</span>
         </div>
       </div>
     );
@@ -231,11 +232,11 @@ export function ConsentPreferences() {
     <div className="container mx-auto p-6">
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-            <Shield className="w-6 h-6" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2" id="consent-preferences-title">
+            <Shield className="w-6 h-6" aria-hidden="true" />
             Consent & Preferences
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600" id="consent-preferences-description">
             Manage your consent preferences for marketing communications, cookies, and service functionality. 
             You can update or withdraw your consent at any time.
           </p>

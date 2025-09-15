@@ -1410,7 +1410,7 @@ export default function BreachManagement() {
                   <li>• Complete breach details and impact assessment</li>
                   <li>• Data categories affected and number of subjects</li>
                   <li>• Containment and preventive measures taken</li>
-                  <li>• Organization contact information</li>
+                  <li>• Organisation contact information</li>
                   <li>• Compliance with Article 33 requirements</li>
                 </ul>
               </div>

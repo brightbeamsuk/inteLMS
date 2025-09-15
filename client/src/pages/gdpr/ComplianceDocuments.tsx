@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, FileText, Download, Eye, Edit, Publish, History, Shield, CheckCircle, AlertCircle, Clock, ExternalLink } from "lucide-react";
+import { Loader2, FileText, Download, Eye, Edit, Send, History, Shield, CheckCircle, AlertCircle, Clock, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
@@ -368,7 +368,7 @@ export default function ComplianceDocuments() {
             Compliance Documents
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2" data-testid="page-description">
-            Generate, manage, and publish legal compliance documents for your organization
+            Generate, manage, and publish legal compliance documents for your organisation
           </p>
         </div>
         <Button 
@@ -398,7 +398,7 @@ export default function ComplianceDocuments() {
                 Generated Documents
               </CardTitle>
               <CardDescription>
-                Manage your organization's compliance documents and their publication status
+                Manage your organisation's compliance documents and their publication status
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -485,7 +485,7 @@ export default function ComplianceDocuments() {
                                   onClick={() => handlePublishDocument(document)}
                                   data-testid={`button-publish-${document.id}`}
                                 >
-                                  <Publish className="h-4 w-4" />
+                                  <Send className="h-4 w-4" />
                                 </Button>
                               )}
                               <Button
@@ -725,7 +725,7 @@ export default function ComplianceDocuments() {
           <DialogHeader>
             <DialogTitle>Generate Compliance Document</DialogTitle>
             <DialogDescription>
-              Create a new compliance document using your organization's data and regulatory templates
+              Create a new compliance document using your organisation's data and regulatory templates
             </DialogDescription>
           </DialogHeader>
           
@@ -1028,7 +1028,7 @@ export default function ComplianceDocuments() {
                 </>
               ) : (
                 <>
-                  <Publish className="mr-2 h-4 w-4" />
+                  <Send className="mr-2 h-4 w-4" />
                   Publish Document
                 </>
               )}
