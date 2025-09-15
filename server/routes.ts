@@ -18,7 +18,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, insertUserRightRequestSchema, insertConsentRecordSchema, insertCookieInventorySchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
@@ -1773,6 +1773,349 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting cookie inventory:", error);
       res.status(500).json({ message: "Failed to delete cookie inventory entry" });
+    }
+  });
+
+  // ===== GDPR USER RIGHTS REQUEST ROUTES =====
+
+  // Get user's own rights requests
+  app.get('/api/gdpr/user-rights', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const requests = await storage.getUserRightRequestsByUser(currentUser.id);
+      res.json(requests);
+    } catch (error: any) {
+      console.error("Error fetching user rights requests:", error);
+      res.status(500).json({ message: "Failed to fetch user rights requests" });
+    }
+  });
+
+  // Submit new user rights request
+  app.post('/api/gdpr/user-rights', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      if (!currentUser.organisationId) {
+        return res.status(400).json({ message: "User must belong to an organisation to submit requests" });
+      }
+
+      // Validate request body
+      const requestSchema = insertUserRightRequestSchema.omit({
+        id: true,
+        userId: true,
+        organisationId: true,
+        status: true,
+        requestedAt: true,
+        verifiedAt: true,
+        processedAt: true,
+        completedAt: true,
+        adminNotes: true,
+        createdAt: true,
+        updatedAt: true
+      }).extend({
+        type: z.enum(['access', 'rectification', 'erasure', 'restriction', 'objection', 'portability']),
+        description: z.string().min(10, "Please provide at least 10 characters describing your request"),
+      });
+
+      const requestData = requestSchema.parse(req.body);
+
+      // Check for existing pending/in-progress request of same type
+      const existingRequest = await storage.getUserRightRequestPending(currentUser.id, requestData.type);
+      if (existingRequest) {
+        return res.status(409).json({ 
+          message: `You already have a ${requestData.type} request in progress`,
+          existingRequestId: existingRequest.id 
+        });
+      }
+
+      // Create new request
+      const newRequest = await storage.createUserRightRequest({
+        userId: currentUser.id,
+        organisationId: currentUser.organisationId,
+        type: requestData.type as any,
+        description: requestData.description,
+        rejectionReason: requestData.rejectionReason || null,
+        attachments: requestData.attachments || [],
+        metadata: requestData.metadata || {}
+      });
+
+      res.status(201).json(newRequest);
+    } catch (error: any) {
+      console.error("Error creating user rights request:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to create user rights request" });
+    }
+  });
+
+  // Admin: Get all user rights requests for organisation
+  app.get('/api/gdpr/user-rights/admin', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can view organisation requests
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      const { type, status, search, limit = '50', offset = '0' } = req.query;
+
+      // For superadmin, they need to specify an organisation or get all requests
+      let organisationId = currentUser.organisationId;
+      if (currentUser.role === 'superadmin') {
+        organisationId = req.query.organisationId as string;
+        if (!organisationId) {
+          return res.status(400).json({ message: "Organisation ID required for superadmin" });
+        }
+      }
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation ID required" });
+      }
+
+      const filters = {
+        type: type as string,
+        status: status as string,
+        search: search as string,
+        limit: parseInt(limit as string, 10),
+        offset: parseInt(offset as string, 10)
+      };
+
+      const requests = await storage.getUserRightRequestsWithFilters(organisationId, filters);
+
+      res.json(requests);
+    } catch (error: any) {
+      console.error("Error fetching admin user rights requests:", error);
+      res.status(500).json({ message: "Failed to fetch user rights requests" });
+    }
+  });
+
+  // Admin: Process/update user rights request
+  app.patch('/api/gdpr/user-rights/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can process requests
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      const requestId = req.params.id;
+      const existingRequest = await storage.getUserRightRequest(requestId);
+      
+      if (!existingRequest) {
+        return res.status(404).json({ message: "User rights request not found" });
+      }
+
+      // For admin users, ensure they can only process requests from their organisation
+      if (currentUser.role === 'admin' && existingRequest.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - can only process requests from your organisation" });
+      }
+
+      const { action, adminNotes, rejectionReason, attachments } = req.body;
+
+      let updatedRequest;
+
+      switch (action) {
+        case 'verify':
+          // Mark as verified and move to in_progress
+          updatedRequest = await storage.verifyUserRightRequest(requestId, currentUser.id);
+          break;
+
+        case 'complete':
+          // Mark as completed
+          updatedRequest = await storage.completeUserRightRequest(requestId, {
+            status: 'completed',
+            adminNotes,
+            attachments
+          });
+          break;
+
+        case 'reject':
+          // Mark as rejected with reason
+          if (!rejectionReason) {
+            return res.status(400).json({ message: "Rejection reason is required" });
+          }
+          updatedRequest = await storage.completeUserRightRequest(requestId, {
+            status: 'rejected',
+            adminNotes,
+            rejectionReason,
+            attachments
+          });
+          break;
+
+        case 'update':
+          // General update (admin notes, status, etc.)
+          const updateData: any = {};
+          if (adminNotes !== undefined) updateData.adminNotes = adminNotes;
+          if (attachments !== undefined) updateData.attachments = attachments;
+          updatedRequest = await storage.updateUserRightRequest(requestId, updateData);
+          break;
+
+        default:
+          return res.status(400).json({ message: "Invalid action. Must be one of: verify, complete, reject, update" });
+      }
+
+      res.json(updatedRequest);
+    } catch (error: any) {
+      console.error("Error processing user rights request:", error);
+      res.status(500).json({ message: "Failed to process user rights request" });
+    }
+  });
+
+  // Data export for access/portability requests
+  app.get('/api/gdpr/user-rights/:id/export', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const requestId = req.params.id;
+      const request = await storage.getUserRightRequest(requestId);
+      
+      if (!request) {
+        return res.status(404).json({ message: "User rights request not found" });
+      }
+
+      // Check permissions: user can export their own data, admins can export org users' data
+      if (currentUser.role === 'user' && request.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Access denied - can only export your own data" });
+      }
+
+      if (currentUser.role === 'admin' && request.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - can only export data from your organisation" });
+      }
+
+      // Only allow export for access and portability requests
+      if (!['access', 'portability'].includes(request.type)) {
+        return res.status(400).json({ message: "Data export only available for access and portability requests" });
+      }
+
+      // Only allow export for completed requests
+      if (request.status !== 'completed') {
+        return res.status(400).json({ message: "Data export only available for completed requests" });
+      }
+
+      // Get the user whose data is being exported
+      const targetUser = await storage.getUser(request.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "Target user not found" });
+      }
+
+      // Collect user data for export
+      const userData = {
+        personal_information: {
+          id: targetUser.id,
+          email: targetUser.email,
+          firstName: targetUser.firstName,
+          lastName: targetUser.lastName,
+          jobTitle: targetUser.jobTitle,
+          department: targetUser.department,
+          phone: targetUser.phone,
+          bio: targetUser.bio,
+          role: targetUser.role,
+          status: targetUser.status,
+          createdAt: targetUser.createdAt,
+          updatedAt: targetUser.updatedAt,
+          lastActive: targetUser.lastActive
+        },
+        assignments: await storage.getAssignmentsByUser(request.userId),
+        completions: await storage.getCompletionsByUser(request.userId),
+        certificates: await storage.getCertificatesByUser(request.userId),
+        scorm_attempts: await storage.getScormAttemptsByUser(request.userId),
+        consent_records: await storage.getConsentRecordsByUser(request.userId),
+        user_rights_requests: await storage.getUserRightRequestsByUser(request.userId),
+        export_metadata: {
+          exported_at: new Date().toISOString(),
+          request_id: requestId,
+          request_type: request.type,
+          exported_by: currentUser.id,
+          data_format: 'json',
+          gdpr_article: request.type === 'access' ? 'Article 15 (Right of Access)' : 'Article 20 (Right to Data Portability)'
+        }
+      };
+
+      const format = req.query.format || 'json';
+
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="user_data_export_${targetUser.id}_${Date.now()}.json"`);
+        res.json(userData);
+      } else if (format === 'csv') {
+        // For CSV, we'll flatten the main personal information
+        const csvData = [
+          ['Field', 'Value'],
+          ['User ID', userData.personal_information.id],
+          ['Email', userData.personal_information.email],
+          ['First Name', userData.personal_information.firstName],
+          ['Last Name', userData.personal_information.lastName],
+          ['Job Title', userData.personal_information.jobTitle],
+          ['Department', userData.personal_information.department],
+          ['Phone', userData.personal_information.phone],
+          ['Role', userData.personal_information.role],
+          ['Status', userData.personal_information.status],
+          ['Created At', userData.personal_information.createdAt],
+          ['Last Active', userData.personal_information.lastActive],
+          ['Total Assignments', userData.assignments.length],
+          ['Total Completions', userData.completions.length],
+          ['Total Certificates', userData.certificates.length]
+        ];
+
+        const csvContent = csvData.map(row => row.map(field => `"${field || ''}"`).join(',')).join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="user_data_export_${targetUser.id}_${Date.now()}.csv"`);
+        res.send(csvContent);
+      } else {
+        return res.status(400).json({ message: "Invalid format. Supported formats: json, csv" });
+      }
+
+    } catch (error: any) {
+      console.error("Error exporting user data:", error);
+      res.status(500).json({ message: "Failed to export user data" });
     }
   });
 

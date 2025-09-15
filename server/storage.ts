@@ -2719,6 +2719,132 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(asc(cookieInventory.name));
   }
+
+  // GDPR User Rights Request operations
+  async createUserRightRequest(userRightRequestData: InsertUserRightRequest): Promise<UserRightRequest> {
+    const [request] = await db.insert(userRightRequests).values(userRightRequestData).returning();
+    return request;
+  }
+
+  async getUserRightRequest(id: string): Promise<UserRightRequest | undefined> {
+    const [request] = await db.select().from(userRightRequests).where(eq(userRightRequests.id, id));
+    return request;
+  }
+
+  async getUserRightRequestsByUser(userId: string): Promise<UserRightRequest[]> {
+    return await db.select().from(userRightRequests)
+      .where(eq(userRightRequests.userId, userId))
+      .orderBy(desc(userRightRequests.requestedAt));
+  }
+
+  async getUserRightRequestsByOrganisation(organisationId: string): Promise<UserRightRequest[]> {
+    return await db.select().from(userRightRequests)
+      .where(eq(userRightRequests.organisationId, organisationId))
+      .orderBy(desc(userRightRequests.requestedAt));
+  }
+
+  async updateUserRightRequest(id: string, userRightRequestData: Partial<InsertUserRightRequest>): Promise<UserRightRequest> {
+    const [request] = await db
+      .update(userRightRequests)
+      .set({ ...userRightRequestData, updatedAt: new Date() })
+      .where(eq(userRightRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  async deleteUserRightRequest(id: string): Promise<void> {
+    await db.delete(userRightRequests).where(eq(userRightRequests.id, id));
+  }
+
+  // Get user rights requests with filtering and pagination for admin interface
+  async getUserRightRequestsWithFilters(organisationId: string, filters?: {
+    type?: string;
+    status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<UserRightRequest[]> {
+    let query = db.select().from(userRightRequests)
+      .where(eq(userRightRequests.organisationId, organisationId));
+
+    if (filters?.type) {
+      query = query.where(eq(userRightRequests.type, filters.type as any));
+    }
+
+    if (filters?.status) {
+      query = query.where(eq(userRightRequests.status, filters.status as any));
+    }
+
+    if (filters?.search) {
+      query = query.where(
+        or(
+          ilike(userRightRequests.description, `%${filters.search}%`),
+          ilike(userRightRequests.adminNotes, `%${filters.search}%`)
+        )
+      );
+    }
+
+    query = query.orderBy(desc(userRightRequests.requestedAt));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    if (filters?.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    return await query;
+  }
+
+  // Check if user has pending request of specific type (prevent duplicates)
+  async getUserRightRequestPending(userId: string, type: string): Promise<UserRightRequest | undefined> {
+    const [request] = await db.select().from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.userId, userId),
+        eq(userRightRequests.type, type as any),
+        inArray(userRightRequests.status, ['pending', 'in_progress'])
+      ))
+      .orderBy(desc(userRightRequests.requestedAt))
+      .limit(1);
+    return request;
+  }
+
+  // Mark request as verified (identity verification completed)
+  async verifyUserRightRequest(id: string, adminId: string): Promise<UserRightRequest> {
+    const [request] = await db
+      .update(userRightRequests)
+      .set({ 
+        verifiedAt: new Date(),
+        status: 'in_progress',
+        updatedAt: new Date()
+      })
+      .where(eq(userRightRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  // Complete request with outcome
+  async completeUserRightRequest(id: string, outcome: {
+    status: 'completed' | 'rejected';
+    adminNotes?: string;
+    rejectionReason?: string;
+    attachments?: string[];
+  }): Promise<UserRightRequest> {
+    const [request] = await db
+      .update(userRightRequests)
+      .set({
+        status: outcome.status,
+        completedAt: new Date(),
+        adminNotes: outcome.adminNotes || '',
+        rejectionReason: outcome.rejectionReason,
+        attachments: outcome.attachments || [],
+        updatedAt: new Date()
+      })
+      .where(eq(userRightRequests.id, id))
+      .returning();
+    return request;
+  }
 }
 
 export const storage = new DatabaseStorage();

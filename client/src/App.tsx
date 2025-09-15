@@ -49,6 +49,8 @@ import { AdminSupport } from "@/pages/admin/Support";
 import { PrivacySettings } from "@/pages/gdpr/PrivacySettings";
 import { ConsentPreferences } from "@/pages/gdpr/ConsentPreferences";
 import { CookieSettings } from "@/pages/gdpr/CookieSettings";
+import { UserRights } from "@/pages/gdpr/UserRights";
+import { AdminUserRights } from "@/pages/gdpr/AdminUserRights";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -389,6 +391,15 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* GDPR User Rights Management (feature flag protected) */}
+      <Route path="/admin/user-rights">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminUserRights />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
 
       {/* User routes */}
       <Route path="/user">
@@ -435,6 +446,15 @@ function Router() {
         <ProtectedRoute requiredRole="user">
           <UserLayout>
             <ConsentPreferences />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR User Rights (feature flag protected) */}
+      <Route path="/user/rights">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <UserRights />
           </UserLayout>
         </ProtectedRoute>
       </Route>
