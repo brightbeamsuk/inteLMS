@@ -51,6 +51,12 @@ import {
   complianceDocumentTemplates,
   complianceDocumentAudit,
   complianceDocumentPublications,
+  // PECR Marketing Consent tables
+  marketingConsent,
+  communicationPreferences,
+  marketingCampaigns,
+  consentHistory,
+  suppressionList,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -151,6 +157,17 @@ import {
   type InsertComplianceDocumentAudit,
   type ComplianceDocumentPublication,
   type InsertComplianceDocumentPublication,
+  // PECR Marketing Consent types
+  type MarketingConsent,
+  type InsertMarketingConsent,
+  type CommunicationPreferences,
+  type InsertCommunicationPreferences,
+  type MarketingCampaigns,
+  type InsertMarketingCampaigns,
+  type ConsentHistory,
+  type InsertConsentHistory,
+  type SuppressionList,
+  type InsertSuppressionList,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -777,6 +794,71 @@ export interface IStorage {
     deletionReason: string;
     requestReference?: string;
   }): Promise<SecureDeletionCertificate>;
+
+  // ===== PECR MARKETING CONSENT OPERATIONS =====
+  
+  // Marketing consent operations
+  getMarketingConsent(id: string): Promise<MarketingConsent | undefined>;
+  getMarketingConsentByUserAndType(userId: string, organisationId: string, consentType: string): Promise<MarketingConsent | undefined>;
+  getMarketingConsentsByUser(userId: string, organisationId?: string): Promise<MarketingConsent[]>;
+  getMarketingConsentsByOrganisation(organisationId: string): Promise<MarketingConsent[]>;
+  createMarketingConsent(consent: InsertMarketingConsent): Promise<MarketingConsent>;
+  updateMarketingConsent(id: string, consent: Partial<InsertMarketingConsent>): Promise<MarketingConsent>;
+  withdrawMarketingConsent(id: string, withdrawalReason?: string): Promise<MarketingConsent>;
+  deleteMarketingConsent(id: string): Promise<void>;
+  verifyMarketingConsent(userId: string, organisationId: string, consentType: string): Promise<boolean>;
+  getMarketingConsentsRequiringRenewal(daysBeforeExpiry: number): Promise<MarketingConsent[]>;
+  bulkWithdrawMarketingConsent(userIds: string[], organisationId: string, consentType: string, reason?: string): Promise<number>;
+
+  // Communication preferences operations
+  getCommunicationPreferences(id: string): Promise<CommunicationPreferences | undefined>;
+  getCommunicationPreferencesByUser(userId: string, organisationId: string): Promise<CommunicationPreferences[]>;
+  getCommunicationPreferencesByUserAndType(userId: string, organisationId: string, communicationType: string, channel: string): Promise<CommunicationPreferences | undefined>;
+  createCommunicationPreferences(preferences: InsertCommunicationPreferences): Promise<CommunicationPreferences>;
+  updateCommunicationPreferences(id: string, preferences: Partial<InsertCommunicationPreferences>): Promise<CommunicationPreferences>;
+  deleteCommunicationPreferences(id: string): Promise<void>;
+  bulkUpdateCommunicationPreferences(userId: string, organisationId: string, preferences: Partial<InsertCommunicationPreferences>[]): Promise<CommunicationPreferences[]>;
+  checkCommunicationAllowed(userId: string, organisationId: string, communicationType: string, channel: string): Promise<boolean>;
+  getGlobalOptOuts(organisationId: string): Promise<CommunicationPreferences[]>;
+
+  // Marketing campaigns operations
+  getMarketingCampaign(id: string): Promise<MarketingCampaigns | undefined>;
+  getMarketingCampaignsByOrganisation(organisationId: string, status?: string): Promise<MarketingCampaigns[]>;
+  createMarketingCampaign(campaign: InsertMarketingCampaigns): Promise<MarketingCampaigns>;
+  updateMarketingCampaign(id: string, campaign: Partial<InsertMarketingCampaigns>): Promise<MarketingCampaigns>;
+  deleteMarketingCampaign(id: string): Promise<void>;
+  getScheduledCampaigns(cutoffDate: Date): Promise<MarketingCampaigns[]>;
+  getCampaignRecipients(campaignId: string): Promise<{ userId: string; email: string; consentStatus: string; }[]>;
+  validateCampaignCompliance(campaignId: string): Promise<{ isCompliant: boolean; issues: string[]; recipientCount: number; }>;
+  updateCampaignStats(campaignId: string, stats: { sentCount?: number; deliveredCount?: number; openedCount?: number; clickedCount?: number; unsubscribedCount?: number; bounceCount?: number; }): Promise<MarketingCampaigns>;
+  
+  // Consent history operations
+  getConsentHistory(id: string): Promise<ConsentHistory | undefined>;
+  getConsentHistoryByUser(userId: string, organisationId?: string): Promise<ConsentHistory[]>;
+  getConsentHistoryByConsentId(marketingConsentId: string): Promise<ConsentHistory[]>;
+  createConsentHistoryEntry(history: InsertConsentHistory): Promise<ConsentHistory>;
+  getConsentAuditTrail(userId: string, organisationId: string, consentType?: string): Promise<ConsentHistory[]>;
+  getConsentHistoryReport(organisationId: string, startDate: Date, endDate: Date): Promise<{ 
+    totalGrants: number; 
+    totalWithdrawals: number; 
+    totalModifications: number; 
+    consentsByType: { [key: string]: number };
+    dailyActivity: { date: string; grants: number; withdrawals: number; }[];
+  }>;
+
+  // Suppression list operations
+  getSuppressionListEntry(id: string): Promise<SuppressionList | undefined>;
+  getSuppressionListByOrganisation(organisationId: string): Promise<SuppressionList[]>;
+  getSuppressionListByEmail(email: string, organisationId?: string): Promise<SuppressionList[]>;
+  getSuppressionListByPhone(phone: string, organisationId?: string): Promise<SuppressionList[]>;
+  createSuppressionListEntry(entry: InsertSuppressionList): Promise<SuppressionList>;
+  updateSuppressionListEntry(id: string, entry: Partial<InsertSuppressionList>): Promise<SuppressionList>;
+  deleteSuppressionListEntry(id: string): Promise<void>;
+  isEmailSuppressed(email: string, organisationId: string, channel: string): Promise<boolean>;
+  isPhoneSuppressed(phone: string, organisationId: string, channel: string): Promise<boolean>;
+  addToSuppressionList(contact: { email?: string; phone?: string; }, organisationId: string, reason: string, channels: string[]): Promise<SuppressionList>;
+  bulkAddToSuppressionList(contacts: { email?: string; phone?: string; }[], organisationId: string, reason: string, channels: string[]): Promise<number>;
+  getGlobalSuppressions(): Promise<SuppressionList[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4589,6 +4671,726 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
 
     return result[0] || undefined;
+  }
+
+  // ===== PECR MARKETING CONSENT OPERATIONS IMPLEMENTATION =====
+
+  // Marketing consent operations
+  async getMarketingConsent(id: string): Promise<MarketingConsent | undefined> {
+    const [consent] = await db.select().from(marketingConsent).where(eq(marketingConsent.id, id));
+    return consent;
+  }
+
+  async getMarketingConsentByUserAndType(userId: string, organisationId: string, consentType: string): Promise<MarketingConsent | undefined> {
+    const [consent] = await db
+      .select()
+      .from(marketingConsent)
+      .where(and(
+        eq(marketingConsent.userId, userId),
+        eq(marketingConsent.organisationId, organisationId),
+        eq(marketingConsent.consentType, consentType)
+      ))
+      .orderBy(desc(marketingConsent.createdAt))
+      .limit(1);
+    return consent;
+  }
+
+  async getMarketingConsentsByUser(userId: string, organisationId?: string): Promise<MarketingConsent[]> {
+    const conditions = [eq(marketingConsent.userId, userId)];
+    if (organisationId) {
+      conditions.push(eq(marketingConsent.organisationId, organisationId));
+    }
+
+    return await db
+      .select()
+      .from(marketingConsent)
+      .where(and(...conditions))
+      .orderBy(desc(marketingConsent.createdAt));
+  }
+
+  async getMarketingConsentsByOrganisation(organisationId: string): Promise<MarketingConsent[]> {
+    return await db
+      .select()
+      .from(marketingConsent)
+      .where(eq(marketingConsent.organisationId, organisationId))
+      .orderBy(desc(marketingConsent.createdAt));
+  }
+
+  async createMarketingConsent(consentData: InsertMarketingConsent): Promise<MarketingConsent> {
+    const [consent] = await db
+      .insert(marketingConsent)
+      .values(consentData)
+      .returning();
+
+    // Create consent history entry
+    await this.createConsentHistoryEntry({
+      userId: consent.userId,
+      organisationId: consent.organisationId,
+      marketingConsentId: consent.id,
+      consentType: consent.consentType,
+      action: 'granted',
+      newStatus: consent.consentStatus,
+      source: consent.consentSource,
+      evidenceType: consent.evidenceType,
+      evidenceData: consent.consentEvidence,
+      processingLawfulBasis: consent.lawfulBasis,
+      effectiveDate: consent.consentGivenAt,
+      ipAddress: consent.ipAddress,
+      userAgent: consent.userAgent,
+    });
+
+    return consent;
+  }
+
+  async updateMarketingConsent(id: string, consentData: Partial<InsertMarketingConsent>): Promise<MarketingConsent> {
+    const [consent] = await db
+      .update(marketingConsent)
+      .set({ ...consentData, updatedAt: new Date() })
+      .where(eq(marketingConsent.id, id))
+      .returning();
+
+    if (!consent) {
+      throw new Error('Marketing consent not found');
+    }
+
+    // Create consent history entry for modification
+    await this.createConsentHistoryEntry({
+      userId: consent.userId,
+      organisationId: consent.organisationId,
+      marketingConsentId: consent.id,
+      consentType: consent.consentType,
+      action: 'modified',
+      newStatus: consent.consentStatus,
+      source: consent.consentSource,
+      evidenceType: consent.evidenceType,
+      effectiveDate: new Date().toISOString(),
+    });
+
+    return consent;
+  }
+
+  async withdrawMarketingConsent(id: string, withdrawalReason?: string): Promise<MarketingConsent> {
+    const [consent] = await db
+      .update(marketingConsent)
+      .set({
+        consentStatus: 'withdrawn',
+        consentWithdrawnAt: new Date(),
+        withdrawalReason,
+        updatedAt: new Date(),
+      })
+      .where(eq(marketingConsent.id, id))
+      .returning();
+
+    if (!consent) {
+      throw new Error('Marketing consent not found');
+    }
+
+    // Create consent history entry for withdrawal
+    await this.createConsentHistoryEntry({
+      userId: consent.userId,
+      organisationId: consent.organisationId,
+      marketingConsentId: consent.id,
+      consentType: consent.consentType,
+      action: 'withdrawn',
+      previousStatus: 'granted',
+      newStatus: 'withdrawn',
+      source: 'user_request',
+      evidenceType: 'withdrawal',
+      changeReason: withdrawalReason,
+      effectiveDate: consent.consentWithdrawnAt || new Date().toISOString(),
+    });
+
+    return consent;
+  }
+
+  async deleteMarketingConsent(id: string): Promise<void> {
+    await db.delete(marketingConsent).where(eq(marketingConsent.id, id));
+  }
+
+  async verifyMarketingConsent(userId: string, organisationId: string, consentType: string): Promise<boolean> {
+    const consent = await this.getMarketingConsentByUserAndType(userId, organisationId, consentType);
+    
+    if (!consent || consent.consentStatus !== 'granted') {
+      return false;
+    }
+
+    // Check if consent has expired
+    if (consent.expiryDate && new Date() > new Date(consent.expiryDate)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async getMarketingConsentsRequiringRenewal(daysBeforeExpiry: number): Promise<MarketingConsent[]> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() + daysBeforeExpiry);
+
+    return await db
+      .select()
+      .from(marketingConsent)
+      .where(and(
+        eq(marketingConsent.consentStatus, 'granted'),
+        lt(marketingConsent.expiryDate, cutoffDate.toISOString())
+      ))
+      .orderBy(asc(marketingConsent.expiryDate));
+  }
+
+  async bulkWithdrawMarketingConsent(userIds: string[], organisationId: string, consentType: string, reason?: string): Promise<number> {
+    const result = await db
+      .update(marketingConsent)
+      .set({
+        consentStatus: 'withdrawn',
+        consentWithdrawnAt: new Date(),
+        withdrawalReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        inArray(marketingConsent.userId, userIds),
+        eq(marketingConsent.organisationId, organisationId),
+        eq(marketingConsent.consentType, consentType),
+        eq(marketingConsent.consentStatus, 'granted')
+      ))
+      .returning();
+
+    // Create consent history entries for bulk withdrawal
+    for (const consent of result) {
+      await this.createConsentHistoryEntry({
+        userId: consent.userId,
+        organisationId: consent.organisationId,
+        marketingConsentId: consent.id,
+        consentType: consent.consentType,
+        action: 'withdrawn',
+        previousStatus: 'granted',
+        newStatus: 'withdrawn',
+        source: 'admin_action',
+        evidenceType: 'withdrawal',
+        changeReason: reason,
+        effectiveDate: consent.consentWithdrawnAt || new Date().toISOString(),
+        automatedAction: true,
+      });
+    }
+
+    return result.length;
+  }
+
+  // Communication preferences operations
+  async getCommunicationPreferences(id: string): Promise<CommunicationPreferences | undefined> {
+    const [preferences] = await db.select().from(communicationPreferences).where(eq(communicationPreferences.id, id));
+    return preferences;
+  }
+
+  async getCommunicationPreferencesByUser(userId: string, organisationId: string): Promise<CommunicationPreferences[]> {
+    return await db
+      .select()
+      .from(communicationPreferences)
+      .where(and(
+        eq(communicationPreferences.userId, userId),
+        eq(communicationPreferences.organisationId, organisationId)
+      ))
+      .orderBy(communicationPreferences.communicationType, communicationPreferences.channel);
+  }
+
+  async getCommunicationPreferencesByUserAndType(userId: string, organisationId: string, communicationType: string, channel: string): Promise<CommunicationPreferences | undefined> {
+    const [preferences] = await db
+      .select()
+      .from(communicationPreferences)
+      .where(and(
+        eq(communicationPreferences.userId, userId),
+        eq(communicationPreferences.organisationId, organisationId),
+        eq(communicationPreferences.communicationType, communicationType),
+        eq(communicationPreferences.channel, channel)
+      ))
+      .limit(1);
+    return preferences;
+  }
+
+  async createCommunicationPreferences(preferencesData: InsertCommunicationPreferences): Promise<CommunicationPreferences> {
+    const [preferences] = await db
+      .insert(communicationPreferences)
+      .values(preferencesData)
+      .returning();
+    return preferences;
+  }
+
+  async updateCommunicationPreferences(id: string, preferencesData: Partial<InsertCommunicationPreferences>): Promise<CommunicationPreferences> {
+    const [preferences] = await db
+      .update(communicationPreferences)
+      .set({ ...preferencesData, updatedAt: new Date() })
+      .where(eq(communicationPreferences.id, id))
+      .returning();
+
+    if (!preferences) {
+      throw new Error('Communication preferences not found');
+    }
+
+    return preferences;
+  }
+
+  async deleteCommunicationPreferences(id: string): Promise<void> {
+    await db.delete(communicationPreferences).where(eq(communicationPreferences.id, id));
+  }
+
+  async bulkUpdateCommunicationPreferences(userId: string, organisationId: string, preferencesUpdates: Partial<InsertCommunicationPreferences>[]): Promise<CommunicationPreferences[]> {
+    const results: CommunicationPreferences[] = [];
+
+    for (const update of preferencesUpdates) {
+      if (update.communicationType && update.channel) {
+        // Try to find existing preference
+        const existing = await this.getCommunicationPreferencesByUserAndType(
+          userId, 
+          organisationId, 
+          update.communicationType, 
+          update.channel
+        );
+
+        if (existing) {
+          const updated = await this.updateCommunicationPreferences(existing.id, update);
+          results.push(updated);
+        } else {
+          const created = await this.createCommunicationPreferences({
+            userId,
+            organisationId,
+            ...update,
+          } as InsertCommunicationPreferences);
+          results.push(created);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  async checkCommunicationAllowed(userId: string, organisationId: string, communicationType: string, channel: string): Promise<boolean> {
+    // Check for global opt-out
+    const globalOptOut = await db
+      .select()
+      .from(communicationPreferences)
+      .where(and(
+        eq(communicationPreferences.userId, userId),
+        eq(communicationPreferences.organisationId, organisationId),
+        eq(communicationPreferences.globalOptOut, true)
+      ))
+      .limit(1);
+
+    if (globalOptOut.length > 0) {
+      return false;
+    }
+
+    // Check specific preference
+    const preference = await this.getCommunicationPreferencesByUserAndType(userId, organisationId, communicationType, channel);
+    
+    if (!preference) {
+      // Default behavior based on communication type
+      return communicationType === 'service_essential';
+    }
+
+    return preference.isEnabled;
+  }
+
+  async getGlobalOptOuts(organisationId: string): Promise<CommunicationPreferences[]> {
+    return await db
+      .select()
+      .from(communicationPreferences)
+      .where(and(
+        eq(communicationPreferences.organisationId, organisationId),
+        eq(communicationPreferences.globalOptOut, true)
+      ));
+  }
+
+  // Marketing campaigns operations
+  async getMarketingCampaign(id: string): Promise<MarketingCampaigns | undefined> {
+    const [campaign] = await db.select().from(marketingCampaigns).where(eq(marketingCampaigns.id, id));
+    return campaign;
+  }
+
+  async getMarketingCampaignsByOrganisation(organisationId: string, status?: string): Promise<MarketingCampaigns[]> {
+    const conditions = [eq(marketingCampaigns.organisationId, organisationId)];
+    if (status) {
+      conditions.push(eq(marketingCampaigns.status, status));
+    }
+
+    return await db
+      .select()
+      .from(marketingCampaigns)
+      .where(and(...conditions))
+      .orderBy(desc(marketingCampaigns.createdAt));
+  }
+
+  async createMarketingCampaign(campaignData: InsertMarketingCampaigns): Promise<MarketingCampaigns> {
+    const [campaign] = await db
+      .insert(marketingCampaigns)
+      .values(campaignData)
+      .returning();
+    return campaign;
+  }
+
+  async updateMarketingCampaign(id: string, campaignData: Partial<InsertMarketingCampaigns>): Promise<MarketingCampaigns> {
+    const [campaign] = await db
+      .update(marketingCampaigns)
+      .set({ ...campaignData, updatedAt: new Date() })
+      .where(eq(marketingCampaigns.id, id))
+      .returning();
+
+    if (!campaign) {
+      throw new Error('Marketing campaign not found');
+    }
+
+    return campaign;
+  }
+
+  async deleteMarketingCampaign(id: string): Promise<void> {
+    await db.delete(marketingCampaigns).where(eq(marketingCampaigns.id, id));
+  }
+
+  async getScheduledCampaigns(cutoffDate: Date): Promise<MarketingCampaigns[]> {
+    return await db
+      .select()
+      .from(marketingCampaigns)
+      .where(and(
+        eq(marketingCampaigns.status, 'scheduled'),
+        lt(marketingCampaigns.scheduledAt, cutoffDate.toISOString())
+      ))
+      .orderBy(asc(marketingCampaigns.scheduledAt));
+  }
+
+  async getCampaignRecipients(campaignId: string): Promise<{ userId: string; email: string; consentStatus: string; }[]> {
+    const campaign = await this.getMarketingCampaign(campaignId);
+    if (!campaign) {
+      return [];
+    }
+
+    // This would need to be customized based on campaign targeting criteria
+    // For now, get all users in the organisation with marketing consent
+    const recipients = await db
+      .select({
+        userId: users.id,
+        email: users.email,
+        consentStatus: marketingConsent.consentStatus,
+      })
+      .from(users)
+      .leftJoin(marketingConsent, and(
+        eq(marketingConsent.userId, users.id),
+        eq(marketingConsent.organisationId, campaign.organisationId),
+        inArray(marketingConsent.consentType, campaign.requiredConsentTypes)
+      ))
+      .where(eq(users.organisationId, campaign.organisationId));
+
+    return recipients;
+  }
+
+  async validateCampaignCompliance(campaignId: string): Promise<{ isCompliant: boolean; issues: string[]; recipientCount: number; }> {
+    const campaign = await this.getMarketingCampaign(campaignId);
+    if (!campaign) {
+      return { isCompliant: false, issues: ['Campaign not found'], recipientCount: 0 };
+    }
+
+    const recipients = await this.getCampaignRecipients(campaignId);
+    const issues: string[] = [];
+
+    // Check for required consents
+    const validRecipients = recipients.filter(r => r.consentStatus === 'granted');
+    const invalidRecipients = recipients.filter(r => r.consentStatus !== 'granted');
+
+    if (invalidRecipients.length > 0) {
+      issues.push(`${invalidRecipients.length} recipients without valid consent`);
+    }
+
+    if (campaign.requiredConsentTypes.length === 0) {
+      issues.push('No required consent types specified');
+    }
+
+    if (!campaign.complianceChecked) {
+      issues.push('Campaign compliance not verified');
+    }
+
+    return {
+      isCompliant: issues.length === 0,
+      issues,
+      recipientCount: validRecipients.length,
+    };
+  }
+
+  async updateCampaignStats(campaignId: string, stats: { sentCount?: number; deliveredCount?: number; openedCount?: number; clickedCount?: number; unsubscribedCount?: number; bounceCount?: number; }): Promise<MarketingCampaigns> {
+    const [campaign] = await db
+      .update(marketingCampaigns)
+      .set({ ...stats, updatedAt: new Date() })
+      .where(eq(marketingCampaigns.id, campaignId))
+      .returning();
+
+    if (!campaign) {
+      throw new Error('Marketing campaign not found');
+    }
+
+    return campaign;
+  }
+
+  // Consent history operations
+  async getConsentHistory(id: string): Promise<ConsentHistory | undefined> {
+    const [history] = await db.select().from(consentHistory).where(eq(consentHistory.id, id));
+    return history;
+  }
+
+  async getConsentHistoryByUser(userId: string, organisationId?: string): Promise<ConsentHistory[]> {
+    const conditions = [eq(consentHistory.userId, userId)];
+    if (organisationId) {
+      conditions.push(eq(consentHistory.organisationId, organisationId));
+    }
+
+    return await db
+      .select()
+      .from(consentHistory)
+      .where(and(...conditions))
+      .orderBy(desc(consentHistory.recordedAt));
+  }
+
+  async getConsentHistoryByConsentId(marketingConsentId: string): Promise<ConsentHistory[]> {
+    return await db
+      .select()
+      .from(consentHistory)
+      .where(eq(consentHistory.marketingConsentId, marketingConsentId))
+      .orderBy(desc(consentHistory.recordedAt));
+  }
+
+  async createConsentHistoryEntry(historyData: InsertConsentHistory): Promise<ConsentHistory> {
+    const [history] = await db
+      .insert(consentHistory)
+      .values(historyData)
+      .returning();
+    return history;
+  }
+
+  async getConsentAuditTrail(userId: string, organisationId: string, consentType?: string): Promise<ConsentHistory[]> {
+    const conditions = [
+      eq(consentHistory.userId, userId),
+      eq(consentHistory.organisationId, organisationId),
+    ];
+    
+    if (consentType) {
+      conditions.push(eq(consentHistory.consentType, consentType));
+    }
+
+    return await db
+      .select()
+      .from(consentHistory)
+      .where(and(...conditions))
+      .orderBy(desc(consentHistory.effectiveDate));
+  }
+
+  async getConsentHistoryReport(organisationId: string, startDate: Date, endDate: Date): Promise<{ 
+    totalGrants: number; 
+    totalWithdrawals: number; 
+    totalModifications: number; 
+    consentsByType: { [key: string]: number };
+    dailyActivity: { date: string; grants: number; withdrawals: number; }[];
+  }> {
+    const historyRecords = await db
+      .select()
+      .from(consentHistory)
+      .where(and(
+        eq(consentHistory.organisationId, organisationId),
+        gte(consentHistory.effectiveDate, startDate.toISOString()),
+        lt(consentHistory.effectiveDate, endDate.toISOString())
+      ));
+
+    const totalGrants = historyRecords.filter(h => h.action === 'granted').length;
+    const totalWithdrawals = historyRecords.filter(h => h.action === 'withdrawn').length;
+    const totalModifications = historyRecords.filter(h => h.action === 'modified').length;
+
+    // Group by consent type
+    const consentsByType: { [key: string]: number } = {};
+    historyRecords.forEach(h => {
+      if (h.action === 'granted') {
+        consentsByType[h.consentType] = (consentsByType[h.consentType] || 0) + 1;
+      }
+    });
+
+    // Daily activity aggregation
+    const dailyActivity: { date: string; grants: number; withdrawals: number; }[] = [];
+    const dailyStats = new Map<string, { grants: number; withdrawals: number; }>();
+
+    historyRecords.forEach(h => {
+      const date = new Date(h.effectiveDate).toISOString().split('T')[0];
+      if (!dailyStats.has(date)) {
+        dailyStats.set(date, { grants: 0, withdrawals: 0 });
+      }
+      const stats = dailyStats.get(date)!;
+      if (h.action === 'granted') stats.grants++;
+      if (h.action === 'withdrawn') stats.withdrawals++;
+    });
+
+    for (const [date, stats] of dailyStats) {
+      dailyActivity.push({ date, ...stats });
+    }
+
+    dailyActivity.sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      totalGrants,
+      totalWithdrawals,
+      totalModifications,
+      consentsByType,
+      dailyActivity,
+    };
+  }
+
+  // Suppression list operations
+  async getSuppressionListEntry(id: string): Promise<SuppressionList | undefined> {
+    const [entry] = await db.select().from(suppressionList).where(eq(suppressionList.id, id));
+    return entry;
+  }
+
+  async getSuppressionListByOrganisation(organisationId: string): Promise<SuppressionList[]> {
+    return await db
+      .select()
+      .from(suppressionList)
+      .where(and(
+        eq(suppressionList.organisationId, organisationId),
+        eq(suppressionList.isActive, true)
+      ))
+      .orderBy(desc(suppressionList.createdAt));
+  }
+
+  async getSuppressionListByEmail(email: string, organisationId?: string): Promise<SuppressionList[]> {
+    const conditions = [
+      eq(suppressionList.email, email),
+      eq(suppressionList.isActive, true)
+    ];
+    
+    if (organisationId) {
+      conditions.push(eq(suppressionList.organisationId, organisationId));
+    }
+
+    return await db
+      .select()
+      .from(suppressionList)
+      .where(and(...conditions));
+  }
+
+  async getSuppressionListByPhone(phone: string, organisationId?: string): Promise<SuppressionList[]> {
+    const conditions = [
+      eq(suppressionList.phone, phone),
+      eq(suppressionList.isActive, true)
+    ];
+    
+    if (organisationId) {
+      conditions.push(eq(suppressionList.organisationId, organisationId));
+    }
+
+    return await db
+      .select()
+      .from(suppressionList)
+      .where(and(...conditions));
+  }
+
+  async createSuppressionListEntry(entryData: InsertSuppressionList): Promise<SuppressionList> {
+    const [entry] = await db
+      .insert(suppressionList)
+      .values(entryData)
+      .returning();
+    return entry;
+  }
+
+  async updateSuppressionListEntry(id: string, entryData: Partial<InsertSuppressionList>): Promise<SuppressionList> {
+    const [entry] = await db
+      .update(suppressionList)
+      .set({ ...entryData, updatedAt: new Date() })
+      .where(eq(suppressionList.id, id))
+      .returning();
+
+    if (!entry) {
+      throw new Error('Suppression list entry not found');
+    }
+
+    return entry;
+  }
+
+  async deleteSuppressionListEntry(id: string): Promise<void> {
+    await db.delete(suppressionList).where(eq(suppressionList.id, id));
+  }
+
+  async isEmailSuppressed(email: string, organisationId: string, channel: string): Promise<boolean> {
+    const suppressions = await db
+      .select()
+      .from(suppressionList)
+      .where(and(
+        eq(suppressionList.email, email),
+        eq(suppressionList.organisationId, organisationId),
+        sql`${channel} = ANY(${suppressionList.channels})`,
+        eq(suppressionList.isActive, true),
+        or(
+          eq(suppressionList.isPermanent, true),
+          gte(suppressionList.suppressUntil, new Date().toISOString())
+        )
+      ))
+      .limit(1);
+
+    return suppressions.length > 0;
+  }
+
+  async isPhoneSuppressed(phone: string, organisationId: string, channel: string): Promise<boolean> {
+    const suppressions = await db
+      .select()
+      .from(suppressionList)
+      .where(and(
+        eq(suppressionList.phone, phone),
+        eq(suppressionList.organisationId, organisationId),
+        sql`${channel} = ANY(${suppressionList.channels})`,
+        eq(suppressionList.isActive, true),
+        or(
+          eq(suppressionList.isPermanent, true),
+          gte(suppressionList.suppressUntil, new Date().toISOString())
+        )
+      ))
+      .limit(1);
+
+    return suppressions.length > 0;
+  }
+
+  async addToSuppressionList(contact: { email?: string; phone?: string; }, organisationId: string, reason: string, channels: string[]): Promise<SuppressionList> {
+    return await this.createSuppressionListEntry({
+      organisationId,
+      email: contact.email,
+      phone: contact.phone,
+      suppressionType: 'marketing',
+      channels,
+      reason,
+      source: 'user_request',
+      isPermanent: true,
+      isActive: true,
+    });
+  }
+
+  async bulkAddToSuppressionList(contacts: { email?: string; phone?: string; }[], organisationId: string, reason: string, channels: string[]): Promise<number> {
+    const entries = contacts.map(contact => ({
+      organisationId,
+      email: contact.email,
+      phone: contact.phone,
+      suppressionType: 'marketing',
+      channels,
+      reason,
+      source: 'bulk_import',
+      isPermanent: true,
+      isActive: true,
+    }));
+
+    const result = await db
+      .insert(suppressionList)
+      .values(entries)
+      .returning();
+
+    return result.length;
+  }
+
+  async getGlobalSuppressions(): Promise<SuppressionList[]> {
+    return await db
+      .select()
+      .from(suppressionList)
+      .where(and(
+        eq(suppressionList.isGlobal, true),
+        eq(suppressionList.isActive, true)
+      ))
+      .orderBy(desc(suppressionList.createdAt));
   }
 }
 

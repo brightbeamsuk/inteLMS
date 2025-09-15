@@ -20,6 +20,7 @@ import Handlebars from 'handlebars';
 import { storage } from '../storage';
 import { MailerService, type EmailResult } from './MailerService';
 import { emailTemplateResolver } from './EmailTemplateResolutionService';
+import { isGdprEnabled } from '../config/gdpr';
 import type { 
   EmailSend,
   InsertEmailSend,
@@ -41,6 +42,7 @@ export interface TemplateRenderContext {
     firstName?: string;
     lastName?: string;
     fullName?: string;
+    id?: string; // Added for consent checking
   };
   org?: {
     name?: string;
@@ -123,6 +125,17 @@ export interface TemplateRenderContext {
   supportPhone?: string;
   
   // Authentication
+  
+  // PECR Marketing Consent Variables
+  marketingConsent?: {
+    hasEmailConsent?: boolean;
+    consentType?: string;
+    consentStatus?: string;
+    evidenceType?: string;
+    unsubscribeUrl?: string;
+    consentGivenAt?: string;
+    communicationFrequency?: string;
+  };
   temporaryPassword?: string;
   dueDate?: string;
   
@@ -289,6 +302,241 @@ export class EmailOrchestrator {
     });
     
     console.log(`${this.LOG_PREFIX} Initialized with security helpers`);
+  }
+
+  /**
+   * PECR Marketing Consent Verification
+   * Verifies user consent for marketing communications before sending emails
+   */
+  private async verifyMarketingConsent(
+    userId: string,
+    organisationId: string,
+    email: string,
+    triggerEvent: string,
+    templateKey: string
+  ): Promise<{
+    isAllowed: boolean;
+    reason: string;
+    consentType?: string;
+    requiresConsent: boolean;
+  }> {
+    try {
+      // Skip consent checks if GDPR is disabled
+      if (!isGdprEnabled()) {
+        console.log(`${this.LOG_PREFIX} GDPR disabled, skipping consent check`);
+        return { isAllowed: true, reason: 'GDPR_DISABLED', requiresConsent: false };
+      }
+
+      // Determine if this is a marketing email based on trigger event or template
+      const isMarketingEmail = this.isMarketingCommunication(triggerEvent, templateKey);
+      
+      if (!isMarketingEmail) {
+        console.log(`${this.LOG_PREFIX} Service email detected, no consent required:`, { triggerEvent, templateKey });
+        return { isAllowed: true, reason: 'SERVICE_EMAIL', requiresConsent: false };
+      }
+
+      console.log(`${this.LOG_PREFIX} Marketing email detected, checking consent:`, { userId, triggerEvent, templateKey });
+
+      // Check if email is on suppression list first
+      const isEmailSuppressed = await storage.isEmailSuppressed(email, organisationId, 'email');
+      if (isEmailSuppressed) {
+        console.log(`${this.LOG_PREFIX} Email is on suppression list:`, email);
+        return { 
+          isAllowed: false, 
+          reason: 'EMAIL_SUPPRESSED',
+          requiresConsent: true
+        };
+      }
+
+      // Determine required consent type based on trigger/template
+      const consentType = this.getRequiredConsentType(triggerEvent, templateKey);
+      
+      // Verify marketing consent for email communications
+      const hasValidConsent = await storage.verifyMarketingConsent(userId, organisationId, consentType);
+      
+      if (!hasValidConsent) {
+        console.log(`${this.LOG_PREFIX} No valid marketing consent found:`, { userId, consentType });
+        return { 
+          isAllowed: false, 
+          reason: 'NO_MARKETING_CONSENT',
+          consentType,
+          requiresConsent: true
+        };
+      }
+
+      // Check communication preferences for email channel
+      const isEmailAllowed = await storage.checkCommunicationAllowed(userId, organisationId, 'marketing', 'email');
+      if (!isEmailAllowed) {
+        console.log(`${this.LOG_PREFIX} Email communication not allowed in preferences:`, { userId });
+        return { 
+          isAllowed: false, 
+          reason: 'EMAIL_CHANNEL_DISABLED',
+          consentType,
+          requiresConsent: true
+        };
+      }
+
+      console.log(`${this.LOG_PREFIX} Marketing consent verified successfully:`, { userId, consentType });
+      return { 
+        isAllowed: true, 
+        reason: 'CONSENT_VERIFIED',
+        consentType,
+        requiresConsent: true
+      };
+
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error verifying marketing consent:`, error);
+      // Fail closed - if we can't verify consent, don't send
+      return { 
+        isAllowed: false, 
+        reason: 'CONSENT_CHECK_ERROR',
+        requiresConsent: true
+      };
+    }
+  }
+
+  /**
+   * Determines if an email is marketing communication based on trigger event and template
+   */
+  private isMarketingCommunication(triggerEvent: string, templateKey: string): boolean {
+    // Service/transactional emails that don't require marketing consent
+    const serviceEvents = [
+      'user_registered',
+      'user_invited',
+      'password_reset',
+      'email_verification',
+      'login_notification',
+      'security_alert',
+      'gdpr_breach_notification',
+      'gdpr_user_notification',
+      'account_activated',
+      'account_suspended',
+      'course_assigned',
+      'certificate_earned',
+      'assignment_due',
+      'assignment_overdue',
+      'org_plan_changed',
+      'billing_failed',
+      'billing_updated',
+      'compliance_reminder'
+    ];
+
+    const serviceTemplates = [
+      'user_welcome',
+      'password_reset',
+      'email_verification',
+      'account_notification',
+      'course_notification',
+      'certificate_notification',
+      'billing_notification',
+      'security_notification',
+      'gdpr_notification',
+      'compliance_notification'
+    ];
+
+    // Marketing emails that require explicit consent
+    const marketingEvents = [
+      'newsletter_send',
+      'promotional_email',
+      'product_update',
+      'feature_announcement',
+      'webinar_invitation',
+      'survey_request',
+      'marketing_campaign',
+      'seasonal_promotion',
+      'upgrade_recommendation'
+    ];
+
+    const marketingTemplates = [
+      'newsletter',
+      'promotional',
+      'marketing_email',
+      'product_announcement',
+      'feature_update',
+      'webinar_invite',
+      'survey_email',
+      'promotion',
+      'upgrade_offer'
+    ];
+
+    // Check if it's explicitly a service email
+    if (serviceEvents.includes(triggerEvent) || serviceTemplates.includes(templateKey)) {
+      return false;
+    }
+
+    // Check if it's explicitly a marketing email
+    if (marketingEvents.includes(triggerEvent) || marketingTemplates.includes(templateKey)) {
+      return true;
+    }
+
+    // Default behavior: if unsure, treat as marketing to be safe (PECR compliance)
+    // This ensures we always get consent for potentially promotional content
+    console.log(`${this.LOG_PREFIX} Unrecognized email type, treating as marketing for safety:`, { triggerEvent, templateKey });
+    return true;
+  }
+
+  /**
+   * Determines the required consent type based on trigger event and template
+   */
+  private getRequiredConsentType(triggerEvent: string, templateKey: string): string {
+    // Map different communication types to consent requirements
+    if (triggerEvent.includes('newsletter') || templateKey.includes('newsletter')) {
+      return 'email_marketing';
+    }
+    
+    if (triggerEvent.includes('promotion') || templateKey.includes('promotion')) {
+      return 'email_marketing';
+    }
+    
+    if (triggerEvent.includes('webinar') || templateKey.includes('webinar')) {
+      return 'email_marketing';
+    }
+    
+    if (triggerEvent.includes('survey') || templateKey.includes('survey')) {
+      return 'email_marketing';
+    }
+
+    // Default to general email marketing consent
+    return 'email_marketing';
+  }
+
+  /**
+   * Enhanced context with marketing consent information
+   */
+  private async enrichContextWithConsent(
+    context: TemplateRenderContext,
+    userId: string,
+    organisationId: string,
+    consentVerification: { isAllowed: boolean; reason: string; consentType?: string; requiresConsent: boolean }
+  ): Promise<TemplateRenderContext> {
+    const enrichedContext = { ...context };
+
+    if (consentVerification.requiresConsent && consentVerification.consentType) {
+      try {
+        // Get marketing consent details
+        const marketingConsent = await storage.getMarketingConsentByUserAndType(
+          userId,
+          organisationId,
+          consentVerification.consentType
+        );
+
+        if (marketingConsent) {
+          enrichedContext.marketingConsent = {
+            hasEmailConsent: marketingConsent.consentStatus === 'granted',
+            consentType: marketingConsent.consentType,
+            consentStatus: marketingConsent.consentStatus,
+            evidenceType: marketingConsent.evidenceType,
+            unsubscribeUrl: `${process.env.APP_URL || 'https://app.intellms.com'}/unsubscribe?token=${userId}&type=${consentVerification.consentType}`,
+            consentGivenAt: marketingConsent.consentGivenAt,
+            communicationFrequency: marketingConsent.communicationFrequency
+          };
+        }
+      } catch (error) {
+        console.warn(`${this.LOG_PREFIX} Could not enrich context with consent information:`, error);
+      }
+    }
+
+    return enrichedContext;
   }
 
   /**

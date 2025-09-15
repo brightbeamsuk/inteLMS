@@ -158,6 +158,60 @@ export const breachSeverityEnum = pgEnum('breach_severity', ['low', 'medium', 'h
 export const breachStatusEnum = pgEnum('breach_status', ['detected', 'assessed', 'notified_ico', 'notified_subjects', 'resolved']);
 export const cookieCategoryEnum = pgEnum('cookie_category', ['strictly_necessary', 'functional', 'analytics', 'advertising']);
 export const marketingConsentTypeEnum = pgEnum('marketing_consent_type', ['email', 'sms', 'phone', 'post', 'push_notifications']);
+
+// PECR Marketing Communications enums
+export const communicationTypeEnum = pgEnum('communication_type', [
+  'service_essential',     // Essential service communications (PECR exempt)
+  'service_optional',      // Optional service communications
+  'marketing_promotional', // Marketing and promotional content (PECR opt-in required)
+  'marketing_newsletter',  // Newsletters and updates
+  'marketing_offers',      // Special offers and discounts
+  'marketing_surveys',     // Market research and surveys
+  'training_reminders',    // Training-related reminders
+  'system_notifications'   // System and technical notifications
+]);
+
+export const consentSourceEnum = pgEnum('consent_source', [
+  'registration_form',     // During user registration
+  'preference_center',     // User preference center
+  'marketing_signup',      // Marketing-specific signup
+  'admin_portal',          // Admin-initiated consent
+  'api_import',           // Bulk import via API
+  'third_party_sync',     // Third-party system sync
+  'manual_entry'          // Manual admin entry
+]);
+
+export const communicationFrequencyEnum = pgEnum('communication_frequency', [
+  'immediate',            // Immediate communications
+  'daily',               // Daily digest
+  'weekly',              // Weekly summary
+  'monthly',             // Monthly newsletter
+  'quarterly',           // Quarterly updates
+  'as_needed',           // As needed basis
+  'never'               // No communications
+]);
+
+export const marketingCampaignStatusEnum = pgEnum('marketing_campaign_status', [
+  'draft',               // Campaign is being created
+  'scheduled',           // Campaign is scheduled
+  'active',              // Campaign is currently running
+  'paused',              // Campaign is temporarily paused
+  'completed',           // Campaign has finished
+  'cancelled'            // Campaign was cancelled
+]);
+
+export const consentEvidenceTypeEnum = pgEnum('consent_evidence_type', [
+  'checkbox_tick',       // User ticked consent checkbox
+  'form_submission',     // Form submission with consent
+  'email_confirmation',  // Email confirmation of consent
+  'double_opt_in',       // Double opt-in confirmation
+  'api_consent',         // API-based consent
+  'admin_granted',       // Admin-granted consent
+  'imported_consent',    // Imported from external system
+  'withdrawal',          // Consent withdrawal evidence
+  'modification'         // Consent modification evidence
+]);
+
 export const retentionDeletionMethodEnum = pgEnum('retention_deletion_method', ['soft', 'hard']);
 export const retentionScheduleStatusEnum = pgEnum('retention_schedule_status', ['scheduled', 'completed', 'cancelled']);
 
@@ -2356,6 +2410,264 @@ export const complianceDocumentPublications = pgTable("compliance_document_publi
   unique("unique_compliance_document_publication").on(table.documentId),
 ]);
 
+// ===== PECR MARKETING CONSENT SYSTEM =====
+// PECR (Privacy and Electronic Communications Regulations) compliant marketing consent
+
+// Marketing consent records table - tracks granular consent for marketing communications
+export const marketingConsent = pgTable("marketing_consent", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Consent details
+  consentType: marketingConsentTypeEnum("consent_type").notNull(), // email, sms, phone, post, push_notifications
+  consentStatus: consentStatusEnum("consent_status").notNull(), // granted, denied, withdrawn, pending
+  consentSource: consentSourceEnum("consent_source").notNull(), // registration_form, preference_center, etc.
+  
+  // PECR compliance fields
+  doubleOptIn: boolean("double_opt_in").default(false), // Whether double opt-in was completed
+  doubleOptInConfirmedAt: timestamp("double_opt_in_confirmed_at"), // When double opt-in was confirmed
+  ipAddress: varchar("ip_address"), // IP address when consent was given
+  userAgent: text("user_agent"), // User agent when consent was given
+  
+  // Evidence and audit trail
+  consentEvidence: jsonb("consent_evidence").default('{}'), // Evidence of consent (form data, checkboxes, etc.)
+  evidenceType: consentEvidenceTypeEnum("evidence_type").notNull(),
+  withdrawalReason: text("withdrawal_reason"), // User-provided reason for withdrawal
+  
+  // Legal basis and processing
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis").default('consent'),
+  processingPurpose: text("processing_purpose").notNull(), // Clear description of what consent is for
+  
+  // Timestamps
+  consentGivenAt: timestamp("consent_given_at").notNull(),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  lastModifiedAt: timestamp("last_modified_at").defaultNow(),
+  expiryDate: timestamp("expiry_date"), // When consent expires (if applicable)
+  
+  // Metadata
+  metadata: jsonb("metadata").default('{}'), // Additional compliance data
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_marketing_consent_user_id").on(table.userId),
+  index("idx_marketing_consent_organisation_id").on(table.organisationId),
+  index("idx_marketing_consent_type_status").on(table.consentType, table.consentStatus),
+  index("idx_marketing_consent_given_at").on(table.consentGivenAt),
+  index("idx_marketing_consent_withdrawn_at").on(table.consentWithdrawnAt),
+  index("idx_marketing_consent_expiry").on(table.expiryDate),
+  // Unique constraint: one active consent per user/org/type combination
+  unique("unique_marketing_consent_user_org_type").on(table.userId, table.organisationId, table.consentType),
+]);
+
+// Communication preferences table - detailed user preferences for different communication types
+export const communicationPreferences = pgTable("communication_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Communication settings
+  communicationType: communicationTypeEnum("communication_type").notNull(),
+  channel: marketingConsentTypeEnum("channel").notNull(), // email, sms, phone, post, push_notifications
+  isEnabled: boolean("is_enabled").default(false),
+  frequency: communicationFrequencyEnum("frequency").default('as_needed'),
+  
+  // Timing preferences
+  preferredTimeStart: varchar("preferred_time_start"), // e.g., "09:00"
+  preferredTimeEnd: varchar("preferred_time_end"), // e.g., "17:00"
+  preferredDays: text("preferred_days").array().default([]), // e.g., ["monday", "tuesday"]
+  timezone: varchar("timezone").default('UTC'),
+  
+  // Content preferences
+  contentPreferences: jsonb("content_preferences").default('{}'), // Topics, categories, etc.
+  languagePreference: varchar("language_preference").default('en'),
+  
+  // Suppression and opt-out
+  globalOptOut: boolean("global_opt_out").default(false), // Global suppression
+  suppressUntil: timestamp("suppress_until"), // Temporary suppression
+  
+  // Audit and compliance
+  lastUpdatedBy: varchar("last_updated_by"), // User or admin who made the change
+  ipAddress: varchar("ip_address"), // IP when preference was set
+  userAgent: text("user_agent"), // User agent when preference was set
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_communication_preferences_user_id").on(table.userId),
+  index("idx_communication_preferences_organisation_id").on(table.organisationId),
+  index("idx_communication_preferences_type_channel").on(table.communicationType, table.channel),
+  index("idx_communication_preferences_global_opt_out").on(table.globalOptOut),
+  index("idx_communication_preferences_suppress_until").on(table.suppressUntil),
+  // Unique constraint: one preference record per user/org/type/channel combination
+  unique("unique_communication_preference").on(table.userId, table.organisationId, table.communicationType, table.channel),
+]);
+
+// Marketing campaigns table - manage marketing campaigns with consent verification
+export const marketingCampaigns = pgTable("marketing_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Campaign details
+  name: varchar("name").notNull(),
+  description: text("description"),
+  campaignType: communicationTypeEnum("campaign_type").notNull(),
+  status: marketingCampaignStatusEnum("status").default('draft'),
+  
+  // Targeting and consent
+  targetChannels: text("target_channels").array().notNull(), // email, sms, etc.
+  requiredConsentTypes: text("required_consent_types").array().notNull(), // What consent is required
+  respectDoNotDisturb: boolean("respect_do_not_disturb").default(true),
+  honorFrequencyLimits: boolean("honor_frequency_limits").default(true),
+  
+  // Scheduling
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Content and templates
+  emailTemplateId: varchar("email_template_id"), // Reference to email template
+  smsTemplate: text("sms_template"),
+  content: jsonb("content").default('{}'), // Campaign content data
+  
+  // Targeting criteria
+  targetAudience: jsonb("target_audience").default('{}'), // Audience selection criteria
+  excludeSegments: jsonb("exclude_segments").default('{}'), // Segments to exclude
+  
+  // Results and tracking
+  targetCount: integer("target_count").default(0), // Planned recipients
+  sentCount: integer("sent_count").default(0), // Actually sent
+  deliveredCount: integer("delivered_count").default(0),
+  openedCount: integer("opened_count").default(0),
+  clickedCount: integer("clicked_count").default(0),
+  unsubscribedCount: integer("unsubscribed_count").default(0),
+  bounceCount: integer("bounce_count").default(0),
+  
+  // Compliance and audit
+  complianceChecked: boolean("compliance_checked").default(false),
+  complianceCheckData: jsonb("compliance_check_data").default('{}'),
+  approvedBy: varchar("approved_by"), // Admin who approved the campaign
+  approvedAt: timestamp("approved_at"),
+  
+  // Management
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  metadata: jsonb("metadata").default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_marketing_campaigns_organisation_id").on(table.organisationId),
+  index("idx_marketing_campaigns_status").on(table.status),
+  index("idx_marketing_campaigns_campaign_type").on(table.campaignType),
+  index("idx_marketing_campaigns_scheduled_at").on(table.scheduledAt),
+  index("idx_marketing_campaigns_created_by").on(table.createdBy),
+]);
+
+// Consent history table - comprehensive audit trail for all consent changes
+export const consentHistory = pgTable("consent_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Reference to consent record
+  marketingConsentId: varchar("marketing_consent_id"), // Link to marketing consent record
+  consentType: marketingConsentTypeEnum("consent_type").notNull(),
+  
+  // Change details
+  action: varchar("action").notNull(), // granted, withdrawn, modified, expired
+  previousStatus: consentStatusEnum("previous_status"),
+  newStatus: consentStatusEnum("new_status").notNull(),
+  
+  // Source and context
+  source: consentSourceEnum("source").notNull(),
+  triggeredBy: varchar("triggered_by"), // User ID who made the change (if admin action)
+  automatedAction: boolean("automated_action").default(false), // Was this automated?
+  
+  // Evidence and technical details
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  requestId: varchar("request_id"), // For tracing API requests
+  
+  // Legal and compliance
+  evidenceType: consentEvidenceTypeEnum("evidence_type").notNull(),
+  evidenceData: jsonb("evidence_data").default('{}'), // Detailed evidence
+  processingLawfulBasis: processingLawfulBasisEnum("processing_lawful_basis").default('consent'),
+  
+  // Context and metadata
+  changeReason: text("change_reason"), // User-provided or system reason
+  relatedCampaignId: varchar("related_campaign_id"), // If related to a campaign
+  notes: text("notes"), // Admin notes
+  metadata: jsonb("metadata").default('{}'),
+  
+  // Timing
+  effectiveDate: timestamp("effective_date").notNull(), // When change takes effect
+  recordedAt: timestamp("recorded_at").defaultNow(), // When record was created
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_consent_history_user_id").on(table.userId),
+  index("idx_consent_history_organisation_id").on(table.organisationId),
+  index("idx_consent_history_marketing_consent_id").on(table.marketingConsentId),
+  index("idx_consent_history_consent_type").on(table.consentType),
+  index("idx_consent_history_action").on(table.action),
+  index("idx_consent_history_effective_date").on(table.effectiveDate),
+  index("idx_consent_history_recorded_at").on(table.recordedAt),
+  index("idx_consent_history_triggered_by").on(table.triggeredBy),
+]);
+
+// Suppression list table - manage global suppression and do-not-contact lists
+export const suppressionList = pgTable("suppression_list", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Contact details
+  email: varchar("email"),
+  phone: varchar("phone"),
+  hashedEmail: varchar("hashed_email"), // SHA-256 hash for privacy
+  hashedPhone: varchar("hashed_phone"), // SHA-256 hash for privacy
+  
+  // Suppression details
+  suppressionType: varchar("suppression_type").notNull(), // global, marketing, service
+  channels: text("channels").array().notNull(), // Which channels to suppress
+  reason: varchar("reason").notNull(), // complaint, bounce, unsubscribe, legal
+  
+  // Source and evidence
+  source: varchar("source").notNull(), // user_request, admin_action, automated_bounce, etc.
+  evidenceData: jsonb("evidence_data").default('{}'),
+  originalRequestId: varchar("original_request_id"), // Original consent/unsubscribe request
+  
+  // Scope and duration
+  isGlobal: boolean("is_global").default(false), // Global across all organisations
+  isPermanent: boolean("is_permanent").default(true),
+  suppressUntil: timestamp("suppress_until"), // Temporary suppression end date
+  
+  // Metadata and audit
+  addedBy: varchar("added_by"), // Admin who added the suppression
+  addedReason: text("added_reason"), // Admin-provided reason
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  lastCheckedAt: timestamp("last_checked_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_suppression_list_organisation_id").on(table.organisationId),
+  index("idx_suppression_list_email").on(table.email),
+  index("idx_suppression_list_phone").on(table.phone),
+  index("idx_suppression_list_hashed_email").on(table.hashedEmail),
+  index("idx_suppression_list_hashed_phone").on(table.hashedPhone),
+  index("idx_suppression_list_suppression_type").on(table.suppressionType),
+  index("idx_suppression_list_is_active").on(table.isActive),
+  index("idx_suppression_list_suppress_until").on(table.suppressUntil),
+  index("idx_suppression_list_is_global").on(table.isGlobal),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -2700,6 +3012,36 @@ export const insertAdequacyDecisionSchema = createInsertSchema(adequacyDecisions
   updatedAt: true,
 });
 
+// PECR Marketing Consent insert schemas
+export const insertMarketingConsentSchema = createInsertSchema(marketingConsent).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCommunicationPreferencesSchema = createInsertSchema(communicationPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMarketingCampaignsSchema = createInsertSchema(marketingCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertConsentHistorySchema = createInsertSchema(consentHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSuppressionListSchema = createInsertSchema(suppressionList).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -2875,3 +3217,19 @@ export type ComplianceDocumentAudit = typeof complianceDocumentAudit.$inferSelec
 
 export type InsertComplianceDocumentPublication = z.infer<typeof insertComplianceDocumentPublicationSchema>;
 export type ComplianceDocumentPublication = typeof complianceDocumentPublications.$inferSelect;
+
+// PECR Marketing Consent types
+export type InsertMarketingConsent = z.infer<typeof insertMarketingConsentSchema>;
+export type MarketingConsent = typeof marketingConsent.$inferSelect;
+
+export type InsertCommunicationPreferences = z.infer<typeof insertCommunicationPreferencesSchema>;
+export type CommunicationPreferences = typeof communicationPreferences.$inferSelect;
+
+export type InsertMarketingCampaigns = z.infer<typeof insertMarketingCampaignsSchema>;
+export type MarketingCampaigns = typeof marketingCampaigns.$inferSelect;
+
+export type InsertConsentHistory = z.infer<typeof insertConsentHistorySchema>;
+export type ConsentHistory = typeof consentHistory.$inferSelect;
+
+export type InsertSuppressionList = z.infer<typeof insertSuppressionListSchema>;
+export type SuppressionList = typeof suppressionList.$inferSelect;

@@ -56,7 +56,7 @@ interface GdprAuditLogParams {
   userId?: string;
   adminId?: string;
   action: string;
-  resource: 'user_rights_request' | 'data_export' | 'gdpr_settings' | 'processing_activity';
+  resource: 'user_rights_request' | 'data_export' | 'gdpr_settings' | 'processing_activity' | 'marketing_consent' | 'marketing_campaign' | 'communication_preferences' | 'suppression_list';
   resourceId: string;
   details: Record<string, any>;
   ipAddress: string;
@@ -1929,6 +1929,711 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting cookie inventory:", error);
       res.status(500).json({ message: "Failed to delete cookie inventory entry" });
+    }
+  });
+
+  // ===== PECR MARKETING CONSENT ROUTES =====
+
+  // Get user's marketing consent preferences
+  app.get('/api/gdpr/marketing-consent', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get user's marketing consents
+      const marketingConsents = await storage.getMarketingConsentsByUser(currentUser.id, currentUser.organisationId);
+      
+      // Get communication preferences
+      const communicationPreferences = await storage.getCommunicationPreferencesByUser(currentUser.id, currentUser.organisationId);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: 'view_marketing_consent',
+        resource: 'marketing_consent',
+        resourceId: 'user_preferences',
+        details: {
+          consentsCount: marketingConsents.length,
+          preferencesCount: communicationPreferences.length
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({
+        marketingConsents,
+        communicationPreferences
+      });
+    } catch (error: any) {
+      console.error("Error fetching marketing consent:", error);
+      res.status(500).json({ message: "Failed to fetch marketing consent preferences" });
+    }
+  });
+
+  // Update user's marketing consent preferences
+  app.post('/api/gdpr/marketing-consent', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const consentSchema = z.object({
+        consentType: z.enum(['email_marketing', 'sms_marketing', 'phone_marketing', 'post_marketing', 'push_marketing']),
+        consentStatus: z.enum(['granted', 'withdrawn']),
+        consentSource: z.enum(['website_form', 'email_signup', 'phone_call', 'in_person', 'api']),
+        evidenceType: z.enum(['checkbox', 'email_confirmation', 'verbal_agreement', 'written_form', 'api_request']).optional(),
+        communicationFrequency: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'occasional']).optional(),
+      });
+
+      const consentData = consentSchema.parse(req.body);
+
+      // Check if consent already exists
+      const existingConsent = await storage.getMarketingConsentByUserAndType(
+        currentUser.id, 
+        currentUser.organisationId, 
+        consentData.consentType
+      );
+
+      let resultConsent;
+      if (existingConsent) {
+        // Update existing consent
+        resultConsent = await storage.updateMarketingConsent(existingConsent.id, {
+          consentStatus: consentData.consentStatus,
+          consentSource: consentData.consentSource,
+          evidenceType: consentData.evidenceType,
+          communicationFrequency: consentData.communicationFrequency,
+          ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent') || 'unknown',
+        });
+      } else {
+        // Create new consent
+        resultConsent = await storage.createMarketingConsent({
+          userId: currentUser.id,
+          organisationId: currentUser.organisationId,
+          consentType: consentData.consentType,
+          consentStatus: consentData.consentStatus,
+          lawfulBasis: 'consent',
+          consentSource: consentData.consentSource,
+          evidenceType: consentData.evidenceType,
+          consentGivenAt: new Date().toISOString(),
+          communicationFrequency: consentData.communicationFrequency,
+          ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent') || 'unknown',
+        });
+      }
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: existingConsent ? 'update_marketing_consent' : 'grant_marketing_consent',
+        resource: 'marketing_consent',
+        resourceId: resultConsent.id,
+        details: {
+          consentType: consentData.consentType,
+          consentStatus: consentData.consentStatus,
+          consentSource: consentData.consentSource,
+          isUpdate: !!existingConsent
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(resultConsent);
+    } catch (error: any) {
+      console.error("Error updating marketing consent:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update marketing consent" });
+    }
+  });
+
+  // Withdraw specific marketing consent
+  app.post('/api/gdpr/marketing-consent/withdraw', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const withdrawSchema = z.object({
+        consentType: z.enum(['email_marketing', 'sms_marketing', 'phone_marketing', 'post_marketing', 'push_marketing']),
+        withdrawalReason: z.string().optional()
+      });
+
+      const { consentType, withdrawalReason } = withdrawSchema.parse(req.body);
+
+      // Find existing consent
+      const existingConsent = await storage.getMarketingConsentByUserAndType(
+        currentUser.id, 
+        currentUser.organisationId, 
+        consentType
+      );
+
+      if (!existingConsent) {
+        return res.status(404).json({ message: "Marketing consent not found" });
+      }
+
+      if (existingConsent.consentStatus === 'withdrawn') {
+        return res.status(400).json({ message: "Consent already withdrawn" });
+      }
+
+      // Withdraw consent
+      const withdrawnConsent = await storage.withdrawMarketingConsent(existingConsent.id, withdrawalReason);
+
+      // Add to suppression list
+      if (currentUser.email) {
+        await storage.addToSuppressionList(
+          { email: currentUser.email },
+          currentUser.organisationId,
+          `Marketing consent withdrawn: ${withdrawalReason || 'User request'}`,
+          [consentType.replace('_marketing', '')]
+        );
+      }
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: 'withdraw_marketing_consent',
+        resource: 'marketing_consent',
+        resourceId: withdrawnConsent.id,
+        details: {
+          consentType,
+          withdrawalReason,
+          addedToSuppressionList: !!currentUser.email
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(withdrawnConsent);
+    } catch (error: any) {
+      console.error("Error withdrawing marketing consent:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to withdraw marketing consent" });
+    }
+  });
+
+  // Get/Update communication preferences
+  app.get('/api/gdpr/communication-preferences', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const preferences = await storage.getCommunicationPreferencesByUser(currentUser.id, currentUser.organisationId);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: 'view_communication_preferences',
+        resource: 'communication_preferences',
+        resourceId: 'user_preferences',
+        details: {
+          preferencesCount: preferences.length
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(preferences);
+    } catch (error: any) {
+      console.error("Error fetching communication preferences:", error);
+      res.status(500).json({ message: "Failed to fetch communication preferences" });
+    }
+  });
+
+  app.post('/api/gdpr/communication-preferences', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const preferencesSchema = z.object({
+        preferences: z.array(z.object({
+          communicationType: z.enum(['service_essential', 'service_updates', 'marketing', 'newsletter', 'promotional']),
+          channel: z.enum(['email', 'sms', 'phone', 'post', 'push']),
+          isEnabled: z.boolean(),
+          frequency: z.enum(['immediate', 'daily', 'weekly', 'monthly', 'quarterly']).optional(),
+        })),
+        globalOptOut: z.boolean().optional()
+      });
+
+      const { preferences: preferencesUpdates, globalOptOut } = preferencesSchema.parse(req.body);
+
+      // Handle global opt-out
+      if (globalOptOut !== undefined) {
+        for (const pref of preferencesUpdates) {
+          pref.globalOptOut = globalOptOut;
+        }
+      }
+
+      // Bulk update preferences
+      const updatedPreferences = await storage.bulkUpdateCommunicationPreferences(
+        currentUser.id,
+        currentUser.organisationId,
+        preferencesUpdates
+      );
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: 'update_communication_preferences',
+        resource: 'communication_preferences',
+        resourceId: 'bulk_update',
+        details: {
+          updatedCount: updatedPreferences.length,
+          globalOptOut,
+          preferences: preferencesUpdates.map(p => ({ type: p.communicationType, channel: p.channel, enabled: p.isEnabled }))
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedPreferences);
+    } catch (error: any) {
+      console.error("Error updating communication preferences:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update communication preferences" });
+    }
+  });
+
+  // Admin: Get organization's marketing consents (admin/superadmin only)
+  app.get('/api/gdpr/marketing-consent/admin', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      const consents = await storage.getMarketingConsentsByOrganisation(currentUser.organisationId);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_organization_marketing_consents',
+        resource: 'marketing_consent',
+        resourceId: 'organization_audit',
+        details: {
+          consentsCount: consents.length,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(consents);
+    } catch (error: any) {
+      console.error("Error fetching organization marketing consents:", error);
+      res.status(500).json({ message: "Failed to fetch organization marketing consents" });
+    }
+  });
+
+  // Admin: Get marketing campaigns
+  app.get('/api/gdpr/marketing-campaigns', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      const status = req.query.status as string;
+      const campaigns = await storage.getMarketingCampaignsByOrganisation(currentUser.organisationId, status);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_marketing_campaigns',
+        resource: 'marketing_campaign',
+        resourceId: 'organization_campaigns',
+        details: {
+          campaignCount: campaigns.length,
+          filterStatus: status,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(campaigns);
+    } catch (error: any) {
+      console.error("Error fetching marketing campaigns:", error);
+      res.status(500).json({ message: "Failed to fetch marketing campaigns" });
+    }
+  });
+
+  // Admin: Create marketing campaign
+  app.post('/api/gdpr/marketing-campaigns', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      // Validate request body
+      const campaignSchema = z.object({
+        name: z.string().min(1, "Campaign name is required"),
+        campaignType: z.enum(['email', 'sms', 'phone', 'post', 'push']),
+        status: z.enum(['draft', 'scheduled', 'active', 'paused', 'completed', 'cancelled']).default('draft'),
+        requiredConsentTypes: z.array(z.string()).min(1, "At least one consent type is required"),
+        scheduledAt: z.string().optional(),
+        content: z.record(z.any()).optional(),
+        targetAudience: z.record(z.any()).optional(),
+      });
+
+      const campaignData = campaignSchema.parse(req.body);
+
+      const campaign = await storage.createMarketingCampaign({
+        organisationId: currentUser.organisationId,
+        createdBy: currentUser.id,
+        ...campaignData,
+        complianceChecked: false, // Will be checked before sending
+      });
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'create_marketing_campaign',
+        resource: 'marketing_campaign',
+        resourceId: campaign.id,
+        details: {
+          campaignName: campaignData.name,
+          campaignType: campaignData.campaignType,
+          requiredConsentTypes: campaignData.requiredConsentTypes,
+          status: campaignData.status,
+          scheduledAt: campaignData.scheduledAt
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(campaign);
+    } catch (error: any) {
+      console.error("Error creating marketing campaign:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create marketing campaign" });
+    }
+  });
+
+  // Admin: Get consent history and audit trail
+  app.get('/api/gdpr/consent-history', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      const userId = req.query.userId as string;
+      const consentType = req.query.consentType as string;
+
+      let history;
+      if (userId) {
+        history = await storage.getConsentAuditTrail(userId, currentUser.organisationId, consentType);
+      } else {
+        // Get all history for the organization
+        history = await storage.getConsentHistoryByUser('', currentUser.organisationId);
+      }
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_consent_history',
+        resource: 'marketing_consent',
+        resourceId: userId || 'organization_history',
+        details: {
+          historyCount: history.length,
+          targetUserId: userId,
+          consentTypeFilter: consentType,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(history);
+    } catch (error: any) {
+      console.error("Error fetching consent history:", error);
+      res.status(500).json({ message: "Failed to fetch consent history" });
+    }
+  });
+
+  // Admin: Get suppression list
+  app.get('/api/gdpr/suppression-list', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      const suppressionList = await storage.getSuppressionListByOrganisation(currentUser.organisationId);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_suppression_list',
+        resource: 'suppression_list',
+        resourceId: 'organization_list',
+        details: {
+          suppressionCount: suppressionList.length,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(suppressionList);
+    } catch (error: any) {
+      console.error("Error fetching suppression list:", error);
+      res.status(500).json({ message: "Failed to fetch suppression list" });
+    }
+  });
+
+  // Admin: Add to suppression list
+  app.post('/api/gdpr/suppression-list', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      // Validate request body
+      const suppressionSchema = z.object({
+        contacts: z.array(z.object({
+          email: z.string().email().optional(),
+          phone: z.string().optional(),
+        })).min(1, "At least one contact is required"),
+        reason: z.string().min(1, "Reason is required"),
+        channels: z.array(z.enum(['email', 'sms', 'phone', 'post', 'push'])).min(1, "At least one channel is required"),
+      });
+
+      const { contacts, reason, channels } = suppressionSchema.parse(req.body);
+
+      let addedCount = 0;
+      if (contacts.length === 1) {
+        const entry = await storage.addToSuppressionList(contacts[0], currentUser.organisationId, reason, channels);
+        addedCount = 1;
+      } else {
+        addedCount = await storage.bulkAddToSuppressionList(contacts, currentUser.organisationId, reason, channels);
+      }
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'add_to_suppression_list',
+        resource: 'suppression_list',
+        resourceId: 'bulk_add',
+        details: {
+          contactsCount: contacts.length,
+          addedCount,
+          reason,
+          channels,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json({ addedCount, message: `${addedCount} contacts added to suppression list` });
+    } catch (error: any) {
+      console.error("Error adding to suppression list:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to add to suppression list" });
+    }
+  });
+
+  // Admin: PECR compliance report
+  app.get('/api/gdpr/marketing-consent/compliance', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Admin privileges required" });
+      }
+
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // Default 30 days ago
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date();
+
+      // Get consent history report
+      const consentReport = await storage.getConsentHistoryReport(currentUser.organisationId, startDate, endDate);
+      
+      // Get active marketing consents
+      const activeConsents = await storage.getMarketingConsentsByOrganisation(currentUser.organisationId);
+      const activeConsentsByType = activeConsents
+        .filter(c => c.consentStatus === 'granted')
+        .reduce((acc, consent) => {
+          acc[consent.consentType] = (acc[consent.consentType] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+      // Get suppression list stats
+      const suppressionList = await storage.getSuppressionListByOrganisation(currentUser.organisationId);
+      const suppressionByChannel = suppressionList.reduce((acc, item) => {
+        item.channels.forEach(channel => {
+          acc[channel] = (acc[channel] || 0) + 1;
+        });
+        return acc;
+      }, {} as Record<string, number>);
+
+      const complianceReport = {
+        reportPeriod: { startDate, endDate },
+        consentActivity: consentReport,
+        activeConsents: {
+          total: activeConsents.filter(c => c.consentStatus === 'granted').length,
+          byType: activeConsentsByType
+        },
+        suppressionList: {
+          total: suppressionList.length,
+          byChannel: suppressionByChannel
+        },
+        pecrCompliance: {
+          optInRate: consentReport.totalGrants / (consentReport.totalGrants + consentReport.totalWithdrawals) * 100,
+          withdrawalRate: consentReport.totalWithdrawals / (consentReport.totalGrants + consentReport.totalWithdrawals) * 100,
+          evidenceCollection: activeConsents.filter(c => c.consentEvidence).length / activeConsents.length * 100
+        }
+      };
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_pecr_compliance_report',
+        resource: 'marketing_consent',
+        resourceId: 'compliance_report',
+        details: {
+          reportPeriod: { startDate, endDate },
+          totalConsents: activeConsents.length,
+          totalSuppressions: suppressionList.length,
+          adminRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(complianceReport);
+    } catch (error: any) {
+      console.error("Error generating PECR compliance report:", error);
+      res.status(500).json({ message: "Failed to generate PECR compliance report" });
     }
   });
 
