@@ -65,6 +65,30 @@ export interface TemplateRenderContext {
     passed?: boolean;
   };
   
+  // GDPR Breach notification variables (Articles 33 & 34)
+  breach?: {
+    id?: string;
+    title?: string;
+    description?: string;
+    reference?: string;
+    severity?: 'low' | 'medium' | 'high' | 'critical';
+    detectedAt?: string;
+    notificationDeadline?: string;
+    affectedSubjects?: number | string;
+    dataCategories?: string[];
+    cause?: string;
+    impact?: string;
+    containmentMeasures?: string;
+    preventiveMeasures?: string;
+    responsible?: string;
+    riskAssessment?: string;
+    icoRequired?: boolean;
+    subjectNotificationRequired?: boolean;
+    daysUntilDeadline?: number;
+    hoursUntilDeadline?: number;
+    isOverdue?: boolean;
+  };
+  
   // Event-specific variables
   addedBy?: {
     name?: string;
@@ -109,7 +133,10 @@ export interface TemplateRenderContext {
 
 export interface QueueEmailParams {
   // Required parameters
-  triggerEvent: 'ORG_FAST_ADD' | 'USER_FAST_ADD' | 'COURSE_ASSIGNED' | 'COURSE_COMPLETED' | 'COURSE_FAILED' | 'PLAN_UPDATED';
+  triggerEvent: 'ORG_FAST_ADD' | 'USER_FAST_ADD' | 'COURSE_ASSIGNED' | 'COURSE_COMPLETED' | 'COURSE_FAILED' | 'PLAN_UPDATED' | 
+    // GDPR Breach Management Events (Articles 33 & 34)
+    'BREACH_ICO_NOTIFICATION' | 'BREACH_SUBJECT_NOTIFICATION' | 'BREACH_DEADLINE_ALERT' | 
+    'BREACH_URGENT_ALERT' | 'BREACH_OVERDUE_ALERT' | 'BREACH_ESCALATION_ALERT';
   templateKey: string;
   toEmail: string;
   context: TemplateRenderContext;

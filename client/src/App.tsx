@@ -52,6 +52,7 @@ import { CookieSettings } from "@/pages/gdpr/CookieSettings";
 import { UserRights } from "@/pages/gdpr/UserRights";
 import { AdminUserRights } from "@/pages/gdpr/AdminUserRights";
 import RegisterOfProcessing from "@/pages/gdpr/RegisterOfProcessing";
+import BreachManagement from "@/pages/gdpr/BreachManagement";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -406,6 +407,15 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <RegisterOfProcessing />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Breach Management (Articles 33 & 34 compliance) */}
+      <Route path="/admin/breach-management">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <BreachManagement />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

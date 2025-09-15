@@ -31,6 +31,8 @@ import bcrypt from "bcryptjs";
 import { emailService } from "./services/emailService";
 import { EmailOrchestrator } from "./services/EmailOrchestrator";
 import { emailNotificationService } from "./services/EmailNotificationService";
+import { breachNotificationService } from "./services/BreachNotificationService";
+import { breachDeadlineService } from "./services/BreachDeadlineService";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersion } from "./config/gdpr";
@@ -161,6 +163,16 @@ async function validateUserRightsAccess(
 
 // Initialize EmailOrchestrator for the new email system
 const emailOrchestrator = new EmailOrchestrator();
+
+// Initialize and register breach notification templates
+(async () => {
+  try {
+    await breachNotificationService.registerBreachTemplates();
+    console.log('[GDPR] Breach notification templates registered successfully');
+  } catch (error) {
+    console.error('[GDPR] Failed to register breach notification templates:', error);
+  }
+})();
 
 // Feature flag for EMAIL_TEMPLATES_V2 system
 const EMAIL_TEMPLATES_V2_ENABLED = process.env.EMAIL_TEMPLATES_V2 === 'true';
@@ -3142,6 +3154,984 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error exporting processing activities:", error);
       res.status(500).json({ message: "Failed to export processing activities" });
+    }
+  });
+
+  // ===== DATA BREACH MANAGEMENT ROUTES - GDPR ARTICLES 33 & 34 COMPLIANCE =====
+
+  /**
+   * Get all data breaches for organization
+   * GET /api/gdpr/breaches
+   * Admin/SuperAdmin only - Articles 33 & 34 compliance
+   */
+  app.get('/api/gdpr/breaches', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can view breach register
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for breach management." });
+      }
+
+      const { status, search, severity } = req.query;
+      let breaches: any[];
+
+      if (search) {
+        breaches = await storage.searchDataBreaches(currentUser.organisationId, search as string);
+      } else if (status) {
+        breaches = await storage.getDataBreachesByStatus(currentUser.organisationId, status as string);
+      } else {
+        breaches = await storage.getDataBreachesByOrganisation(currentUser.organisationId);
+      }
+
+      // Filter by severity if specified
+      if (severity) {
+        breaches = breaches.filter(breach => breach.severity === severity);
+      }
+
+      // Add compliance status and deadline information
+      const enrichedBreaches = breaches.map(breach => {
+        const now = new Date();
+        const deadlinePassed = new Date(breach.notificationDeadline) < now;
+        const hoursUntilDeadline = Math.ceil((new Date(breach.notificationDeadline).getTime() - now.getTime()) / (1000 * 60 * 60));
+        
+        return {
+          ...breach,
+          complianceStatus: {
+            icoNotificationRequired: ['medium', 'high', 'critical'].includes(breach.severity),
+            subjectNotificationRequired: ['high', 'critical'].includes(breach.severity),
+            deadlinePassed,
+            hoursUntilDeadline: Math.max(0, hoursUntilDeadline),
+            isOverdue: deadlinePassed && !breach.icoNotifiedAt,
+            isUrgent: hoursUntilDeadline <= 24 && !breach.icoNotifiedAt
+          }
+        };
+      });
+
+      res.json(enrichedBreaches);
+
+    } catch (error: any) {
+      console.error("Error fetching breaches:", error);
+      res.status(500).json({ message: "Failed to fetch data breaches" });
+    }
+  });
+
+  /**
+   * Create new data breach record
+   * POST /api/gdpr/breaches
+   * Admin/SuperAdmin only - Article 33 compliance
+   */
+  app.post('/api/gdpr/breaches', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for breach reporting." });
+      }
+
+      const breachData = req.body;
+      
+      // Validate required fields
+      const requiredFields = ['title', 'description', 'severity', 'affectedSubjects', 'dataCategories', 'cause', 'impact', 'containmentMeasures', 'preventiveMeasures'];
+      const missingFields = requiredFields.filter(field => !breachData[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          message: "Missing required fields", 
+          missingFields 
+        });
+      }
+
+      // Calculate notification deadline (72 hours from detection for ICO)
+      const detectedAt = breachData.detectedAt ? new Date(breachData.detectedAt) : new Date();
+      const notificationDeadline = new Date(detectedAt);
+      notificationDeadline.setHours(notificationDeadline.getHours() + 72);
+
+      const newBreach = await storage.createDataBreach({
+        organisationId: currentUser.organisationId,
+        title: breachData.title,
+        description: breachData.description,
+        severity: breachData.severity,
+        detectedAt,
+        affectedSubjects: breachData.affectedSubjects,
+        dataCategories: breachData.dataCategories || [],
+        cause: breachData.cause,
+        impact: breachData.impact,
+        containmentMeasures: breachData.containmentMeasures,
+        preventiveMeasures: breachData.preventiveMeasures,
+        responsible: breachData.responsible || `${currentUser.firstName} ${currentUser.lastName}`,
+        notificationDeadline,
+        metadata: {
+          reportedBy: currentUser.id,
+          reportedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+          reportedByRole: currentUser.role,
+          reportedAt: new Date().toISOString(),
+          riskAssessment: breachData.riskAssessment || {},
+          gdprArticles: ['Article_33_Notification_to_Supervisory_Authority', 'Article_34_Communication_to_Data_Subject']
+        }
+      });
+
+      // GDPR Audit Logging - Critical breach reported
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'create_data_breach',
+        resource: 'data_breach',
+        resourceId: newBreach.id,
+        details: {
+          breachSeverity: newBreach.severity,
+          affectedSubjects: newBreach.affectedSubjects,
+          dataCategories: newBreach.dataCategories,
+          notificationDeadline: newBreach.notificationDeadline,
+          reportedByAdmin: currentUser.id,
+          reportedByRole: currentUser.role,
+          gdprArticle33: true,
+          icoNotificationRequired: ['medium', 'high', 'critical'].includes(newBreach.severity),
+          subjectNotificationRequired: ['high', 'critical'].includes(newBreach.severity),
+          complianceStatus: 'breach_detected_and_logged',
+          securityLevel: 'critical_data_breach_report'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(newBreach);
+
+    } catch (error: any) {
+      console.error("Error creating breach:", error);
+      res.status(500).json({ message: "Failed to create data breach record" });
+    }
+  });
+
+  /**
+   * Get single data breach by ID
+   * GET /api/gdpr/breaches/:id
+   * Admin/SuperAdmin only - Articles 33 & 34 compliance
+   */
+  app.get('/api/gdpr/breaches/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const breach = await storage.getDataBreach(req.params.id);
+      if (!breach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (breach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      // Add compliance information
+      const now = new Date();
+      const deadlinePassed = new Date(breach.notificationDeadline) < now;
+      const hoursUntilDeadline = Math.ceil((new Date(breach.notificationDeadline).getTime() - now.getTime()) / (1000 * 60 * 60));
+
+      const enrichedBreach = {
+        ...breach,
+        complianceStatus: {
+          icoNotificationRequired: ['medium', 'high', 'critical'].includes(breach.severity),
+          subjectNotificationRequired: ['high', 'critical'].includes(breach.severity),
+          deadlinePassed,
+          hoursUntilDeadline: Math.max(0, hoursUntilDeadline),
+          isOverdue: deadlinePassed && !breach.icoNotifiedAt,
+          isUrgent: hoursUntilDeadline <= 24 && !breach.icoNotifiedAt,
+          timelineStatus: {
+            detected: !!breach.detectedAt,
+            reported: !!breach.reportedAt,
+            icoNotified: !!breach.icoNotifiedAt,
+            subjectsNotified: !!breach.subjectsNotifiedAt,
+            resolved: breach.status === 'resolved'
+          }
+        }
+      };
+
+      res.json(enrichedBreach);
+
+    } catch (error: any) {
+      console.error("Error fetching breach:", error);
+      res.status(500).json({ message: "Failed to fetch data breach" });
+    }
+  });
+
+  /**
+   * Update data breach record
+   * PUT /api/gdpr/breaches/:id
+   * Admin/SuperAdmin only - Articles 33 & 34 compliance
+   */
+  app.put('/api/gdpr/breaches/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      const updateData = req.body;
+      
+      // Handle status transitions and notifications
+      const statusChanges: any = {};
+      
+      if (updateData.status === 'reported' && !existingBreach.reportedAt) {
+        statusChanges.reportedAt = new Date();
+      }
+      
+      if (updateData.icoNotified && !existingBreach.icoNotifiedAt) {
+        statusChanges.icoNotifiedAt = new Date();
+        statusChanges.status = 'notified_ico';
+      }
+      
+      if (updateData.subjectsNotified && !existingBreach.subjectsNotifiedAt) {
+        statusChanges.subjectsNotifiedAt = new Date();
+      }
+
+      // Update metadata with change log
+      const currentMetadata = existingBreach.metadata || {};
+      const changeLog = currentMetadata.changeLog || [];
+      changeLog.push({
+        timestamp: new Date().toISOString(),
+        updatedBy: currentUser.id,
+        updatedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+        changes: Object.keys(updateData),
+        statusChanges: Object.keys(statusChanges)
+      });
+
+      const updatedBreach = await storage.updateDataBreach(req.params.id, {
+        ...updateData,
+        ...statusChanges,
+        metadata: {
+          ...currentMetadata,
+          changeLog,
+          lastUpdatedBy: currentUser.id,
+          lastUpdatedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+          lastUpdatedAt: new Date().toISOString()
+        }
+      });
+
+      // GDPR Audit Logging - Breach updated
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'update_data_breach',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          previousStatus: existingBreach.status,
+          newStatus: updatedBreach.status,
+          changedFields: Object.keys(updateData),
+          statusChanges: Object.keys(statusChanges),
+          updatedByAdmin: currentUser.id,
+          updatedByRole: currentUser.role,
+          gdprArticle33: true,
+          icoNotified: !!statusChanges.icoNotifiedAt,
+          subjectsNotified: !!statusChanges.subjectsNotifiedAt,
+          complianceStatus: 'breach_record_updated',
+          securityLevel: 'critical_breach_update'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedBreach);
+
+    } catch (error: any) {
+      console.error("Error updating breach:", error);
+      res.status(500).json({ message: "Failed to update data breach" });
+    }
+  });
+
+  /**
+   * Delete data breach record
+   * DELETE /api/gdpr/breaches/:id
+   * SuperAdmin only - Critical compliance record deletion
+   */
+  app.delete('/api/gdpr/breaches/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // CRITICAL: Only SuperAdmin can delete breach records (legal compliance)
+      if (currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. SuperAdmin privileges required for breach record deletion." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      await storage.deleteDataBreach(req.params.id);
+
+      // GDPR Audit Logging - CRITICAL breach record deletion
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'delete_data_breach',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          deletedBreach: existingBreach,
+          deletedByAdmin: currentUser.id,
+          deletedByRole: currentUser.role,
+          gdprArticles: ['Article_33_Notification', 'Article_34_Communication'],
+          complianceImpact: 'critical_breach_record_deletion',
+          legalRequirement: 'Data_breach_records_must_be_maintained_for_compliance',
+          securityLevel: 'critical_compliance_record_deletion',
+          warning: 'Breach records should normally be retained for audit purposes'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({ message: "Data breach record deleted successfully" });
+
+    } catch (error: any) {
+      console.error("Error deleting breach:", error);
+      res.status(500).json({ message: "Failed to delete data breach" });
+    }
+  });
+
+  /**
+   * Get breach analytics dashboard
+   * GET /api/gdpr/breaches/analytics
+   * Admin/SuperAdmin only - Compliance reporting
+   */
+  app.get('/api/gdpr/breaches/analytics', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const analytics = await storage.getBreachAnalytics(currentUser.organisationId);
+      
+      // Add ICO compliance metrics
+      const icoRequired = await storage.getBreachesRequiringICONotification(currentUser.organisationId);
+      const subjectRequired = await storage.getBreachesRequiringSubjectNotification(currentUser.organisationId);
+      const overdue = await storage.getOverdueDataBreaches(currentUser.organisationId);
+
+      const enhancedAnalytics = {
+        ...analytics,
+        complianceMetrics: {
+          pendingIcoNotifications: icoRequired.length,
+          pendingSubjectNotifications: subjectRequired.length,
+          overdueNotifications: overdue.length,
+          complianceRate: analytics.totalBreaches > 0 
+            ? Math.round(((analytics.totalBreaches - overdue.length) / analytics.totalBreaches) * 100)
+            : 100
+        },
+        urgentActions: {
+          requiresImmediateAction: overdue.length,
+          urgentDeadlines: icoRequired.filter(breach => {
+            const hoursLeft = Math.ceil((new Date(breach.notificationDeadline).getTime() - new Date().getTime()) / (1000 * 60 * 60));
+            return hoursLeft <= 24 && hoursLeft > 0;
+          }).length
+        }
+      };
+
+      res.json(enhancedAnalytics);
+
+    } catch (error: any) {
+      console.error("Error fetching breach analytics:", error);
+      res.status(500).json({ message: "Failed to fetch breach analytics" });
+    }
+  });
+
+  /**
+   * Export breach register for ICO compliance
+   * GET /api/gdpr/breaches/export
+   * Admin/SuperAdmin only - Regulatory reporting
+   */
+  app.get('/api/gdpr/breaches/export', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const breaches = await storage.getDataBreachesByOrganisation(currentUser.organisationId);
+      const organisation = await storage.getOrganisation(currentUser.organisationId);
+
+      const exportData = {
+        export_metadata: {
+          exported_at: new Date().toISOString(),
+          exported_by: `${currentUser.firstName} ${currentUser.lastName}`,
+          exported_by_role: currentUser.role,
+          organisation: organisation?.name,
+          organisation_id: currentUser.organisationId,
+          gdpr_articles: ['Article 33 - Notification to Supervisory Authority', 'Article 34 - Communication to Data Subject'],
+          legal_requirement: 'UK GDPR Articles 33 & 34 Compliance',
+          data_controller: organisation?.name,
+          total_breaches: breaches.length,
+          compliance_status: 'exported_for_ico_submission'
+        },
+        breach_register: breaches.map(breach => ({
+          breach_id: breach.id,
+          title: breach.title,
+          description: breach.description,
+          severity: breach.severity,
+          status: breach.status,
+          detected_at: breach.detectedAt,
+          reported_at: breach.reportedAt,
+          ico_notified_at: breach.icoNotifiedAt,
+          subjects_notified_at: breach.subjectsNotifiedAt,
+          affected_subjects: breach.affectedSubjects,
+          data_categories: breach.dataCategories,
+          cause: breach.cause,
+          impact: breach.impact,
+          containment_measures: breach.containmentMeasures,
+          preventive_measures: breach.preventiveMeasures,
+          notification_deadline: breach.notificationDeadline,
+          responsible_person: breach.responsible,
+          compliance_status: {
+            ico_notification_required: ['medium', 'high', 'critical'].includes(breach.severity),
+            subject_notification_required: ['high', 'critical'].includes(breach.severity),
+            deadline_met: breach.icoNotifiedAt ? new Date(breach.icoNotifiedAt) <= new Date(breach.notificationDeadline) : false
+          },
+          created_at: breach.createdAt,
+          updated_at: breach.updatedAt
+        }))
+      };
+
+      const format = req.query.format || 'json';
+
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="breach_register_${organisation?.name || 'org'}_${Date.now()}.json"`);
+        res.json(exportData);
+      } else if (format === 'csv') {
+        const csvHeaders = [
+          'Breach ID', 'Title', 'Description', 'Severity', 'Status', 'Detected Date',
+          'Reported Date', 'ICO Notified Date', 'Subjects Notified Date', 'Affected Subjects',
+          'Data Categories', 'Cause', 'Impact', 'Containment Measures', 'Preventive Measures',
+          'Notification Deadline', 'Responsible Person', 'ICO Notification Required',
+          'Subject Notification Required', 'Deadline Met'
+        ];
+
+        const csvRows = breaches.map(breach => [
+          `"${breach.id || ''}"`,
+          `"${breach.title || ''}"`,
+          `"${breach.description?.replace(/"/g, '""') || ''}"`,
+          `"${breach.severity || ''}"`,
+          `"${breach.status || ''}"`,
+          `"${breach.detectedAt ? new Date(breach.detectedAt).toLocaleDateString() : ''}"`,
+          `"${breach.reportedAt ? new Date(breach.reportedAt).toLocaleDateString() : ''}"`,
+          `"${breach.icoNotifiedAt ? new Date(breach.icoNotifiedAt).toLocaleDateString() : ''}"`,
+          `"${breach.subjectsNotifiedAt ? new Date(breach.subjectsNotifiedAt).toLocaleDateString() : ''}"`,
+          `"${breach.affectedSubjects || 0}"`,
+          `"${breach.dataCategories?.join('; ') || ''}"`,
+          `"${breach.cause?.replace(/"/g, '""') || ''}"`,
+          `"${breach.impact?.replace(/"/g, '""') || ''}"`,
+          `"${breach.containmentMeasures?.replace(/"/g, '""') || ''}"`,
+          `"${breach.preventiveMeasures?.replace(/"/g, '""') || ''}"`,
+          `"${breach.notificationDeadline ? new Date(breach.notificationDeadline).toLocaleDateString() : ''}"`,
+          `"${breach.responsible || ''}"`,
+          `"${['medium', 'high', 'critical'].includes(breach.severity) ? 'Yes' : 'No'}"`,
+          `"${['high', 'critical'].includes(breach.severity) ? 'Yes' : 'No'}"`,
+          `"${breach.icoNotifiedAt ? (new Date(breach.icoNotifiedAt) <= new Date(breach.notificationDeadline) ? 'Yes' : 'No') : 'Pending'}"`
+        ]);
+
+        const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="breach_register_${organisation?.name || 'org'}_${Date.now()}.csv"`);
+        res.send(csvContent);
+      } else {
+        return res.status(400).json({ message: "Invalid format. Supported formats: json, csv" });
+      }
+
+      // GDPR Audit Logging - Critical compliance export
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'export_breach_register',
+        resource: 'breach_register_export',
+        resourceId: `export_${Date.now()}`,
+        details: {
+          exportFormat: format,
+          totalBreaches: breaches.length,
+          exportedByAdmin: currentUser.id,
+          exportedByRole: currentUser.role,
+          gdprArticles: ['Article_33_Notification_to_Supervisory_Authority', 'Article_34_Communication_to_Data_Subject'],
+          legalRequirement: 'UK_GDPR_Articles_33_34_Compliance',
+          complianceExport: true,
+          icoSubmissionReady: true,
+          securityLevel: 'critical_compliance_export'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+    } catch (error: any) {
+      console.error("Error exporting breach register:", error);
+      res.status(500).json({ message: "Failed to export breach register" });
+    }
+  });
+
+  // ===== BREACH MANAGEMENT PATCH ENDPOINTS - TARGETED OPERATIONS =====
+
+  /**
+   * Update risk assessment for breach
+   * PATCH /api/gdpr/breaches/:id/risk-assessment
+   * Admin/SuperAdmin only - Risk evaluation updates
+   */
+  app.patch('/api/gdpr/breaches/:id/risk-assessment', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      const { likelihood, severityAssessment, riskScore, mitigatingFactors, overallRisk } = req.body;
+
+      // Update breach metadata with risk assessment
+      const currentMetadata = existingBreach.metadata || {};
+      const updatedRiskAssessment = {
+        ...currentMetadata.riskAssessment,
+        likelihood: likelihood || currentMetadata.riskAssessment?.likelihood,
+        severityAssessment: severityAssessment || currentMetadata.riskAssessment?.severityAssessment,
+        riskScore: riskScore || currentMetadata.riskAssessment?.riskScore,
+        mitigatingFactors: mitigatingFactors || currentMetadata.riskAssessment?.mitigatingFactors,
+        overallRisk: overallRisk || currentMetadata.riskAssessment?.overallRisk,
+        assessedAt: new Date().toISOString(),
+        assessedBy: currentUser.id,
+        assessedByName: `${currentUser.firstName} ${currentUser.lastName}`
+      };
+
+      const updatedBreach = await storage.updateDataBreach(req.params.id, {
+        metadata: {
+          ...currentMetadata,
+          riskAssessment: updatedRiskAssessment,
+          lastUpdatedBy: currentUser.id,
+          lastUpdatedAt: new Date().toISOString()
+        }
+      });
+
+      // GDPR Audit Logging - Risk assessment update
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'update_breach_risk_assessment',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          previousRiskAssessment: currentMetadata.riskAssessment || null,
+          newRiskAssessment: updatedRiskAssessment,
+          assessedByAdmin: currentUser.id,
+          assessedByRole: currentUser.role,
+          gdprArticles: ['Article_33_Risk_Assessment', 'Article_34_Risk_Evaluation'],
+          complianceStatus: 'risk_assessment_updated',
+          securityLevel: 'critical_risk_evaluation'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedBreach);
+
+    } catch (error: any) {
+      console.error("Error updating breach risk assessment:", error);
+      res.status(500).json({ message: "Failed to update risk assessment" });
+    }
+  });
+
+  /**
+   * Mark breach as ICO notified and send notification
+   * PATCH /api/gdpr/breaches/:id/ico-notify
+   * Admin/SuperAdmin only - Article 33 ICO notification
+   */
+  app.patch('/api/gdpr/breaches/:id/ico-notify', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      // Check if already notified
+      if (existingBreach.icoNotifiedAt) {
+        return res.status(400).json({ message: "ICO already notified for this breach" });
+      }
+
+      // Get organization details for notification
+      const organisation = await getOrgById(storage, currentUser.organisationId);
+      if (!organisation) {
+        return res.status(400).json({ message: "Organisation not found" });
+      }
+
+      // Send ICO notification via BreachNotificationService
+      const notificationResult = await breachNotificationService.sendICONotification(
+        existingBreach.id,
+        currentUser.organisationId,
+        {
+          id: currentUser.id,
+          name: `${currentUser.firstName} ${currentUser.lastName}`,
+          email: currentUser.email
+        }
+      );
+
+      // Update breach status
+      const now = new Date();
+      const updatedBreach = await storage.updateDataBreach(req.params.id, {
+        icoNotifiedAt: now,
+        status: 'notified_ico',
+        metadata: {
+          ...existingBreach.metadata,
+          icoNotification: {
+            notifiedAt: now.toISOString(),
+            notifiedBy: currentUser.id,
+            notifiedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+            emailResult: notificationResult,
+            referenceNumber: `ICO-${existingBreach.id.substring(0, 8).toUpperCase()}-${Date.now()}`
+          },
+          lastUpdatedBy: currentUser.id,
+          lastUpdatedAt: now.toISOString()
+        }
+      });
+
+      // GDPR Audit Logging - ICO notification sent
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'notify_ico_data_breach',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          breachSeverity: existingBreach.severity,
+          affectedSubjects: existingBreach.affectedSubjects,
+          notificationDeadline: existingBreach.notificationDeadline,
+          deadlineCompliance: now <= new Date(existingBreach.notificationDeadline),
+          hoursAfterDetection: Math.round((now.getTime() - new Date(existingBreach.detectedAt).getTime()) / (1000 * 60 * 60)),
+          notifiedByAdmin: currentUser.id,
+          notifiedByRole: currentUser.role,
+          emailResult: notificationResult,
+          gdprArticle33: true,
+          complianceStatus: 'ico_notified_article_33',
+          securityLevel: 'critical_regulatory_notification'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({
+        ...updatedBreach,
+        notificationResult,
+        complianceStatus: {
+          icoNotified: true,
+          deadlineMet: now <= new Date(existingBreach.notificationDeadline),
+          hoursAfterDetection: Math.round((now.getTime() - new Date(existingBreach.detectedAt).getTime()) / (1000 * 60 * 60))
+        }
+      });
+
+    } catch (error: any) {
+      console.error("Error notifying ICO:", error);
+      res.status(500).json({ message: "Failed to notify ICO" });
+    }
+  });
+
+  /**
+   * Send individual notifications to affected data subjects
+   * PATCH /api/gdpr/breaches/:id/notify-subjects
+   * Admin/SuperAdmin only - Article 34 individual notifications
+   */
+  app.patch('/api/gdpr/breaches/:id/notify-subjects', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      // Check if high-risk breach requiring individual notification
+      if (!['high', 'critical'].includes(existingBreach.severity)) {
+        return res.status(400).json({ 
+          message: "Individual notification not required for low/medium risk breaches" 
+        });
+      }
+
+      const { recipientEmails, notificationMessage } = req.body;
+
+      if (!recipientEmails || !Array.isArray(recipientEmails) || recipientEmails.length === 0) {
+        return res.status(400).json({ message: "Recipient emails required" });
+      }
+
+      // Get organization details
+      const organisation = await getOrgById(storage, currentUser.organisationId);
+      if (!organisation) {
+        return res.status(400).json({ message: "Organisation not found" });
+      }
+
+      // Send bulk notifications via BreachNotificationService
+      const notificationResults = await breachNotificationService.sendIndividualNotifications(
+        existingBreach.id,
+        currentUser.organisationId,
+        recipientEmails,
+        {
+          id: currentUser.id,
+          name: `${currentUser.firstName} ${currentUser.lastName}`,
+          email: currentUser.email
+        },
+        notificationMessage
+      );
+
+      // Update breach with subject notification status
+      const now = new Date();
+      const updatedBreach = await storage.updateDataBreach(req.params.id, {
+        subjectsNotifiedAt: now,
+        status: existingBreach.icoNotifiedAt ? 'notified_subjects' : 'assessed',
+        metadata: {
+          ...existingBreach.metadata,
+          subjectNotifications: {
+            notifiedAt: now.toISOString(),
+            notifiedBy: currentUser.id,
+            notifiedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+            totalRecipients: recipientEmails.length,
+            results: notificationResults,
+            customMessage: notificationMessage
+          },
+          lastUpdatedBy: currentUser.id,
+          lastUpdatedAt: now.toISOString()
+        }
+      });
+
+      // GDPR Audit Logging - Subject notifications sent
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'notify_subjects_data_breach',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          breachSeverity: existingBreach.severity,
+          totalRecipientsNotified: recipientEmails.length,
+          successfulNotifications: notificationResults.filter(r => !r.error).length,
+          failedNotifications: notificationResults.filter(r => r.error).length,
+          notifiedByAdmin: currentUser.id,
+          notifiedByRole: currentUser.role,
+          gdprArticle34: true,
+          complianceStatus: 'subjects_notified_article_34',
+          securityLevel: 'critical_subject_notifications',
+          customMessage: !!notificationMessage
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({
+        ...updatedBreach,
+        notificationResults,
+        summary: {
+          totalSent: recipientEmails.length,
+          successful: notificationResults.filter(r => !r.error).length,
+          failed: notificationResults.filter(r => r.error).length
+        }
+      });
+
+    } catch (error: any) {
+      console.error("Error notifying subjects:", error);
+      res.status(500).json({ message: "Failed to notify affected subjects" });
+    }
+  });
+
+  /**
+   * Close/resolve data breach
+   * PATCH /api/gdpr/breaches/:id/resolve
+   * Admin/SuperAdmin only - Breach resolution
+   */
+  app.patch('/api/gdpr/breaches/:id/resolve', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('breachManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingBreach = await storage.getDataBreach(req.params.id);
+      if (!existingBreach) {
+        return res.status(404).json({ message: "Data breach not found" });
+      }
+
+      if (existingBreach.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Breach belongs to different organisation." });
+      }
+
+      if (existingBreach.status === 'resolved') {
+        return res.status(400).json({ message: "Breach is already resolved" });
+      }
+
+      const { resolutionNotes, lessonsLearned, preventiveMeasures } = req.body;
+
+      // Update breach to resolved status
+      const now = new Date();
+      const updatedBreach = await storage.updateDataBreach(req.params.id, {
+        status: 'resolved',
+        metadata: {
+          ...existingBreach.metadata,
+          resolution: {
+            resolvedAt: now.toISOString(),
+            resolvedBy: currentUser.id,
+            resolvedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+            resolutionNotes: resolutionNotes || '',
+            lessonsLearned: lessonsLearned || '',
+            additionalPreventiveMeasures: preventiveMeasures || ''
+          },
+          lastUpdatedBy: currentUser.id,
+          lastUpdatedAt: now.toISOString()
+        }
+      });
+
+      // GDPR Audit Logging - Breach resolved
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'resolve_data_breach',
+        resource: 'data_breach',
+        resourceId: req.params.id,
+        details: {
+          breachSeverity: existingBreach.severity,
+          daysToResolution: Math.ceil((now.getTime() - new Date(existingBreach.detectedAt).getTime()) / (1000 * 60 * 60 * 24)),
+          icoNotified: !!existingBreach.icoNotifiedAt,
+          subjectsNotified: !!existingBreach.subjectsNotifiedAt,
+          resolvedByAdmin: currentUser.id,
+          resolvedByRole: currentUser.role,
+          resolutionNotes: resolutionNotes || '',
+          lessonsLearned: lessonsLearned || '',
+          gdprCompliance: true,
+          complianceStatus: 'breach_resolved_and_closed',
+          securityLevel: 'critical_breach_resolution'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedBreach);
+
+    } catch (error: any) {
+      console.error("Error resolving breach:", error);
+      res.status(500).json({ message: "Failed to resolve breach" });
     }
   });
 

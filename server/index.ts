@@ -105,6 +105,53 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Initialize GDPR Breach Management Services
+  // Critical for Articles 33 & 34 compliance - automatic deadline monitoring
+  console.log('🛡️  Initializing GDPR breach management services...');
+  
+  try {
+    // Import breach management services
+    const { BreachDeadlineService } = await import('./services/BreachDeadlineService.js');
+    const { BreachNotificationService } = await import('./services/BreachNotificationService.js');
+    
+    // Initialize services
+    const breachDeadlineService = new BreachDeadlineService();
+    const breachNotificationService = new BreachNotificationService();
+    
+    // Register breach notification templates at startup
+    await breachNotificationService.registerBreachTemplates();
+    console.log('✅ Breach notification templates registered');
+    
+    // Set up automated deadline monitoring (every hour)
+    // Critical: 72-hour ICO notification deadlines per Article 33
+    const DEADLINE_MONITOR_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+    
+    const deadlineMonitorLoop = async () => {
+      try {
+        console.log('🚨 Starting breach deadline monitoring sweep...');
+        await breachDeadlineService.monitorAllDeadlines();
+        console.log('✅ Breach deadline monitoring completed successfully');
+      } catch (error) {
+        console.error('❌ CRITICAL: Breach deadline monitoring failed:', error);
+        // Don't throw - keep the server running, but log for monitoring alerts
+      }
+    };
+    
+    // Start initial monitoring check
+    setImmediate(deadlineMonitorLoop);
+    
+    // Schedule hourly monitoring
+    setInterval(deadlineMonitorLoop, DEADLINE_MONITOR_INTERVAL_MS);
+    
+    console.log(`✅ Breach deadline monitoring active - checking every ${DEADLINE_MONITOR_INTERVAL_MS / 1000 / 60} minutes`);
+    console.log('🛡️  GDPR breach management services initialized successfully');
+    
+  } catch (error) {
+    console.error('❌ CRITICAL: Failed to initialize GDPR breach management services:', error);
+    // Don't throw - continue server startup but alert that breach monitoring is disabled
+    console.error('⚠️  GDPR breach monitoring is DISABLED - manual monitoring required!');
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

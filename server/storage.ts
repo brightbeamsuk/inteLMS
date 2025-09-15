@@ -2943,6 +2943,280 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(desc(processingActivities.updatedAt));
   }
+
+  // ===== DATA BREACH MANAGEMENT - GDPR ARTICLES 33 & 34 COMPLIANCE =====
+
+  async createDataBreach(dataBreach: InsertDataBreach): Promise<DataBreach> {
+    const [breach] = await db
+      .insert(dataBreaches)
+      .values({
+        ...dataBreach,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return breach;
+  }
+
+  async getDataBreach(id: string): Promise<DataBreach | undefined> {
+    const [breach] = await db
+      .select()
+      .from(dataBreaches)
+      .where(eq(dataBreaches.id, id))
+      .limit(1);
+    return breach;
+  }
+
+  async getDataBreachesByOrganisation(organisationId: string): Promise<DataBreach[]> {
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(eq(dataBreaches.organisationId, organisationId))
+      .orderBy(desc(dataBreaches.detectedAt));
+  }
+
+  async updateDataBreach(id: string, dataBreach: Partial<InsertDataBreach>): Promise<DataBreach> {
+    const [updated] = await db
+      .update(dataBreaches)
+      .set({
+        ...dataBreach,
+        updatedAt: new Date(),
+      })
+      .where(eq(dataBreaches.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDataBreach(id: string): Promise<void> {
+    await db
+      .delete(dataBreaches)
+      .where(eq(dataBreaches.id, id));
+  }
+
+  async getDataBreachesByStatus(organisationId: string, status: string): Promise<DataBreach[]> {
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        eq(dataBreaches.status, status as any)
+      ))
+      .orderBy(desc(dataBreaches.detectedAt));
+  }
+
+  async getOverdueDataBreaches(organisationId: string): Promise<DataBreach[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.notificationDeadline} < ${now}`,
+        inArray(dataBreaches.status, ['detected', 'assessed'])
+      ))
+      .orderBy(asc(dataBreaches.notificationDeadline));
+  }
+
+  // Advanced breach management queries for ICO compliance
+  async getBreachesRequiringICONotification(organisationId: string): Promise<DataBreach[]> {
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        isNull(dataBreaches.icoNotifiedAt),
+        inArray(dataBreaches.severity, ['medium', 'high', 'critical'])
+      ))
+      .orderBy(asc(dataBreaches.notificationDeadline));
+  }
+
+  async getBreachesRequiringSubjectNotification(organisationId: string): Promise<DataBreach[]> {
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        isNull(dataBreaches.subjectsNotifiedAt),
+        inArray(dataBreaches.severity, ['high', 'critical'])
+      ))
+      .orderBy(asc(dataBreaches.detectedAt));
+  }
+
+  async searchDataBreaches(organisationId: string, searchTerm: string): Promise<DataBreach[]> {
+    return await db
+      .select()
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        or(
+          ilike(dataBreaches.title, `%${searchTerm}%`),
+          ilike(dataBreaches.description, `%${searchTerm}%`),
+          ilike(dataBreaches.cause, `%${searchTerm}%`)
+        )
+      ))
+      .orderBy(desc(dataBreaches.detectedAt));
+  }
+
+  async getBreachAnalytics(organisationId: string): Promise<{
+    totalBreaches: number;
+    criticalBreaches: number;
+    overdueNotifications: number;
+    averageTimeToNotify: number;
+    breachesByMonth: Array<{ month: string; count: number }>;
+    breachesBySeverity: Array<{ severity: string; count: number }>;
+  }> {
+    const [totalBreaches] = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(eq(dataBreaches.organisationId, organisationId));
+
+    const [criticalBreaches] = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        eq(dataBreaches.severity, 'critical')
+      ));
+
+    const overdueBreaches = await this.getOverdueDataBreaches(organisationId);
+
+    // Calculate average time to notify ICO (in hours)
+    const notifiedBreaches = await db
+      .select({
+        detectedAt: dataBreaches.detectedAt,
+        icoNotifiedAt: dataBreaches.icoNotifiedAt,
+      })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        isNull(dataBreaches.icoNotifiedAt).not()
+      ));
+
+    const avgTimeToNotify = notifiedBreaches.length > 0 
+      ? notifiedBreaches.reduce((sum, breach) => {
+          const timeDiff = new Date(breach.icoNotifiedAt!).getTime() - new Date(breach.detectedAt).getTime();
+          return sum + (timeDiff / (1000 * 60 * 60)); // Convert to hours
+        }, 0) / notifiedBreaches.length
+      : 0;
+
+    // Get breaches by month for the last 12 months
+    const breachesByMonth = await db
+      .select({
+        month: sql<string>`to_char(${dataBreaches.detectedAt}, 'YYYY-MM')`,
+        count: count()
+      })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.detectedAt} >= ${sql`NOW() - INTERVAL '12 months'`}`
+      ))
+      .groupBy(sql`to_char(${dataBreaches.detectedAt}, 'YYYY-MM')`)
+      .orderBy(sql`to_char(${dataBreaches.detectedAt}, 'YYYY-MM')`);
+
+    // Get breaches by severity
+    const breachesBySeverity = await db
+      .select({
+        severity: dataBreaches.severity,
+        count: count()
+      })
+      .from(dataBreaches)
+      .where(eq(dataBreaches.organisationId, organisationId))
+      .groupBy(dataBreaches.severity);
+
+    return {
+      totalBreaches: totalBreaches.count,
+      criticalBreaches: criticalBreaches.count,
+      overdueNotifications: overdueBreaches.length,
+      averageTimeToNotify: Math.round(avgTimeToNotify * 100) / 100,
+      breachesByMonth: breachesByMonth.map(row => ({ 
+        month: row.month, 
+        count: row.count 
+      })),
+      breachesBySeverity: breachesBySeverity.map(row => ({ 
+        severity: row.severity, 
+        count: row.count 
+      })),
+    };
+  }
+
+  // GDPR Audit Log operations
+  async createGdprAuditLog(gdprAuditLog: InsertGdprAuditLog): Promise<GdprAuditLog> {
+    const [log] = await db.insert(gdprAuditLogs).values({
+      ...gdprAuditLog,
+      timestamp: new Date()
+    }).returning();
+    return log;
+  }
+
+  async getGdprAuditLog(id: string): Promise<GdprAuditLog | undefined> {
+    const [log] = await db.select().from(gdprAuditLogs).where(eq(gdprAuditLogs.id, id));
+    return log;
+  }
+
+  async getGdprAuditLogsByOrganisation(
+    organisationId: string, 
+    filters?: {
+      userId?: string;
+      adminId?: string;
+      action?: string;
+      resource?: string;
+      startDate?: Date;
+      endDate?: Date;
+      limit?: number;
+    }
+  ): Promise<GdprAuditLog[]> {
+    let query = db.select().from(gdprAuditLogs).where(eq(gdprAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(gdprAuditLogs.organisationId, organisationId)];
+
+    if (filters?.userId) {
+      conditions.push(eq(gdprAuditLogs.userId, filters.userId));
+    }
+
+    if (filters?.adminId) {
+      conditions.push(eq(gdprAuditLogs.adminId, filters.adminId));
+    }
+
+    if (filters?.action) {
+      conditions.push(eq(gdprAuditLogs.action, filters.action));
+    }
+
+    if (filters?.resource) {
+      conditions.push(eq(gdprAuditLogs.resource, filters.resource));
+    }
+
+    if (filters?.startDate) {
+      conditions.push(sql`${gdprAuditLogs.timestamp} >= ${filters.startDate}`);
+    }
+
+    if (filters?.endDate) {
+      conditions.push(sql`${gdprAuditLogs.timestamp} <= ${filters.endDate}`);
+    }
+
+    if (conditions.length > 1) {
+      query = db.select().from(gdprAuditLogs).where(and(...conditions));
+    }
+
+    query = query.orderBy(desc(gdprAuditLogs.timestamp));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    return await query;
+  }
+
+  async getGdprAuditLogsByResource(organisationId: string, resource: string, resourceId: string): Promise<GdprAuditLog[]> {
+    return await db
+      .select()
+      .from(gdprAuditLogs)
+      .where(and(
+        eq(gdprAuditLogs.organisationId, organisationId),
+        eq(gdprAuditLogs.resource, resource),
+        eq(gdprAuditLogs.resourceId, resourceId)
+      ))
+      .orderBy(desc(gdprAuditLogs.timestamp));
+  }
 }
 
 export const storage = new DatabaseStorage();

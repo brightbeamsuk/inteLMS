@@ -979,6 +979,154 @@ export class MailerService {
       // Don't throw - logging failure shouldn't break email sending
     }
   }
+
+  /**
+   * Send GDPR Breach Notification to ICO (Article 33)
+   * Critical compliance function for 72-hour deadline
+   */
+  async sendICOBreachNotification(
+    organisationId: string,
+    breach: any,
+    icoEmail: string = 'casework@ico.org.uk'
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      // Import templates dynamically
+      const { generateICONotificationEmail, generateBreachReference } = await import('../templates/breach-notifications');
+      
+      // Get organization details
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation) {
+        throw new Error('Organisation not found');
+      }
+
+      // Generate breach reference
+      const breachReference = generateBreachReference(breach, organisation.name);
+
+      // Prepare notification context
+      const context = {
+        breach,
+        organisation: {
+          name: organisation.name,
+          contactEmail: organisation.contactEmail || 'admin@example.com',
+          contactPhone: organisation.contactPhone || '',
+          dpoName: '',
+          dpoEmail: organisation.contactEmail || 'admin@example.com',
+        },
+        recipient: {
+          email: icoEmail,
+        },
+        notificationDate: new Date(),
+        references: {
+          breachReference,
+          legalBasis: ['UK GDPR Article 33', 'Data Protection Act 2018'],
+          complianceUrl: ''
+        }
+      };
+
+      // Generate email content
+      const emailContent = generateICONotificationEmail(context);
+
+      // Send email with high priority
+      const result = await this.send({
+        orgId: organisationId,
+        to: icoEmail,
+        subject: emailContent.subject,
+        html: emailContent.htmlContent,
+        text: emailContent.textContent,
+        templateType: 'gdpr_breach_ico_notification'
+      });
+
+      console.log(`🚨 ICO Breach Notification: ${result.success ? 'SENT' : 'FAILED'} | Breach: ${breach.id} | Ref: ${breachReference}`);
+      
+      return {
+        success: result.success,
+        messageId: result.details.messageId,
+        error: result.error?.short
+      };
+
+    } catch (error: any) {
+      console.error('Failed to send ICO breach notification:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send ICO notification'
+      };
+    }
+  }
+
+  /**
+   * Send Individual Breach Notification (Article 34)
+   * For high-risk breaches affecting data subjects
+   */
+  async sendIndividualBreachNotification(
+    organisationId: string,
+    breach: any,
+    recipient: {
+      email: string;
+      firstName?: string;
+      lastName?: string;
+    }
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      // Import templates dynamically
+      const { generateIndividualNotificationEmail, generateBreachReference } = await import('../templates/breach-notifications');
+      
+      // Get organization details
+      const organisation = await storage.getOrganisation(organisationId);
+      if (!organisation) {
+        throw new Error('Organisation not found');
+      }
+
+      // Generate breach reference
+      const breachReference = generateBreachReference(breach, organisation.name);
+
+      // Prepare notification context
+      const context = {
+        breach,
+        organisation: {
+          name: organisation.name,
+          contactEmail: organisation.contactEmail || 'admin@example.com',
+          contactPhone: organisation.contactPhone || '',
+          dpoName: '',
+          dpoEmail: organisation.contactEmail || 'admin@example.com',
+        },
+        recipient,
+        notificationDate: new Date(),
+        references: {
+          breachReference,
+          legalBasis: ['UK GDPR Article 34', 'Data Protection Act 2018'],
+          complianceUrl: ''
+        }
+      };
+
+      // Generate email content
+      const emailContent = generateIndividualNotificationEmail(context);
+
+      // Send email
+      const result = await this.send({
+        orgId: organisationId,
+        to: recipient.email,
+        subject: emailContent.subject,
+        html: emailContent.htmlContent,
+        text: emailContent.textContent,
+        templateType: 'gdpr_breach_individual_notification'
+      });
+
+      console.log(`📨 Individual Breach Notification: ${result.success ? 'SENT' : 'FAILED'} | Breach: ${breach.id} | Recipient: ${recipient.email}`);
+      
+      return {
+        success: result.success,
+        messageId: result.details.messageId,
+        error: result.error?.short
+      };
+
+    } catch (error: any) {
+      console.error('Failed to send individual breach notification:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send individual notification'
+      };
+    }
+  }
 }
 
 // Export singleton instance
