@@ -18,7 +18,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, insertUserRightRequestSchema, insertConsentRecordSchema, insertCookieInventorySchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, insertUserRightRequestSchema, insertConsentRecordSchema, insertCookieInventorySchema, insertComplianceDocumentSchema, insertComplianceDocumentTemplateSchema, insertComplianceDocumentAuditSchema, insertComplianceDocumentPublicationSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
@@ -37,9 +37,13 @@ import { dataRetentionService } from "./services/DataRetentionService";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersion } from "./config/gdpr";
+import { ComplianceDocumentGenerationService } from "./services/ComplianceDocumentGenerationService";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
+
+// Initialize ComplianceDocumentGenerationService
+const complianceDocumentService = new ComplianceDocumentGenerationService();
 
 // ===== GDPR AUDIT LOGGING SYSTEM =====
 
@@ -5184,6 +5188,480 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching adequacy decision:", error);
       res.status(500).json({ message: "Failed to fetch adequacy decision" });
+    }
+  });
+
+  // ===== COMPLIANCE DOCUMENTS ROUTES =====
+
+  // Get all compliance documents for organization
+  app.get('/api/gdpr/compliance-documents', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Admin and SuperAdmin can access compliance documents
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const documents = await storage.getComplianceDocumentsByOrganisation(organisationId);
+      res.json(documents);
+
+    } catch (error) {
+      console.error("Error fetching compliance documents:", error);
+      res.status(500).json({ message: "Failed to fetch compliance documents" });
+    }
+  });
+
+  // Get compliance documents by type
+  app.get('/api/gdpr/compliance-documents/type/:documentType', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const documents = await storage.getComplianceDocumentsByType(organisationId, req.params.documentType);
+      res.json(documents);
+
+    } catch (error) {
+      console.error("Error fetching compliance documents by type:", error);
+      res.status(500).json({ message: "Failed to fetch compliance documents" });
+    }
+  });
+
+  // Generate new compliance document
+  app.post('/api/gdpr/compliance-documents/generate', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const { documentType, templateId, title, description } = req.body;
+
+      if (!documentType) {
+        return res.status(400).json({ message: "Document type is required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // Generate document content
+      const generatedContent = await complianceDocumentService.generateDocument(
+        documentType,
+        organisationId,
+        templateId
+      );
+
+      // Create document record
+      const documentData = {
+        organisationId,
+        documentType,
+        title: title || generatedContent.title,
+        description: description || `Auto-generated ${documentType.replace('_', ' ')} document`,
+        documentReference: `${documentType}_${Date.now()}`,
+        content: generatedContent.content,
+        htmlContent: generatedContent.htmlContent,
+        plainTextContent: generatedContent.plainTextContent,
+        wordCount: generatedContent.wordCount,
+        readingTime: generatedContent.readingTime,
+        templateId: templateId || null,
+        templateVersion: '1.0',
+        status: 'draft' as const,
+        version: '1.0',
+        generatedBy: currentUser.id,
+        generatedAt: new Date(),
+        lastModifiedBy: currentUser.id,
+        complianceStatus: 'pending_review' as const,
+        regulatoryRequirements: generatedContent.regulatoryRequirements,
+        applicableLaws: generatedContent.applicableLaws,
+        isActive: false,
+        allowsPublicAccess: false
+      };
+
+      const document = await storage.createComplianceDocument(documentData);
+
+      // Create audit trail
+      await storage.createComplianceDocumentAudit({
+        organisationId,
+        documentId: document.id,
+        action: 'generated',
+        actionBy: currentUser.id,
+        actionDetails: `Document generated using ${templateId ? 'custom template' : 'default template'}`,
+        oldValues: null,
+        newValues: {
+          documentType,
+          status: 'draft',
+          version: '1.0'
+        },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(document);
+
+    } catch (error: any) {
+      console.error("Error generating compliance document:", error);
+      if (error.message?.includes('GDPR compliance features are not enabled')) {
+        return res.status(403).json({ message: "GDPR compliance features are not enabled" });
+      }
+      if (error.message?.includes('No template found')) {
+        return res.status(404).json({ message: "Template not found for document type" });
+      }
+      res.status(500).json({ message: "Failed to generate compliance document" });
+    }
+  });
+
+  // Get specific compliance document
+  app.get('/api/gdpr/compliance-documents/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const document = await storage.getComplianceDocument(req.params.id);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Compliance document not found" });
+      }
+
+      // Organization scoping
+      if (currentUser.role === 'admin' && document.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - cannot access documents outside your organization" });
+      }
+
+      res.json(document);
+
+    } catch (error) {
+      console.error("Error fetching compliance document:", error);
+      res.status(500).json({ message: "Failed to fetch compliance document" });
+    }
+  });
+
+  // Update compliance document
+  app.patch('/api/gdpr/compliance-documents/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const document = await storage.getComplianceDocument(req.params.id);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Compliance document not found" });
+      }
+
+      // Organization scoping
+      if (currentUser.role === 'admin' && document.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - cannot modify documents outside your organization" });
+      }
+
+      const oldValues = {
+        title: document.title,
+        content: document.content,
+        status: document.status,
+        version: document.version
+      };
+
+      const updateData = {
+        ...req.body,
+        lastModifiedBy: currentUser.id,
+        lastModifiedAt: new Date()
+      };
+
+      // If content is being updated, increment version
+      if (req.body.content && req.body.content !== document.content) {
+        const currentVersion = parseFloat(document.version || '1.0');
+        updateData.version = (currentVersion + 0.1).toFixed(1);
+      }
+
+      const updatedDocument = await storage.updateComplianceDocument(req.params.id, updateData);
+
+      // Create audit trail
+      await storage.createComplianceDocumentAudit({
+        organisationId: document.organisationId,
+        documentId: document.id,
+        action: 'updated',
+        actionBy: currentUser.id,
+        actionDetails: `Document updated: ${Object.keys(req.body).join(', ')}`,
+        oldValues,
+        newValues: req.body,
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedDocument);
+
+    } catch (error: any) {
+      console.error("Error updating compliance document:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update compliance document" });
+    }
+  });
+
+  // Publish compliance document
+  app.post('/api/gdpr/compliance-documents/:id/publish', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const document = await storage.getComplianceDocument(req.params.id);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Compliance document not found" });
+      }
+
+      // Organization scoping
+      if (currentUser.role === 'admin' && document.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - cannot publish documents outside your organization" });
+      }
+
+      const { isPublic = true, publicUrl, passwordProtected = false, accessPassword } = req.body;
+
+      // Update document status
+      await storage.updateComplianceDocument(req.params.id, {
+        status: 'published',
+        isActive: true,
+        allowsPublicAccess: isPublic,
+        publishedBy: currentUser.id,
+        publishedAt: new Date(),
+        lastModifiedBy: currentUser.id,
+        lastModifiedAt: new Date()
+      });
+
+      // Create or update publication settings
+      const existingPublication = await storage.getComplianceDocumentPublicationByDocument(req.params.id);
+      
+      const publicationData = {
+        organisationId: document.organisationId,
+        documentId: req.params.id,
+        isPublic,
+        publicUrl: publicUrl || `/${document.documentType}`,
+        passwordProtected,
+        accessPassword: passwordProtected && accessPassword ? await bcrypt.hash(accessPassword, 10) : null,
+        publishedBy: currentUser.id,
+        publicationNotes: req.body.publicationNotes || null
+      };
+
+      let publication;
+      if (existingPublication) {
+        publication = await storage.updateComplianceDocumentPublication(existingPublication.id, publicationData);
+      } else {
+        publication = await storage.createComplianceDocumentPublication(publicationData);
+      }
+
+      // Create audit trail
+      await storage.createComplianceDocumentAudit({
+        organisationId: document.organisationId,
+        documentId: document.id,
+        action: 'published',
+        actionBy: currentUser.id,
+        actionDetails: `Document published${isPublic ? ' publicly' : ' privately'}${publicUrl ? ` at ${publicUrl}` : ''}`,
+        oldValues: { status: document.status },
+        newValues: { status: 'published', isPublic, publicUrl },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({ document, publication });
+
+    } catch (error) {
+      console.error("Error publishing compliance document:", error);
+      res.status(500).json({ message: "Failed to publish compliance document" });
+    }
+  });
+
+  // Get document templates
+  app.get('/api/gdpr/compliance-document-templates', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const { documentType } = req.query;
+
+      let templates;
+      if (documentType) {
+        templates = await storage.getComplianceDocumentTemplatesByType(documentType as string);
+      } else {
+        templates = await storage.getAllComplianceDocumentTemplates();
+      }
+
+      res.json(templates);
+
+    } catch (error) {
+      console.error("Error fetching compliance document templates:", error);
+      res.status(500).json({ message: "Failed to fetch document templates" });
+    }
+  });
+
+  // Get document audit trail
+  app.get('/api/gdpr/compliance-documents/:id/audit', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const document = await storage.getComplianceDocument(req.params.id);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Compliance document not found" });
+      }
+
+      // Organization scoping
+      if (currentUser.role === 'admin' && document.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - cannot access audit trail outside your organization" });
+      }
+
+      const auditTrail = await storage.getComplianceDocumentAuditsByDocument(req.params.id);
+      res.json(auditTrail);
+
+    } catch (error) {
+      console.error("Error fetching compliance document audit trail:", error);
+      res.status(500).json({ message: "Failed to fetch audit trail" });
+    }
+  });
+
+  // Preview document generation (without saving)
+  app.post('/api/gdpr/compliance-documents/preview', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('userRights')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const { documentType, templateId } = req.body;
+
+      if (!documentType) {
+        return res.status(400).json({ message: "Document type is required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // Generate document content preview
+      const generatedContent = await complianceDocumentService.generateDocument(
+        documentType,
+        organisationId,
+        templateId
+      );
+
+      res.json(generatedContent);
+
+    } catch (error: any) {
+      console.error("Error previewing compliance document:", error);
+      if (error.message?.includes('GDPR compliance features are not enabled')) {
+        return res.status(403).json({ message: "GDPR compliance features are not enabled" });
+      }
+      if (error.message?.includes('No template found')) {
+        return res.status(404).json({ message: "Template not found for document type" });
+      }
+      res.status(500).json({ message: "Failed to preview compliance document" });
     }
   });
 

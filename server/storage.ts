@@ -46,6 +46,11 @@ import {
   dataLifecycleRecords,
   retentionComplianceAudits,
   secureDeletionCertificates,
+  // Compliance documents tables
+  complianceDocuments,
+  complianceDocumentTemplates,
+  complianceDocumentAudit,
+  complianceDocumentPublications,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -137,6 +142,15 @@ import {
   type InsertRetentionComplianceAudit,
   type SecureDeletionCertificate,
   type InsertSecureDeletionCertificate,
+  // Compliance documents types
+  type ComplianceDocument,
+  type InsertComplianceDocument,
+  type ComplianceDocumentTemplate,
+  type InsertComplianceDocumentTemplate,
+  type ComplianceDocumentAudit,
+  type InsertComplianceDocumentAudit,
+  type ComplianceDocumentPublication,
+  type InsertComplianceDocumentPublication,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -572,6 +586,60 @@ export interface IStorage {
   deleteDataRetentionPolicy(id: string): Promise<void>;
   getEnabledDataRetentionPolicies(organisationId: string): Promise<DataRetentionPolicy[]>;
   getDataRetentionPolicyByPriority(organisationId: string, dataType: string): Promise<DataRetentionPolicy | undefined>;
+
+  // Compliance Documents operations - auto-generated legal documents for GDPR regulatory compliance
+  // Document management
+  createComplianceDocument(document: InsertComplianceDocument): Promise<ComplianceDocument>;
+  getComplianceDocument(id: string): Promise<ComplianceDocument | undefined>;
+  getComplianceDocumentsByOrganisation(organisationId: string): Promise<ComplianceDocument[]>;
+  getComplianceDocumentsByType(organisationId: string, documentType: string): Promise<ComplianceDocument[]>;
+  getComplianceDocumentsByStatus(organisationId: string, status: string): Promise<ComplianceDocument[]>;
+  getCurrentVersionComplianceDocument(organisationId: string, documentType: string): Promise<ComplianceDocument | undefined>;
+  updateComplianceDocument(id: string, document: Partial<InsertComplianceDocument>): Promise<ComplianceDocument>;
+  deleteComplianceDocument(id: string): Promise<void>;
+  archiveComplianceDocument(id: string): Promise<ComplianceDocument>;
+  publishComplianceDocument(id: string, publishedBy: string): Promise<ComplianceDocument>;
+  supersederComplianceDocument(oldDocumentId: string, newDocumentId: string): Promise<void>;
+  getDocumentsRequiringRegeneration(organisationId: string): Promise<ComplianceDocument[]>;
+  markDocumentForRegeneration(id: string): Promise<ComplianceDocument>;
+
+  // Document templates
+  createComplianceDocumentTemplate(template: InsertComplianceDocumentTemplate): Promise<ComplianceDocumentTemplate>;
+  getComplianceDocumentTemplate(id: string): Promise<ComplianceDocumentTemplate | undefined>;
+  getComplianceDocumentTemplatesByType(documentType: string): Promise<ComplianceDocumentTemplate[]>;
+  getDefaultComplianceDocumentTemplate(documentType: string): Promise<ComplianceDocumentTemplate | undefined>;
+  getActiveComplianceDocumentTemplates(): Promise<ComplianceDocumentTemplate[]>;
+  updateComplianceDocumentTemplate(id: string, template: Partial<InsertComplianceDocumentTemplate>): Promise<ComplianceDocumentTemplate>;
+  deleteComplianceDocumentTemplate(id: string): Promise<void>;
+  incrementTemplateUsage(id: string): Promise<void>;
+
+  // Document audit trail
+  createComplianceDocumentAudit(audit: InsertComplianceDocumentAudit): Promise<ComplianceDocumentAudit>;
+  getComplianceDocumentAudit(id: string): Promise<ComplianceDocumentAudit | undefined>;
+  getComplianceDocumentAuditsByDocument(documentId: string): Promise<ComplianceDocumentAudit[]>;
+  getComplianceDocumentAuditsByOrganisation(organisationId: string, filters?: {
+    documentId?: string;
+    action?: string;
+    actionBy?: string;
+    legalReviewRequired?: boolean;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<ComplianceDocumentAudit[]>;
+  getComplianceDocumentAuditsRequiringLegalReview(organisationId: string): Promise<ComplianceDocumentAudit[]>;
+
+  // Document publications
+  createComplianceDocumentPublication(publication: InsertComplianceDocumentPublication): Promise<ComplianceDocumentPublication>;
+  getComplianceDocumentPublication(id: string): Promise<ComplianceDocumentPublication | undefined>;
+  getComplianceDocumentPublicationByDocument(documentId: string): Promise<ComplianceDocumentPublication | undefined>;
+  getComplianceDocumentPublicationByUrl(publicUrl: string): Promise<ComplianceDocumentPublication | undefined>;
+  getPublishedComplianceDocumentsByOrganisation(organisationId: string): Promise<ComplianceDocumentPublication[]>;
+  updateComplianceDocumentPublication(id: string, publication: Partial<InsertComplianceDocumentPublication>): Promise<ComplianceDocumentPublication>;
+  deleteComplianceDocumentPublication(id: string): Promise<void>;
+  incrementPublicationViews(id: string): Promise<void>;
+  incrementPublicationDownloads(id: string): Promise<void>;
+  getPublicComplianceDocument(publicUrl: string): Promise<{ document: ComplianceDocument; publication: ComplianceDocumentPublication } | undefined>;
 
   // International Transfers operations (GDPR Chapter V Articles 44-49)
   // International transfers
@@ -4159,6 +4227,368 @@ export class DatabaseStorage implements IStorage {
     // This would identify overdue records that need retention processing
     console.log(`[Storage] getDataEligibleForRetention called for organization: ${organisationId}`);
     return [];
+  }
+
+  // ===== COMPLIANCE DOCUMENTS OPERATIONS =====
+  // Auto-generated legal documents for GDPR regulatory compliance
+
+  // Document management
+  async createComplianceDocument(document: InsertComplianceDocument): Promise<ComplianceDocument> {
+    const [complianceDocument] = await db.insert(complianceDocuments).values({
+      ...document,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return complianceDocument;
+  }
+
+  async getComplianceDocument(id: string): Promise<ComplianceDocument | undefined> {
+    const [document] = await db.select().from(complianceDocuments).where(eq(complianceDocuments.id, id));
+    return document;
+  }
+
+  async getComplianceDocumentsByOrganisation(organisationId: string): Promise<ComplianceDocument[]> {
+    return await db.select().from(complianceDocuments)
+      .where(eq(complianceDocuments.organisationId, organisationId))
+      .orderBy(desc(complianceDocuments.createdAt));
+  }
+
+  async getComplianceDocumentsByType(organisationId: string, documentType: string): Promise<ComplianceDocument[]> {
+    return await db.select().from(complianceDocuments)
+      .where(and(
+        eq(complianceDocuments.organisationId, organisationId),
+        eq(complianceDocuments.documentType, documentType)
+      ))
+      .orderBy(desc(complianceDocuments.version));
+  }
+
+  async getComplianceDocumentsByStatus(organisationId: string, status: string): Promise<ComplianceDocument[]> {
+    return await db.select().from(complianceDocuments)
+      .where(and(
+        eq(complianceDocuments.organisationId, organisationId),
+        eq(complianceDocuments.status, status)
+      ))
+      .orderBy(desc(complianceDocuments.updatedAt));
+  }
+
+  async getCurrentVersionComplianceDocument(organisationId: string, documentType: string): Promise<ComplianceDocument | undefined> {
+    const [document] = await db.select().from(complianceDocuments)
+      .where(and(
+        eq(complianceDocuments.organisationId, organisationId),
+        eq(complianceDocuments.documentType, documentType),
+        eq(complianceDocuments.isCurrentVersion, true)
+      ))
+      .limit(1);
+    return document;
+  }
+
+  async updateComplianceDocument(id: string, document: Partial<InsertComplianceDocument>): Promise<ComplianceDocument> {
+    const [updatedDocument] = await db
+      .update(complianceDocuments)
+      .set({ ...document, updatedAt: new Date() })
+      .where(eq(complianceDocuments.id, id))
+      .returning();
+    return updatedDocument;
+  }
+
+  async deleteComplianceDocument(id: string): Promise<void> {
+    await db.delete(complianceDocuments).where(eq(complianceDocuments.id, id));
+  }
+
+  async archiveComplianceDocument(id: string): Promise<ComplianceDocument> {
+    const [archivedDocument] = await db
+      .update(complianceDocuments)
+      .set({ 
+        status: 'archived',
+        isCurrentVersion: false,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocuments.id, id))
+      .returning();
+    return archivedDocument;
+  }
+
+  async publishComplianceDocument(id: string, publishedBy: string): Promise<ComplianceDocument> {
+    const [publishedDocument] = await db
+      .update(complianceDocuments)
+      .set({ 
+        status: 'published',
+        publishedAt: new Date(),
+        approvedBy: publishedBy,
+        approvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocuments.id, id))
+      .returning();
+    return publishedDocument;
+  }
+
+  async supersederComplianceDocument(oldDocumentId: string, newDocumentId: string): Promise<void> {
+    // Mark old document as superseded
+    await db
+      .update(complianceDocuments)
+      .set({ 
+        status: 'superseded',
+        isCurrentVersion: false,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocuments.id, oldDocumentId));
+
+    // Mark new document as current
+    await db
+      .update(complianceDocuments)
+      .set({ 
+        isCurrentVersion: true,
+        parentDocumentId: oldDocumentId,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocuments.id, newDocumentId));
+  }
+
+  async getDocumentsRequiringRegeneration(organisationId: string): Promise<ComplianceDocument[]> {
+    return await db.select().from(complianceDocuments)
+      .where(and(
+        eq(complianceDocuments.organisationId, organisationId),
+        eq(complianceDocuments.requiresRegeneration, true),
+        eq(complianceDocuments.isCurrentVersion, true)
+      ))
+      .orderBy(desc(complianceDocuments.lastAutoGenerated));
+  }
+
+  async markDocumentForRegeneration(id: string): Promise<ComplianceDocument> {
+    const [updatedDocument] = await db
+      .update(complianceDocuments)
+      .set({ 
+        requiresRegeneration: true,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocuments.id, id))
+      .returning();
+    return updatedDocument;
+  }
+
+  // Document templates
+  async createComplianceDocumentTemplate(template: InsertComplianceDocumentTemplate): Promise<ComplianceDocumentTemplate> {
+    const [complianceTemplate] = await db.insert(complianceDocumentTemplates).values({
+      ...template,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return complianceTemplate;
+  }
+
+  async getComplianceDocumentTemplate(id: string): Promise<ComplianceDocumentTemplate | undefined> {
+    const [template] = await db.select().from(complianceDocumentTemplates).where(eq(complianceDocumentTemplates.id, id));
+    return template;
+  }
+
+  async getComplianceDocumentTemplatesByType(documentType: string): Promise<ComplianceDocumentTemplate[]> {
+    return await db.select().from(complianceDocumentTemplates)
+      .where(and(
+        eq(complianceDocumentTemplates.documentType, documentType),
+        eq(complianceDocumentTemplates.isActive, true)
+      ))
+      .orderBy(desc(complianceDocumentTemplates.isDefault), desc(complianceDocumentTemplates.rating));
+  }
+
+  async getDefaultComplianceDocumentTemplate(documentType: string): Promise<ComplianceDocumentTemplate | undefined> {
+    const [template] = await db.select().from(complianceDocumentTemplates)
+      .where(and(
+        eq(complianceDocumentTemplates.documentType, documentType),
+        eq(complianceDocumentTemplates.isDefault, true),
+        eq(complianceDocumentTemplates.isActive, true)
+      ))
+      .limit(1);
+    return template;
+  }
+
+  async getActiveComplianceDocumentTemplates(): Promise<ComplianceDocumentTemplate[]> {
+    return await db.select().from(complianceDocumentTemplates)
+      .where(eq(complianceDocumentTemplates.isActive, true))
+      .orderBy(asc(complianceDocumentTemplates.documentType), desc(complianceDocumentTemplates.isDefault));
+  }
+
+  async updateComplianceDocumentTemplate(id: string, template: Partial<InsertComplianceDocumentTemplate>): Promise<ComplianceDocumentTemplate> {
+    const [updatedTemplate] = await db
+      .update(complianceDocumentTemplates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(complianceDocumentTemplates.id, id))
+      .returning();
+    return updatedTemplate;
+  }
+
+  async deleteComplianceDocumentTemplate(id: string): Promise<void> {
+    await db.delete(complianceDocumentTemplates).where(eq(complianceDocumentTemplates.id, id));
+  }
+
+  async incrementTemplateUsage(id: string): Promise<void> {
+    await db
+      .update(complianceDocumentTemplates)
+      .set({ 
+        usageCount: sql`${complianceDocumentTemplates.usageCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocumentTemplates.id, id));
+  }
+
+  // Document audit trail
+  async createComplianceDocumentAudit(audit: InsertComplianceDocumentAudit): Promise<ComplianceDocumentAudit> {
+    const [auditRecord] = await db.insert(complianceDocumentAudit).values({
+      ...audit,
+      timestamp: new Date(),
+    }).returning();
+    return auditRecord;
+  }
+
+  async getComplianceDocumentAudit(id: string): Promise<ComplianceDocumentAudit | undefined> {
+    const [audit] = await db.select().from(complianceDocumentAudit).where(eq(complianceDocumentAudit.id, id));
+    return audit;
+  }
+
+  async getComplianceDocumentAuditsByDocument(documentId: string): Promise<ComplianceDocumentAudit[]> {
+    return await db.select().from(complianceDocumentAudit)
+      .where(eq(complianceDocumentAudit.documentId, documentId))
+      .orderBy(desc(complianceDocumentAudit.timestamp));
+  }
+
+  async getComplianceDocumentAuditsByOrganisation(organisationId: string, filters: {
+    documentId?: string;
+    action?: string;
+    actionBy?: string;
+    legalReviewRequired?: boolean;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<ComplianceDocumentAudit[]> {
+    const { documentId, action, actionBy, legalReviewRequired, fromDate, toDate, limit = 50, offset = 0 } = filters;
+
+    const conditions: any[] = [eq(complianceDocumentAudit.organisationId, organisationId)];
+    
+    if (documentId) {
+      conditions.push(eq(complianceDocumentAudit.documentId, documentId));
+    }
+    if (action) {
+      conditions.push(eq(complianceDocumentAudit.action, action));
+    }
+    if (actionBy) {
+      conditions.push(eq(complianceDocumentAudit.actionBy, actionBy));
+    }
+    if (legalReviewRequired !== undefined) {
+      conditions.push(eq(complianceDocumentAudit.legalReviewRequired, legalReviewRequired));
+    }
+    if (fromDate) {
+      conditions.push(sql`${complianceDocumentAudit.timestamp} >= ${fromDate}`);
+    }
+    if (toDate) {
+      conditions.push(sql`${complianceDocumentAudit.timestamp} <= ${toDate}`);
+    }
+
+    return await db.select().from(complianceDocumentAudit)
+      .where(and(...conditions))
+      .orderBy(desc(complianceDocumentAudit.timestamp))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getComplianceDocumentAuditsRequiringLegalReview(organisationId: string): Promise<ComplianceDocumentAudit[]> {
+    return await db.select().from(complianceDocumentAudit)
+      .where(and(
+        eq(complianceDocumentAudit.organisationId, organisationId),
+        eq(complianceDocumentAudit.legalReviewRequired, true)
+      ))
+      .orderBy(desc(complianceDocumentAudit.timestamp));
+  }
+
+  // Document publications
+  async createComplianceDocumentPublication(publication: InsertComplianceDocumentPublication): Promise<ComplianceDocumentPublication> {
+    const [publicationRecord] = await db.insert(complianceDocumentPublications).values({
+      ...publication,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return publicationRecord;
+  }
+
+  async getComplianceDocumentPublication(id: string): Promise<ComplianceDocumentPublication | undefined> {
+    const [publication] = await db.select().from(complianceDocumentPublications).where(eq(complianceDocumentPublications.id, id));
+    return publication;
+  }
+
+  async getComplianceDocumentPublicationByDocument(documentId: string): Promise<ComplianceDocumentPublication | undefined> {
+    const [publication] = await db.select().from(complianceDocumentPublications)
+      .where(eq(complianceDocumentPublications.documentId, documentId))
+      .limit(1);
+    return publication;
+  }
+
+  async getComplianceDocumentPublicationByUrl(publicUrl: string): Promise<ComplianceDocumentPublication | undefined> {
+    const [publication] = await db.select().from(complianceDocumentPublications)
+      .where(eq(complianceDocumentPublications.publicUrl, publicUrl))
+      .limit(1);
+    return publication;
+  }
+
+  async getPublishedComplianceDocumentsByOrganisation(organisationId: string): Promise<ComplianceDocumentPublication[]> {
+    return await db.select().from(complianceDocumentPublications)
+      .where(and(
+        eq(complianceDocumentPublications.organisationId, organisationId),
+        eq(complianceDocumentPublications.isActive, true)
+      ))
+      .orderBy(desc(complianceDocumentPublications.publishedAt));
+  }
+
+  async updateComplianceDocumentPublication(id: string, publication: Partial<InsertComplianceDocumentPublication>): Promise<ComplianceDocumentPublication> {
+    const [updatedPublication] = await db
+      .update(complianceDocumentPublications)
+      .set({ ...publication, updatedAt: new Date() })
+      .where(eq(complianceDocumentPublications.id, id))
+      .returning();
+    return updatedPublication;
+  }
+
+  async deleteComplianceDocumentPublication(id: string): Promise<void> {
+    await db.delete(complianceDocumentPublications).where(eq(complianceDocumentPublications.id, id));
+  }
+
+  async incrementPublicationViews(id: string): Promise<void> {
+    await db
+      .update(complianceDocumentPublications)
+      .set({ 
+        viewCount: sql`${complianceDocumentPublications.viewCount} + 1`,
+        lastAccessed: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocumentPublications.id, id));
+  }
+
+  async incrementPublicationDownloads(id: string): Promise<void> {
+    await db
+      .update(complianceDocumentPublications)
+      .set({ 
+        downloadCount: sql`${complianceDocumentPublications.downloadCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(complianceDocumentPublications.id, id));
+  }
+
+  async getPublicComplianceDocument(publicUrl: string): Promise<{ document: ComplianceDocument; publication: ComplianceDocumentPublication } | undefined> {
+    const result = await db
+      .select({
+        document: complianceDocuments,
+        publication: complianceDocumentPublications,
+      })
+      .from(complianceDocumentPublications)
+      .innerJoin(complianceDocuments, eq(complianceDocumentPublications.documentId, complianceDocuments.id))
+      .where(and(
+        eq(complianceDocumentPublications.publicUrl, publicUrl),
+        eq(complianceDocumentPublications.isPublic, true),
+        eq(complianceDocumentPublications.isActive, true),
+        eq(complianceDocuments.status, 'published')
+      ))
+      .limit(1);
+
+    return result[0] || undefined;
   }
 }
 

@@ -54,6 +54,7 @@ import { AdminUserRights } from "@/pages/gdpr/AdminUserRights";
 import RegisterOfProcessing from "@/pages/gdpr/RegisterOfProcessing";
 import BreachManagement from "@/pages/gdpr/BreachManagement";
 import InternationalTransfers from "@/pages/gdpr/InternationalTransfers";
+import ComplianceDocuments from "@/pages/gdpr/ComplianceDocuments";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -426,6 +427,15 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <InternationalTransfers />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Compliance Documents (Legal document generation and management) */}
+      <Route path="/admin/compliance-documents">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <ComplianceDocuments />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
