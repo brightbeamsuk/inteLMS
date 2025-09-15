@@ -159,6 +159,77 @@ export const breachStatusEnum = pgEnum('breach_status', ['detected', 'assessed',
 export const cookieCategoryEnum = pgEnum('cookie_category', ['strictly_necessary', 'functional', 'analytics', 'advertising']);
 export const marketingConsentTypeEnum = pgEnum('marketing_consent_type', ['email', 'sms', 'phone', 'post', 'push_notifications']);
 
+// UK GDPR Article 8 - Age Verification and Parental Consent enums
+export const ageGroupEnum = pgEnum('age_group', [
+  'under_13',        // Children under 13 (parental consent required)
+  'teen_13_16',      // Teens 13-16 (parental consent may be required based on jurisdiction)
+  'young_adult_16_18', // Young adults 16-18 (transitional protections)
+  'adult_18_plus'    // Adults 18+ (full capacity)
+]);
+
+export const ageVerificationMethodEnum = pgEnum('age_verification_method', [
+  'self_declaration',    // User self-declares age (least reliable)
+  'date_of_birth',      // Date of birth verification
+  'government_id',      // Government ID verification
+  'credit_card',        // Credit card verification (age estimation)
+  'third_party_service', // Third-party age verification service
+  'parental_declaration', // Parent declares child's age
+  'school_enrollment',   // School enrollment verification
+  'guardian_attestation' // Legal guardian formal attestation
+]);
+
+export const parentalConsentStatusEnum = pgEnum('parental_consent_status', [
+  'required',           // Parental consent is required but not yet obtained
+  'pending',           // Consent request sent to parent, awaiting response
+  'granted',           // Parent has granted consent with valid evidence
+  'denied',            // Parent has explicitly denied consent
+  'withdrawn',         // Previously granted consent has been withdrawn
+  'expired',           // Consent has expired and needs renewal
+  'invalid',           // Consent found to be invalid or fraudulent
+  'disputed'           // Consent is under dispute or challenge
+]);
+
+export const parentalRelationshipEnum = pgEnum('parental_relationship', [
+  'mother',            // Biological or adoptive mother
+  'father',            // Biological or adoptive father
+  'legal_guardian',    // Court-appointed legal guardian
+  'step_parent',       // Step-parent with parental responsibility
+  'grandparent',       // Grandparent with custody
+  'foster_parent',     // Foster parent with responsibility
+  'other_relative',    // Other family member with custody
+  'care_provider',     // Professional care provider
+  'education_authority' // Educational institution authority
+]);
+
+export const consentVerificationMethodEnum = pgEnum('consent_verification_method', [
+  'email_verification',     // Email-based verification (basic)
+  'sms_verification',       // SMS-based verification
+  'phone_call_verification', // Phone call verification
+  'video_call_verification', // Video call with parent
+  'government_id_verification', // Government ID document verification
+  'utility_bill_verification', // Utility bill address verification
+  'bank_verification',      // Bank account verification
+  'digital_signature',     // Cryptographic digital signature
+  'in_person_verification', // In-person verification
+  'notarized_consent'      // Notarized consent document
+]);
+
+export const childProtectionLevelEnum = pgEnum('child_protection_level', [
+  'minimal',           // Basic UK GDPR protections
+  'standard',          // Standard child protection measures
+  'enhanced',          // Enhanced protections for vulnerable children
+  'maximum'           // Maximum protection (restricted processing)
+]);
+
+export const familyAccountStatusEnum = pgEnum('family_account_status', [
+  'active',           // Family account is active and linked
+  'pending_verification', // Awaiting parental verification
+  'suspended',        // Temporarily suspended due to issues
+  'disputed',         // Under dispute or investigation
+  'dissolved',        // Family link dissolved (child reached majority)
+  'archived'          // Archived for historical purposes
+]);
+
 // PECR Marketing Communications enums
 export const communicationTypeEnum = pgEnum('communication_type', [
   'service_essential',     // Essential service communications (PECR exempt)
@@ -1418,26 +1489,339 @@ export const gdprAuditLogs = pgTable("gdpr_audit_logs", {
   index("idx_gdpr_audit_logs_timestamp").on(table.timestamp),
 ]);
 
+// Enhanced Age Verification table (UK GDPR Article 8 compliance)
 export const ageVerifications = pgTable("age_verifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().unique(),
   organisationId: varchar("organisation_id").notNull(),
+  
+  // Age verification details
   dateOfBirth: timestamp("date_of_birth"),
+  ageGroup: ageGroupEnum("age_group"),
+  estimatedAge: integer("estimated_age"), // For cases where exact age is estimated
   ageVerified: boolean("age_verified").notNull().default(false),
+  verificationMethod: ageVerificationMethodEnum("verification_method").notNull().default('self_declaration'),
+  verificationScore: integer("verification_score").default(0), // Confidence score 0-100
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: varchar("verified_by"), // Admin or system that verified
+  
+  // Parental consent tracking (legacy fields for compatibility)
   parentalConsentRequired: boolean("parental_consent_required").notNull().default(false),
   parentalConsentGiven: boolean("parental_consent_given").notNull().default(false),
   parentEmail: varchar("parent_email"),
   parentName: varchar("parent_name"),
-  verificationMethod: varchar("verification_method").notNull(),
-  verifiedAt: timestamp("verified_at"),
+  
+  // Enhanced child protection
+  protectionLevel: childProtectionLevelEnum("protection_level").notNull().default('standard'),
+  restrictedProcessing: boolean("restricted_processing").notNull().default(false),
+  marketingRestricted: boolean("marketing_restricted").notNull().default(true),
+  profilingRestricted: boolean("profiling_restricted").notNull().default(true),
+  
+  // Documentation and evidence
+  verificationDocuments: text("verification_documents").array().default(sql`ARRAY[]::text[]`),
+  evidenceStorageId: varchar("evidence_storage_id"), // Reference to object storage
+  parentalConsentDocumentId: varchar("parental_consent_document_id"),
+  
+  // Compliance and audit
+  legalBasis: processingLawfulBasisEnum("legal_basis").array().default(sql`ARRAY[]::processing_lawful_basis[]`),
+  specialCategoryJustification: text("special_category_justification"),
+  dataMinimizationApplied: boolean("data_minimization_applied").notNull().default(true),
+  
+  // Lifecycle management
+  consentExpiryDate: timestamp("consent_expiry_date"),
+  nextVerificationDue: timestamp("next_verification_due"),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  reviewedBy: varchar("reviewed_by"),
+  
+  // Status and flags
+  isActive: boolean("is_active").notNull().default(true),
+  flags: text("flags").array().default(sql`ARRAY[]::text[]`), // For special considerations
+  notes: text("notes"),
   metadata: jsonb("metadata").notNull().default('{}'),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_age_verifications_user_id").on(table.userId),
   index("idx_age_verifications_organisation_id").on(table.organisationId),
   index("idx_age_verifications_age_verified").on(table.ageVerified),
+  index("idx_age_verifications_age_group").on(table.ageGroup),
   index("idx_age_verifications_parental_consent_required").on(table.parentalConsentRequired),
+  index("idx_age_verifications_protection_level").on(table.protectionLevel),
+  index("idx_age_verifications_consent_expiry").on(table.consentExpiryDate),
+  index("idx_age_verifications_verification_method").on(table.verificationMethod),
+]);
+
+// Parental Consent Records table (UK GDPR Article 8 compliance)
+export const parentalConsentRecords = pgTable("parental_consent_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  childUserId: varchar("child_user_id").notNull(),
+  parentUserId: varchar("parent_user_id"), // If parent has an account
+  
+  // Parental information
+  parentName: varchar("parent_name").notNull(),
+  parentEmail: varchar("parent_email").notNull(),
+  parentPhone: varchar("parent_phone"),
+  relationship: parentalRelationshipEnum("relationship").notNull(),
+  
+  // Consent details
+  consentStatus: parentalConsentStatusEnum("consent_status").notNull().default('required'),
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  consentExpiryDate: timestamp("consent_expiry_date"),
+  
+  // Verification and evidence
+  verificationMethod: consentVerificationMethodEnum("verification_method").notNull().default('email_verification'),
+  verificationToken: varchar("verification_token"), // For email/SMS verification
+  verificationTokenExpiry: timestamp("verification_token_expiry"),
+  verificationAttempts: integer("verification_attempts").default(0),
+  verificationCompletedAt: timestamp("verification_completed_at"),
+  
+  // Evidence collection
+  consentEvidence: jsonb("consent_evidence").notNull().default('{}'),
+  evidenceDocuments: text("evidence_documents").array().default(sql`ARRAY[]::text[]`),
+  digitalSignature: text("digital_signature"),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  geolocation: jsonb("geolocation"),
+  
+  // Processing details
+  purposesConsented: text("purposes_consented").array().notNull().default(sql`ARRAY[]::text[]`),
+  dataTypesAuthorized: dataCategoryEnum("data_types_authorized").array().default(sql`ARRAY[]::data_category[]`),
+  processingLimitations: text("processing_limitations").array().default(sql`ARRAY[]::text[]`),
+  retentionPeriodMonths: integer("retention_period_months").default(12),
+  
+  // Contact and communication preferences
+  preferredContactMethod: communicationTypeEnum("preferred_contact_method").default('service_essential'),
+  communicationLanguage: varchar("communication_language").default('en-GB'),
+  notificationFrequency: communicationFrequencyEnum("notification_frequency").default('as_needed'),
+  
+  // Audit and compliance
+  consentSourceDetails: jsonb("consent_source_details").notNull().default('{}'),
+  legalBasisJustification: text("legal_basis_justification"),
+  specialCategoryConsent: boolean("special_category_consent").default(false),
+  internationalTransferConsent: boolean("international_transfer_consent").default(false),
+  
+  // Review and renewal
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  nextReviewDue: timestamp("next_review_due"),
+  renewalNotificationSent: boolean("renewal_notification_sent").default(false),
+  
+  // Administrative
+  grantedBy: varchar("granted_by"), // Admin who processed the consent
+  withdrawnBy: varchar("withdrawn_by"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  internalReference: varchar("internal_reference"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_parental_consent_organisation_id").on(table.organisationId),
+  index("idx_parental_consent_child_user_id").on(table.childUserId),
+  index("idx_parental_consent_parent_user_id").on(table.parentUserId),
+  index("idx_parental_consent_parent_email").on(table.parentEmail),
+  index("idx_parental_consent_status").on(table.consentStatus),
+  index("idx_parental_consent_granted_at").on(table.consentGrantedAt),
+  index("idx_parental_consent_expiry_date").on(table.consentExpiryDate),
+  index("idx_parental_consent_verification_method").on(table.verificationMethod),
+  index("idx_parental_consent_next_review_due").on(table.nextReviewDue),
+]);
+
+// Family Account Linking table (UK GDPR Article 8 compliance)
+export const familyAccounts = pgTable("family_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Family identification
+  familyName: varchar("family_name").notNull(),
+  primaryParentUserId: varchar("primary_parent_user_id").notNull(),
+  secondaryParentUserId: varchar("secondary_parent_user_id"), // Optional second parent/guardian
+  
+  // Account management
+  accountStatus: familyAccountStatusEnum("account_status").notNull().default('pending_verification'),
+  accountType: varchar("account_type").notNull().default('family'), // family, guardian, institution
+  
+  // Verification details
+  primaryParentVerified: boolean("primary_parent_verified").notNull().default(false),
+  secondaryParentVerified: boolean("secondary_parent_verified").default(false),
+  verificationLevel: consentVerificationMethodEnum("verification_level").notNull().default('email_verification'),
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: varchar("verified_by"),
+  
+  // Family settings and preferences
+  childProtectionLevel: childProtectionLevelEnum("child_protection_level").notNull().default('standard'),
+  communicationPreferences: jsonb("communication_preferences").notNull().default('{}'),
+  notificationSettings: jsonb("notification_settings").notNull().default('{}'),
+  
+  // Data processing settings
+  sharedDataPolicy: jsonb("shared_data_policy").notNull().default('{}'),
+  consentSharingAllowed: boolean("consent_sharing_allowed").default(false),
+  crossChildDataSharing: boolean("cross_child_data_sharing").default(false),
+  
+  // Contact information
+  primaryContactEmail: varchar("primary_contact_email").notNull(),
+  alternateContactEmail: varchar("alternate_contact_email"),
+  contactPhone: varchar("contact_phone"),
+  emergencyContact: jsonb("emergency_contact"),
+  
+  // Address and location
+  homeAddress: jsonb("home_address"),
+  jurisdiction: varchar("jurisdiction").default('GB'), // Legal jurisdiction
+  
+  // Lifecycle management
+  activatedAt: timestamp("activated_at"),
+  suspendedAt: timestamp("suspended_at"),
+  suspensionReason: text("suspension_reason"),
+  dissolvedAt: timestamp("dissolved_at"),
+  dissolutionReason: text("dissolution_reason"),
+  
+  // Administrative
+  isActive: boolean("is_active").notNull().default(true),
+  flags: text("flags").array().default(sql`ARRAY[]::text[]`),
+  notes: text("notes"),
+  internalReference: varchar("internal_reference"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_accounts_organisation_id").on(table.organisationId),
+  index("idx_family_accounts_primary_parent").on(table.primaryParentUserId),
+  index("idx_family_accounts_secondary_parent").on(table.secondaryParentUserId),
+  index("idx_family_accounts_status").on(table.accountStatus),
+  index("idx_family_accounts_primary_contact_email").on(table.primaryContactEmail),
+  index("idx_family_accounts_protection_level").on(table.childProtectionLevel),
+  index("idx_family_accounts_activated_at").on(table.activatedAt),
+]);
+
+// Child Account Links table (many-to-many relationship between family accounts and child users)
+export const childAccountLinks = pgTable("child_account_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  familyAccountId: varchar("family_account_id").notNull(),
+  childUserId: varchar("child_user_id").notNull(),
+  
+  // Link details
+  linkType: varchar("link_type").notNull().default('child'), // child, ward, student
+  relationship: parentalRelationshipEnum("relationship").notNull(),
+  custodyType: varchar("custody_type"), // full, shared, limited, temporary
+  parentalResponsibility: boolean("parental_responsibility").notNull().default(true),
+  
+  // Consent specific to this child
+  parentalConsentRecordId: varchar("parental_consent_record_id"),
+  consentStatus: parentalConsentStatusEnum("consent_status").notNull().default('required'),
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentExpiryDate: timestamp("consent_expiry_date"),
+  
+  // Child-specific settings
+  protectionLevel: childProtectionLevelEnum("protection_level").notNull().default('standard'),
+  dataProcessingRestrictions: text("data_processing_restrictions").array().default(sql`ARRAY[]::text[]`),
+  allowedActivities: text("allowed_activities").array().default(sql`ARRAY[]::text[]`),
+  prohibitedActivities: text("prohibited_activities").array().default(sql`ARRAY[]::text[]`),
+  
+  // Age transition planning
+  ageTransitionPlanned: boolean("age_transition_planned").default(false),
+  transitionDate: timestamp("transition_date"), // When child will reach age of consent
+  transitionNotificationSent: boolean("transition_notification_sent").default(false),
+  
+  // Supervision and monitoring
+  supervisionLevel: varchar("supervision_level").default('standard'), // standard, enhanced, minimal
+  monitoringEnabled: boolean("monitoring_enabled").default(false),
+  lastSupervisionCheck: timestamp("last_supervision_check"),
+  
+  // Link status and lifecycle
+  linkStatus: varchar("link_status").notNull().default('active'), // active, suspended, dissolved, transferred
+  linkedAt: timestamp("linked_at").defaultNow(),
+  suspendedAt: timestamp("suspended_at"),
+  suspensionReason: text("suspension_reason"),
+  dissolvedAt: timestamp("dissolved_at"),
+  dissolutionReason: text("dissolution_reason"),
+  
+  // Administrative
+  linkedBy: varchar("linked_by"), // Admin who created the link
+  lastModifiedBy: varchar("last_modified_by"),
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_child_account_links_organisation_id").on(table.organisationId),
+  index("idx_child_account_links_family_account_id").on(table.familyAccountId),
+  index("idx_child_account_links_child_user_id").on(table.childUserId),
+  index("idx_child_account_links_consent_status").on(table.consentStatus),
+  index("idx_child_account_links_consent_expiry").on(table.consentExpiryDate),
+  index("idx_child_account_links_protection_level").on(table.protectionLevel),
+  index("idx_child_account_links_transition_date").on(table.transitionDate),
+  index("idx_child_account_links_link_status").on(table.linkStatus),
+  unique("unique_family_child_link").on(table.familyAccountId, table.childUserId),
+]);
+
+// Child Protection Settings table (organization-level child protection policies)
+export const childProtectionSettings = pgTable("child_protection_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull().unique(),
+  
+  // Age verification policies
+  ageVerificationRequired: boolean("age_verification_required").notNull().default(true),
+  minimumVerificationMethod: ageVerificationMethodEnum("minimum_verification_method").notNull().default('date_of_birth'),
+  requiredVerificationScore: integer("required_verification_score").default(70),
+  
+  // Parental consent policies
+  parentalConsentRequired: boolean("parental_consent_required").notNull().default(true),
+  minimumConsentMethod: consentVerificationMethodEnum("minimum_consent_method").notNull().default('email_verification'),
+  consentExpiryMonths: integer("consent_expiry_months").default(12),
+  consentRenewalReminder: boolean("consent_renewal_reminder").default(true),
+  reminderDaysBefore: integer("reminder_days_before").default(30),
+  
+  // Data processing restrictions for children
+  childDataMinimization: boolean("child_data_minimization").notNull().default(true),
+  prohibitProfiling: boolean("prohibit_profiling").notNull().default(true),
+  prohibitMarketing: boolean("prohibit_marketing").notNull().default(true),
+  prohibitDataSharing: boolean("prohibit_data_sharing").notNull().default(true),
+  restrictInternationalTransfers: boolean("restrict_international_transfers").notNull().default(true),
+  
+  // Retention and deletion policies for child data
+  childDataRetentionMonths: integer("child_data_retention_months").default(12),
+  automaticDeletionEnabled: boolean("automatic_deletion_enabled").default(true),
+  parentsCanRequestDeletion: boolean("parents_can_request_deletion").default(true),
+  transitionToAdultConsent: boolean("transition_to_adult_consent").default(true),
+  
+  // Communication and notification settings
+  parentalNotificationsEnabled: boolean("parental_notifications_enabled").default(true),
+  notifyOnDataCollection: boolean("notify_on_data_collection").default(true),
+  notifyOnProcessingChanges: boolean("notify_on_processing_changes").default(true),
+  notifyOnBreaches: boolean("notify_on_breaches").default(true),
+  
+  // Special category data handling
+  specialCategoryDataAllowed: boolean("special_category_data_allowed").default(false),
+  healthDataRestrictions: jsonb("health_data_restrictions").default('{}'),
+  educationalRecordsPolicy: jsonb("educational_records_policy").default('{}'),
+  
+  // Platform features and restrictions
+  chatFeaturesRestricted: boolean("chat_features_restricted").default(true),
+  socialFeaturesRestricted: boolean("social_features_restricted").default(true),
+  publicProfileProhibited: boolean("public_profile_prohibited").default(true),
+  contactInformationHidden: boolean("contact_information_hidden").default(true),
+  
+  // Compliance and reporting
+  reportingRequired: boolean("reporting_required").default(true),
+  auditFrequencyMonths: integer("audit_frequency_months").default(6),
+  complianceOfficerRequired: boolean("compliance_officer_required").default(false),
+  designatedContactRequired: boolean("designated_contact_required").default(true),
+  
+  // Administrative
+  isActive: boolean("is_active").notNull().default(true),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  lastReviewedBy: varchar("last_reviewed_by"),
+  nextReviewDue: timestamp("next_review_due"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_child_protection_settings_organisation_id").on(table.organisationId),
+  index("idx_child_protection_settings_last_reviewed").on(table.lastReviewedAt),
+  index("idx_child_protection_settings_next_review_due").on(table.nextReviewDue),
 ]);
 
 export const cookieInventory = pgTable("cookie_inventory", {
@@ -3175,6 +3559,31 @@ export const insertAgeVerificationSchema = createInsertSchema(ageVerifications).
   updatedAt: true,
 });
 
+// UK GDPR Article 8 - Parental Consent insert schemas
+export const insertParentalConsentRecordSchema = createInsertSchema(parentalConsentRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFamilyAccountSchema = createInsertSchema(familyAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertChildAccountLinkSchema = createInsertSchema(childAccountLinks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertChildProtectionSettingsSchema = createInsertSchema(childProtectionSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertCookieInventorySchema = createInsertSchema(cookieInventory).omit({
   id: true,
   createdAt: true,
@@ -3416,6 +3825,19 @@ export type GdprAuditLog = typeof gdprAuditLogs.$inferSelect;
 
 export type InsertAgeVerification = z.infer<typeof insertAgeVerificationSchema>;
 export type AgeVerification = typeof ageVerifications.$inferSelect;
+
+// UK GDPR Article 8 - Parental Consent types
+export type InsertParentalConsentRecord = z.infer<typeof insertParentalConsentRecordSchema>;
+export type ParentalConsentRecord = typeof parentalConsentRecords.$inferSelect;
+
+export type InsertFamilyAccount = z.infer<typeof insertFamilyAccountSchema>;
+export type FamilyAccount = typeof familyAccounts.$inferSelect;
+
+export type InsertChildAccountLink = z.infer<typeof insertChildAccountLinkSchema>;
+export type ChildAccountLink = typeof childAccountLinks.$inferSelect;
+
+export type InsertChildProtectionSettings = z.infer<typeof insertChildProtectionSettingsSchema>;
+export type ChildProtectionSettings = typeof childProtectionSettings.$inferSelect;
 
 export type InsertCookieInventory = z.infer<typeof insertCookieInventorySchema>;
 export type CookieInventory = typeof cookieInventory.$inferSelect;

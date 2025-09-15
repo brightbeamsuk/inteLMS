@@ -38,6 +38,8 @@ import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersion } from "./config/gdpr";
 import { ComplianceDocumentGenerationService } from "./services/ComplianceDocumentGenerationService";
+import { ageVerificationService } from "./services/AgeVerificationService";
+import { parentalConsentService } from "./services/ParentalConsentService";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -6903,6 +6905,616 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching export job:", error);
       res.status(500).json({ message: "Failed to fetch export job" });
+    }
+  });
+
+  // ===== UK GDPR ARTICLE 8 - AGE VERIFICATION & PARENTAL CONSENT ROUTES =====
+  // Comprehensive child protection and parental consent management for UK GDPR compliance
+
+  // Age Verification Routes
+
+  // Create age verification for user
+  app.post('/api/gdpr/age-verification', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const verificationSchema = z.object({
+        userId: z.string().min(1),
+        dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+        verificationMethod: z.enum(['self_declaration', 'document_verification', 'credit_check', 'parental_verification']),
+        evidenceType: z.enum(['passport', 'drivers_license', 'birth_certificate', 'school_record', 'parent_declaration']).optional(),
+        evidenceData: z.record(z.any()).optional(),
+        parentalConsentRequired: z.boolean().optional()
+      });
+
+      const requestData = verificationSchema.parse(req.body);
+
+      // Authorization check - admins can verify any user, users can only verify themselves
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin' && requestData.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const verification = await ageVerificationService.createAgeVerification({
+        ...requestData,
+        organisationId: currentUser.organisationId,
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: requestData.userId,
+        adminId: currentUser.role === 'admin' || currentUser.role === 'superadmin' ? currentUser.id : undefined,
+        action: 'age_verification_created',
+        resource: 'age_verification' as any,
+        resourceId: verification.id,
+        details: {
+          verificationMethod: requestData.verificationMethod,
+          ageGroup: verification.ageGroup,
+          parentalConsentRequired: verification.parentalConsentRequired
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(verification);
+    } catch (error: any) {
+      console.error("Error creating age verification:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create age verification" });
+    }
+  });
+
+  // Get age verification for user
+  app.get('/api/gdpr/age-verification/:userId', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const userId = req.params.userId;
+
+      // Authorization check
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin' && userId !== currentUser.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const verification = await ageVerificationService.determineAgeGroup('1990-01-01'); // This will be replaced with actual logic
+      const storedVerification = await storage.getAgeVerificationByUser(userId);
+
+      if (!storedVerification) {
+        return res.status(404).json({ message: "Age verification not found" });
+      }
+
+      // Organization scoping
+      if (storedVerification.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - verification outside your organization" });
+      }
+
+      res.json(storedVerification);
+    } catch (error: any) {
+      console.error("Error fetching age verification:", error);
+      res.status(500).json({ message: "Failed to fetch age verification" });
+    }
+  });
+
+  // Get all age verifications for organization (admin only)
+  app.get('/api/gdpr/age-verifications', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const verifications = await storage.getAgeVerificationsByOrganisation(organisationId);
+
+      res.json(verifications);
+    } catch (error: any) {
+      console.error("Error fetching age verifications:", error);
+      res.status(500).json({ message: "Failed to fetch age verifications" });
+    }
+  });
+
+  // Parental Consent Routes
+
+  // Create parental consent request
+  app.post('/api/gdpr/parental-consent', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const consentSchema = z.object({
+        childUserId: z.string().min(1),
+        parentEmail: z.string().email(),
+        parentName: z.string().min(1),
+        parentPhoneNumber: z.string().optional(),
+        relationshipToChild: z.enum(['parent', 'guardian', 'legal_representative']),
+        consentMechanism: z.enum(['email_verification', 'video_call', 'document_verification', 'payment_card_verification']),
+        consentTypes: z.array(z.string()).min(1),
+        consentEvidence: z.record(z.any()).optional()
+      });
+
+      const requestData = consentSchema.parse(req.body);
+
+      // Only admins can create parental consent requests for now
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const consentRecord = await ageVerificationService.createParentalConsentRecord({
+        ...requestData,
+        organisationId: currentUser.organisationId,
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: requestData.childUserId,
+        adminId: currentUser.id,
+        action: 'parental_consent_requested',
+        resource: 'parental_consent' as any,
+        resourceId: consentRecord.id,
+        details: {
+          parentEmail: requestData.parentEmail,
+          consentMechanism: requestData.consentMechanism,
+          consentTypes: requestData.consentTypes
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(consentRecord);
+    } catch (error: any) {
+      console.error("Error creating parental consent request:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create parental consent request" });
+    }
+  });
+
+  // Initiate parental consent verification
+  app.post('/api/gdpr/parental-consent/:id/verify', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only admins can initiate verification
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const consentId = req.params.id;
+      const { verificationMethod } = req.body;
+
+      if (!verificationMethod) {
+        return res.status(400).json({ message: "Verification method is required" });
+      }
+
+      const result = await parentalConsentService.initiateConsentVerification(
+        consentId,
+        verificationMethod,
+        currentUser.id
+      );
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'parental_verification_initiated',
+        resource: 'parental_consent' as any,
+        resourceId: consentId,
+        details: {
+          verificationMethod,
+          verificationId: result.verificationId
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error initiating parental consent verification:", error);
+      res.status(500).json({ message: "Failed to initiate verification" });
+    }
+  });
+
+  // Grant parental consent after verification
+  app.post('/api/gdpr/parental-consent/:id/grant', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only admins can grant consent
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const consentId = req.params.id;
+      const { verificationEvidence } = req.body;
+
+      const grantedConsent = await ageVerificationService.grantParentalConsent(
+        consentId,
+        currentUser.id,
+        verificationEvidence
+      );
+
+      res.json(grantedConsent);
+    } catch (error: any) {
+      console.error("Error granting parental consent:", error);
+      res.status(500).json({ message: "Failed to grant parental consent" });
+    }
+  });
+
+  // Withdraw parental consent
+  app.post('/api/gdpr/parental-consent/:id/withdraw', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only admins can process withdrawals
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const consentId = req.params.id;
+      const { reason, withdrawalMethod, parentIdentityVerified, withdrawalEvidence } = req.body;
+
+      const withdrawnConsent = await parentalConsentService.withdrawParentalConsent({
+        consentRecordId: consentId,
+        withdrawalMethod: withdrawalMethod || 'email',
+        withdrawalReason: reason,
+        parentIdentityVerified: parentIdentityVerified || false,
+        withdrawalEvidence
+      }, currentUser.id);
+
+      res.json(withdrawnConsent);
+    } catch (error: any) {
+      console.error("Error withdrawing parental consent:", error);
+      res.status(500).json({ message: "Failed to withdraw parental consent" });
+    }
+  });
+
+  // Get parental consent records for organization
+  app.get('/api/gdpr/parental-consents', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const status = req.query.status as string;
+
+      let consents;
+      if (status) {
+        consents = await storage.getParentalConsentRecordsByStatus(organisationId, status);
+      } else {
+        consents = await storage.getParentalConsentRecordsByOrganisation(organisationId);
+      }
+
+      res.json(consents);
+    } catch (error: any) {
+      console.error("Error fetching parental consents:", error);
+      res.status(500).json({ message: "Failed to fetch parental consents" });
+    }
+  });
+
+  // Family Account Management Routes
+
+  // Create family account
+  app.post('/api/gdpr/family-accounts', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only admins can create family accounts
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const {
+        primaryParentUserId,
+        primaryContactEmail,
+        familyName,
+        secondaryParentUserId,
+        alternateContactEmail
+      } = req.body;
+
+      const familyAccount = await ageVerificationService.createFamilyAccount(
+        currentUser.organisationId,
+        primaryParentUserId,
+        primaryContactEmail,
+        familyName,
+        secondaryParentUserId,
+        alternateContactEmail
+      );
+
+      res.status(201).json(familyAccount);
+    } catch (error: any) {
+      console.error("Error creating family account:", error);
+      res.status(500).json({ message: "Failed to create family account" });
+    }
+  });
+
+  // Link child to family account
+  app.post('/api/gdpr/family-accounts/:id/children', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only admins can link children
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const familyAccountId = req.params.id;
+      const { childUserId } = req.body;
+
+      const link = await ageVerificationService.linkChildToFamily(
+        familyAccountId,
+        childUserId,
+        currentUser.organisationId,
+        currentUser.id
+      );
+
+      res.status(201).json(link);
+    } catch (error: any) {
+      console.error("Error linking child to family:", error);
+      res.status(500).json({ message: "Failed to link child to family" });
+    }
+  });
+
+  // Child Protection Settings Routes
+
+  // Get child protection settings for organization
+  app.get('/api/gdpr/child-protection-settings', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const settings = await ageVerificationService.getChildProtectionSettings(organisationId);
+
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error fetching child protection settings:", error);
+      res.status(500).json({ message: "Failed to fetch child protection settings" });
+    }
+  });
+
+  // Update child protection settings
+  app.put('/api/gdpr/child-protection-settings', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const settings = await ageVerificationService.updateChildProtectionSettings(
+        organisationId,
+        req.body,
+        currentUser.id
+      );
+
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error updating child protection settings:", error);
+      res.status(500).json({ message: "Failed to update child protection settings" });
+    }
+  });
+
+  // Compliance Monitoring Routes
+
+  // Get parental consent metrics
+  app.get('/api/gdpr/parental-consent/metrics', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const metrics = await parentalConsentService.getConsentMetrics(organisationId);
+
+      res.json(metrics);
+    } catch (error: any) {
+      console.error("Error fetching consent metrics:", error);
+      res.status(500).json({ message: "Failed to fetch consent metrics" });
+    }
+  });
+
+  // Get children approaching age transition
+  app.get('/api/gdpr/age-transitions', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      const daysFromNow = parseInt(req.query.days as string) || 30;
+
+      const children = await ageVerificationService.getChildrenApproachingTransition(organisationId, daysFromNow);
+
+      res.json(children);
+    } catch (error: any) {
+      console.error("Error fetching age transitions:", error);
+      res.status(500).json({ message: "Failed to fetch age transitions" });
+    }
+  });
+
+  // Process age transition for child
+  app.post('/api/gdpr/age-transitions/:childUserId/process', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin access
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const childUserId = req.params.childUserId;
+
+      await ageVerificationService.processAgeTransition(childUserId, currentUser.id);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: childUserId,
+        adminId: currentUser.id,
+        action: 'age_transition_processed',
+        resource: 'age_verification' as any,
+        resourceId: childUserId,
+        details: {
+          transitionedBy: currentUser.id
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({ message: "Age transition processed successfully" });
+    } catch (error: any) {
+      console.error("Error processing age transition:", error);
+      res.status(500).json({ message: "Failed to process age transition" });
     }
   });
 

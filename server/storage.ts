@@ -40,6 +40,11 @@ import {
   retentionSchedules,
   gdprAuditLogs,
   ageVerifications,
+  // UK GDPR Article 8 - Parental Consent tables
+  parentalConsentRecords,
+  familyAccounts,
+  childAccountLinks,
+  childProtectionSettings,
   cookieInventory,
   // Enhanced data retention tables
   dataRetentionPolicies,
@@ -141,6 +146,15 @@ import {
   type InsertGdprAuditLog,
   type AgeVerification,
   type InsertAgeVerification,
+  // UK GDPR Article 8 - Parental Consent types
+  type ParentalConsentRecord,
+  type InsertParentalConsentRecord,
+  type FamilyAccount,
+  type InsertFamilyAccount,
+  type ChildAccountLink,
+  type InsertChildAccountLink,
+  type ChildProtectionSettings,
+  type InsertChildProtectionSettings,
   type CookieInventory,
   type InsertCookieInventory,
   // Enhanced data retention types
@@ -596,6 +610,50 @@ export interface IStorage {
   updateAgeVerification(id: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification>;
   upsertAgeVerification(userId: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification>;
   deleteAgeVerification(id: string): Promise<void>;
+  
+  // UK GDPR Article 8 - Parental Consent Records
+  createParentalConsentRecord(record: InsertParentalConsentRecord): Promise<ParentalConsentRecord>;
+  getParentalConsentRecord(id: string): Promise<ParentalConsentRecord | undefined>;
+  getParentalConsentRecordByChild(childUserId: string): Promise<ParentalConsentRecord | undefined>;
+  getParentalConsentRecordsByParent(parentEmail: string): Promise<ParentalConsentRecord[]>;
+  getParentalConsentRecordsByOrganisation(organisationId: string): Promise<ParentalConsentRecord[]>;
+  updateParentalConsentRecord(id: string, record: Partial<InsertParentalConsentRecord>): Promise<ParentalConsentRecord>;
+  deleteParentalConsentRecord(id: string): Promise<void>;
+  getParentalConsentRecordsByStatus(organisationId: string, status: string): Promise<ParentalConsentRecord[]>;
+  getExpiringParentalConsents(organisationId: string, daysFromNow: number): Promise<ParentalConsentRecord[]>;
+  updateConsentStatus(id: string, status: string, adminId?: string): Promise<ParentalConsentRecord>;
+  
+  // Family Accounts
+  createFamilyAccount(account: InsertFamilyAccount): Promise<FamilyAccount>;
+  getFamilyAccount(id: string): Promise<FamilyAccount | undefined>;
+  getFamilyAccountByParent(parentUserId: string): Promise<FamilyAccount | undefined>;
+  getFamilyAccountByEmail(email: string): Promise<FamilyAccount | undefined>;
+  getFamilyAccountsByOrganisation(organisationId: string): Promise<FamilyAccount[]>;
+  updateFamilyAccount(id: string, account: Partial<InsertFamilyAccount>): Promise<FamilyAccount>;
+  deleteFamilyAccount(id: string): Promise<void>;
+  getFamilyAccountsByStatus(organisationId: string, status: string): Promise<FamilyAccount[]>;
+  activateFamilyAccount(id: string, activatedBy: string): Promise<FamilyAccount>;
+  suspendFamilyAccount(id: string, reason: string, suspendedBy: string): Promise<FamilyAccount>;
+  
+  // Child Account Links
+  createChildAccountLink(link: InsertChildAccountLink): Promise<ChildAccountLink>;
+  getChildAccountLink(id: string): Promise<ChildAccountLink | undefined>;
+  getChildAccountLinkByChild(childUserId: string): Promise<ChildAccountLink | undefined>;
+  getChildAccountLinksByFamily(familyAccountId: string): Promise<ChildAccountLink[]>;
+  getChildAccountLinksByOrganisation(organisationId: string): Promise<ChildAccountLink[]>;
+  updateChildAccountLink(id: string, link: Partial<InsertChildAccountLink>): Promise<ChildAccountLink>;
+  deleteChildAccountLink(id: string): Promise<void>;
+  getChildAccountLinksByStatus(organisationId: string, status: string): Promise<ChildAccountLink[]>;
+  getChildrenTransitioningToAdult(organisationId: string, daysFromNow: number): Promise<ChildAccountLink[]>;
+  transitionChildToAdult(childUserId: string, transitionedBy: string): Promise<void>;
+  
+  // Child Protection Settings
+  createChildProtectionSettings(settings: InsertChildProtectionSettings): Promise<ChildProtectionSettings>;
+  getChildProtectionSettings(id: string): Promise<ChildProtectionSettings | undefined>;
+  getChildProtectionSettingsByOrganisation(organisationId: string): Promise<ChildProtectionSettings | undefined>;
+  updateChildProtectionSettings(id: string, settings: Partial<InsertChildProtectionSettings>): Promise<ChildProtectionSettings>;
+  deleteChildProtectionSettings(id: string): Promise<void>;
+  upsertChildProtectionSettings(organisationId: string, settings: Partial<InsertChildProtectionSettings>): Promise<ChildProtectionSettings>;
   
   // Cookie inventory
   createCookieInventory(cookieInventory: InsertCookieInventory): Promise<CookieInventory>;
@@ -6101,6 +6159,439 @@ export class DatabaseStorage implements IStorage {
       icoCompliance,
       subjectNotificationCompliance
     };
+  }
+
+  // ===== AGE VERIFICATION OPERATIONS (UK GDPR Article 8) =====
+
+  async createAgeVerification(ageVerification: InsertAgeVerification): Promise<AgeVerification> {
+    const [result] = await db.insert(ageVerifications).values(ageVerification).returning();
+    return result;
+  }
+
+  async getAgeVerification(id: string): Promise<AgeVerification | undefined> {
+    const [verification] = await db
+      .select()
+      .from(ageVerifications)
+      .where(eq(ageVerifications.id, id));
+    return verification;
+  }
+
+  async getAgeVerificationByUser(userId: string): Promise<AgeVerification | undefined> {
+    const [verification] = await db
+      .select()
+      .from(ageVerifications)
+      .where(eq(ageVerifications.userId, userId));
+    return verification;
+  }
+
+  async getAgeVerificationsByOrganisation(organisationId: string): Promise<AgeVerification[]> {
+    return await db
+      .select()
+      .from(ageVerifications)
+      .where(eq(ageVerifications.organisationId, organisationId))
+      .orderBy(desc(ageVerifications.createdAt));
+  }
+
+  async updateAgeVerification(id: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification> {
+    const [result] = await db
+      .update(ageVerifications)
+      .set({ ...ageVerification, updatedAt: new Date() })
+      .where(eq(ageVerifications.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Age verification not found');
+    }
+
+    return result;
+  }
+
+  async upsertAgeVerification(userId: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification> {
+    const existing = await this.getAgeVerificationByUser(userId);
+    
+    if (existing) {
+      return await this.updateAgeVerification(existing.id, ageVerification);
+    } else {
+      return await this.createAgeVerification({ ...ageVerification, userId } as InsertAgeVerification);
+    }
+  }
+
+  async deleteAgeVerification(id: string): Promise<void> {
+    await db.delete(ageVerifications).where(eq(ageVerifications.id, id));
+  }
+
+  // ===== PARENTAL CONSENT RECORDS OPERATIONS (UK GDPR Article 8) =====
+
+  async createParentalConsentRecord(record: InsertParentalConsentRecord): Promise<ParentalConsentRecord> {
+    const [result] = await db.insert(parentalConsentRecords).values(record).returning();
+    return result;
+  }
+
+  async getParentalConsentRecord(id: string): Promise<ParentalConsentRecord | undefined> {
+    const [record] = await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(eq(parentalConsentRecords.id, id));
+    return record;
+  }
+
+  async getParentalConsentRecordByChild(childUserId: string): Promise<ParentalConsentRecord | undefined> {
+    const [record] = await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(eq(parentalConsentRecords.childUserId, childUserId))
+      .orderBy(desc(parentalConsentRecords.createdAt))
+      .limit(1);
+    return record;
+  }
+
+  async getParentalConsentRecordsByParent(parentEmail: string): Promise<ParentalConsentRecord[]> {
+    return await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(eq(parentalConsentRecords.parentEmail, parentEmail))
+      .orderBy(desc(parentalConsentRecords.createdAt));
+  }
+
+  async getParentalConsentRecordsByOrganisation(organisationId: string): Promise<ParentalConsentRecord[]> {
+    return await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(eq(parentalConsentRecords.organisationId, organisationId))
+      .orderBy(desc(parentalConsentRecords.createdAt));
+  }
+
+  async updateParentalConsentRecord(id: string, record: Partial<InsertParentalConsentRecord>): Promise<ParentalConsentRecord> {
+    const [result] = await db
+      .update(parentalConsentRecords)
+      .set({ ...record, updatedAt: new Date() })
+      .where(eq(parentalConsentRecords.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Parental consent record not found');
+    }
+
+    return result;
+  }
+
+  async deleteParentalConsentRecord(id: string): Promise<void> {
+    await db.delete(parentalConsentRecords).where(eq(parentalConsentRecords.id, id));
+  }
+
+  async getParentalConsentRecordsByStatus(organisationId: string, status: string): Promise<ParentalConsentRecord[]> {
+    return await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(and(
+        eq(parentalConsentRecords.organisationId, organisationId),
+        eq(parentalConsentRecords.consentStatus, status)
+      ))
+      .orderBy(desc(parentalConsentRecords.createdAt));
+  }
+
+  async getExpiringParentalConsents(organisationId: string, daysFromNow: number): Promise<ParentalConsentRecord[]> {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysFromNow);
+
+    return await db
+      .select()
+      .from(parentalConsentRecords)
+      .where(and(
+        eq(parentalConsentRecords.organisationId, organisationId),
+        eq(parentalConsentRecords.consentStatus, 'granted'),
+        sql`${parentalConsentRecords.consentExpiryDate} <= ${futureDate.toISOString()}`
+      ))
+      .orderBy(asc(parentalConsentRecords.consentExpiryDate));
+  }
+
+  async updateConsentStatus(id: string, status: string, adminId?: string): Promise<ParentalConsentRecord> {
+    const updateData: any = {
+      consentStatus: status,
+      updatedAt: new Date()
+    };
+
+    if (status === 'granted') {
+      updateData.consentGrantedAt = new Date();
+      updateData.grantedBy = adminId;
+    } else if (status === 'withdrawn') {
+      updateData.consentWithdrawnAt = new Date();
+      updateData.withdrawnBy = adminId;
+    }
+
+    const [result] = await db
+      .update(parentalConsentRecords)
+      .set(updateData)
+      .where(eq(parentalConsentRecords.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Parental consent record not found');
+    }
+
+    return result;
+  }
+
+  // ===== FAMILY ACCOUNTS OPERATIONS (UK GDPR Article 8) =====
+
+  async createFamilyAccount(account: InsertFamilyAccount): Promise<FamilyAccount> {
+    const [result] = await db.insert(familyAccounts).values(account).returning();
+    return result;
+  }
+
+  async getFamilyAccount(id: string): Promise<FamilyAccount | undefined> {
+    const [account] = await db
+      .select()
+      .from(familyAccounts)
+      .where(eq(familyAccounts.id, id));
+    return account;
+  }
+
+  async getFamilyAccountByParent(parentUserId: string): Promise<FamilyAccount | undefined> {
+    const [account] = await db
+      .select()
+      .from(familyAccounts)
+      .where(or(
+        eq(familyAccounts.primaryParentUserId, parentUserId),
+        eq(familyAccounts.secondaryParentUserId, parentUserId)
+      ))
+      .limit(1);
+    return account;
+  }
+
+  async getFamilyAccountByEmail(email: string): Promise<FamilyAccount | undefined> {
+    const [account] = await db
+      .select()
+      .from(familyAccounts)
+      .where(or(
+        eq(familyAccounts.primaryContactEmail, email),
+        eq(familyAccounts.alternateContactEmail, email)
+      ))
+      .limit(1);
+    return account;
+  }
+
+  async getFamilyAccountsByOrganisation(organisationId: string): Promise<FamilyAccount[]> {
+    return await db
+      .select()
+      .from(familyAccounts)
+      .where(eq(familyAccounts.organisationId, organisationId))
+      .orderBy(desc(familyAccounts.createdAt));
+  }
+
+  async updateFamilyAccount(id: string, account: Partial<InsertFamilyAccount>): Promise<FamilyAccount> {
+    const [result] = await db
+      .update(familyAccounts)
+      .set({ ...account, updatedAt: new Date() })
+      .where(eq(familyAccounts.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Family account not found');
+    }
+
+    return result;
+  }
+
+  async deleteFamilyAccount(id: string): Promise<void> {
+    await db.delete(familyAccounts).where(eq(familyAccounts.id, id));
+  }
+
+  async getFamilyAccountsByStatus(organisationId: string, status: string): Promise<FamilyAccount[]> {
+    return await db
+      .select()
+      .from(familyAccounts)
+      .where(and(
+        eq(familyAccounts.organisationId, organisationId),
+        eq(familyAccounts.accountStatus, status)
+      ))
+      .orderBy(desc(familyAccounts.createdAt));
+  }
+
+  async activateFamilyAccount(id: string, activatedBy: string): Promise<FamilyAccount> {
+    const [result] = await db
+      .update(familyAccounts)
+      .set({
+        accountStatus: 'active',
+        activatedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(familyAccounts.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Family account not found');
+    }
+
+    return result;
+  }
+
+  async suspendFamilyAccount(id: string, reason: string, suspendedBy: string): Promise<FamilyAccount> {
+    const [result] = await db
+      .update(familyAccounts)
+      .set({
+        accountStatus: 'suspended',
+        suspendedAt: new Date(),
+        suspensionReason: reason,
+        updatedAt: new Date()
+      })
+      .where(eq(familyAccounts.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Family account not found');
+    }
+
+    return result;
+  }
+
+  // ===== CHILD ACCOUNT LINKS OPERATIONS (UK GDPR Article 8) =====
+
+  async createChildAccountLink(link: InsertChildAccountLink): Promise<ChildAccountLink> {
+    const [result] = await db.insert(childAccountLinks).values(link).returning();
+    return result;
+  }
+
+  async getChildAccountLink(id: string): Promise<ChildAccountLink | undefined> {
+    const [link] = await db
+      .select()
+      .from(childAccountLinks)
+      .where(eq(childAccountLinks.id, id));
+    return link;
+  }
+
+  async getChildAccountLinkByChild(childUserId: string): Promise<ChildAccountLink | undefined> {
+    const [link] = await db
+      .select()
+      .from(childAccountLinks)
+      .where(eq(childAccountLinks.childUserId, childUserId))
+      .limit(1);
+    return link;
+  }
+
+  async getChildAccountLinksByFamily(familyAccountId: string): Promise<ChildAccountLink[]> {
+    return await db
+      .select()
+      .from(childAccountLinks)
+      .where(eq(childAccountLinks.familyAccountId, familyAccountId))
+      .orderBy(desc(childAccountLinks.createdAt));
+  }
+
+  async getChildAccountLinksByOrganisation(organisationId: string): Promise<ChildAccountLink[]> {
+    return await db
+      .select()
+      .from(childAccountLinks)
+      .where(eq(childAccountLinks.organisationId, organisationId))
+      .orderBy(desc(childAccountLinks.createdAt));
+  }
+
+  async updateChildAccountLink(id: string, link: Partial<InsertChildAccountLink>): Promise<ChildAccountLink> {
+    const [result] = await db
+      .update(childAccountLinks)
+      .set({ ...link, updatedAt: new Date() })
+      .where(eq(childAccountLinks.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Child account link not found');
+    }
+
+    return result;
+  }
+
+  async deleteChildAccountLink(id: string): Promise<void> {
+    await db.delete(childAccountLinks).where(eq(childAccountLinks.id, id));
+  }
+
+  async getChildAccountLinksByStatus(organisationId: string, status: string): Promise<ChildAccountLink[]> {
+    return await db
+      .select()
+      .from(childAccountLinks)
+      .where(and(
+        eq(childAccountLinks.organisationId, organisationId),
+        eq(childAccountLinks.linkStatus, status)
+      ))
+      .orderBy(desc(childAccountLinks.createdAt));
+  }
+
+  async getChildrenTransitioningToAdult(organisationId: string, daysFromNow: number): Promise<ChildAccountLink[]> {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysFromNow);
+
+    return await db
+      .select()
+      .from(childAccountLinks)
+      .where(and(
+        eq(childAccountLinks.organisationId, organisationId),
+        eq(childAccountLinks.linkStatus, 'active'),
+        sql`${childAccountLinks.transitionDate} <= ${futureDate.toISOString()}`
+      ))
+      .orderBy(asc(childAccountLinks.transitionDate));
+  }
+
+  async transitionChildToAdult(childUserId: string, transitionedBy: string): Promise<void> {
+    await db
+      .update(childAccountLinks)
+      .set({
+        linkStatus: 'dissolved',
+        dissolvedAt: new Date(),
+        dissolutionReason: 'age_transition_to_adult',
+        lastModifiedBy: transitionedBy,
+        updatedAt: new Date()
+      })
+      .where(eq(childAccountLinks.childUserId, childUserId));
+  }
+
+  // ===== CHILD PROTECTION SETTINGS OPERATIONS (UK GDPR Article 8) =====
+
+  async createChildProtectionSettings(settings: InsertChildProtectionSettings): Promise<ChildProtectionSettings> {
+    const [result] = await db.insert(childProtectionSettings).values(settings).returning();
+    return result;
+  }
+
+  async getChildProtectionSettings(id: string): Promise<ChildProtectionSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(childProtectionSettings)
+      .where(eq(childProtectionSettings.id, id));
+    return settings;
+  }
+
+  async getChildProtectionSettingsByOrganisation(organisationId: string): Promise<ChildProtectionSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(childProtectionSettings)
+      .where(eq(childProtectionSettings.organisationId, organisationId))
+      .limit(1);
+    return settings;
+  }
+
+  async updateChildProtectionSettings(id: string, settings: Partial<InsertChildProtectionSettings>): Promise<ChildProtectionSettings> {
+    const [result] = await db
+      .update(childProtectionSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(childProtectionSettings.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Child protection settings not found');
+    }
+
+    return result;
+  }
+
+  async deleteChildProtectionSettings(id: string): Promise<void> {
+    await db.delete(childProtectionSettings).where(eq(childProtectionSettings.id, id));
+  }
+
+  async upsertChildProtectionSettings(organisationId: string, settings: Partial<InsertChildProtectionSettings>): Promise<ChildProtectionSettings> {
+    const existing = await this.getChildProtectionSettingsByOrganisation(organisationId);
+    
+    if (existing) {
+      return await this.updateChildProtectionSettings(existing.id, settings);
+    } else {
+      return await this.createChildProtectionSettings({ ...settings, organisationId } as InsertChildProtectionSettings);
+    }
   }
 }
 
