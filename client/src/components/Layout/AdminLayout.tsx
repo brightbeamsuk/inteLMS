@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FeatureUpgradeModal } from "@/components/FeatureUpgradeModal";
 import { Footer } from "./Footer";
+import { useIsGdprEnabled, useIsGdprFeatureEnabled } from "@/hooks/useGdpr";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface AdminLayoutProps {
@@ -16,6 +17,11 @@ interface MenuItem {
   icon: string;
   label: string;
   requiresFeature?: string;
+  gdprFeature?: string;
+}
+
+interface GdprMenuItem extends MenuItem {
+  gdprFeature: string;
 }
 
 interface Organization {
@@ -37,6 +43,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
+  const [gdprMenuExpanded, setGdprMenuExpanded] = useState(false);
   const [upgradeModal, setUpgradeModal] = useState<{
     isOpen: boolean;
     featureName: string;
@@ -48,6 +55,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     featureDescription: '',
     featureIcon: ''
   });
+
+  const isGdprEnabled = useIsGdprEnabled();
+  const ropaEnabled = useIsGdprFeatureEnabled('ropaManagement');
+  const userRightsEnabled = useIsGdprFeatureEnabled('userRights');
+  const cookiesEnabled = useIsGdprFeatureEnabled('cookieManagement');
 
   // Fetch organization data for the current admin user
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
@@ -173,6 +185,49 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     },
     { path: "/admin/settings", icon: "fas fa-cog", label: "Organisation Settings" },
   ];
+
+  const gdprMenuItems: GdprMenuItem[] = [
+    { 
+      path: "/admin/processing-activities", 
+      icon: "fas fa-file-alt", 
+      label: "Register of Processing Activities",
+      gdprFeature: "ropaManagement"
+    },
+    { 
+      path: "/admin/user-rights", 
+      icon: "fas fa-user-shield", 
+      label: "User Rights Management",
+      gdprFeature: "userRights"
+    },
+    { 
+      path: "/admin/privacy-settings", 
+      icon: "fas fa-shield-alt", 
+      label: "Privacy Settings",
+      gdprFeature: "dataRetention"
+    },
+    { 
+      path: "/admin/cookie-settings", 
+      icon: "fas fa-cookie-bite", 
+      label: "Cookie Management",
+      gdprFeature: "cookieManagement"
+    }
+  ];
+
+  // Filter GDPR menu items based on enabled features
+  const availableGdprItems = gdprMenuItems.filter(item => {
+    switch (item.gdprFeature) {
+      case 'ropaManagement':
+        return ropaEnabled;
+      case 'userRights':
+        return userRightsEnabled;
+      case 'cookieManagement':
+        return cookiesEnabled;
+      case 'dataRetention':
+        return true; // Privacy settings generally available when GDPR enabled
+      default:
+        return false;
+    }
+  });
 
   return (
     <ThemeProvider>
@@ -359,6 +414,49 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                     </li>
                   );
                 })}
+                
+                {/* GDPR Compliance Menu Section */}
+                {isGdprEnabled && availableGdprItems.length > 0 && (
+                  <>
+                    <li className="menu-title">
+                      <button
+                        className={`w-full text-left font-semibold text-sm opacity-70 uppercase tracking-wide ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
+                        onClick={() => !sidebarMinimized && setGdprMenuExpanded(!gdprMenuExpanded)}
+                        data-testid="button-gdpr-section"
+                        data-tip={sidebarMinimized ? "GDPR Compliance" : undefined}
+                      >
+                        <i className="fas fa-shield-alt mr-2"></i>
+                        {!sidebarMinimized && (
+                          <>
+                            GDPR Compliance
+                            <i className={`fas fa-chevron-${gdprMenuExpanded ? 'down' : 'right'} ml-auto text-xs`}></i>
+                          </>
+                        )}
+                      </button>
+                    </li>
+                    
+                    {(sidebarMinimized || gdprMenuExpanded) && availableGdprItems.map((item) => (
+                      <li key={item.path} className={sidebarMinimized ? '' : 'ml-4'}>
+                        <Link 
+                          href={item.path}
+                          className={`${location === item.path ? "active" : ""} ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
+                          onClick={() => setDrawerOpen(false)}
+                          data-testid={`link-gdpr-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                          data-tip={sidebarMinimized ? item.label : undefined}
+                        >
+                          <i className={item.icon}></i>
+                          {!sidebarMinimized && item.label}
+                          {/* Special badge for RoPA as it's critical for Article 30 */}
+                          {item.path === '/admin/processing-activities' && !sidebarMinimized && (
+                            <div className="ml-2">
+                              <div className="badge badge-primary badge-xs">Article 30</div>
+                            </div>
+                          )}
+                        </Link>
+                      </li>
+                    ))}
+                  </>
+                )}
               </ul>
             </aside>
           </div>

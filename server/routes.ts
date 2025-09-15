@@ -49,7 +49,7 @@ interface GdprAuditLogParams {
   userId?: string;
   adminId?: string;
   action: string;
-  resource: 'user_rights_request' | 'data_export' | 'gdpr_settings';
+  resource: 'user_rights_request' | 'data_export' | 'gdpr_settings' | 'processing_activity';
   resourceId: string;
   details: Record<string, any>;
   ipAddress: string;
@@ -2680,6 +2680,468 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error exporting user data:", error);
       res.status(500).json({ message: "Failed to export user data" });
+    }
+  });
+
+  // ===== REGISTER OF PROCESSING ACTIVITIES (ROPA) - ARTICLE 30 COMPLIANCE =====
+
+  /**
+   * Get all processing activities for organisation
+   * GET /api/gdpr/processing-activities
+   * Admin/SuperAdmin only - Article 30 compliance
+   */
+  app.get('/api/gdpr/processing-activities', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can access RoPA
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities." });
+      }
+
+      const { search, lawfulBasis, internationalTransfers } = req.query;
+      let activities = [];
+
+      if (search) {
+        activities = await storage.searchProcessingActivities(currentUser.organisationId, search);
+      } else if (lawfulBasis) {
+        activities = await storage.getProcessingActivitiesByLawfulBasis(currentUser.organisationId, lawfulBasis);
+      } else if (internationalTransfers === 'true') {
+        activities = await storage.getProcessingActivitiesWithInternationalTransfers(currentUser.organisationId);
+      } else {
+        activities = await storage.getProcessingActivitiesByOrganisation(currentUser.organisationId);
+      }
+
+      // GDPR Audit Logging - Processing Activities Access
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_processing_activities',
+        resource: 'processing_activity',
+        resourceId: 'list',
+        details: {
+          activitiesCount: activities.length,
+          searchQuery: search || null,
+          lawfulBasisFilter: lawfulBasis || null,
+          internationalTransfersFilter: internationalTransfers || null,
+          adminRole: currentUser.role,
+          article30Compliance: true,
+          securityLevel: 'compliance_data_access'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(activities);
+
+    } catch (error: any) {
+      console.error("Error fetching processing activities:", error);
+      res.status(500).json({ message: "Failed to fetch processing activities" });
+    }
+  });
+
+  /**
+   * Create new processing activity
+   * POST /api/gdpr/processing-activities
+   * Admin/SuperAdmin only - Article 30 compliance
+   */
+  app.post('/api/gdpr/processing-activities', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can create RoPA entries
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities." });
+      }
+
+      // Validate request body
+      const validationResult = insertProcessingActivitySchema.safeParse({
+        ...req.body,
+        organisationId: currentUser.organisationId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid processing activity data", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const activity = await storage.createProcessingActivity(validationResult.data);
+
+      // GDPR Audit Logging - Processing Activity Created
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'create_processing_activity',
+        resource: 'processing_activity',
+        resourceId: activity.id,
+        details: {
+          activityName: activity.name,
+          lawfulBasis: activity.lawfulBasis,
+          dataCategories: activity.dataCategories,
+          dataSubjects: activity.dataSubjects,
+          internationalTransfers: activity.internationalTransfers,
+          transferCountries: activity.transferCountries,
+          createdByAdmin: currentUser.id,
+          article30Compliance: true
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(activity);
+
+    } catch (error: any) {
+      console.error("Error creating processing activity:", error);
+      res.status(500).json({ message: "Failed to create processing activity" });
+    }
+  });
+
+  /**
+   * Get specific processing activity by ID
+   * GET /api/gdpr/processing-activities/:id
+   * Admin/SuperAdmin only - Article 30 compliance
+   */
+  app.get('/api/gdpr/processing-activities/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can access RoPA entries
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities." });
+      }
+
+      const activity = await storage.getProcessingActivity(req.params.id);
+
+      if (!activity) {
+        return res.status(404).json({ message: "Processing activity not found" });
+      }
+
+      // Ensure activity belongs to current user's organisation
+      if (activity.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Processing activity belongs to different organisation." });
+      }
+
+      // GDPR Audit Logging - Individual Processing Activity Access
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'view_processing_activity',
+        resource: 'processing_activity',
+        resourceId: activity.id,
+        details: {
+          activityName: activity.name,
+          lawfulBasis: activity.lawfulBasis,
+          dataCategories: activity.dataCategories,
+          internationalTransfers: activity.internationalTransfers,
+          adminRole: currentUser.role,
+          article30Compliance: true,
+          securityLevel: 'compliance_data_access'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(activity);
+
+    } catch (error: any) {
+      console.error("Error fetching processing activity:", error);
+      res.status(500).json({ message: "Failed to fetch processing activity" });
+    }
+  });
+
+  /**
+   * Update processing activity
+   * PUT /api/gdpr/processing-activities/:id
+   * Admin/SuperAdmin only - Article 30 compliance
+   */
+  app.put('/api/gdpr/processing-activities/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can update RoPA entries
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities." });
+      }
+
+      // Verify activity exists and belongs to organisation
+      const existingActivity = await storage.getProcessingActivity(req.params.id);
+      if (!existingActivity) {
+        return res.status(404).json({ message: "Processing activity not found" });
+      }
+
+      if (existingActivity.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Processing activity belongs to different organisation." });
+      }
+
+      // Validate request body
+      const validationResult = insertProcessingActivitySchema.omit({ organisationId: true }).safeParse(req.body);
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid processing activity data", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const updatedActivity = await storage.updateProcessingActivity(req.params.id, validationResult.data);
+
+      // GDPR Audit Logging - Processing Activity Updated
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'update_processing_activity',
+        resource: 'processing_activity',
+        resourceId: updatedActivity.id,
+        details: {
+          activityName: updatedActivity.name,
+          lawfulBasis: updatedActivity.lawfulBasis,
+          dataCategories: updatedActivity.dataCategories,
+          previousData: existingActivity,
+          updatedData: validationResult.data,
+          updatedByAdmin: currentUser.id,
+          article30Compliance: true
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedActivity);
+
+    } catch (error: any) {
+      console.error("Error updating processing activity:", error);
+      res.status(500).json({ message: "Failed to update processing activity" });
+    }
+  });
+
+  /**
+   * Delete processing activity
+   * DELETE /api/gdpr/processing-activities/:id
+   * Admin/SuperAdmin only - Article 30 compliance
+   */
+  app.delete('/api/gdpr/processing-activities/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can delete RoPA entries
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities." });
+      }
+
+      // Verify activity exists and belongs to organisation
+      const existingActivity = await storage.getProcessingActivity(req.params.id);
+      if (!existingActivity) {
+        return res.status(404).json({ message: "Processing activity not found" });
+      }
+
+      if (existingActivity.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied. Processing activity belongs to different organisation." });
+      }
+
+      await storage.deleteProcessingActivity(req.params.id);
+
+      // GDPR Audit Logging - Processing Activity Deleted (CRITICAL for compliance)
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'delete_processing_activity',
+        resource: 'processing_activity',
+        resourceId: req.params.id,
+        details: {
+          deletedActivity: existingActivity,
+          deletedByAdmin: currentUser.id,
+          article30Compliance: true,
+          securityLevel: 'critical_compliance_record_deletion'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({ message: "Processing activity deleted successfully" });
+
+    } catch (error: any) {
+      console.error("Error deleting processing activity:", error);
+      res.status(500).json({ message: "Failed to delete processing activity" });
+    }
+  });
+
+  /**
+   * Export Register of Processing Activities for compliance audits
+   * GET /api/gdpr/processing-activities/export
+   * Admin/SuperAdmin only - Article 30 compliance
+   * Supports CSV/JSON formats for ICO/supervisory authority submissions
+   */
+  app.get('/api/gdpr/processing-activities/export', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('ropaManagement')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // RBAC: Only admins and superadmins can export RoPA
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied. Admin privileges required for Register of Processing Activities export." });
+      }
+
+      const activities = await storage.getProcessingActivitiesByOrganisation(currentUser.organisationId);
+      const organisation = await storage.getOrganisation(currentUser.organisationId);
+
+      const exportData = {
+        export_metadata: {
+          exported_at: new Date().toISOString(),
+          exported_by: `${currentUser.firstName} ${currentUser.lastName}`,
+          exported_by_role: currentUser.role,
+          organisation: organisation?.name,
+          organisation_id: currentUser.organisationId,
+          gdpr_article: 'Article 30 - Records of Processing Activities',
+          legal_requirement: 'UK GDPR Article 30 Compliance',
+          data_controller: organisation?.name,
+          total_activities: activities.length,
+          compliance_status: 'exported_for_supervisory_authority'
+        },
+        processing_activities: activities.map(activity => ({
+          id: activity.id,
+          name: activity.name,
+          purpose: activity.purpose,
+          description: activity.description,
+          lawful_basis: activity.lawfulBasis,
+          data_categories: activity.dataCategories,
+          data_subjects: activity.dataSubjects,
+          recipients: activity.recipients,
+          international_transfers: activity.internationalTransfers,
+          transfer_countries: activity.transferCountries,
+          retention_period: activity.retentionPeriod,
+          security_measures: activity.securityMeasures,
+          dpia_required: activity.dpia.required || false,
+          dpia_completed: activity.dpia.completed || false,
+          created_at: activity.createdAt,
+          updated_at: activity.updatedAt
+        }))
+      };
+
+      const format = req.query.format || 'json';
+
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="ropa_export_${organisation?.name || 'org'}_${Date.now()}.json"`);
+        res.json(exportData);
+      } else if (format === 'csv') {
+        // Create CSV export for ICO/supervisory authority submissions
+        const csvHeaders = [
+          'Processing Activity Name',
+          'Purpose',
+          'Description', 
+          'Lawful Basis',
+          'Data Categories',
+          'Data Subjects',
+          'Recipients',
+          'International Transfers',
+          'Transfer Countries',
+          'Retention Period',
+          'Security Measures',
+          'DPIA Required',
+          'DPIA Completed',
+          'Created Date',
+          'Last Updated'
+        ];
+
+        const csvRows = activities.map(activity => [
+          `"${activity.name || ''}"`,
+          `"${activity.purpose || ''}"`,
+          `"${activity.description || ''}"`,
+          `"${activity.lawfulBasis || ''}"`,
+          `"${activity.dataCategories.join('; ') || ''}"`,
+          `"${activity.dataSubjects.join('; ') || ''}"`,
+          `"${activity.recipients.join('; ') || ''}"`,
+          `"${activity.internationalTransfers ? 'Yes' : 'No'}"`,
+          `"${activity.transferCountries.join('; ') || ''}"`,
+          `"${activity.retentionPeriod || ''}"`,
+          `"${activity.securityMeasures.join('; ') || ''}"`,
+          `"${activity.dpia?.required ? 'Yes' : 'No'}"`,
+          `"${activity.dpia?.completed ? 'Yes' : 'No'}"`,
+          `"${activity.createdAt ? new Date(activity.createdAt).toLocaleDateString() : ''}"`,
+          `"${activity.updatedAt ? new Date(activity.updatedAt).toLocaleDateString() : ''}"`,
+        ]);
+
+        const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="ropa_export_${organisation?.name || 'org'}_${Date.now()}.csv"`);
+        res.send(csvContent);
+      } else {
+        return res.status(400).json({ message: "Invalid format. Supported formats: json, csv" });
+      }
+
+      // GDPR Audit Logging - Critical compliance export
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'export_ropa',
+        resource: 'processing_activities_export',
+        resourceId: `export_${Date.now()}`,
+        details: {
+          exportFormat: format,
+          totalActivities: activities.length,
+          exportedByAdmin: currentUser.id,
+          exportedByRole: currentUser.role,
+          gdprArticle: 'Article_30_Records_of_Processing',
+          legalRequirement: 'UK_GDPR_Article_30_Compliance',
+          complianceExport: true,
+          securityLevel: 'critical_compliance_export'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+    } catch (error: any) {
+      console.error("Error exporting processing activities:", error);
+      res.status(500).json({ message: "Failed to export processing activities" });
     }
   });
 

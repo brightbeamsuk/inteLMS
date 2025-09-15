@@ -2845,6 +2845,104 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return request;
   }
+
+  // ===== REGISTER OF PROCESSING ACTIVITIES (ROPA) - ARTICLE 30 COMPLIANCE =====
+
+  async createProcessingActivity(processingActivity: InsertProcessingActivity): Promise<ProcessingActivity> {
+    const [activity] = await db
+      .insert(processingActivities)
+      .values({
+        ...processingActivity,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return activity;
+  }
+
+  async getProcessingActivity(id: string): Promise<ProcessingActivity | undefined> {
+    const [activity] = await db
+      .select()
+      .from(processingActivities)
+      .where(eq(processingActivities.id, id))
+      .limit(1);
+    return activity;
+  }
+
+  async getProcessingActivitiesByOrganisation(organisationId: string): Promise<ProcessingActivity[]> {
+    return await db
+      .select()
+      .from(processingActivities)
+      .where(eq(processingActivities.organisationId, organisationId))
+      .orderBy(desc(processingActivities.updatedAt));
+  }
+
+  async updateProcessingActivity(id: string, processingActivity: Partial<InsertProcessingActivity>): Promise<ProcessingActivity> {
+    const [updated] = await db
+      .update(processingActivities)
+      .set({
+        ...processingActivity,
+        updatedAt: new Date(),
+      })
+      .where(eq(processingActivities.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProcessingActivity(id: string): Promise<void> {
+    await db
+      .delete(processingActivities)
+      .where(eq(processingActivities.id, id));
+  }
+
+  // Enhanced processing activities queries for compliance reporting
+  async getProcessingActivitiesByLawfulBasis(organisationId: string, lawfulBasis: string): Promise<ProcessingActivity[]> {
+    return await db
+      .select()
+      .from(processingActivities)
+      .where(and(
+        eq(processingActivities.organisationId, organisationId),
+        eq(processingActivities.lawfulBasis, lawfulBasis as any)
+      ))
+      .orderBy(desc(processingActivities.updatedAt));
+  }
+
+  async getProcessingActivitiesWithInternationalTransfers(organisationId: string): Promise<ProcessingActivity[]> {
+    return await db
+      .select()
+      .from(processingActivities)
+      .where(and(
+        eq(processingActivities.organisationId, organisationId),
+        eq(processingActivities.internationalTransfers, true)
+      ))
+      .orderBy(desc(processingActivities.updatedAt));
+  }
+
+  async getProcessingActivitiesRequiringDPIA(organisationId: string): Promise<ProcessingActivity[]> {
+    return await db
+      .select()
+      .from(processingActivities)
+      .where(and(
+        eq(processingActivities.organisationId, organisationId),
+        sql`${processingActivities.dpia}->>'required' = 'true'`
+      ))
+      .orderBy(desc(processingActivities.updatedAt));
+  }
+
+  async searchProcessingActivities(organisationId: string, searchTerm: string): Promise<ProcessingActivity[]> {
+    return await db
+      .select()
+      .from(processingActivities)
+      .where(and(
+        eq(processingActivities.organisationId, organisationId),
+        or(
+          ilike(processingActivities.name, `%${searchTerm}%`),
+          ilike(processingActivities.purpose, `%${searchTerm}%`),
+          ilike(processingActivities.description, `%${searchTerm}%`)
+        )
+      ))
+      .orderBy(desc(processingActivities.updatedAt));
+  }
 }
 
 export const storage = new DatabaseStorage();

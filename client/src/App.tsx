@@ -51,6 +51,7 @@ import { ConsentPreferences } from "@/pages/gdpr/ConsentPreferences";
 import { CookieSettings } from "@/pages/gdpr/CookieSettings";
 import { UserRights } from "@/pages/gdpr/UserRights";
 import { AdminUserRights } from "@/pages/gdpr/AdminUserRights";
+import RegisterOfProcessing from "@/pages/gdpr/RegisterOfProcessing";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -396,6 +397,15 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminUserRights />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Register of Processing Activities (Article 30 compliance) */}
+      <Route path="/admin/processing-activities">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <RegisterOfProcessing />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
