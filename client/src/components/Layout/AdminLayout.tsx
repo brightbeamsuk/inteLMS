@@ -188,6 +188,18 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   const gdprMenuItems: GdprMenuItem[] = [
     { 
+      path: "/admin/gdpr-dashboard", 
+      icon: "fas fa-tachometer-alt", 
+      label: "Compliance Dashboard",
+      gdprFeature: "general"
+    },
+    { 
+      path: "/admin/compliance-export", 
+      icon: "fas fa-download", 
+      label: "Compliance Export",
+      gdprFeature: "general"
+    },
+    { 
       path: "/admin/processing-activities", 
       icon: "fas fa-file-alt", 
       label: "Register of Processing Activities",
@@ -216,6 +228,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // Filter GDPR menu items based on enabled features
   const availableGdprItems = gdprMenuItems.filter(item => {
     switch (item.gdprFeature) {
+      case 'general':
+        return true; // Dashboard and export available when GDPR enabled
       case 'ropaManagement':
         return ropaEnabled;
       case 'userRights':

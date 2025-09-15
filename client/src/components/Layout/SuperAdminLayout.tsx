@@ -30,6 +30,8 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     { path: "/superadmin/subscriptions", icon: "fas fa-chart-line", label: "Subscriptions" },
     { path: "/superadmin/course-builder", icon: "fas fa-hammer", label: "Course Builder" },
     { path: "/superadmin/courses", icon: "fas fa-graduation-cap", label: "Courses" },
+    { path: "/superadmin/gdpr-dashboard", icon: "fas fa-shield-alt", label: "GDPR Dashboard" },
+    { path: "/superadmin/compliance-export", icon: "fas fa-download", label: "Compliance Export" },
     { path: "/superadmin/email-templates", icon: "fas fa-envelope-open-text", label: "Email Templates" },
     { path: "/superadmin/email-logs", icon: "fas fa-mail-bulk", label: "Email Logs" },
     { path: "/superadmin/support", icon: "fas fa-headset", label: "Support" },

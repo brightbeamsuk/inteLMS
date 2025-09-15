@@ -91,6 +91,92 @@ export interface TemplateRenderContext {
     isOverdue?: boolean;
   };
   
+  // GDPR Dashboard Compliance Reporting variables
+  complianceReport?: {
+    reportType?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'audit' | 'ico_submission';
+    reportPeriod?: string;
+    overallScore?: number;
+    previousScore?: number;
+    scoreChange?: number;
+    complianceStatus?: 'compliant' | 'attention_required' | 'non_compliant';
+    criticalIssues?: number;
+    warningIssues?: number;
+    totalAlerts?: number;
+    
+    // Consent Management Metrics
+    consentMetrics?: {
+      totalConsents?: number;
+      activeConsents?: number;
+      consentRate?: number;
+      withdrawalRate?: number;
+      marketingConsentRate?: number;
+    };
+    
+    // User Rights Performance
+    userRightsMetrics?: {
+      totalRequests?: number;
+      pendingRequests?: number;
+      completedRequests?: number;
+      averageResponseTime?: number;
+      slaCompliance?: number;
+      overdueRequests?: number;
+    };
+    
+    // Data Retention Status
+    retentionMetrics?: {
+      totalRecords?: number;
+      activeRecords?: number;
+      scheduledForDeletion?: number;
+      deletedThisPeriod?: number;
+      retentionCompliance?: number;
+    };
+    
+    // Breach Management Status
+    breachMetrics?: {
+      totalBreaches?: number;
+      activeBreaches?: number;
+      resolvedBreaches?: number;
+      averageResolutionTime?: number;
+      icoNotificationCompliance?: number;
+    };
+    
+    // Export Job Status
+    exportStatus?: {
+      jobId?: string;
+      jobType?: string;
+      status?: 'completed' | 'failed' | 'processing';
+      downloadUrl?: string;
+      expiresAt?: string;
+      fileSize?: string;
+    };
+    
+    // Key Performance Indicators
+    kpis?: Array<{
+      name?: string;
+      value?: number | string;
+      trend?: 'up' | 'down' | 'stable';
+      status?: 'good' | 'warning' | 'critical';
+    }>;
+    
+    // Action Items
+    actionItems?: Array<{
+      title?: string;
+      description?: string;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      dueDate?: string;
+      assignedTo?: string;
+    }>;
+    
+    // Regulatory Deadlines
+    upcomingDeadlines?: Array<{
+      title?: string;
+      description?: string;
+      dueDate?: string;
+      daysUntil?: number;
+      urgency?: 'low' | 'medium' | 'high' | 'critical';
+    }>;
+  };
+  
   // Event-specific variables
   addedBy?: {
     name?: string;
@@ -149,7 +235,12 @@ export interface QueueEmailParams {
   triggerEvent: 'ORG_FAST_ADD' | 'USER_FAST_ADD' | 'COURSE_ASSIGNED' | 'COURSE_COMPLETED' | 'COURSE_FAILED' | 'PLAN_UPDATED' | 
     // GDPR Breach Management Events (Articles 33 & 34)
     'BREACH_ICO_NOTIFICATION' | 'BREACH_SUBJECT_NOTIFICATION' | 'BREACH_DEADLINE_ALERT' | 
-    'BREACH_URGENT_ALERT' | 'BREACH_OVERDUE_ALERT' | 'BREACH_ESCALATION_ALERT';
+    'BREACH_URGENT_ALERT' | 'BREACH_OVERDUE_ALERT' | 'BREACH_ESCALATION_ALERT' |
+    // GDPR Dashboard Compliance Reporting Events
+    'COMPLIANCE_DAILY_DIGEST' | 'COMPLIANCE_WEEKLY_REPORT' | 'COMPLIANCE_MONTHLY_REPORT' |
+    'COMPLIANCE_QUARTERLY_REPORT' | 'COMPLIANCE_ANNUAL_REPORT' | 'COMPLIANCE_ALERT_CRITICAL' |
+    'COMPLIANCE_ALERT_WARNING' | 'COMPLIANCE_SLA_BREACH' | 'COMPLIANCE_EXPORT_READY' |
+    'ICO_SUBMISSION_READY' | 'REGULATORY_DEADLINE_REMINDER' | 'COMPLIANCE_AUDIT_ALERT';
   templateKey: string;
   toEmail: string;
   context: TemplateRenderContext;
@@ -418,7 +509,20 @@ export class EmailOrchestrator {
       'org_plan_changed',
       'billing_failed',
       'billing_updated',
-      'compliance_reminder'
+      'compliance_reminder',
+      // GDPR Dashboard Compliance Service Events
+      'COMPLIANCE_DAILY_DIGEST',
+      'COMPLIANCE_WEEKLY_REPORT',
+      'COMPLIANCE_MONTHLY_REPORT',
+      'COMPLIANCE_QUARTERLY_REPORT',
+      'COMPLIANCE_ANNUAL_REPORT',
+      'COMPLIANCE_ALERT_CRITICAL',
+      'COMPLIANCE_ALERT_WARNING',
+      'COMPLIANCE_SLA_BREACH',
+      'COMPLIANCE_EXPORT_READY',
+      'ICO_SUBMISSION_READY',
+      'REGULATORY_DEADLINE_REMINDER',
+      'COMPLIANCE_AUDIT_ALERT'
     ];
 
     const serviceTemplates = [
@@ -431,7 +535,18 @@ export class EmailOrchestrator {
       'billing_notification',
       'security_notification',
       'gdpr_notification',
-      'compliance_notification'
+      'compliance_notification',
+      // GDPR Dashboard Compliance Templates
+      'compliance_daily_digest',
+      'compliance_weekly_report',
+      'compliance_monthly_report',
+      'compliance_quarterly_report',
+      'compliance_annual_report',
+      'compliance_alert',
+      'compliance_export_notification',
+      'ico_submission_notification',
+      'regulatory_deadline_alert',
+      'compliance_audit_report'
     ];
 
     // Marketing emails that require explicit consent

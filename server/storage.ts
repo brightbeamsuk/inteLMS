@@ -57,6 +57,10 @@ import {
   marketingCampaigns,
   consentHistory,
   suppressionList,
+  // GDPR Dashboard tables
+  gdprDashboardConfig,
+  complianceReports,
+  exportJobs,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -168,6 +172,13 @@ import {
   type InsertConsentHistory,
   type SuppressionList,
   type InsertSuppressionList,
+  // GDPR Dashboard types
+  type GdprDashboardConfig,
+  type InsertGdprDashboardConfig,
+  type ComplianceReports,
+  type InsertComplianceReports,
+  type ExportJobs,
+  type InsertExportJobs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -859,6 +870,98 @@ export interface IStorage {
   addToSuppressionList(contact: { email?: string; phone?: string; }, organisationId: string, reason: string, channels: string[]): Promise<SuppressionList>;
   bulkAddToSuppressionList(contacts: { email?: string; phone?: string; }[], organisationId: string, reason: string, channels: string[]): Promise<number>;
   getGlobalSuppressions(): Promise<SuppressionList[]>;
+
+  // GDPR Dashboard operations
+  // Dashboard configuration
+  getGdprDashboardConfig(organisationId: string): Promise<GdprDashboardConfig | undefined>;
+  createGdprDashboardConfig(config: InsertGdprDashboardConfig): Promise<GdprDashboardConfig>;
+  updateGdprDashboardConfig(organisationId: string, config: Partial<InsertGdprDashboardConfig>): Promise<GdprDashboardConfig>;
+  
+  // Dashboard metrics aggregation
+  getDashboardComplianceMetrics(organisationId: string, dateRange?: { start: Date; end: Date }): Promise<{
+    consentMetrics: {
+      totalConsents: number;
+      consentRate: number;
+      withdrawalRate: number;
+      consentsByType: { [key: string]: number };
+      recentActivity: { date: string; grants: number; withdrawals: number; }[];
+    };
+    userRightsMetrics: {
+      totalRequests: number;
+      pendingRequests: number;
+      overdueRequests: number;
+      avgResponseTime: number;
+      requestsByType: { [key: string]: number };
+      complianceRate: number;
+    };
+    dataRetentionMetrics: {
+      totalPolicies: number;
+      recordsProcessed: number;
+      recordsPendingDeletion: number;
+      retentionCompliance: number;
+      upcomingDeletions: number;
+    };
+    breachMetrics: {
+      totalBreaches: number;
+      activeBreaches: number;
+      overdueNotifications: number;
+      avgResponseTime: number;
+      breachesBySeverity: { [key: string]: number };
+    };
+    transferMetrics: {
+      totalTransfers: number;
+      activeTransfers: number;
+      overdueReviews: number;
+      transfersByRisk: { [key: string]: number };
+      complianceRate: number;
+    };
+    overallComplianceScore: number;
+    complianceStatus: 'compliant' | 'attention_required' | 'non_compliant' | 'unknown';
+    criticalAlerts: Array<{
+      type: string;
+      message: string;
+      severity: 'low' | 'medium' | 'high' | 'critical';
+      dueDate?: Date;
+    }>;
+  }>;
+  
+  // Compliance reports
+  createComplianceReport(report: InsertComplianceReports): Promise<ComplianceReports>;
+  getComplianceReport(id: string): Promise<ComplianceReports | undefined>;
+  getComplianceReportsByOrganisation(organisationId: string, limit?: number): Promise<ComplianceReports[]>;
+  updateComplianceReport(id: string, report: Partial<InsertComplianceReports>): Promise<ComplianceReports>;
+  deleteComplianceReport(id: string): Promise<void>;
+  
+  // Export jobs
+  createExportJob(job: InsertExportJobs): Promise<ExportJobs>;
+  getExportJob(id: string): Promise<ExportJobs | undefined>;
+  getExportJobsByOrganisation(organisationId: string, status?: string): Promise<ExportJobs[]>;
+  updateExportJob(id: string, job: Partial<InsertExportJobs>): Promise<ExportJobs>;
+  deleteExportJob(id: string): Promise<void>;
+  getActiveExportJobs(): Promise<ExportJobs[]>; // For background processing
+  
+  // Compliance analytics for dashboard
+  getConsentTrends(organisationId: string, days?: number): Promise<Array<{
+    date: string;
+    totalConsents: number;
+    grantedConsents: number;
+    withdrawnConsents: number;
+    consentRate: number;
+  }>>;
+  
+  getUserRightsTrends(organisationId: string, days?: number): Promise<Array<{
+    date: string;
+    totalRequests: number;
+    completedRequests: number;
+    responseTime: number;
+  }>>;
+  
+  getBreachResponseMetrics(organisationId: string): Promise<{
+    totalBreaches: number;
+    avgNotificationTime: number;
+    icoCompliance: number;
+    subjectNotificationCompliance: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4151,7 +4254,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(dataRetentionPolicies)
       .where(and(
         eq(dataRetentionPolicies.organisationId, organisationId),
-        eq(dataRetentionPolicies.isActive, true)
+        eq(dataRetentionPolicies.enabled, true)
       ))
       .orderBy(desc(dataRetentionPolicies.priority));
   }
@@ -4161,7 +4264,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(dataRetentionPolicies.organisationId, organisationId),
         eq(dataRetentionPolicies.dataType, dataType),
-        eq(dataRetentionPolicies.isActive, true)
+        eq(dataRetentionPolicies.enabled, true)
       ))
       .orderBy(desc(dataRetentionPolicies.priority))
       .limit(1);
@@ -5391,6 +5494,613 @@ export class DatabaseStorage implements IStorage {
         eq(suppressionList.isActive, true)
       ))
       .orderBy(desc(suppressionList.createdAt));
+  }
+
+  // ===== GDPR Dashboard Implementation =====
+
+  // Dashboard configuration operations
+  async getGdprDashboardConfig(organisationId: string): Promise<GdprDashboardConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(gdprDashboardConfig)
+      .where(eq(gdprDashboardConfig.organisationId, organisationId));
+    return config;
+  }
+
+  async createGdprDashboardConfig(config: InsertGdprDashboardConfig): Promise<GdprDashboardConfig> {
+    const [result] = await db.insert(gdprDashboardConfig).values(config).returning();
+    return result;
+  }
+
+  async updateGdprDashboardConfig(organisationId: string, config: Partial<InsertGdprDashboardConfig>): Promise<GdprDashboardConfig> {
+    const [result] = await db
+      .update(gdprDashboardConfig)
+      .set({ ...config, updatedAt: new Date() })
+      .where(eq(gdprDashboardConfig.organisationId, organisationId))
+      .returning();
+    return result;
+  }
+
+  // Dashboard metrics aggregation (comprehensive compliance health check)
+  async getDashboardComplianceMetrics(organisationId: string, dateRange?: { start: Date; end: Date }) {
+    const endDate = dateRange?.end || new Date();
+    const startDate = dateRange?.start || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+
+    // Parallel execution for performance
+    const [
+      consentStats,
+      userRightsStats,
+      breachStats,
+      retentionStats,
+      transferStats
+    ] = await Promise.all([
+      // Consent metrics
+      this.getConsentMetricsForDashboard(organisationId, startDate, endDate),
+      // User rights metrics
+      this.getUserRightsMetricsForDashboard(organisationId, startDate, endDate),
+      // Breach metrics
+      this.getBreachMetricsForDashboard(organisationId, startDate, endDate),
+      // Data retention metrics
+      this.getRetentionMetricsForDashboard(organisationId, startDate, endDate),
+      // International transfer metrics (if available)
+      this.getTransferMetricsForDashboard(organisationId, startDate, endDate)
+    ]);
+
+    // Calculate overall compliance score
+    const overallComplianceScore = this.calculateComplianceScore(
+      consentStats, userRightsStats, breachStats, retentionStats, transferStats
+    );
+
+    // Generate critical alerts
+    const criticalAlerts = this.generateCriticalAlerts(
+      consentStats, userRightsStats, breachStats, retentionStats, transferStats
+    );
+
+    // Determine compliance status
+    const complianceStatus = this.determineComplianceStatus(overallComplianceScore, criticalAlerts);
+
+    return {
+      consentMetrics: consentStats,
+      userRightsMetrics: userRightsStats,
+      dataRetentionMetrics: retentionStats,
+      breachMetrics: breachStats,
+      transferMetrics: transferStats,
+      overallComplianceScore,
+      complianceStatus,
+      criticalAlerts
+    };
+  }
+
+  // Helper methods for dashboard metrics
+  private async getConsentMetricsForDashboard(organisationId: string, startDate: Date, endDate: Date) {
+    // Get consent statistics
+    const totalConsents = await db
+      .select({ count: count() })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ));
+
+    const grantedConsents = await db
+      .select({ count: count() })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        eq(consentRecords.status, 'granted'),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ));
+
+    const withdrawnConsents = await db
+      .select({ count: count() })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        eq(consentRecords.status, 'withdrawn'),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ));
+
+    // Get consent activity by day for trends
+    const dailyActivity = await db
+      .select({
+        date: sql<string>`DATE(${consentRecords.timestamp})`,
+        grants: sql<number>`SUM(CASE WHEN ${consentRecords.status} = 'granted' THEN 1 ELSE 0 END)`,
+        withdrawals: sql<number>`SUM(CASE WHEN ${consentRecords.status} = 'withdrawn' THEN 1 ELSE 0 END)`
+      })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ))
+      .groupBy(sql`DATE(${consentRecords.timestamp})`)
+      .orderBy(sql`DATE(${consentRecords.timestamp})`);
+
+    // Get consents by type
+    const consentsByType = await db
+      .select({
+        type: consentRecords.consentType,
+        count: count()
+      })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        eq(consentRecords.status, 'granted'),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ))
+      .groupBy(consentRecords.consentType);
+
+    const total = totalConsents[0].count;
+    const granted = grantedConsents[0].count;
+    const withdrawn = withdrawnConsents[0].count;
+    
+    return {
+      totalConsents: total,
+      consentRate: total > 0 ? (granted / total) * 100 : 0,
+      withdrawalRate: total > 0 ? (withdrawn / total) * 100 : 0,
+      consentsByType: Object.fromEntries(consentsByType.map(c => [c.type, c.count])),
+      recentActivity: dailyActivity
+    };
+  }
+
+  private async getUserRightsMetricsForDashboard(organisationId: string, startDate: Date, endDate: Date) {
+    // Get user rights request statistics
+    const totalRequests = await db
+      .select({ count: count() })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        sql`${userRightRequests.requestedAt} >= ${startDate}`,
+        sql`${userRightRequests.requestedAt} <= ${endDate}`
+      ));
+
+    const pendingRequests = await db
+      .select({ count: count() })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        eq(userRightRequests.status, 'pending')
+      ));
+
+    // Calculate overdue requests (30 days SLA)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const overdueRequests = await db
+      .select({ count: count() })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        sql`${userRightRequests.status} IN ('pending', 'in_progress')`,
+        sql`${userRightRequests.requestedAt} < ${thirtyDaysAgo}`
+      ));
+
+    // Calculate average response time
+    const completedRequests = await db
+      .select({
+        responseTime: sql<number>`EXTRACT(EPOCH FROM (${userRightRequests.completedAt} - ${userRightRequests.requestedAt})) / 86400` // days
+      })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        eq(userRightRequests.status, 'completed'),
+        sql`${userRightRequests.completedAt} IS NOT NULL`
+      ));
+
+    // Get requests by type
+    const requestsByType = await db
+      .select({
+        type: userRightRequests.type,
+        count: count()
+      })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        sql`${userRightRequests.requestedAt} >= ${startDate}`,
+        sql`${userRightRequests.requestedAt} <= ${endDate}`
+      ))
+      .groupBy(userRightRequests.type);
+
+    const total = totalRequests[0].count;
+    const avgResponseTime = completedRequests.length > 0 
+      ? completedRequests.reduce((sum, r) => sum + (r.responseTime || 0), 0) / completedRequests.length 
+      : 0;
+
+    return {
+      totalRequests: total,
+      pendingRequests: pendingRequests[0].count,
+      overdueRequests: overdueRequests[0].count,
+      avgResponseTime,
+      requestsByType: Object.fromEntries(requestsByType.map(r => [r.type, r.count])),
+      complianceRate: total > 0 ? Math.max(0, 100 - (overdueRequests[0].count / total) * 100) : 100
+    };
+  }
+
+  private async getBreachMetricsForDashboard(organisationId: string, startDate: Date, endDate: Date) {
+    const totalBreaches = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.detectedAt} >= ${startDate}`,
+        sql`${dataBreaches.detectedAt} <= ${endDate}`
+      ));
+
+    const activeBreaches = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.status} NOT IN ('resolved')`
+      ));
+
+    // Overdue notifications (72 hour rule)
+    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const overdueNotifications = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.icoNotifiedAt} IS NULL`,
+        sql`${dataBreaches.detectedAt} < ${seventyTwoHoursAgo}`
+      ));
+
+    // Breaches by severity
+    const breachesBySeverity = await db
+      .select({
+        severity: dataBreaches.severity,
+        count: count()
+      })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.detectedAt} >= ${startDate}`,
+        sql`${dataBreaches.detectedAt} <= ${endDate}`
+      ))
+      .groupBy(dataBreaches.severity);
+
+    // Calculate average response time for completed notifications
+    const notificationTimes = await db
+      .select({
+        responseTime: sql<number>`EXTRACT(EPOCH FROM (${dataBreaches.icoNotifiedAt} - ${dataBreaches.detectedAt})) / 3600` // hours
+      })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.icoNotifiedAt} IS NOT NULL`
+      ));
+
+    const avgResponseTime = notificationTimes.length > 0 
+      ? notificationTimes.reduce((sum, n) => sum + (n.responseTime || 0), 0) / notificationTimes.length 
+      : 0;
+
+    return {
+      totalBreaches: totalBreaches[0].count,
+      activeBreaches: activeBreaches[0].count,
+      overdueNotifications: overdueNotifications[0].count,
+      avgResponseTime,
+      breachesBySeverity: Object.fromEntries(breachesBySeverity.map(b => [b.severity, b.count]))
+    };
+  }
+
+  private async getRetentionMetricsForDashboard(organisationId: string, startDate: Date, endDate: Date) {
+    // Basic retention statistics
+    const totalPolicies = await db
+      .select({ count: count() })
+      .from(retentionRules)
+      .where(and(
+        eq(retentionRules.organisationId, organisationId),
+        eq(retentionRules.enabled, true)
+      ));
+
+    const recordsProcessed = await db
+      .select({ count: count() })
+      .from(retentionSchedules)
+      .where(and(
+        eq(retentionSchedules.organisationId, organisationId),
+        eq(retentionSchedules.status, 'completed'),
+        sql`${retentionSchedules.processedAt} >= ${startDate}`,
+        sql`${retentionSchedules.processedAt} <= ${endDate}`
+      ));
+
+    const recordsPendingDeletion = await db
+      .select({ count: count() })
+      .from(retentionSchedules)
+      .where(and(
+        eq(retentionSchedules.organisationId, organisationId),
+        eq(retentionSchedules.status, 'scheduled'),
+        sql`${retentionSchedules.scheduledDeletion} <= ${new Date()}`
+      ));
+
+    // Upcoming deletions (next 7 days)
+    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const upcomingDeletions = await db
+      .select({ count: count() })
+      .from(retentionSchedules)
+      .where(and(
+        eq(retentionSchedules.organisationId, organisationId),
+        eq(retentionSchedules.status, 'scheduled'),
+        sql`${retentionSchedules.scheduledDeletion} BETWEEN ${new Date()} AND ${nextWeek}`
+      ));
+
+    const processed = recordsProcessed[0].count;
+    const pending = recordsPendingDeletion[0].count;
+    const retentionCompliance = (processed + pending) > 0 ? (processed / (processed + pending)) * 100 : 100;
+
+    return {
+      totalPolicies: totalPolicies[0].count,
+      recordsProcessed: processed,
+      recordsPendingDeletion: pending,
+      retentionCompliance,
+      upcomingDeletions: upcomingDeletions[0].count
+    };
+  }
+
+  private async getTransferMetricsForDashboard(organisationId: string, startDate: Date, endDate: Date) {
+    // Placeholder implementation - would be expanded if international transfers are implemented
+    return {
+      totalTransfers: 0,
+      activeTransfers: 0,
+      overdueReviews: 0,
+      transfersByRisk: {},
+      complianceRate: 100
+    };
+  }
+
+  private calculateComplianceScore(consentStats: any, userRightsStats: any, breachStats: any, retentionStats: any, transferStats: any): number {
+    // Weighted compliance scoring
+    const consentScore = Math.min(100, consentStats.consentRate);
+    const userRightsScore = userRightsStats.complianceRate;
+    const breachScore = breachStats.overdueNotifications === 0 ? 100 : Math.max(0, 100 - breachStats.overdueNotifications * 10);
+    const retentionScore = retentionStats.retentionCompliance;
+
+    // Weighted average (adjust weights as needed)
+    const totalScore = (
+      consentScore * 0.3 +
+      userRightsScore * 0.3 +
+      breachScore * 0.25 +
+      retentionScore * 0.15
+    );
+
+    return Math.round(totalScore);
+  }
+
+  private generateCriticalAlerts(consentStats: any, userRightsStats: any, breachStats: any, retentionStats: any, transferStats: any) {
+    const alerts = [];
+
+    // User rights overdue alerts
+    if (userRightsStats.overdueRequests > 0) {
+      alerts.push({
+        type: 'user_rights_overdue',
+        message: `${userRightsStats.overdueRequests} user rights requests are overdue (>30 days)`,
+        severity: 'critical' as const,
+        dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000) // Tomorrow
+      });
+    }
+
+    // Breach notification overdue
+    if (breachStats.overdueNotifications > 0) {
+      alerts.push({
+        type: 'breach_notification_overdue',
+        message: `${breachStats.overdueNotifications} data breach notifications are overdue (>72 hours)`,
+        severity: 'critical' as const,
+        dueDate: new Date() // Immediate
+      });
+    }
+
+    // Low consent rate warning
+    if (consentStats.consentRate < 50) {
+      alerts.push({
+        type: 'low_consent_rate',
+        message: `Consent rate is below 50% (${consentStats.consentRate.toFixed(1)}%)`,
+        severity: 'high' as const
+      });
+    }
+
+    // Data retention pending
+    if (retentionStats.recordsPendingDeletion > 100) {
+      alerts.push({
+        type: 'retention_backlog',
+        message: `${retentionStats.recordsPendingDeletion} records pending deletion`,
+        severity: 'medium' as const
+      });
+    }
+
+    return alerts;
+  }
+
+  private determineComplianceStatus(score: number, alerts: any[]): 'compliant' | 'attention_required' | 'non_compliant' | 'unknown' {
+    const criticalAlerts = alerts.filter(a => a.severity === 'critical').length;
+    
+    if (criticalAlerts > 0) return 'non_compliant';
+    if (score >= 85) return 'compliant';
+    if (score >= 70) return 'attention_required';
+    return 'non_compliant';
+  }
+
+  // Compliance reports operations
+  async createComplianceReport(report: InsertComplianceReports): Promise<ComplianceReports> {
+    const [result] = await db.insert(complianceReports).values(report).returning();
+    return result;
+  }
+
+  async getComplianceReport(id: string): Promise<ComplianceReports | undefined> {
+    const [report] = await db
+      .select()
+      .from(complianceReports)
+      .where(eq(complianceReports.id, id));
+    return report;
+  }
+
+  async getComplianceReportsByOrganisation(organisationId: string, limit = 50): Promise<ComplianceReports[]> {
+    return await db
+      .select()
+      .from(complianceReports)
+      .where(eq(complianceReports.organisationId, organisationId))
+      .orderBy(desc(complianceReports.generatedAt))
+      .limit(limit);
+  }
+
+  async updateComplianceReport(id: string, report: Partial<InsertComplianceReports>): Promise<ComplianceReports> {
+    const [result] = await db
+      .update(complianceReports)
+      .set({ ...report, updatedAt: new Date() })
+      .where(eq(complianceReports.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteComplianceReport(id: string): Promise<void> {
+    await db.delete(complianceReports).where(eq(complianceReports.id, id));
+  }
+
+  // Export jobs operations
+  async createExportJob(job: InsertExportJobs): Promise<ExportJobs> {
+    const [result] = await db.insert(exportJobs).values(job).returning();
+    return result;
+  }
+
+  async getExportJob(id: string): Promise<ExportJobs | undefined> {
+    const [job] = await db
+      .select()
+      .from(exportJobs)
+      .where(eq(exportJobs.id, id));
+    return job;
+  }
+
+  async getExportJobsByOrganisation(organisationId: string, status?: string): Promise<ExportJobs[]> {
+    const conditions = [eq(exportJobs.organisationId, organisationId)];
+    
+    if (status) {
+      conditions.push(eq(exportJobs.status, status as any));
+    }
+
+    return await db
+      .select()
+      .from(exportJobs)
+      .where(and(...conditions))
+      .orderBy(desc(exportJobs.requestedAt));
+  }
+
+  async updateExportJob(id: string, job: Partial<InsertExportJobs>): Promise<ExportJobs> {
+    const [result] = await db
+      .update(exportJobs)
+      .set({ ...job, updatedAt: new Date() })
+      .where(eq(exportJobs.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteExportJob(id: string): Promise<void> {
+    await db.delete(exportJobs).where(eq(exportJobs.id, id));
+  }
+
+  async getActiveExportJobs(): Promise<ExportJobs[]> {
+    return await db
+      .select()
+      .from(exportJobs)
+      .where(sql`${exportJobs.status} IN ('pending', 'processing')`)
+      .orderBy(asc(exportJobs.priority), asc(exportJobs.requestedAt));
+  }
+
+  // Compliance analytics for dashboard trends
+  async getConsentTrends(organisationId: string, days = 30) {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const trends = await db
+      .select({
+        date: sql<string>`DATE(${consentRecords.timestamp})`,
+        totalConsents: count(),
+        grantedConsents: sql<number>`SUM(CASE WHEN ${consentRecords.status} = 'granted' THEN 1 ELSE 0 END)`,
+        withdrawnConsents: sql<number>`SUM(CASE WHEN ${consentRecords.status} = 'withdrawn' THEN 1 ELSE 0 END)`
+      })
+      .from(consentRecords)
+      .where(and(
+        eq(consentRecords.organisationId, organisationId),
+        sql`${consentRecords.timestamp} >= ${startDate}`,
+        sql`${consentRecords.timestamp} <= ${endDate}`
+      ))
+      .groupBy(sql`DATE(${consentRecords.timestamp})`)
+      .orderBy(sql`DATE(${consentRecords.timestamp})`);
+
+    return trends.map(t => ({
+      date: t.date,
+      totalConsents: t.totalConsents,
+      grantedConsents: t.grantedConsents,
+      withdrawnConsents: t.withdrawnConsents,
+      consentRate: t.totalConsents > 0 ? (t.grantedConsents / t.totalConsents) * 100 : 0
+    }));
+  }
+
+  async getUserRightsTrends(organisationId: string, days = 30) {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const trends = await db
+      .select({
+        date: sql<string>`DATE(${userRightRequests.requestedAt})`,
+        totalRequests: count(),
+        completedRequests: sql<number>`SUM(CASE WHEN ${userRightRequests.status} = 'completed' THEN 1 ELSE 0 END)`,
+        avgResponseTime: sql<number>`AVG(CASE WHEN ${userRightRequests.completedAt} IS NOT NULL THEN EXTRACT(EPOCH FROM (${userRightRequests.completedAt} - ${userRightRequests.requestedAt})) / 86400 END)`
+      })
+      .from(userRightRequests)
+      .where(and(
+        eq(userRightRequests.organisationId, organisationId),
+        sql`${userRightRequests.requestedAt} >= ${startDate}`,
+        sql`${userRightRequests.requestedAt} <= ${endDate}`
+      ))
+      .groupBy(sql`DATE(${userRightRequests.requestedAt})`)
+      .orderBy(sql`DATE(${userRightRequests.requestedAt})`);
+
+    return trends.map(t => ({
+      date: t.date,
+      totalRequests: t.totalRequests,
+      completedRequests: t.completedRequests,
+      responseTime: t.avgResponseTime || 0
+    }));
+  }
+
+  async getBreachResponseMetrics(organisationId: string) {
+    const totalBreaches = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(eq(dataBreaches.organisationId, organisationId));
+
+    const notificationTimes = await db
+      .select({
+        notificationTime: sql<number>`EXTRACT(EPOCH FROM (${dataBreaches.icoNotifiedAt} - ${dataBreaches.detectedAt})) / 3600`
+      })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.icoNotifiedAt} IS NOT NULL`
+      ));
+
+    const subjectNotifications = await db
+      .select({ count: count() })
+      .from(dataBreaches)
+      .where(and(
+        eq(dataBreaches.organisationId, organisationId),
+        sql`${dataBreaches.subjectsNotifiedAt} IS NOT NULL`
+      ));
+
+    const avgNotificationTime = notificationTimes.length > 0
+      ? notificationTimes.reduce((sum, n) => sum + (n.notificationTime || 0), 0) / notificationTimes.length
+      : 0;
+
+    const total = totalBreaches[0].count;
+    const icoCompliance = total > 0 ? (notificationTimes.length / total) * 100 : 100;
+    const subjectNotificationCompliance = total > 0 ? (subjectNotifications[0].count / total) * 100 : 100;
+
+    return {
+      totalBreaches: total,
+      avgNotificationTime,
+      icoCompliance,
+      subjectNotificationCompliance
+    };
   }
 }
 

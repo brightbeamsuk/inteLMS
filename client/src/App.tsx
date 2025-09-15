@@ -46,6 +46,8 @@ import AuditLog from "@/pages/admin/AuditLog";
 import { AdminSupport } from "@/pages/admin/Support";
 
 // GDPR pages (feature flag protected)
+import { GdprDashboard } from "@/pages/gdpr/GdprDashboard";
+import { ComplianceExport } from "@/pages/gdpr/ComplianceExport";
 import { PrivacySettings } from "@/pages/gdpr/PrivacySettings";
 import { ConsentPreferences } from "@/pages/gdpr/ConsentPreferences";
 import { CookieSettings } from "@/pages/gdpr/CookieSettings";
@@ -280,6 +282,24 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* GDPR Dashboard (feature flag protected) */}
+      <Route path="/superadmin/gdpr-dashboard">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <GdprDashboard />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Compliance Export (feature flag protected) */}
+      <Route path="/superadmin/compliance-export">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <ComplianceExport />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* Admin routes */}
       <Route path="/admin">
         <ProtectedRoute requiredRole="admin">
@@ -440,6 +460,24 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* GDPR Dashboard (feature flag protected) */}
+      <Route path="/admin/gdpr-dashboard">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <GdprDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Compliance Export (feature flag protected) */}
+      <Route path="/admin/compliance-export">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <ComplianceExport />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* User routes */}
       <Route path="/user">
         <ProtectedRoute requiredRole="user">
@@ -494,6 +532,15 @@ function Router() {
         <ProtectedRoute requiredRole="user">
           <UserLayout>
             <UserRights />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* GDPR Personal Data Dashboard (feature flag protected) */}
+      <Route path="/user/gdpr-dashboard">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <GdprDashboard />
           </UserLayout>
         </ProtectedRoute>
       </Route>

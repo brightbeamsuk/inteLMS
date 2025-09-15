@@ -84,7 +84,7 @@ export class DataRetentionService {
 
       // Get active retention policies for this organization
       const policies = await storage.getDataRetentionPoliciesByOrganisation(organisationId);
-      const activePolicies = policies.filter(p => p.isActive);
+      const activePolicies = policies.filter(p => p.enabled);
 
       if (activePolicies.length === 0) {
         console.log(`[DataRetentionService] No active retention policies found for organization: ${organisationId}`);
@@ -180,7 +180,7 @@ export class DataRetentionService {
     let recordsSecurelyErased = 0;
 
     try {
-      console.log(`[DataRetentionService] Processing retention policy: ${policy.name} (${policy.dataType})`);
+      console.log(`[DataRetentionService] Processing retention policy: ${policy.description || 'Unnamed Policy'} (${policy.dataType})`);
 
       // Process soft-delete candidates (data past retention period)
       const softDeleteResult = await this.processSoftDeleteCandidates(policy);
@@ -967,7 +967,7 @@ export class DataRetentionService {
           riskLevel: this.calculateRiskLevel(complianceRate, overdueRecords),
           issues: scanResult.errors.map(error => ({ error, timestamp: new Date() })),
           recommendations: this.generateRecommendations(complianceRate, overdueRecords, policy),
-          auditNotes: `Automated compliance audit for retention policy ${policy.name}`,
+          auditNotes: `Automated compliance audit for retention policy ${policy.description || 'Unnamed Policy'}`,
           auditDuration: scanResult.scanDuration,
           nextAuditDue: this.calculateNextAuditDate(),
           metadata: {

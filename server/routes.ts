@@ -6370,6 +6370,542 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== GDPR Dashboard API Routes =====
+  // Comprehensive dashboard for tenant compliance monitoring and reporting
+
+  // Get dashboard configuration for organization
+  app.get('/api/gdpr/dashboard', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // Get or create dashboard configuration
+      let dashboardConfig = await storage.getGdprDashboardConfig(organisationId);
+      
+      if (!dashboardConfig) {
+        // Create default configuration
+        dashboardConfig = await storage.createGdprDashboardConfig({
+          organisationId,
+          isEnabled: true,
+          refreshInterval: 300, // 5 minutes
+          widgets: ['compliance-overview', 'consent-metrics', 'user-rights-status', 'breach-activity', 'data-retention-summary'],
+          alertSettings: {
+            enableRealTimeAlerts: true,
+            emailNotifications: true,
+            slackIntegration: false,
+            criticalThreshold: 85,
+            warningThreshold: 70
+          },
+          complianceThresholds: {
+            consentRate: 80,
+            userRightsResponseTime: 28,
+            breachNotificationTime: 72,
+            retentionCompliance: 95
+          }
+        });
+      }
+
+      // Log dashboard access
+      await logGdprAudit({
+        organisationId,
+        userId: currentUser.id,
+        action: 'dashboard_access',
+        resource: 'gdpr_dashboard' as any,
+        resourceId: dashboardConfig.id,
+        details: { configurationViewed: true },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown'
+      });
+
+      res.json(dashboardConfig);
+
+    } catch (error) {
+      console.error("Error fetching GDPR dashboard configuration:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard configuration" });
+    }
+  });
+
+  // Update dashboard configuration
+  app.patch('/api/gdpr/dashboard', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const updatedConfig = await storage.updateGdprDashboardConfig(organisationId, req.body);
+
+      // Log configuration update
+      await logGdprAudit({
+        organisationId,
+        adminId: currentUser.id,
+        action: 'dashboard_config_updated',
+        resource: 'gdpr_dashboard' as any,
+        resourceId: updatedConfig.id,
+        details: { changes: req.body },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown'
+      });
+
+      res.json(updatedConfig);
+
+    } catch (error) {
+      console.error("Error updating GDPR dashboard configuration:", error);
+      res.status(500).json({ message: "Failed to update dashboard configuration" });
+    }
+  });
+
+  // Get comprehensive dashboard metrics
+  app.get('/api/gdpr/dashboard/metrics', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin', 'user'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // For regular users, limit to their own data visibility
+      if (currentUser.role === 'user') {
+        // Users can only see aggregate numbers, not detailed breakdowns
+        const limitedMetrics = {
+          personalDataStatus: 'tracked', // Simplified view
+          consentStatus: 'active',
+          userRightsAvailable: true,
+          overallCompliance: 'compliant'
+        };
+        return res.json(limitedMetrics);
+      }
+
+      // Parse date range
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      const dateRange = startDate && endDate ? { start: startDate, end: endDate } : undefined;
+
+      // Get comprehensive metrics for admins
+      const metrics = await storage.getDashboardComplianceMetrics(organisationId, dateRange);
+
+      // Log metrics access for audit
+      await logGdprAudit({
+        organisationId,
+        userId: currentUser.id,
+        action: 'dashboard_metrics_viewed',
+        resource: 'gdpr_dashboard' as any,
+        resourceId: `metrics-${organisationId}`,
+        details: { dateRange, metricsAccessed: Object.keys(metrics) },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown'
+      });
+
+      res.json(metrics);
+
+    } catch (error) {
+      console.error("Error fetching GDPR dashboard metrics:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard metrics" });
+    }
+  });
+
+  // Get consent trends for dashboard charts
+  app.get('/api/gdpr/dashboard/trends/consent', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const days = parseInt(req.query.days as string) || 30;
+      const trends = await storage.getConsentTrends(organisationId, days);
+
+      res.json(trends);
+
+    } catch (error) {
+      console.error("Error fetching consent trends:", error);
+      res.status(500).json({ message: "Failed to fetch consent trends" });
+    }
+  });
+
+  // Get user rights trends for dashboard charts
+  app.get('/api/gdpr/dashboard/trends/user-rights', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const days = parseInt(req.query.days as string) || 30;
+      const trends = await storage.getUserRightsTrends(organisationId, days);
+
+      res.json(trends);
+
+    } catch (error) {
+      console.error("Error fetching user rights trends:", error);
+      res.status(500).json({ message: "Failed to fetch user rights trends" });
+    }
+  });
+
+  // Get breach response metrics
+  app.get('/api/gdpr/dashboard/metrics/breaches', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const breachMetrics = await storage.getBreachResponseMetrics(organisationId);
+
+      res.json(breachMetrics);
+
+    } catch (error) {
+      console.error("Error fetching breach metrics:", error);
+      res.status(500).json({ message: "Failed to fetch breach metrics" });
+    }
+  });
+
+  // Get compliance reports for organization
+  app.get('/api/gdpr/dashboard/reports', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 50;
+      const reports = await storage.getComplianceReportsByOrganisation(organisationId, limit);
+
+      res.json(reports);
+
+    } catch (error) {
+      console.error("Error fetching compliance reports:", error);
+      res.status(500).json({ message: "Failed to fetch compliance reports" });
+    }
+  });
+
+  // Create new compliance report
+  app.post('/api/gdpr/dashboard/reports', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // Validate required fields
+      const { reportType, title, description, includeModules } = req.body;
+      if (!reportType || !title) {
+        return res.status(400).json({ message: "Report type and title are required" });
+      }
+
+      // Create report with status 'generating'
+      const report = await storage.createComplianceReport({
+        organisationId,
+        reportType: reportType as any,
+        title,
+        description: description || '',
+        includeModules: includeModules || ['consent', 'user-rights', 'breaches', 'retention'],
+        status: 'generating',
+        format: req.body.format || 'pdf',
+        generatedBy: currentUser.id,
+        reportData: {},
+        metadata: {
+          dateRange: req.body.dateRange || { start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), end: new Date() },
+          includeCharts: req.body.includeCharts || true,
+          includeAuditTrail: req.body.includeAuditTrail || false
+        }
+      });
+
+      // Log report generation request
+      await logGdprAudit({
+        organisationId,
+        adminId: currentUser.id,
+        action: 'compliance_report_requested',
+        resource: 'gdpr_dashboard' as any,
+        resourceId: report.id,
+        details: { reportType, title, includeModules },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown'
+      });
+
+      // TODO: Trigger background job to generate report content
+      // This would typically be handled by a queue system or scheduled job
+
+      res.status(201).json(report);
+
+    } catch (error) {
+      console.error("Error creating compliance report:", error);
+      res.status(500).json({ message: "Failed to create compliance report" });
+    }
+  });
+
+  // Get export jobs for organization
+  app.get('/api/gdpr/dashboard/export-jobs', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.query.organisationId as string || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      const status = req.query.status as string;
+      const jobs = await storage.getExportJobsByOrganisation(organisationId, status);
+
+      res.json(jobs);
+
+    } catch (error) {
+      console.error("Error fetching export jobs:", error);
+      res.status(500).json({ message: "Failed to fetch export jobs" });
+    }
+  });
+
+  // Create new export job
+  app.post('/api/gdpr/dashboard/export-jobs', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const organisationId = currentUser.role === 'superadmin' 
+        ? req.body.organisationId || currentUser.organisationId
+        : currentUser.organisationId;
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organization ID required" });
+      }
+
+      // Validate required fields
+      const { exportType, format, includeData } = req.body;
+      if (!exportType || !format) {
+        return res.status(400).json({ message: "Export type and format are required" });
+      }
+
+      // Create export job
+      const job = await storage.createExportJob({
+        organisationId,
+        exportType: exportType as any,
+        format: format as any,
+        status: 'pending',
+        priority: req.body.priority || 'medium',
+        requestedBy: currentUser.id,
+        includeData: includeData || ['consent', 'user-rights', 'audit-logs'],
+        parameters: {
+          dateRange: req.body.dateRange || { start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), end: new Date() },
+          includePersonalData: req.body.includePersonalData || false,
+          compressionLevel: req.body.compressionLevel || 'standard'
+        },
+        estimatedSize: 0, // Will be calculated during processing
+        actualSize: 0,
+        downloadUrl: null,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+      });
+
+      // Log export job creation
+      await logGdprAudit({
+        organisationId,
+        adminId: currentUser.id,
+        action: 'export_job_created',
+        resource: 'gdpr_dashboard' as any,
+        resourceId: job.id,
+        details: { exportType, format, includeData },
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown'
+      });
+
+      // TODO: Trigger background processing
+      // This would typically be handled by a queue system
+
+      res.status(201).json(job);
+
+    } catch (error) {
+      console.error("Error creating export job:", error);
+      res.status(500).json({ message: "Failed to create export job" });
+    }
+  });
+
+  // Get specific export job status
+  app.get('/api/gdpr/dashboard/export-jobs/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!['admin', 'superadmin'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Access denied - admin privileges required" });
+      }
+
+      const job = await storage.getExportJob(req.params.id);
+      
+      if (!job) {
+        return res.status(404).json({ message: "Export job not found" });
+      }
+
+      // Organization scoping
+      if (currentUser.role === 'admin' && job.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - cannot access export job outside your organization" });
+      }
+
+      res.json(job);
+
+    } catch (error) {
+      console.error("Error fetching export job:", error);
+      res.status(500).json({ message: "Failed to fetch export job" });
+    }
+  });
+
   // Update user profile
   app.put('/api/auth/profile', requireAuth, async (req: any, res) => {
     try {
@@ -6915,6 +7451,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching platform stats:', error);
       res.status(500).json({ message: 'Failed to fetch stats' });
+    }
+  });
+
+  // Get all organisations for SuperAdmin (for GDPR dashboard org selection)
+  app.get('/api/superadmin/organisations', requireAuth, async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const organisations = await storage.getAllOrganisations();
+      
+      // Return simplified organisation data for dashboard selection
+      const orgList = organisations.map(org => ({
+        id: org.id,
+        name: org.name,
+        subdomain: org.subdomain,
+        status: org.status,
+        activeUserCount: org.activeUserCount || 0,
+        createdAt: org.createdAt
+      }));
+
+      res.json(orgList);
+    } catch (error) {
+      console.error('Error fetching organisations for SuperAdmin:', error);
+      res.status(500).json({ message: 'Failed to fetch organisations' });
     }
   });
 

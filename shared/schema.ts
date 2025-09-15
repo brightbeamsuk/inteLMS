@@ -1466,23 +1466,24 @@ export const cookieInventory = pgTable("cookie_inventory", {
 export const dataRetentionPolicies = pgTable("data_retention_policies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organisationId: varchar("organisation_id").notNull(),
-  name: varchar("name").notNull(),
-  description: text("description").notNull(),
   dataType: retentionDataTypeEnum("data_type").notNull(),
-  retentionPeriod: integer("retention_period").notNull(), // days
-  gracePeriod: integer("grace_period").notNull().default(30), // days before secure erase
+  retentionPeriodDays: integer("retention_period_days").notNull(),
+  triggerType: retentionPolicyTriggerEnum("trigger_type").notNull().default('time_based'),
+  triggerConditions: jsonb("trigger_conditions").notNull().default('{}'),
+  description: text("description"),
+  legalBasis: processingLawfulBasisEnum("legal_basis").array(),
   deletionMethod: retentionDeletionMethodEnum("deletion_method").notNull().default('soft'),
   secureEraseMethod: secureEraseMethodEnum("secure_erase_method").notNull().default('overwrite_multiple'),
-  triggerType: retentionPolicyTriggerEnum("trigger_type").notNull().default('time_based'),
-  legalBasis: processingLawfulBasisEnum("legal_basis").notNull(),
-  regulatoryRequirement: text("regulatory_requirement"), // e.g., "GDPR Article 6(1)(c)", "Companies Act 2006"
-  priority: integer("priority").notNull().default(100), // Higher number = higher priority for conflicts
+  gracePeriodDays: integer("grace_period_days").notNull().default(30),
+  notifyBeforeDays: integer("notify_before_days").notNull().default(7),
+  priority: integer("priority").notNull().default(100),
   enabled: boolean("enabled").notNull().default(true),
   automaticDeletion: boolean("automatic_deletion").notNull().default(true),
   requiresManualReview: boolean("requires_manual_review").notNull().default(false),
-  notificationSettings: jsonb("notification_settings").notNull().default('{}'), // Notification preferences
+  exceptions: text("exceptions").array(),
   metadata: jsonb("metadata").notNull().default('{}'),
   createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -2668,6 +2669,228 @@ export const suppressionList = pgTable("suppression_list", {
   index("idx_suppression_list_is_global").on(table.isGlobal),
 ]);
 
+// GDPR Dashboard Configuration enums
+export const dashboardWidgetTypeEnum = pgEnum('dashboard_widget_type', [
+  'compliance_overview',      // Overall compliance health metrics
+  'consent_metrics',          // Consent management statistics
+  'data_retention_status',    // Data retention compliance status
+  'user_rights_queue',        // Pending user rights requests
+  'breach_alerts',            // Recent breach activity
+  'international_transfers',  // Transfer compliance monitoring
+  'audit_activity',           // Recent audit log activity
+  'compliance_alerts',        // Critical compliance notifications
+  'export_reports',          // Recent compliance exports
+  'processing_activities'     // Active processing activities overview
+]);
+
+export const dashboardComplianceStatusEnum = pgEnum('dashboard_compliance_status', [
+  'compliant',               // All requirements met (green)
+  'attention_required',      // Some issues need attention (amber)
+  'non_compliant',          // Critical issues requiring immediate action (red)
+  'unknown'                 // Status cannot be determined
+]);
+
+export const exportJobStatusEnum = pgEnum('export_job_status', [
+  'pending',                // Job queued for processing
+  'processing',             // Currently generating export
+  'completed',              // Export successful
+  'failed',                 // Export failed
+  'cancelled'               // Export cancelled by user
+]);
+
+export const exportFormatEnum = pgEnum('export_format', [
+  'pdf',                    // PDF compliance report
+  'csv',                    // CSV data export
+  'json',                   // JSON data export
+  'xml',                    // XML structured export
+  'xlsx'                    // Excel spreadsheet export
+]);
+
+export const reportTypeEnum = pgEnum('report_type', [
+  'ico_compliance',         // ICO-ready compliance report
+  'consent_analytics',      // Consent management analytics
+  'user_rights_summary',    // User rights performance report
+  'breach_incident_report', // Data breach incident report
+  'retention_audit',        // Data retention audit report
+  'transfer_compliance',    // International transfer compliance
+  'full_gdpr_audit',       // Comprehensive GDPR audit report
+  'custom_export'          // Custom data export
+]);
+
+// GDPR Dashboard Configuration table
+export const gdprDashboardConfig = pgTable("gdpr_dashboard_config", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull().unique(),
+  
+  // Dashboard layout and preferences
+  enabledWidgets: text("enabled_widgets").array().notNull().default(sql`ARRAY[]::text[]`), // Array of widget types
+  widgetLayout: jsonb("widget_layout").$type<{
+    widgetId: string;
+    type: string;
+    position: number;
+    size: 'small' | 'medium' | 'large';
+    visible: boolean;
+    config?: Record<string, any>;
+  }[]>().notNull().default('[]'),
+  
+  // Notification preferences
+  alertThresholds: jsonb("alert_thresholds").$type<{
+    consentRateBelow?: number;          // Alert if consent rate below %
+    userRightsOverdue?: number;         // Alert if requests overdue (days)
+    breachResponseTime?: number;        // Alert if breach response exceeds (hours)
+    retentionProcessingDelay?: number;  // Alert if retention processing delayed (days)
+  }>().notNull().default('{}'),
+  
+  // Report preferences
+  defaultExportFormat: exportFormatEnum("default_export_format").notNull().default('pdf'),
+  autoReportFrequency: varchar("auto_report_frequency").default('monthly'), // 'daily', 'weekly', 'monthly', 'quarterly'
+  recipientEmails: text("recipient_emails").array().notNull().default(sql`ARRAY[]::text[]`),
+  
+  // Display preferences
+  displayTimeZone: varchar("display_time_zone").notNull().default('Europe/London'),
+  defaultDateRange: integer("default_date_range").notNull().default(30), // days
+  showHistoricalTrends: boolean("show_historical_trends").notNull().default(true),
+  
+  // Compliance settings
+  complianceFramework: varchar("compliance_framework").notNull().default('UK_GDPR'), // UK_GDPR, EU_GDPR, etc.
+  enableRiskScoring: boolean("enable_risk_scoring").notNull().default(true),
+  riskToleranceLevel: varchar("risk_tolerance_level").notNull().default('medium'), // 'low', 'medium', 'high'
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_gdpr_dashboard_config_organisation_id").on(table.organisationId),
+  index("idx_gdpr_dashboard_config_auto_report_frequency").on(table.autoReportFrequency),
+]);
+
+// Compliance Reports table
+export const complianceReports = pgTable("compliance_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Report identification
+  reportName: varchar("report_name").notNull(),
+  reportType: reportTypeEnum("report_type").notNull(),
+  reportReference: varchar("report_reference"), // Unique reference for tracking
+  
+  // Report parameters
+  dateRangeStart: timestamp("date_range_start").notNull(),
+  dateRangeEnd: timestamp("date_range_end").notNull(),
+  includeModules: text("include_modules").array().notNull().default(sql`ARRAY[]::text[]`), // Which GDPR modules to include
+  filterCriteria: jsonb("filter_criteria").notNull().default('{}'),
+  
+  // Report metadata
+  totalRecords: integer("total_records").default(0),
+  complianceScore: decimal("compliance_score", { precision: 5, scale: 2 }), // Overall compliance score
+  riskLevel: dashboardComplianceStatusEnum("risk_level").notNull().default('unknown'),
+  criticalIssues: integer("critical_issues").default(0),
+  
+  // Report content summary
+  executiveSummary: text("executive_summary"),
+  keyFindings: jsonb("key_findings").notNull().default('[]'),
+  recommendations: jsonb("recommendations").notNull().default('[]'),
+  complianceMetrics: jsonb("compliance_metrics").notNull().default('{}'),
+  
+  // File information
+  generatedFileId: varchar("generated_file_id"), // Reference to object storage
+  fileName: varchar("file_name"),
+  fileSize: integer("file_size"),
+  filePath: varchar("file_path"),
+  checksumHash: varchar("checksum_hash"), // For integrity verification
+  
+  // Generation details
+  generatedBy: varchar("generated_by").notNull(),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  generationTimeMs: integer("generation_time_ms"),
+  
+  // Access and retention
+  accessedCount: integer("accessed_count").default(0),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  retentionUntil: timestamp("retention_until"),
+  
+  // Status and metadata
+  isArchived: boolean("is_archived").default(false),
+  tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_compliance_reports_organisation_id").on(table.organisationId),
+  index("idx_compliance_reports_report_type").on(table.reportType),
+  index("idx_compliance_reports_generated_by").on(table.generatedBy),
+  index("idx_compliance_reports_generated_at").on(table.generatedAt),
+  index("idx_compliance_reports_risk_level").on(table.riskLevel),
+  index("idx_compliance_reports_retention_until").on(table.retentionUntil),
+  index("idx_compliance_reports_date_range").on(table.dateRangeStart, table.dateRangeEnd),
+]);
+
+// Export Jobs table (for tracking long-running export operations)
+export const exportJobs = pgTable("export_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Job identification
+  jobName: varchar("job_name").notNull(),
+  jobDescription: text("job_description"),
+  jobType: reportTypeEnum("job_type").notNull(),
+  
+  // Export parameters
+  exportFormat: exportFormatEnum("export_format").notNull(),
+  dateRangeStart: timestamp("date_range_start").notNull(),
+  dateRangeEnd: timestamp("date_range_end").notNull(),
+  exportParameters: jsonb("export_parameters").notNull().default('{}'),
+  
+  // Job status and progress
+  status: exportJobStatusEnum("status").notNull().default('pending'),
+  progress: integer("progress").default(0), // 0-100 percentage
+  totalSteps: integer("total_steps").default(1),
+  currentStep: integer("current_step").default(0),
+  statusMessage: text("status_message"),
+  
+  // Error handling
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(3),
+  
+  // Output information
+  outputFileId: varchar("output_file_id"), // Reference to object storage
+  outputFileName: varchar("output_file_name"),
+  outputFileSize: integer("output_file_size"),
+  outputFilePath: varchar("output_file_path"),
+  
+  // Timing information
+  requestedBy: varchar("requested_by").notNull(),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Expiration and cleanup
+  expiresAt: timestamp("expires_at"), // When export file expires
+  downloadCount: integer("download_count").default(0),
+  lastDownloadAt: timestamp("last_download_at"),
+  
+  // Metadata
+  priority: integer("priority").default(5), // 1-10 priority level
+  backgroundJob: boolean("background_job").default(true),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_export_jobs_organisation_id").on(table.organisationId),
+  index("idx_export_jobs_status").on(table.status),
+  index("idx_export_jobs_job_type").on(table.jobType),
+  index("idx_export_jobs_requested_by").on(table.requestedBy),
+  index("idx_export_jobs_requested_at").on(table.requestedAt),
+  index("idx_export_jobs_expires_at").on(table.expiresAt),
+  index("idx_export_jobs_priority").on(table.priority),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -3042,6 +3265,27 @@ export const insertSuppressionListSchema = createInsertSchema(suppressionList).o
   updatedAt: true,
 });
 
+// GDPR Dashboard insert schemas
+export const insertGdprDashboardConfigSchema = createInsertSchema(gdprDashboardConfig).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertComplianceReportsSchema = createInsertSchema(complianceReports).omit({
+  id: true,
+  generatedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertExportJobsSchema = createInsertSchema(exportJobs).omit({
+  id: true,
+  requestedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -3233,3 +3477,13 @@ export type ConsentHistory = typeof consentHistory.$inferSelect;
 
 export type InsertSuppressionList = z.infer<typeof insertSuppressionListSchema>;
 export type SuppressionList = typeof suppressionList.$inferSelect;
+
+// GDPR Dashboard types
+export type InsertGdprDashboardConfig = z.infer<typeof insertGdprDashboardConfigSchema>;
+export type GdprDashboardConfig = typeof gdprDashboardConfig.$inferSelect;
+
+export type InsertComplianceReports = z.infer<typeof insertComplianceReportsSchema>;
+export type ComplianceReports = typeof complianceReports.$inferSelect;
+
+export type InsertExportJobs = z.infer<typeof insertExportJobsSchema>;
+export type ExportJobs = typeof exportJobs.$inferSelect;
