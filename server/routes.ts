@@ -33,6 +33,7 @@ import { EmailOrchestrator } from "./services/EmailOrchestrator";
 import { emailNotificationService } from "./services/EmailNotificationService";
 import { breachNotificationService } from "./services/BreachNotificationService";
 import { breachDeadlineService } from "./services/BreachDeadlineService";
+import { dataRetentionService } from "./services/DataRetentionService";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersion } from "./config/gdpr";
@@ -4132,6 +4133,438 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error resolving breach:", error);
       res.status(500).json({ message: "Failed to resolve breach" });
+    }
+  });
+
+  // ===== ENHANCED DATA RETENTION POLICY ROUTES =====
+  // GDPR Article 5(e) Storage Limitation Compliance with Automated Lifecycle Management
+
+  /**
+   * Get organization's data retention policies
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/retention-policies', requireAuth, async (req: any, res) => {
+    // Route guard: GDPR and data retention feature must be enabled
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can manage retention policies
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const policies = await storage.getDataRetentionPoliciesByOrganisation(currentUser.organisationId);
+      res.json(policies);
+
+    } catch (error) {
+      console.error("Error fetching retention policies:", error);
+      res.status(500).json({ message: "Failed to fetch retention policies" });
+    }
+  });
+
+  /**
+   * Create new data retention policy
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.post('/api/gdpr/retention-policies', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can create retention policies
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const policyData = {
+        ...req.body,
+        organisationId: currentUser.organisationId,
+        createdBy: currentUser.id
+      };
+
+      // Validate legal basis and regulatory requirement
+      if (!policyData.legalBasis) {
+        return res.status(400).json({ message: "Legal basis is required for retention policy" });
+      }
+
+      const policy = await storage.createDataRetentionPolicy(policyData);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'create_retention_policy',
+        resource: 'data_retention_policy',
+        resourceId: policy.id,
+        details: {
+          dataType: policy.dataType,
+          retentionPeriod: policy.retentionPeriod,
+          legalBasis: policy.legalBasis,
+          automaticDeletion: policy.automaticDeletion,
+          createdByAdmin: currentUser.id,
+          complianceLevel: 'gdpr_article_5e'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(201).json(policy);
+
+    } catch (error) {
+      console.error("Error creating retention policy:", error);
+      res.status(500).json({ message: "Failed to create retention policy" });
+    }
+  });
+
+  /**
+   * Update existing data retention policy
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.put('/api/gdpr/retention-policies/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can update retention policies
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingPolicy = await storage.getDataRetentionPolicy(req.params.id);
+      if (!existingPolicy || existingPolicy.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "Retention policy not found" });
+      }
+
+      const updatedPolicy = await storage.updateDataRetentionPolicy(req.params.id, req.body);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'update_retention_policy',
+        resource: 'data_retention_policy',
+        resourceId: req.params.id,
+        details: {
+          changes: req.body,
+          previousPolicy: existingPolicy,
+          updatedByAdmin: currentUser.id,
+          complianceLevel: 'gdpr_article_5e'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(updatedPolicy);
+
+    } catch (error) {
+      console.error("Error updating retention policy:", error);
+      res.status(500).json({ message: "Failed to update retention policy" });
+    }
+  });
+
+  /**
+   * Delete data retention policy
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.delete('/api/gdpr/retention-policies/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can delete retention policies
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const existingPolicy = await storage.getDataRetentionPolicy(req.params.id);
+      if (!existingPolicy || existingPolicy.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "Retention policy not found" });
+      }
+
+      await storage.deleteDataRetentionPolicy(req.params.id);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'delete_retention_policy',
+        resource: 'data_retention_policy',
+        resourceId: req.params.id,
+        details: {
+          deletedPolicy: existingPolicy,
+          deletedByAdmin: currentUser.id,
+          complianceLevel: 'gdpr_article_5e'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.status(204).send();
+
+    } catch (error) {
+      console.error("Error deleting retention policy:", error);
+      res.status(500).json({ message: "Failed to delete retention policy" });
+    }
+  });
+
+  /**
+   * Get data lifecycle records for organization
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/data-lifecycle', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can view lifecycle data
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const { status, dataType, userId } = req.query;
+      let records;
+
+      if (status) {
+        records = await storage.getDataLifecycleRecordsByStatus(currentUser.organisationId, status as string);
+      } else if (userId) {
+        records = await storage.getDataLifecycleRecordsByUser(userId as string);
+      } else {
+        records = await storage.getDataLifecycleRecordsByOrganisation(currentUser.organisationId);
+      }
+
+      // Filter by data type if specified
+      if (dataType) {
+        records = records.filter(r => r.dataType === dataType);
+      }
+
+      res.json(records);
+
+    } catch (error) {
+      console.error("Error fetching data lifecycle records:", error);
+      res.status(500).json({ message: "Failed to fetch data lifecycle records" });
+    }
+  });
+
+  /**
+   * Execute manual retention scan for organization
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.post('/api/gdpr/retention-scan', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can execute retention scans
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const scanResult = await dataRetentionService.executeManualRetentionScan(currentUser.organisationId);
+
+      // GDPR Audit Logging
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        adminId: currentUser.id,
+        action: 'execute_retention_scan',
+        resource: 'data_retention_scan',
+        resourceId: `scan_${Date.now()}`,
+        details: {
+          scanResult,
+          triggeredByAdmin: currentUser.id,
+          scanType: 'manual',
+          complianceLevel: 'gdpr_article_5e'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json({
+        message: "Retention scan completed successfully",
+        result: scanResult
+      });
+
+    } catch (error) {
+      console.error("Error executing retention scan:", error);
+      res.status(500).json({ message: "Failed to execute retention scan" });
+    }
+  });
+
+  /**
+   * Get retention status and overview for organization
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/retention-status', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can view retention status
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const retentionStatus = await dataRetentionService.getRetentionStatus(currentUser.organisationId);
+      const complianceReport = await storage.getRetentionComplianceReport(currentUser.organisationId);
+
+      res.json({
+        retentionStatus,
+        complianceReport
+      });
+
+    } catch (error) {
+      console.error("Error fetching retention status:", error);
+      res.status(500).json({ message: "Failed to fetch retention status" });
+    }
+  });
+
+  /**
+   * Get retention compliance audits for organization
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/retention-audits', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can view compliance audits
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const { policyId } = req.query;
+      let audits;
+
+      if (policyId) {
+        audits = await storage.getRetentionComplianceAuditsByPolicy(policyId as string);
+      } else {
+        audits = await storage.getRetentionComplianceAuditsByOrganisation(currentUser.organisationId);
+      }
+
+      res.json(audits);
+
+    } catch (error) {
+      console.error("Error fetching retention compliance audits:", error);
+      res.status(500).json({ message: "Failed to fetch retention compliance audits" });
+    }
+  });
+
+  /**
+   * Get secure deletion certificates for organization
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/deletion-certificates', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can view deletion certificates
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const { userId } = req.query;
+      let certificates;
+
+      if (userId) {
+        certificates = await storage.getSecureDeletionCertificatesByUser(userId as string);
+      } else {
+        certificates = await storage.getSecureDeletionCertificatesByOrganisation(currentUser.organisationId);
+      }
+
+      res.json(certificates);
+
+    } catch (error) {
+      console.error("Error fetching deletion certificates:", error);
+      res.status(500).json({ message: "Failed to fetch deletion certificates" });
+    }
+  });
+
+  /**
+   * Get specific deletion certificate by certificate number
+   * Feature Guard: GDPR enabled + dataRetention feature + Admin role required
+   */
+  app.get('/api/gdpr/deletion-certificates/:certificateNumber', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('dataRetention')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admin and superadmin can view deletion certificates
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied. Admin privileges required." });
+      }
+
+      const certificate = await storage.getSecureDeletionCertificateByNumber(req.params.certificateNumber);
+      
+      if (!certificate || certificate.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "Deletion certificate not found" });
+      }
+
+      res.json(certificate);
+
+    } catch (error) {
+      console.error("Error fetching deletion certificate:", error);
+      res.status(500).json({ message: "Failed to fetch deletion certificate" });
     }
   });
 

@@ -114,9 +114,13 @@ app.use((req, res, next) => {
     const { BreachDeadlineService } = await import('./services/BreachDeadlineService.js');
     const { BreachNotificationService } = await import('./services/BreachNotificationService.js');
     
+    // Import data retention service for GDPR Article 5(e) compliance
+    const { DataRetentionService } = await import('./services/DataRetentionService.js');
+    
     // Initialize services
     const breachDeadlineService = new BreachDeadlineService();
     const breachNotificationService = new BreachNotificationService();
+    const dataRetentionService = new DataRetentionService();
     
     // Register breach notification templates at startup
     await breachNotificationService.registerBreachTemplates();
@@ -144,7 +148,66 @@ app.use((req, res, next) => {
     setInterval(deadlineMonitorLoop, DEADLINE_MONITOR_INTERVAL_MS);
     
     console.log(`✅ Breach deadline monitoring active - checking every ${DEADLINE_MONITOR_INTERVAL_MS / 1000 / 60} minutes`);
-    console.log('🛡️  GDPR breach management services initialized successfully');
+    
+    // ===== ENHANCED DATA RETENTION LIFECYCLE AUTOMATION =====
+    // GDPR Article 5(e) Storage Limitation - Automated Data Lifecycle Management
+    console.log('🗂️  Initializing automated data retention scanning...');
+    
+    // Set up automated retention scanning (every 6 hours for production efficiency)
+    // Critical: Automated soft-delete and secure erase compliance
+    const RETENTION_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+    
+    const retentionScanLoop = async () => {
+      try {
+        console.log('📊 Starting automated data retention lifecycle scan...');
+        
+        // Get all organizations for comprehensive scanning
+        const { storage } = await import('./storage.js');
+        const organisations = await storage.getAllOrganisations();
+        
+        let totalProcessed = 0;
+        let totalSoftDeleted = 0;
+        let totalSecurelyErased = 0;
+        
+        for (const org of organisations) {
+          try {
+            console.log(`🔍 Scanning retention policies for organization: ${org.name} (${org.id})`);
+            
+            // Execute retention scanning for this organization
+            const scanResult = await dataRetentionService.executeRetentionLifecycleScan(org.id);
+            
+            totalProcessed += scanResult.recordsProcessed || 0;
+            totalSoftDeleted += scanResult.recordsSoftDeleted || 0;
+            totalSecurelyErased += scanResult.recordsSecurelyErased || 0;
+            
+            console.log(`✅ Org ${org.name}: Processed ${scanResult.recordsProcessed}, Soft-deleted ${scanResult.recordsSoftDeleted}, Securely erased ${scanResult.recordsSecurelyErased}`);
+            
+          } catch (orgError) {
+            console.error(`❌ Retention scan failed for organization ${org.id}:`, orgError);
+            // Continue with other organizations even if one fails
+          }
+        }
+        
+        console.log(`✅ Data retention lifecycle scan completed successfully`);
+        console.log(`📋 Total Summary: Processed ${totalProcessed}, Soft-deleted ${totalSoftDeleted}, Securely erased ${totalSecurelyErased} records`);
+        
+      } catch (error) {
+        console.error('❌ CRITICAL: Data retention lifecycle scan failed:', error);
+        // Don't throw - keep the server running, but log for monitoring alerts
+      }
+    };
+    
+    // Start initial retention scan (delayed by 2 minutes to let server fully start)
+    setTimeout(() => {
+      console.log('🚀 Starting initial data retention scan...');
+      retentionScanLoop();
+    }, 2 * 60 * 1000); // 2 minute delay
+    
+    // Schedule regular retention scanning
+    setInterval(retentionScanLoop, RETENTION_SCAN_INTERVAL_MS);
+    
+    console.log(`✅ Data retention lifecycle scanning active - checking every ${RETENTION_SCAN_INTERVAL_MS / 1000 / 60 / 60} hours`);
+    console.log('🛡️  GDPR breach management and data retention services initialized successfully');
     
   } catch (error) {
     console.error('❌ CRITICAL: Failed to initialize GDPR breach management services:', error);

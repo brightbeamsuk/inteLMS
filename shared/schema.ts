@@ -161,6 +161,52 @@ export const marketingConsentTypeEnum = pgEnum('marketing_consent_type', ['email
 export const retentionDeletionMethodEnum = pgEnum('retention_deletion_method', ['soft', 'hard']);
 export const retentionScheduleStatusEnum = pgEnum('retention_schedule_status', ['scheduled', 'completed', 'cancelled']);
 
+// Enhanced data retention enums for comprehensive lifecycle management
+export const retentionDataTypeEnum = pgEnum('retention_data_type', [
+  'user_profile',           // User personal data (PII)
+  'user_authentication',    // Password hashes, sessions, tokens
+  'course_progress',        // Learning progress, completions, attempts
+  'certificates',           // Generated certificates and records
+  'communications',         // Email logs, notifications
+  'audit_logs',            // System audit trails
+  'support_tickets',       // Customer support data
+  'billing_records',       // Payment and subscription data
+  'consent_records',       // GDPR consent preferences
+  'analytics_data',        // Usage analytics and tracking
+  'uploaded_files',        // User-generated content and uploads
+  'system_logs',           // Technical system logs
+  'backup_data'            // System backups and archives
+]);
+
+export const dataLifecycleStatusEnum = pgEnum('data_lifecycle_status', [
+  'active',                // Data is actively used
+  'retention_pending',     // Approaching retention limit
+  'deletion_scheduled',    // Marked for soft deletion
+  'soft_deleted',         // Soft deleted, in grace period
+  'deletion_pending',     // Ready for secure erase
+  'securely_erased',      // Permanently deleted
+  'archived',             // Long-term archived
+  'frozen'                // Litigation hold or dispute freeze
+]);
+
+export const retentionPolicyTriggerEnum = pgEnum('retention_policy_trigger', [
+  'time_based',           // Triggered by time elapsed
+  'event_based',          // Triggered by specific events
+  'consent_withdrawal',   // Triggered by consent withdrawal
+  'account_deletion',     // Triggered by account deletion
+  'contract_termination', // Triggered by contract end
+  'manual_request',       // Manually triggered by admin
+  'legal_obligation'      // Required by legal obligation
+]);
+
+export const secureEraseMethodEnum = pgEnum('secure_erase_method', [
+  'simple_delete',        // Standard database delete
+  'overwrite_once',       // Single pass overwrite
+  'overwrite_multiple',   // Multi-pass secure overwrite
+  'cryptographic_erase',  // Key destruction for encrypted data
+  'physical_destruction'  // Physical destruction of storage media
+]);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1359,6 +1405,184 @@ export const cookieInventory = pgTable("cookie_inventory", {
   index("idx_cookie_inventory_essential").on(table.essential),
 ]);
 
+// Enhanced Data Retention and Lifecycle Management Tables
+// (GDPR Article 5(e) storage limitation compliance)
+
+// Data retention policies - enhanced version of retention rules with comprehensive lifecycle management
+export const dataRetentionPolicies = pgTable("data_retention_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description").notNull(),
+  dataType: retentionDataTypeEnum("data_type").notNull(),
+  retentionPeriod: integer("retention_period").notNull(), // days
+  gracePeriod: integer("grace_period").notNull().default(30), // days before secure erase
+  deletionMethod: retentionDeletionMethodEnum("deletion_method").notNull().default('soft'),
+  secureEraseMethod: secureEraseMethodEnum("secure_erase_method").notNull().default('overwrite_multiple'),
+  triggerType: retentionPolicyTriggerEnum("trigger_type").notNull().default('time_based'),
+  legalBasis: processingLawfulBasisEnum("legal_basis").notNull(),
+  regulatoryRequirement: text("regulatory_requirement"), // e.g., "GDPR Article 6(1)(c)", "Companies Act 2006"
+  priority: integer("priority").notNull().default(100), // Higher number = higher priority for conflicts
+  enabled: boolean("enabled").notNull().default(true),
+  automaticDeletion: boolean("automatic_deletion").notNull().default(true),
+  requiresManualReview: boolean("requires_manual_review").notNull().default(false),
+  notificationSettings: jsonb("notification_settings").notNull().default('{}'), // Notification preferences
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_data_retention_policies_organisation_id").on(table.organisationId),
+  index("idx_data_retention_policies_data_type").on(table.dataType),
+  index("idx_data_retention_policies_enabled").on(table.enabled),
+  index("idx_data_retention_policies_trigger_type").on(table.triggerType),
+  index("idx_data_retention_policies_priority").on(table.priority),
+  index("idx_data_retention_policies_automatic_deletion").on(table.automaticDeletion),
+]);
+
+// Data lifecycle tracking - tracks the deletion lifecycle of individual data records
+export const dataLifecycleRecords = pgTable("data_lifecycle_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  dataType: retentionDataTypeEnum("data_type").notNull(),
+  resourceId: varchar("resource_id").notNull(), // ID of the actual data record
+  resourceTable: varchar("resource_table").notNull(), // Table name containing the data
+  status: dataLifecycleStatusEnum("status").notNull().default('active'),
+  policyId: varchar("policy_id").notNull(), // Reference to data retention policy
+  
+  // Lifecycle timestamps
+  dataCreatedAt: timestamp("data_created_at").notNull(), // When the original data was created
+  retentionEligibleAt: timestamp("retention_eligible_at").notNull(), // When eligible for deletion
+  softDeleteScheduledAt: timestamp("soft_delete_scheduled_at"), // When soft deletion is scheduled
+  softDeletedAt: timestamp("soft_deleted_at"), // When soft deleted
+  secureEraseScheduledAt: timestamp("secure_erase_scheduled_at"), // When secure erase is scheduled
+  secureErasedAt: timestamp("secure_erased_at"), // When securely erased
+  archivedAt: timestamp("archived_at"), // If archived instead of deleted
+  frozenAt: timestamp("frozen_at"), // If frozen due to legal hold
+  
+  // Deletion details
+  deletionReason: text("deletion_reason"), // Human-readable reason for deletion
+  deletionMethod: retentionDeletionMethodEnum("deletion_method"),
+  secureEraseMethod: secureEraseMethodEnum("secure_erase_method"),
+  deletionConfirmation: varchar("deletion_confirmation"), // Confirmation hash/signature
+  complianceCertificate: varchar("compliance_certificate"), // Generated certificate reference
+  
+  // Processing details
+  lastProcessedAt: timestamp("last_processed_at"),
+  processingErrors: jsonb("processing_errors").notNull().default('[]'),
+  retryCount: integer("retry_count").notNull().default(0),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_data_lifecycle_records_organisation_id").on(table.organisationId),
+  index("idx_data_lifecycle_records_user_id").on(table.userId),
+  index("idx_data_lifecycle_records_data_type").on(table.dataType),
+  index("idx_data_lifecycle_records_status").on(table.status),
+  index("idx_data_lifecycle_records_policy_id").on(table.policyId),
+  index("idx_data_lifecycle_records_resource").on(table.resourceTable, table.resourceId),
+  index("idx_data_lifecycle_records_retention_eligible").on(table.retentionEligibleAt),
+  index("idx_data_lifecycle_records_soft_delete_scheduled").on(table.softDeleteScheduledAt),
+  index("idx_data_lifecycle_records_secure_erase_scheduled").on(table.secureEraseScheduledAt),
+  // Compound index for lifecycle processing
+  index("idx_data_lifecycle_processing").on(table.status, table.lastProcessedAt),
+]);
+
+// Retention compliance auditing - tracks adherence to retention policies
+export const retentionComplianceAudits = pgTable("retention_compliance_audits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  auditDate: timestamp("audit_date").defaultNow().notNull(),
+  policyId: varchar("policy_id").notNull(),
+  dataType: retentionDataTypeEnum("data_type").notNull(),
+  
+  // Compliance metrics
+  totalRecords: integer("total_records").notNull().default(0),
+  compliantRecords: integer("compliant_records").notNull().default(0),
+  overdueRecords: integer("overdue_records").notNull().default(0),
+  errorRecords: integer("error_records").notNull().default(0),
+  processedRecords: integer("processed_records").notNull().default(0),
+  
+  // Timing metrics
+  averageRetentionPeriod: integer("average_retention_period"), // days
+  longestRetentionPeriod: integer("longest_retention_period"), // days
+  oldestRecord: timestamp("oldest_record"),
+  
+  // Compliance status
+  complianceRate: decimal("compliance_rate", { precision: 5, scale: 2 }), // percentage
+  isCompliant: boolean("is_compliant").notNull().default(true),
+  riskLevel: varchar("risk_level").notNull().default('low'), // low, medium, high, critical
+  
+  // Issues and recommendations
+  issues: jsonb("issues").notNull().default('[]'),
+  recommendations: jsonb("recommendations").notNull().default('[]'),
+  auditNotes: text("audit_notes"),
+  
+  // Audit metadata
+  auditPerformedBy: varchar("audit_performed_by"),
+  auditDuration: integer("audit_duration"), // seconds
+  nextAuditDue: timestamp("next_audit_due"),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_retention_compliance_audits_organisation_id").on(table.organisationId),
+  index("idx_retention_compliance_audits_policy_id").on(table.policyId),
+  index("idx_retention_compliance_audits_data_type").on(table.dataType),
+  index("idx_retention_compliance_audits_audit_date").on(table.auditDate),
+  index("idx_retention_compliance_audits_compliance").on(table.isCompliant, table.complianceRate),
+  index("idx_retention_compliance_audits_risk_level").on(table.riskLevel),
+  index("idx_retention_compliance_audits_next_due").on(table.nextAuditDue),
+]);
+
+// Secure deletion certificates - provides proof of secure data deletion for compliance
+export const secureDeletionCertificates = pgTable("secure_deletion_certificates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  certificateNumber: varchar("certificate_number").notNull().unique(),
+  
+  // Deletion details
+  userId: varchar("user_id"),
+  dataTypes: text("data_types").array().notNull(), // Array of data types deleted
+  recordCount: integer("record_count").notNull(),
+  deletionMethod: secureEraseMethodEnum("deletion_method").notNull(),
+  deletionStarted: timestamp("deletion_started").notNull(),
+  deletionCompleted: timestamp("deletion_completed").notNull(),
+  
+  // Verification details
+  verificationHash: varchar("verification_hash").notNull(), // Cryptographic proof
+  witnessedBy: varchar("witnessed_by"), // Admin who witnessed the deletion
+  verificationMethod: varchar("verification_method").notNull(),
+  
+  // Legal and compliance context
+  legalBasis: processingLawfulBasisEnum("legal_basis").notNull(),
+  regulatoryRequirement: text("regulatory_requirement"),
+  requestOrigin: varchar("request_origin").notNull(), // 'retention_policy', 'user_request', 'admin_action'
+  requestReference: varchar("request_reference"), // Reference to original request
+  
+  // Certificate metadata
+  certificateTemplate: varchar("certificate_template").default('standard'),
+  certificateUrl: varchar("certificate_url"), // Generated PDF certificate
+  digitalSignature: text("digital_signature"), // Digital signature of certificate
+  validUntil: timestamp("valid_until"), // Certificate validity period
+  
+  // Additional context
+  deletionReason: text("deletion_reason").notNull(),
+  complianceNotes: text("compliance_notes"),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_secure_deletion_certificates_organisation_id").on(table.organisationId),
+  index("idx_secure_deletion_certificates_certificate_number").on(table.certificateNumber),
+  index("idx_secure_deletion_certificates_user_id").on(table.userId),
+  index("idx_secure_deletion_certificates_deletion_completed").on(table.deletionCompleted),
+  index("idx_secure_deletion_certificates_request_origin").on(table.requestOrigin),
+  index("idx_secure_deletion_certificates_legal_basis").on(table.legalBasis),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -1625,6 +1849,29 @@ export const insertCookieInventorySchema = createInsertSchema(cookieInventory).o
   updatedAt: true,
 });
 
+// Enhanced Data Retention insert schemas
+export const insertDataRetentionPolicySchema = createInsertSchema(dataRetentionPolicies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDataLifecycleRecordSchema = createInsertSchema(dataLifecycleRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRetentionComplianceAuditSchema = createInsertSchema(retentionComplianceAudits).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSecureDeletionCertificateSchema = createInsertSchema(secureDeletionCertificates).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1758,3 +2005,16 @@ export type AgeVerification = typeof ageVerifications.$inferSelect;
 
 export type InsertCookieInventory = z.infer<typeof insertCookieInventorySchema>;
 export type CookieInventory = typeof cookieInventory.$inferSelect;
+
+// Enhanced Data Retention types
+export type InsertDataRetentionPolicy = z.infer<typeof insertDataRetentionPolicySchema>;
+export type DataRetentionPolicy = typeof dataRetentionPolicies.$inferSelect;
+
+export type InsertDataLifecycleRecord = z.infer<typeof insertDataLifecycleRecordSchema>;
+export type DataLifecycleRecord = typeof dataLifecycleRecords.$inferSelect;
+
+export type InsertRetentionComplianceAudit = z.infer<typeof insertRetentionComplianceAuditSchema>;
+export type RetentionComplianceAudit = typeof retentionComplianceAudits.$inferSelect;
+
+export type InsertSecureDeletionCertificate = z.infer<typeof insertSecureDeletionCertificateSchema>;
+export type SecureDeletionCertificate = typeof secureDeletionCertificates.$inferSelect;

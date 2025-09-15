@@ -41,6 +41,11 @@ import {
   gdprAuditLogs,
   ageVerifications,
   cookieInventory,
+  // Enhanced data retention tables
+  dataRetentionPolicies,
+  dataLifecycleRecords,
+  retentionComplianceAudits,
+  secureDeletionCertificates,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -123,6 +128,15 @@ import {
   type InsertAgeVerification,
   type CookieInventory,
   type InsertCookieInventory,
+  // Enhanced data retention types
+  type DataRetentionPolicy,
+  type InsertDataRetentionPolicy,
+  type DataLifecycleRecord,
+  type InsertDataLifecycleRecord,
+  type RetentionComplianceAudit,
+  type InsertRetentionComplianceAudit,
+  type SecureDeletionCertificate,
+  type InsertSecureDeletionCertificate,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -548,6 +562,71 @@ export interface IStorage {
   updateCookieInventory(id: string, cookieInventory: Partial<InsertCookieInventory>): Promise<CookieInventory>;
   deleteCookieInventory(id: string): Promise<void>;
   getCookieInventoriesByCategory(organisationId: string, category: string): Promise<CookieInventory[]>;
+
+  // Enhanced Data Retention Policies - comprehensive GDPR Article 5(e) compliance
+  createDataRetentionPolicy(policy: InsertDataRetentionPolicy): Promise<DataRetentionPolicy>;
+  getDataRetentionPolicy(id: string): Promise<DataRetentionPolicy | undefined>;
+  getDataRetentionPoliciesByOrganisation(organisationId: string): Promise<DataRetentionPolicy[]>;
+  getDataRetentionPoliciesByDataType(organisationId: string, dataType: string): Promise<DataRetentionPolicy[]>;
+  updateDataRetentionPolicy(id: string, policy: Partial<InsertDataRetentionPolicy>): Promise<DataRetentionPolicy>;
+  deleteDataRetentionPolicy(id: string): Promise<void>;
+  getEnabledDataRetentionPolicies(organisationId: string): Promise<DataRetentionPolicy[]>;
+  getDataRetentionPolicyByPriority(organisationId: string, dataType: string): Promise<DataRetentionPolicy | undefined>;
+
+  // Data Lifecycle Management - automated deletion tracking and processing
+  createDataLifecycleRecord(record: InsertDataLifecycleRecord): Promise<DataLifecycleRecord>;
+  getDataLifecycleRecord(id: string): Promise<DataLifecycleRecord | undefined>;
+  getDataLifecycleRecordsByUser(userId: string): Promise<DataLifecycleRecord[]>;
+  getDataLifecycleRecordsByOrganisation(organisationId: string): Promise<DataLifecycleRecord[]>;
+  getDataLifecycleRecordsByStatus(organisationId: string, status: string): Promise<DataLifecycleRecord[]>;
+  getDataLifecycleRecordsByResource(resourceTable: string, resourceId: string): Promise<DataLifecycleRecord | undefined>;
+  updateDataLifecycleRecord(id: string, record: Partial<InsertDataLifecycleRecord>): Promise<DataLifecycleRecord>;
+  deleteDataLifecycleRecord(id: string): Promise<void>;
+  getDataEligibleForRetention(organisationId: string): Promise<DataLifecycleRecord[]>;
+  getDataEligibleForSoftDelete(organisationId: string): Promise<DataLifecycleRecord[]>;
+  getDataEligibleForSecureErase(organisationId: string): Promise<DataLifecycleRecord[]>;
+  scheduleDataForSoftDelete(recordIds: string[]): Promise<number>;
+  scheduleDataForSecureErase(recordIds: string[]): Promise<number>;
+  processDataLifecycleRecords(organisationId: string, batchSize?: number): Promise<{
+    processed: number;
+    softDeleted: number;
+    securelyErased: number;
+    errors: number;
+  }>;
+
+  // Retention Compliance Auditing - tracking adherence to retention policies
+  createRetentionComplianceAudit(audit: InsertRetentionComplianceAudit): Promise<RetentionComplianceAudit>;
+  getRetentionComplianceAudit(id: string): Promise<RetentionComplianceAudit | undefined>;
+  getRetentionComplianceAuditsByOrganisation(organisationId: string): Promise<RetentionComplianceAudit[]>;
+  getRetentionComplianceAuditsByPolicy(policyId: string): Promise<RetentionComplianceAudit[]>;
+  getLatestRetentionComplianceAudit(organisationId: string, policyId: string): Promise<RetentionComplianceAudit | undefined>;
+  updateRetentionComplianceAudit(id: string, audit: Partial<InsertRetentionComplianceAudit>): Promise<RetentionComplianceAudit>;
+  deleteRetentionComplianceAudit(id: string): Promise<void>;
+  getRetentionComplianceReport(organisationId: string): Promise<{
+    overallCompliance: number;
+    policiesAudited: number;
+    highRiskPolicies: number;
+    overdueRecords: number;
+    lastAuditDate: Date | null;
+  }>;
+
+  // Secure Deletion Certificates - proof of secure data deletion for compliance
+  createSecureDeletionCertificate(certificate: InsertSecureDeletionCertificate): Promise<SecureDeletionCertificate>;
+  getSecureDeletionCertificate(id: string): Promise<SecureDeletionCertificate | undefined>;
+  getSecureDeletionCertificateByNumber(certificateNumber: string): Promise<SecureDeletionCertificate | undefined>;
+  getSecureDeletionCertificatesByOrganisation(organisationId: string): Promise<SecureDeletionCertificate[]>;
+  getSecureDeletionCertificatesByUser(userId: string): Promise<SecureDeletionCertificate[]>;
+  updateSecureDeletionCertificate(id: string, certificate: Partial<InsertSecureDeletionCertificate>): Promise<SecureDeletionCertificate>;
+  deleteSecureDeletionCertificate(id: string): Promise<void>;
+  generateSecureDeletionCertificate(organisationId: string, deletionDetails: {
+    userId?: string;
+    dataTypes: string[];
+    recordCount: number;
+    deletionMethod: string;
+    legalBasis: string;
+    deletionReason: string;
+    requestReference?: string;
+  }): Promise<SecureDeletionCertificate>;
 }
 
 export class DatabaseStorage implements IStorage {
