@@ -150,6 +150,49 @@ export const emailSendStatusEnum = pgEnum('email_send_status', [
 
 // GDPR enums (UK GDPR and Data Protection Act 2018 compliance)
 export const consentStatusEnum = pgEnum('consent_status', ['granted', 'denied', 'withdrawn', 'pending']);
+
+// Enhanced GDPR audit logging enums for comprehensive accountability
+export const auditActionEnum = pgEnum('audit_action', [
+  // Data processing actions
+  'data_collected', 'data_processed', 'data_shared', 'data_retained', 'data_deleted',
+  'data_exported', 'data_imported', 'data_transferred', 'data_anonymized', 'data_pseudonymized',
+  // User rights actions
+  'rights_request_submitted', 'rights_request_verified', 'rights_request_processed', 'rights_request_completed',
+  'rights_request_rejected', 'rights_request_appealed', 'access_request_fulfilled', 'erasure_completed',
+  'rectification_completed', 'restriction_applied', 'portability_provided', 'objection_processed',
+  // Consent management actions
+  'consent_collected', 'consent_granted', 'consent_denied', 'consent_withdrawn', 'consent_modified',
+  'consent_verified', 'consent_evidence_stored', 'marketing_consent_updated', 'cookie_consent_changed',
+  // Breach management actions
+  'breach_detected', 'breach_assessed', 'breach_contained', 'breach_investigated', 'breach_reported_ico',
+  'breach_subjects_notified', 'breach_remediated', 'breach_closed', 'breach_followup_completed',
+  // System access actions
+  'admin_login', 'admin_logout', 'admin_action_performed', 'privileged_operation', 'access_denied',
+  'failed_authentication', 'password_reset', 'role_changed', 'permissions_modified',
+  // Compliance actions
+  'compliance_check_performed', 'compliance_report_generated', 'audit_initiated', 'audit_completed',
+  'policy_updated', 'procedure_modified', 'training_completed', 'certification_obtained'
+]);
+
+export const auditResourceEnum = pgEnum('audit_resource', [
+  'user_data', 'personal_data', 'special_category_data', 'user_rights_request', 'consent_record',
+  'marketing_consent', 'cookie_consent', 'data_breach', 'processing_activity', 'retention_policy',
+  'user_account', 'admin_account', 'system_settings', 'compliance_document', 'audit_log',
+  'export_job', 'data_transfer', 'third_party_integration', 'security_incident'
+]);
+
+export const auditCategoryEnum = pgEnum('audit_category', [
+  'data_processing', 'user_rights', 'consent_management', 'breach_response', 'system_access',
+  'compliance_monitoring', 'security_event', 'administrative_action', 'automated_process'
+]);
+
+export const auditSeverityEnum = pgEnum('audit_severity', [
+  'info', 'low', 'medium', 'high', 'critical'
+]);
+
+export const auditOutcomeEnum = pgEnum('audit_outcome', [
+  'success', 'failure', 'partial', 'pending', 'cancelled', 'error'
+]);
 export const processingLawfulBasisEnum = pgEnum('processing_lawful_basis', ['consent', 'contract', 'legal_obligation', 'vital_interests', 'public_task', 'legitimate_interests']);
 export const dataCategoryEnum = pgEnum('data_category', ['identity', 'contact', 'financial', 'demographic', 'education', 'technical', 'usage', 'special']);
 export const userRightTypeEnum = pgEnum('user_right_type', ['access', 'rectification', 'erasure', 'restriction', 'objection', 'portability']);
@@ -1473,13 +1516,58 @@ export const gdprAuditLogs = pgTable("gdpr_audit_logs", {
   organisationId: varchar("organisation_id").notNull(),
   userId: varchar("user_id"),
   adminId: varchar("admin_id"),
-  action: varchar("action").notNull(),
-  resource: varchar("resource").notNull(),
+  action: auditActionEnum("action").notNull(),
+  resource: auditResourceEnum("resource").notNull(),
   resourceId: varchar("resource_id").notNull(),
   details: jsonb("details").notNull().default('{}'),
   ipAddress: varchar("ip_address").notNull(),
   userAgent: text("user_agent").notNull(),
+  
+  // Enhanced accountability fields
+  category: auditCategoryEnum("category").notNull(),
+  severity: auditSeverityEnum("severity").notNull().default('info'),
+  outcome: auditOutcomeEnum("outcome").notNull().default('success'),
+  
+  // Correlation and traceability
+  correlationId: varchar("correlation_id"), // Link related audit events
+  parentAuditId: varchar("parent_audit_id"), // Link to parent audit event
+  transactionId: varchar("transaction_id"), // Database transaction ID
+  sessionId: varchar("session_id"), // User session ID
+  requestId: varchar("request_id"), // HTTP request ID
+  
+  // Context and evidence
+  businessContext: text("business_context"), // Business justification
+  legalBasis: processingLawfulBasisEnum("legal_basis"), // GDPR legal basis
+  retentionPeriod: integer("retention_period_days"), // How long to retain this audit log
+  evidenceHash: varchar("evidence_hash"), // Hash of supporting evidence
+  witnessedBy: varchar("witnessed_by"), // Staff member who witnessed action
+  
+  // Compliance metadata
+  complianceFramework: varchar("compliance_framework").default('UK_GDPR'), // UK_GDPR, EU_GDPR, etc.
+  regulatoryRef: varchar("regulatory_ref"), // Reference to regulation/article
+  riskAssessment: jsonb("risk_assessment").default('{}'), // Risk evaluation data
+  
+  // Error and exception handling
+  errorCode: varchar("error_code"), // System error code if applicable
+  errorMessage: text("error_message"), // Error description
+  stackTrace: text("stack_trace"), // Technical error details
+  
+  // Timing and performance
+  duration: integer("duration_ms"), // Action duration in milliseconds
   timestamp: timestamp("timestamp").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"), // When action completed
+  
+  // Integrity and verification (separated from mutable verification metadata)
+  checksumHash: varchar("checksum_hash"), // Audit log integrity hash
+  previousLogHash: varchar("previous_log_hash"), // Chain integrity hash
+  canonicalPayload: jsonb("canonical_payload"), // Exact payload that was hashed for verification
+  // NOTE: isVerified moved to separate chain head table to avoid mutating audit records
+  
+  // Archival and retention
+  isArchived: boolean("is_archived").default(false),
+  archiveDate: timestamp("archive_date"),
+  retentionUntil: timestamp("retention_until"),
+  
 }, (table) => [
   index("idx_gdpr_audit_logs_organisation_id").on(table.organisationId),
   index("idx_gdpr_audit_logs_user_id").on(table.userId),
@@ -1487,6 +1575,270 @@ export const gdprAuditLogs = pgTable("gdpr_audit_logs", {
   index("idx_gdpr_audit_logs_action").on(table.action),
   index("idx_gdpr_audit_logs_resource").on(table.resource),
   index("idx_gdpr_audit_logs_timestamp").on(table.timestamp),
+  index("idx_gdpr_audit_logs_category").on(table.category),
+  index("idx_gdpr_audit_logs_severity").on(table.severity),
+  index("idx_gdpr_audit_logs_outcome").on(table.outcome),
+  index("idx_gdpr_audit_logs_correlation_id").on(table.correlationId),
+  index("idx_gdpr_audit_logs_session_id").on(table.sessionId),
+  index("idx_gdpr_audit_logs_completed_at").on(table.completedAt),
+  index("idx_gdpr_audit_logs_retention_until").on(table.retentionUntil),
+  index("idx_gdpr_audit_logs_legal_basis").on(table.legalBasis),
+]);
+
+// GDPR Audit Chain Head Tracking Table
+// This table maintains the head of audit chains for each organization
+// with proper concurrency control to prevent race conditions
+export const gdprAuditChainHeads = pgTable("gdpr_audit_chain_heads", {
+  organisationId: varchar("organisation_id").primaryKey(),
+  lastAuditLogId: varchar("last_audit_log_id").notNull(), // Reference to latest audit log
+  lastChainHash: varchar("last_chain_hash").notNull(), // Hash of the last audit log in chain
+  chainLength: integer("chain_length").notNull().default(1), // Total number of logs in chain
+  version: integer("version").notNull().default(1), // For optimistic locking
+  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+  // Verification metadata (separate from immutable chain data)
+  lastVerified: timestamp("last_verified"), // When chain was last verified
+  verificationStatus: varchar("verification_status").default('pending'), // pending, valid, broken
+  brokenAtLogId: varchar("broken_at_log_id"), // If chain is broken, which log broke it
+}, (table) => [
+  index("idx_chain_heads_last_updated").on(table.lastUpdated),
+  index("idx_chain_heads_verification_status").on(table.verificationStatus),
+  index("idx_chain_heads_last_verified").on(table.lastVerified),
+]);
+
+// Comprehensive Data Processing Activity Audit Table
+export const dataProcessingAuditLogs = pgTable("data_processing_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Processing activity identification
+  processingActivityId: varchar("processing_activity_id"),
+  processingPurpose: text("processing_purpose").notNull(),
+  dataCategory: dataCategoryEnum("data_category").notNull(),
+  
+  // Processing details
+  operation: varchar("operation").notNull(), // collect, process, share, retain, delete
+  dataSubjects: text("data_subjects").array().notNull(), // Types of data subjects affected
+  personalDataTypes: text("personal_data_types").array().notNull(),
+  specialCategoryData: text("special_category_data").array(),
+  
+  // Legal compliance
+  legalBasis: processingLawfulBasisEnum("legal_basis").notNull(),
+  legitimateInterest: text("legitimate_interest"), // If legal basis is legitimate interest
+  consentRequired: boolean("consent_required").default(false),
+  consentObtained: boolean("consent_obtained").default(false),
+  
+  // Data flow tracking
+  dataSource: varchar("data_source").notNull(), // Where data came from
+  dataDestination: varchar("data_destination"), // Where data is going
+  thirdPartyRecipients: text("third_party_recipients").array(),
+  internationalTransfers: boolean("international_transfers").default(false),
+  transferSafeguards: text("transfer_safeguards"),
+  
+  // Retention and disposal
+  retentionPeriod: varchar("retention_period"),
+  retentionJustification: text("retention_justification"),
+  disposalMethod: varchar("disposal_method"),
+  
+  // User and context
+  triggeredBy: varchar("triggered_by"), // User or system that triggered processing
+  automaticProcessing: boolean("automatic_processing").default(false),
+  humanReviewRequired: boolean("human_review_required").default(false),
+  
+  // Risk and compliance
+  riskLevel: varchar("risk_level").default('low'), // low, medium, high
+  dpiaRequired: boolean("dpia_required").default(false),
+  dpiaReference: varchar("dpia_reference"),
+  
+  // Audit metadata
+  correlationId: varchar("correlation_id"),
+  processingStarted: timestamp("processing_started").notNull(),
+  processingCompleted: timestamp("processing_completed"),
+  recordCount: integer("record_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_data_processing_audit_organisation_id").on(table.organisationId),
+  index("idx_data_processing_audit_activity_id").on(table.processingActivityId),
+  index("idx_data_processing_audit_operation").on(table.operation),
+  index("idx_data_processing_audit_data_category").on(table.dataCategory),
+  index("idx_data_processing_audit_legal_basis").on(table.legalBasis),
+  index("idx_data_processing_audit_started").on(table.processingStarted),
+  index("idx_data_processing_audit_correlation_id").on(table.correlationId),
+  index("idx_data_processing_audit_risk_level").on(table.riskLevel),
+]);
+
+// User Rights Request Audit Trail Table
+export const userRightsAuditLogs = pgTable("user_rights_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Request identification
+  userRightRequestId: varchar("user_right_request_id").notNull(),
+  requestType: userRightTypeEnum("request_type").notNull(),
+  requestReference: varchar("request_reference").notNull(),
+  
+  // Staff and user tracking
+  dataSubjectId: varchar("data_subject_id"),
+  processedBy: varchar("processed_by"), // Staff member processing
+  reviewedBy: varchar("reviewed_by"), // Senior staff reviewer
+  approvedBy: varchar("approved_by"), // Final approver
+  
+  // Action tracking
+  actionTaken: varchar("action_taken").notNull(),
+  actionDescription: text("action_description").notNull(),
+  evidenceCollected: text("evidence_collected").array(),
+  documentsGenerated: text("documents_generated").array(),
+  
+  // Compliance tracking
+  slaStatus: varchar("sla_status").notNull(), // on_track, at_risk, overdue
+  daysSinceSubmission: integer("days_since_submission"),
+  daysUntilDeadline: integer("days_until_deadline"),
+  deadlineExtensionReason: text("deadline_extension_reason"),
+  
+  // Quality assurance
+  qualityCheckPerformed: boolean("quality_check_performed").default(false),
+  qualityCheckBy: varchar("quality_check_by"),
+  qualityIssues: text("quality_issues").array(),
+  correctionsMade: text("corrections_made").array(),
+  
+  // Outcome tracking
+  outcome: varchar("outcome"), // fulfilled, rejected, partially_fulfilled
+  rejectionReason: text("rejection_reason"),
+  dataSubjectNotified: boolean("data_subject_notified").default(false),
+  notificationMethod: varchar("notification_method"),
+  
+  // Audit metadata
+  correlationId: varchar("correlation_id"),
+  stepInProcess: varchar("step_in_process").notNull(),
+  duration: integer("duration_minutes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_user_rights_audit_organisation_id").on(table.organisationId),
+  index("idx_user_rights_audit_request_id").on(table.userRightRequestId),
+  index("idx_user_rights_audit_request_type").on(table.requestType),
+  index("idx_user_rights_audit_processed_by").on(table.processedBy),
+  index("idx_user_rights_audit_sla_status").on(table.slaStatus),
+  index("idx_user_rights_audit_outcome").on(table.outcome),
+  index("idx_user_rights_audit_correlation_id").on(table.correlationId),
+  index("idx_user_rights_audit_created_at").on(table.createdAt),
+]);
+
+// Consent Management Audit Trail Table
+export const consentAuditLogs = pgTable("consent_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Consent identification
+  consentRecordId: varchar("consent_record_id"),
+  marketingConsentId: varchar("marketing_consent_id"),
+  userId: varchar("user_id"),
+  
+  // Consent details
+  consentType: marketingConsentTypeEnum("consent_type"),
+  consentAction: varchar("consent_action").notNull(), // granted, denied, withdrawn, modified
+  previousStatus: consentStatusEnum("previous_status"),
+  newStatus: consentStatusEnum("new_status").notNull(),
+  
+  // Context and evidence
+  consentMethod: varchar("consent_method").notNull(), // web_form, email, phone, in_person
+  consentSource: consentSourceEnum("consent_source").notNull(),
+  evidenceData: jsonb("evidence_data").notNull().default('{}'),
+  doubleOptIn: boolean("double_opt_in").default(false),
+  
+  // Technical details
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  browserFingerprint: varchar("browser_fingerprint"),
+  sessionId: varchar("session_id"),
+  
+  // Legal basis and compliance
+  legalBasis: processingLawfulBasisEnum("legal_basis").default('consent'),
+  pecrCompliance: boolean("pecr_compliance").default(false),
+  childConsent: boolean("child_consent").default(false),
+  parentalConsentId: varchar("parental_consent_id"),
+  
+  // Audit trail
+  processedBy: varchar("processed_by"), // If processed by admin
+  witnessedBy: varchar("witnessed_by"), // If witnessed by staff
+  correlationId: varchar("correlation_id"),
+  
+  // Evidence preservation
+  evidenceHash: varchar("evidence_hash"),
+  digitalSignature: text("digital_signature"),
+  timestampService: varchar("timestamp_service"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_consent_audit_organisation_id").on(table.organisationId),
+  index("idx_consent_audit_consent_record_id").on(table.consentRecordId),
+  index("idx_consent_audit_marketing_consent_id").on(table.marketingConsentId),
+  index("idx_consent_audit_user_id").on(table.userId),
+  index("idx_consent_audit_consent_action").on(table.consentAction),
+  index("idx_consent_audit_new_status").on(table.newStatus),
+  index("idx_consent_audit_consent_source").on(table.consentSource),
+  index("idx_consent_audit_correlation_id").on(table.correlationId),
+  index("idx_consent_audit_created_at").on(table.createdAt),
+]);
+
+// System Access and Security Audit Table
+export const systemAccessAuditLogs = pgTable("system_access_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // User identification
+  userId: varchar("user_id"),
+  userEmail: varchar("user_email"),
+  userRole: userRoleEnum("user_role"),
+  impersonatedUserId: varchar("impersonated_user_id"), // If user is being impersonated
+  
+  // Access details
+  accessType: varchar("access_type").notNull(), // login, logout, action, admin_access, privileged_operation
+  accessMethod: varchar("access_method").notNull(), // web, api, mobile, admin_panel
+  authenticationMethod: varchar("authentication_method"), // password, sso, 2fa
+  
+  // Session tracking
+  sessionId: varchar("session_id"),
+  sessionDuration: integer("session_duration_minutes"),
+  concurrentSessions: integer("concurrent_sessions"),
+  
+  // Technical details
+  ipAddress: varchar("ip_address").notNull(),
+  userAgent: text("user_agent"),
+  geolocation: jsonb("geolocation").default('{}'),
+  deviceFingerprint: varchar("device_fingerprint"),
+  
+  // Security context
+  riskScore: integer("risk_score"), // 0-100 security risk assessment
+  anomalyDetected: boolean("anomaly_detected").default(false),
+  securityFlags: text("security_flags").array(),
+  
+  // Actions and resources
+  resourceAccessed: varchar("resource_accessed"),
+  actionPerformed: varchar("action_performed"),
+  privilegedOperation: boolean("privileged_operation").default(false),
+  dataAccessAttempt: boolean("data_access_attempt").default(false),
+  
+  // Outcome and errors
+  outcome: varchar("outcome").notNull(), // success, failure, blocked, suspicious
+  failureReason: varchar("failure_reason"),
+  securityResponse: varchar("security_response"), // none, alert, block, investigate
+  
+  // Compliance context
+  gdprRelevant: boolean("gdpr_relevant").default(false),
+  personalDataAccessed: boolean("personal_data_accessed").default(false),
+  specialCategoryAccessed: boolean("special_category_accessed").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_system_access_audit_organisation_id").on(table.organisationId),
+  index("idx_system_access_audit_user_id").on(table.userId),
+  index("idx_system_access_audit_access_type").on(table.accessType),
+  index("idx_system_access_audit_outcome").on(table.outcome),
+  index("idx_system_access_audit_privileged_operation").on(table.privilegedOperation),
+  index("idx_system_access_audit_anomaly_detected").on(table.anomalyDetected),
+  index("idx_system_access_audit_ip_address").on(table.ipAddress),
+  index("idx_system_access_audit_created_at").on(table.createdAt),
 ]);
 
 // Enhanced Age Verification table (UK GDPR Article 8 compliance)
@@ -3553,6 +3905,26 @@ export const insertGdprAuditLogSchema = createInsertSchema(gdprAuditLogs).omit({
   id: true,
 });
 
+// Chain head schema for database-backed audit chain tracking
+export const insertGdprAuditChainHeadSchema = createInsertSchema(gdprAuditChainHeads);
+
+// Comprehensive audit log insert schemas
+export const insertDataProcessingAuditLogSchema = createInsertSchema(dataProcessingAuditLogs).omit({
+  id: true,
+});
+
+export const insertUserRightsAuditLogSchema = createInsertSchema(userRightsAuditLogs).omit({
+  id: true,
+});
+
+export const insertConsentAuditLogSchema = createInsertSchema(consentAuditLogs).omit({
+  id: true,
+});
+
+export const insertSystemAccessAuditLogSchema = createInsertSchema(systemAccessAuditLogs).omit({
+  id: true,
+});
+
 export const insertAgeVerificationSchema = createInsertSchema(ageVerifications).omit({
   id: true,
   createdAt: true,
@@ -3822,6 +4194,23 @@ export type RetentionSchedule = typeof retentionSchedules.$inferSelect;
 
 export type InsertGdprAuditLog = z.infer<typeof insertGdprAuditLogSchema>;
 export type GdprAuditLog = typeof gdprAuditLogs.$inferSelect;
+
+// Chain head types for database-backed audit chain tracking
+export type InsertGdprAuditChainHead = z.infer<typeof insertGdprAuditChainHeadSchema>;
+export type GdprAuditChainHead = typeof gdprAuditChainHeads.$inferSelect;
+
+// Comprehensive audit log types
+export type InsertDataProcessingAuditLog = z.infer<typeof insertDataProcessingAuditLogSchema>;
+export type DataProcessingAuditLog = typeof dataProcessingAuditLogs.$inferSelect;
+
+export type InsertUserRightsAuditLog = z.infer<typeof insertUserRightsAuditLogSchema>;
+export type UserRightsAuditLog = typeof userRightsAuditLogs.$inferSelect;
+
+export type InsertConsentAuditLog = z.infer<typeof insertConsentAuditLogSchema>;
+export type ConsentAuditLog = typeof consentAuditLogs.$inferSelect;
+
+export type InsertSystemAccessAuditLog = z.infer<typeof insertSystemAccessAuditLogSchema>;
+export type SystemAccessAuditLog = typeof systemAccessAuditLogs.$inferSelect;
 
 export type InsertAgeVerification = z.infer<typeof insertAgeVerificationSchema>;
 export type AgeVerification = typeof ageVerifications.$inferSelect;

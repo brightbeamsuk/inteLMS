@@ -39,6 +39,10 @@ import {
   retentionRules,
   retentionSchedules,
   gdprAuditLogs,
+  dataProcessingAuditLogs,
+  userRightsAuditLogs,
+  consentAuditLogs,
+  systemAccessAuditLogs,
   ageVerifications,
   // UK GDPR Article 8 - Parental Consent tables
   parentalConsentRecords,
@@ -149,6 +153,14 @@ import {
   type InsertRetentionSchedule,
   type GdprAuditLog,
   type InsertGdprAuditLog,
+  type DataProcessingAuditLog,
+  type InsertDataProcessingAuditLog,
+  type UserRightsAuditLog,
+  type InsertUserRightsAuditLog,
+  type ConsentAuditLog,
+  type InsertConsentAuditLog,
+  type SystemAccessAuditLog,
+  type InsertSystemAccessAuditLog,
   type AgeVerification,
   type InsertAgeVerification,
   // UK GDPR Article 8 - Parental Consent types
@@ -600,9 +612,34 @@ export interface IStorage {
   getOverdueRetentionSchedules(organisationId: string): Promise<RetentionSchedule[]>;
   processRetentionSchedule(id: string): Promise<RetentionSchedule>;
   
+  // GDPR audit chain heads (database-backed chain tracking)
+  getAuditChainHead(organisationId: string): Promise<GdprAuditChainHead | undefined>;
+  upsertAuditChainHead(chainHead: InsertGdprAuditChainHead): Promise<GdprAuditChainHead>;
+  updateAuditChainHeadWithOptimisticLock(
+    organisationId: string,
+    expectedVersion: number,
+    updates: Partial<InsertGdprAuditChainHead>
+  ): Promise<GdprAuditChainHead | null>;
+
   // GDPR audit logs
   createGdprAuditLog(gdprAuditLog: InsertGdprAuditLog): Promise<GdprAuditLog>;
   getGdprAuditLog(id: string): Promise<GdprAuditLog | undefined>;
+  getGdprAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    adminId?: string;
+    action?: string;
+    resource?: string;
+    category?: string;
+    severity?: string;
+    outcome?: string;
+    correlationId?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+    orderBy?: string;
+    orderDirection?: 'asc' | 'desc';
+  }): Promise<{ logs: GdprAuditLog[]; total: number }>;
   getGdprAuditLogsByOrganisation(organisationId: string, filters?: {
     userId?: string;
     adminId?: string;
@@ -614,7 +651,74 @@ export interface IStorage {
     offset?: number;
   }): Promise<GdprAuditLog[]>;
   getGdprAuditLogsByUser(userId: string): Promise<GdprAuditLog[]>;
+  getGdprAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number>;
   cleanupOldGdprAuditLogs(organisationId: string, olderThanDays: number): Promise<number>;
+
+  // Comprehensive data processing audit operations
+  createDataProcessingAuditLog(log: InsertDataProcessingAuditLog): Promise<DataProcessingAuditLog>;
+  getDataProcessingAuditLog(id: string): Promise<DataProcessingAuditLog | undefined>;
+  getDataProcessingAuditLogs(organisationId: string, filters?: {
+    processingActivityId?: string;
+    operation?: string;
+    dataCategory?: string;
+    legalBasis?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: DataProcessingAuditLog[]; total: number }>;
+  getDataProcessingAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number>;
+
+  // User rights audit operations
+  createUserRightsAuditLog(log: InsertUserRightsAuditLog): Promise<UserRightsAuditLog>;
+  getUserRightsAuditLog(id: string): Promise<UserRightsAuditLog | undefined>;
+  getUserRightsAuditLogs(organisationId: string, filters?: {
+    userRightRequestId?: string;
+    requestType?: string;
+    processedBy?: string;
+    slaStatus?: string;
+    outcome?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: UserRightsAuditLog[]; total: number }>;
+  getUserRightsAuditLogsByRequestId(requestId: string): Promise<UserRightsAuditLog[]>;
+  getUserRightsAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number>;
+
+  // Consent audit operations
+  createConsentAuditLog(log: InsertConsentAuditLog): Promise<ConsentAuditLog>;
+  getConsentAuditLog(id: string): Promise<ConsentAuditLog | undefined>;
+  getConsentAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    consentRecordId?: string;
+    marketingConsentId?: string;
+    consentAction?: string;
+    consentType?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: ConsentAuditLog[]; total: number }>;
+  getConsentAuditLogsByUserId(userId: string): Promise<ConsentAuditLog[]>;
+  getConsentAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number>;
+
+  // System access audit operations
+  createSystemAccessAuditLog(log: InsertSystemAccessAuditLog): Promise<SystemAccessAuditLog>;
+  getSystemAccessAuditLog(id: string): Promise<SystemAccessAuditLog | undefined>;
+  getSystemAccessAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    accessType?: string;
+    outcome?: string;
+    privilegedOperation?: boolean;
+    personalDataAccessed?: boolean;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: SystemAccessAuditLog[]; total: number }>;
+  getSystemAccessAuditLogsByUserId(userId: string): Promise<SystemAccessAuditLog[]>;
+  getSystemAccessAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number>;
   
   // Age verification
   createAgeVerification(ageVerification: InsertAgeVerification): Promise<AgeVerification>;
@@ -3734,6 +3838,54 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // GDPR Audit Chain Head operations (database-backed chain tracking)
+  async getAuditChainHead(organisationId: string): Promise<GdprAuditChainHead | undefined> {
+    const [chainHead] = await db.select()
+      .from(gdprAuditChainHeads)
+      .where(eq(gdprAuditChainHeads.organisationId, organisationId));
+    return chainHead;
+  }
+
+  async upsertAuditChainHead(chainHead: InsertGdprAuditChainHead): Promise<GdprAuditChainHead> {
+    const [result] = await db.insert(gdprAuditChainHeads)
+      .values({
+        ...chainHead,
+        lastUpdated: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: gdprAuditChainHeads.organisationId,
+        set: {
+          lastAuditLogId: chainHead.lastAuditLogId,
+          lastChainHash: chainHead.lastChainHash,
+          chainLength: chainHead.chainLength,
+          version: sql`version + 1`,
+          lastUpdated: new Date(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async updateAuditChainHeadWithOptimisticLock(
+    organisationId: string,
+    expectedVersion: number,
+    updates: Partial<InsertGdprAuditChainHead>
+  ): Promise<GdprAuditChainHead | null> {
+    const [result] = await db.update(gdprAuditChainHeads)
+      .set({
+        ...updates,
+        version: sql`version + 1`,
+        lastUpdated: new Date(),
+      })
+      .where(and(
+        eq(gdprAuditChainHeads.organisationId, organisationId),
+        eq(gdprAuditChainHeads.version, expectedVersion)
+      ))
+      .returning();
+    
+    return result || null; // null indicates version conflict (optimistic lock failure)
+  }
+
   // GDPR Audit Log operations
   async createGdprAuditLog(gdprAuditLog: InsertGdprAuditLog): Promise<GdprAuditLog> {
     const [log] = await db.insert(gdprAuditLogs).values({
@@ -3811,6 +3963,348 @@ export class DatabaseStorage implements IStorage {
         eq(gdprAuditLogs.resourceId, resourceId)
       ))
       .orderBy(desc(gdprAuditLogs.timestamp));
+  }
+
+  // Missing GDPR audit methods for ComprehensiveAuditService interface compliance
+  async getGdprAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    adminId?: string;
+    action?: string;
+    resource?: string;
+    category?: string;
+    severity?: string;
+    outcome?: string;
+    correlationId?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+    orderBy?: string;
+    orderDirection?: 'asc' | 'desc';
+  }): Promise<{ logs: GdprAuditLog[]; total: number }> {
+    let query = db.select().from(gdprAuditLogs).where(eq(gdprAuditLogs.organisationId, organisationId));
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(gdprAuditLogs).where(eq(gdprAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(gdprAuditLogs.organisationId, organisationId)];
+
+    if (filters?.userId) conditions.push(eq(gdprAuditLogs.userId, filters.userId));
+    if (filters?.adminId) conditions.push(eq(gdprAuditLogs.adminId, filters.adminId));
+    if (filters?.action) conditions.push(eq(gdprAuditLogs.action, filters.action));
+    if (filters?.resource) conditions.push(eq(gdprAuditLogs.resource, filters.resource));
+    if (filters?.category) conditions.push(eq(gdprAuditLogs.category, filters.category));
+    if (filters?.severity) conditions.push(eq(gdprAuditLogs.severity, filters.severity));
+    if (filters?.outcome) conditions.push(eq(gdprAuditLogs.outcome, filters.outcome));
+    if (filters?.correlationId) conditions.push(eq(gdprAuditLogs.correlationId, filters.correlationId));
+    if (filters?.fromDate) conditions.push(sql`${gdprAuditLogs.timestamp} >= ${filters.fromDate}`);
+    if (filters?.toDate) conditions.push(sql`${gdprAuditLogs.timestamp} <= ${filters.toDate}`);
+
+    if (conditions.length > 1) {
+      query = db.select().from(gdprAuditLogs).where(and(...conditions));
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(gdprAuditLogs).where(and(...conditions));
+    }
+
+    // Handle ordering
+    if (filters?.orderBy === 'timestamp' && filters?.orderDirection === 'asc') {
+      query = query.orderBy(asc(gdprAuditLogs.timestamp));
+    } else {
+      query = query.orderBy(desc(gdprAuditLogs.timestamp));
+    }
+
+    if (filters?.offset) query = query.offset(filters.offset);
+    if (filters?.limit) query = query.limit(filters.limit);
+
+    const [logs, totalResult] = await Promise.all([
+      query,
+      countQuery
+    ]);
+
+    return { logs, total: totalResult[0]?.count || 0 };
+  }
+
+  async getGdprAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(gdprAuditLogs)
+      .where(and(
+        eq(gdprAuditLogs.organisationId, organisationId),
+        sql`${gdprAuditLogs.timestamp} >= ${dateRange.startDate}`,
+        sql`${gdprAuditLogs.timestamp} <= ${dateRange.endDate}`
+      ));
+    return result[0]?.count || 0;
+  }
+
+  // ===== COMPREHENSIVE AUDIT LOG OPERATIONS =====
+
+  // Data Processing Audit Log operations
+  async createDataProcessingAuditLog(log: InsertDataProcessingAuditLog): Promise<DataProcessingAuditLog> {
+    const [created] = await db.insert(dataProcessingAuditLogs).values({
+      ...log,
+      createdAt: new Date()
+    }).returning();
+    return created;
+  }
+
+  async getDataProcessingAuditLog(id: string): Promise<DataProcessingAuditLog | undefined> {
+    const [log] = await db.select().from(dataProcessingAuditLogs).where(eq(dataProcessingAuditLogs.id, id));
+    return log;
+  }
+
+  async getDataProcessingAuditLogs(organisationId: string, filters?: {
+    processingActivityId?: string;
+    operation?: string;
+    dataCategory?: string;
+    legalBasis?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: DataProcessingAuditLog[]; total: number }> {
+    let query = db.select().from(dataProcessingAuditLogs).where(eq(dataProcessingAuditLogs.organisationId, organisationId));
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(dataProcessingAuditLogs).where(eq(dataProcessingAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(dataProcessingAuditLogs.organisationId, organisationId)];
+
+    if (filters?.processingActivityId) conditions.push(eq(dataProcessingAuditLogs.processingActivityId, filters.processingActivityId));
+    if (filters?.operation) conditions.push(eq(dataProcessingAuditLogs.operation, filters.operation));
+    if (filters?.dataCategory) conditions.push(eq(dataProcessingAuditLogs.dataCategory, filters.dataCategory));
+    if (filters?.legalBasis) conditions.push(eq(dataProcessingAuditLogs.legalBasis, filters.legalBasis));
+    if (filters?.fromDate) conditions.push(sql`${dataProcessingAuditLogs.createdAt} >= ${filters.fromDate}`);
+    if (filters?.toDate) conditions.push(sql`${dataProcessingAuditLogs.createdAt} <= ${filters.toDate}`);
+
+    if (conditions.length > 1) {
+      query = db.select().from(dataProcessingAuditLogs).where(and(...conditions));
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(dataProcessingAuditLogs).where(and(...conditions));
+    }
+
+    query = query.orderBy(desc(dataProcessingAuditLogs.createdAt));
+
+    if (filters?.offset) query = query.offset(filters.offset);
+    if (filters?.limit) query = query.limit(filters.limit);
+
+    const [logs, totalResult] = await Promise.all([query, countQuery]);
+    return { logs, total: totalResult[0]?.count || 0 };
+  }
+
+  async getDataProcessingAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(dataProcessingAuditLogs)
+      .where(and(
+        eq(dataProcessingAuditLogs.organisationId, organisationId),
+        sql`${dataProcessingAuditLogs.createdAt} >= ${dateRange.startDate}`,
+        sql`${dataProcessingAuditLogs.createdAt} <= ${dateRange.endDate}`
+      ));
+    return result[0]?.count || 0;
+  }
+
+  // User Rights Audit Log operations
+  async createUserRightsAuditLog(log: InsertUserRightsAuditLog): Promise<UserRightsAuditLog> {
+    const [created] = await db.insert(userRightsAuditLogs).values({
+      ...log,
+      createdAt: new Date()
+    }).returning();
+    return created;
+  }
+
+  async getUserRightsAuditLog(id: string): Promise<UserRightsAuditLog | undefined> {
+    const [log] = await db.select().from(userRightsAuditLogs).where(eq(userRightsAuditLogs.id, id));
+    return log;
+  }
+
+  async getUserRightsAuditLogs(organisationId: string, filters?: {
+    userRightRequestId?: string;
+    requestType?: string;
+    processedBy?: string;
+    slaStatus?: string;
+    outcome?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: UserRightsAuditLog[]; total: number }> {
+    let query = db.select().from(userRightsAuditLogs).where(eq(userRightsAuditLogs.organisationId, organisationId));
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(userRightsAuditLogs).where(eq(userRightsAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(userRightsAuditLogs.organisationId, organisationId)];
+
+    if (filters?.userRightRequestId) conditions.push(eq(userRightsAuditLogs.userRightRequestId, filters.userRightRequestId));
+    if (filters?.requestType) conditions.push(eq(userRightsAuditLogs.requestType, filters.requestType));
+    if (filters?.processedBy) conditions.push(eq(userRightsAuditLogs.processedBy, filters.processedBy));
+    if (filters?.slaStatus) conditions.push(eq(userRightsAuditLogs.slaStatus, filters.slaStatus));
+    if (filters?.outcome) conditions.push(eq(userRightsAuditLogs.outcome, filters.outcome));
+    if (filters?.fromDate) conditions.push(sql`${userRightsAuditLogs.createdAt} >= ${filters.fromDate}`);
+    if (filters?.toDate) conditions.push(sql`${userRightsAuditLogs.createdAt} <= ${filters.toDate}`);
+
+    if (conditions.length > 1) {
+      query = db.select().from(userRightsAuditLogs).where(and(...conditions));
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(userRightsAuditLogs).where(and(...conditions));
+    }
+
+    query = query.orderBy(desc(userRightsAuditLogs.createdAt));
+
+    if (filters?.offset) query = query.offset(filters.offset);
+    if (filters?.limit) query = query.limit(filters.limit);
+
+    const [logs, totalResult] = await Promise.all([query, countQuery]);
+    return { logs, total: totalResult[0]?.count || 0 };
+  }
+
+  async getUserRightsAuditLogsByRequestId(requestId: string): Promise<UserRightsAuditLog[]> {
+    return await db.select().from(userRightsAuditLogs)
+      .where(eq(userRightsAuditLogs.userRightRequestId, requestId))
+      .orderBy(desc(userRightsAuditLogs.createdAt));
+  }
+
+  async getUserRightsAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(userRightsAuditLogs)
+      .where(and(
+        eq(userRightsAuditLogs.organisationId, organisationId),
+        sql`${userRightsAuditLogs.createdAt} >= ${dateRange.startDate}`,
+        sql`${userRightsAuditLogs.createdAt} <= ${dateRange.endDate}`
+      ));
+    return result[0]?.count || 0;
+  }
+
+  // Consent Audit Log operations
+  async createConsentAuditLog(log: InsertConsentAuditLog): Promise<ConsentAuditLog> {
+    const [created] = await db.insert(consentAuditLogs).values({
+      ...log,
+      createdAt: new Date()
+    }).returning();
+    return created;
+  }
+
+  async getConsentAuditLog(id: string): Promise<ConsentAuditLog | undefined> {
+    const [log] = await db.select().from(consentAuditLogs).where(eq(consentAuditLogs.id, id));
+    return log;
+  }
+
+  async getConsentAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    consentRecordId?: string;
+    marketingConsentId?: string;
+    consentAction?: string;
+    consentType?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: ConsentAuditLog[]; total: number }> {
+    let query = db.select().from(consentAuditLogs).where(eq(consentAuditLogs.organisationId, organisationId));
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(consentAuditLogs).where(eq(consentAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(consentAuditLogs.organisationId, organisationId)];
+
+    if (filters?.userId) conditions.push(eq(consentAuditLogs.userId, filters.userId));
+    if (filters?.consentRecordId) conditions.push(eq(consentAuditLogs.consentRecordId, filters.consentRecordId));
+    if (filters?.marketingConsentId) conditions.push(eq(consentAuditLogs.marketingConsentId, filters.marketingConsentId));
+    if (filters?.consentAction) conditions.push(eq(consentAuditLogs.consentAction, filters.consentAction));
+    if (filters?.consentType) conditions.push(eq(consentAuditLogs.consentType, filters.consentType));
+    if (filters?.fromDate) conditions.push(sql`${consentAuditLogs.createdAt} >= ${filters.fromDate}`);
+    if (filters?.toDate) conditions.push(sql`${consentAuditLogs.createdAt} <= ${filters.toDate}`);
+
+    if (conditions.length > 1) {
+      query = db.select().from(consentAuditLogs).where(and(...conditions));
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(consentAuditLogs).where(and(...conditions));
+    }
+
+    query = query.orderBy(desc(consentAuditLogs.createdAt));
+
+    if (filters?.offset) query = query.offset(filters.offset);
+    if (filters?.limit) query = query.limit(filters.limit);
+
+    const [logs, totalResult] = await Promise.all([query, countQuery]);
+    return { logs, total: totalResult[0]?.count || 0 };
+  }
+
+  async getConsentAuditLogsByUserId(userId: string): Promise<ConsentAuditLog[]> {
+    return await db.select().from(consentAuditLogs)
+      .where(eq(consentAuditLogs.userId, userId))
+      .orderBy(desc(consentAuditLogs.createdAt));
+  }
+
+  async getConsentAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(consentAuditLogs)
+      .where(and(
+        eq(consentAuditLogs.organisationId, organisationId),
+        sql`${consentAuditLogs.createdAt} >= ${dateRange.startDate}`,
+        sql`${consentAuditLogs.createdAt} <= ${dateRange.endDate}`
+      ));
+    return result[0]?.count || 0;
+  }
+
+  // System Access Audit Log operations
+  async createSystemAccessAuditLog(log: InsertSystemAccessAuditLog): Promise<SystemAccessAuditLog> {
+    const [created] = await db.insert(systemAccessAuditLogs).values({
+      ...log,
+      createdAt: new Date()
+    }).returning();
+    return created;
+  }
+
+  async getSystemAccessAuditLog(id: string): Promise<SystemAccessAuditLog | undefined> {
+    const [log] = await db.select().from(systemAccessAuditLogs).where(eq(systemAccessAuditLogs.id, id));
+    return log;
+  }
+
+  async getSystemAccessAuditLogs(organisationId: string, filters?: {
+    userId?: string;
+    accessType?: string;
+    outcome?: string;
+    privilegedOperation?: boolean;
+    personalDataAccessed?: boolean;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: SystemAccessAuditLog[]; total: number }> {
+    let query = db.select().from(systemAccessAuditLogs).where(eq(systemAccessAuditLogs.organisationId, organisationId));
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(systemAccessAuditLogs).where(eq(systemAccessAuditLogs.organisationId, organisationId));
+
+    const conditions = [eq(systemAccessAuditLogs.organisationId, organisationId)];
+
+    if (filters?.userId) conditions.push(eq(systemAccessAuditLogs.userId, filters.userId));
+    if (filters?.accessType) conditions.push(eq(systemAccessAuditLogs.accessType, filters.accessType));
+    if (filters?.outcome) conditions.push(eq(systemAccessAuditLogs.outcome, filters.outcome));
+    if (filters?.privilegedOperation !== undefined) conditions.push(eq(systemAccessAuditLogs.privilegedOperation, filters.privilegedOperation));
+    if (filters?.personalDataAccessed !== undefined) conditions.push(eq(systemAccessAuditLogs.dataAccessAttempt, filters.personalDataAccessed));
+    if (filters?.fromDate) conditions.push(sql`${systemAccessAuditLogs.createdAt} >= ${filters.fromDate}`);
+    if (filters?.toDate) conditions.push(sql`${systemAccessAuditLogs.createdAt} <= ${filters.toDate}`);
+
+    if (conditions.length > 1) {
+      query = db.select().from(systemAccessAuditLogs).where(and(...conditions));
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(systemAccessAuditLogs).where(and(...conditions));
+    }
+
+    query = query.orderBy(desc(systemAccessAuditLogs.createdAt));
+
+    if (filters?.offset) query = query.offset(filters.offset);
+    if (filters?.limit) query = query.limit(filters.limit);
+
+    const [logs, totalResult] = await Promise.all([query, countQuery]);
+    return { logs, total: totalResult[0]?.count || 0 };
+  }
+
+  async getSystemAccessAuditLogsByUserId(userId: string): Promise<SystemAccessAuditLog[]> {
+    return await db.select().from(systemAccessAuditLogs)
+      .where(eq(systemAccessAuditLogs.userId, userId))
+      .orderBy(desc(systemAccessAuditLogs.createdAt));
+  }
+
+  async getSystemAccessAuditLogCount(organisationId: string, dateRange: { startDate: Date; endDate: Date }): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(systemAccessAuditLogs)
+      .where(and(
+        eq(systemAccessAuditLogs.organisationId, organisationId),
+        sql`${systemAccessAuditLogs.createdAt} >= ${dateRange.startDate}`,
+        sql`${systemAccessAuditLogs.createdAt} <= ${dateRange.endDate}`
+      ));
+    return result[0]?.count || 0;
   }
 
   // ===== INTERNATIONAL TRANSFERS OPERATIONS - GDPR CHAPTER V COMPLIANCE =====
