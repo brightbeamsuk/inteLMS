@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
+import { Footer } from "./Footer";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface SuperAdminLayoutProps {
@@ -223,6 +224,9 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           </main>
         </div>
       </div>
+      
+      {/* Site-wide Footer with Cookie Settings */}
+      <Footer />
     </div>
   );
 }

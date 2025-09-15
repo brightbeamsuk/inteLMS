@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FeatureUpgradeModal } from "@/components/FeatureUpgradeModal";
+import { Footer } from "./Footer";
 import inteLMSLogo from '@assets/inteLMS_1757337182057.png';
 
 interface AdminLayoutProps {
@@ -371,6 +372,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           featureDescription={upgradeModal.featureDescription}
           featureIcon={upgradeModal.featureIcon}
         />
+        
+        {/* Site-wide Footer with Cookie Settings */}
+        <Footer />
       </div>
     </ThemeProvider>
   );

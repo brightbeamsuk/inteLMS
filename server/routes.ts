@@ -1581,6 +1581,201 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GDPR Cookie Inventory Routes (feature flag protected)
+  
+  // Get organization's cookie inventory
+  app.get('/api/gdpr/cookies', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can manage cookie inventory
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      // For superadmin, require organisationId query parameter
+      let organisationId = currentUser.organisationId;
+      if (currentUser.role === 'superadmin') {
+        const queryOrgId = req.query.organisationId as string;
+        if (!queryOrgId) {
+          return res.status(400).json({ message: "organisationId parameter required for superadmin" });
+        }
+        organisationId = queryOrgId;
+      }
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "No organisation ID available" });
+      }
+
+      // Get optional category filter
+      const category = req.query.category as string;
+      
+      let cookies;
+      if (category) {
+        cookies = await storage.getCookieInventoriesByCategory(organisationId, category);
+      } else {
+        cookies = await storage.getCookieInventoriesByOrganisation(organisationId);
+      }
+
+      res.json(cookies);
+    } catch (error: any) {
+      console.error("Error fetching cookie inventory:", error);
+      res.status(500).json({ message: "Failed to fetch cookie inventory" });
+    }
+  });
+
+  // Create new cookie inventory entry
+  app.post('/api/gdpr/cookies', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can manage cookie inventory
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      // For superadmin, use organisationId from request body; for admin, use their own
+      let organisationId = currentUser.organisationId;
+      if (currentUser.role === 'superadmin') {
+        if (!req.body.organisationId) {
+          return res.status(400).json({ message: "organisationId required in request body for superadmin" });
+        }
+        organisationId = req.body.organisationId;
+      }
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "No organisation ID available" });
+      }
+
+      // Validate input using Zod schema
+      const cookieData = {
+        ...req.body,
+        organisationId
+      };
+
+      const validatedData = insertCookieInventorySchema.parse(cookieData);
+      const newCookie = await storage.createCookieInventory(validatedData);
+
+      res.status(201).json(newCookie);
+    } catch (error: any) {
+      console.error("Error creating cookie inventory:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to create cookie inventory entry" });
+    }
+  });
+
+  // Update cookie inventory entry
+  app.patch('/api/gdpr/cookies/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can manage cookie inventory
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      const cookieId = req.params.id;
+      
+      // Check if cookie exists and user has permission to edit it
+      const existingCookie = await storage.getCookieInventory(cookieId);
+      if (!existingCookie) {
+        return res.status(404).json({ message: "Cookie not found" });
+      }
+
+      // For admin users, ensure they can only edit cookies from their organisation
+      if (currentUser.role === 'admin' && existingCookie.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - can only edit cookies from your organisation" });
+      }
+
+      // Remove organisationId from update data to prevent changing it
+      const { organisationId, ...updateData } = req.body;
+
+      // Validate partial update using Zod schema
+      const validatedData = insertCookieInventorySchema.partial().parse(updateData);
+      const updatedCookie = await storage.updateCookieInventory(cookieId, validatedData);
+
+      res.json(updatedCookie);
+    } catch (error: any) {
+      console.error("Error updating cookie inventory:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to update cookie inventory entry" });
+    }
+  });
+
+  // Delete cookie inventory entry
+  app.delete('/api/gdpr/cookies/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // RBAC: Only admins and superadmins can manage cookie inventory
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Access denied - insufficient privileges" });
+      }
+
+      const cookieId = req.params.id;
+      
+      // Check if cookie exists and user has permission to delete it
+      const existingCookie = await storage.getCookieInventory(cookieId);
+      if (!existingCookie) {
+        return res.status(404).json({ message: "Cookie not found" });
+      }
+
+      // For admin users, ensure they can only delete cookies from their organisation
+      if (currentUser.role === 'admin' && existingCookie.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - can only delete cookies from your organisation" });
+      }
+
+      await storage.deleteCookieInventory(cookieId);
+
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting cookie inventory:", error);
+      res.status(500).json({ message: "Failed to delete cookie inventory entry" });
+    }
+  });
+
   // Update user profile
   app.put('/api/auth/profile', requireAuth, async (req: any, res) => {
     try {

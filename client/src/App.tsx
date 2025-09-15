@@ -48,6 +48,11 @@ import { AdminSupport } from "@/pages/admin/Support";
 // GDPR pages (feature flag protected)
 import { PrivacySettings } from "@/pages/gdpr/PrivacySettings";
 import { ConsentPreferences } from "@/pages/gdpr/ConsentPreferences";
+import { CookieSettings } from "@/pages/gdpr/CookieSettings";
+
+// GDPR components
+import { CookieBanner } from "@/components/gdpr/CookieBanner";
+import { ConsentManager, useConsent } from "@/components/gdpr/ConsentManager";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
@@ -375,6 +380,15 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* GDPR Cookie Settings (feature flag protected) */}
+      <Route path="/admin/cookie-settings">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <CookieSettings />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
 
       {/* User routes */}
       <Route path="/user">
@@ -452,14 +466,30 @@ function Router() {
   );
 }
 
+// Component that uses ConsentManager context
+function AppContent() {
+  const { updateConsents } = useConsent();
+
+  const handleConsentUpdate = (consents: any) => {
+    updateConsents(consents);
+  };
+
+  return (
+    <div data-theme="light">
+      <Toaster />
+      <Router />
+      <CookieBanner onConsentGiven={handleConsentUpdate} />
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div data-theme="light">
-          <Toaster />
-          <Router />
-        </div>
+        <ConsentManager>
+          <AppContent />
+        </ConsentManager>
       </TooltipProvider>
     </QueryClientProvider>
   );

@@ -2680,6 +2680,45 @@ export class DatabaseStorage implements IStorage {
   async deletePrivacySettings(id: string): Promise<void> {
     await db.delete(privacySettings).where(eq(privacySettings.id, id));
   }
+
+  // GDPR Cookie Inventory operations
+  async createCookieInventory(cookieInventoryData: InsertCookieInventory): Promise<CookieInventory> {
+    const [cookie] = await db.insert(cookieInventory).values(cookieInventoryData).returning();
+    return cookie;
+  }
+
+  async getCookieInventory(id: string): Promise<CookieInventory | undefined> {
+    const [cookie] = await db.select().from(cookieInventory).where(eq(cookieInventory.id, id));
+    return cookie;
+  }
+
+  async getCookieInventoriesByOrganisation(organisationId: string): Promise<CookieInventory[]> {
+    return await db.select().from(cookieInventory)
+      .where(eq(cookieInventory.organisationId, organisationId))
+      .orderBy(asc(cookieInventory.category), asc(cookieInventory.name));
+  }
+
+  async updateCookieInventory(id: string, cookieInventoryData: Partial<InsertCookieInventory>): Promise<CookieInventory> {
+    const [cookie] = await db
+      .update(cookieInventory)
+      .set({ ...cookieInventoryData, updatedAt: new Date() })
+      .where(eq(cookieInventory.id, id))
+      .returning();
+    return cookie;
+  }
+
+  async deleteCookieInventory(id: string): Promise<void> {
+    await db.delete(cookieInventory).where(eq(cookieInventory.id, id));
+  }
+
+  async getCookieInventoriesByCategory(organisationId: string, category: string): Promise<CookieInventory[]> {
+    return await db.select().from(cookieInventory)
+      .where(and(
+        eq(cookieInventory.organisationId, organisationId),
+        eq(cookieInventory.category, category)
+      ))
+      .orderBy(asc(cookieInventory.name));
+  }
 }
 
 export const storage = new DatabaseStorage();
