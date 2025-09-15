@@ -66,6 +66,11 @@ import {
   gdprDashboardConfig,
   complianceReports,
   exportJobs,
+  // Integration GDPR compliance tables
+  integrationGdprSettings,
+  integrationUserConsent,
+  integrationProcessingActivities,
+  integrationAuditLogs,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -193,6 +198,15 @@ import {
   type InsertComplianceReports,
   type ExportJobs,
   type InsertExportJobs,
+  // Integration GDPR compliance types
+  type IntegrationGdprSettings,
+  type InsertIntegrationGdprSettings,
+  type IntegrationUserConsent,
+  type InsertIntegrationUserConsent,
+  type IntegrationProcessingActivities,
+  type InsertIntegrationProcessingActivities,
+  type IntegrationAuditLogs,
+  type InsertIntegrationAuditLogs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -1020,6 +1034,115 @@ export interface IStorage {
     icoCompliance: number;
     subjectNotificationCompliance: number;
   }>;
+
+  // ===== INTEGRATION GDPR COMPLIANCE OPERATIONS =====
+
+  // Integration GDPR settings operations
+  getIntegrationGdprSettings(organisationId: string): Promise<IntegrationGdprSettings[]>;
+  getIntegrationGdprSettingsByType(organisationId: string, integrationType: string): Promise<IntegrationGdprSettings | undefined>;
+  createIntegrationGdprSettings(settings: InsertIntegrationGdprSettings): Promise<IntegrationGdprSettings>;
+  updateIntegrationGdprSettings(id: string, settings: Partial<InsertIntegrationGdprSettings>): Promise<IntegrationGdprSettings>;
+  deleteIntegrationGdprSettings(id: string): Promise<void>;
+  getIntegrationGdprSettingsById(id: string): Promise<IntegrationGdprSettings | undefined>;
+  getIntegrationGdprSettingsByComplianceStatus(organisationId: string, status: string): Promise<IntegrationGdprSettings[]>;
+  getIntegrationsRequiringReview(organisationId: string): Promise<IntegrationGdprSettings[]>;
+  bulkUpdateIntegrationCompliance(organisationId: string, updates: Array<{ id: string; complianceStatus: string; assessedBy: string }>): Promise<void>;
+
+  // Integration user consent operations
+  getIntegrationUserConsent(userId: string, integrationSettingsId: string): Promise<IntegrationUserConsent | undefined>;
+  getUserIntegrationConsents(userId: string): Promise<IntegrationUserConsent[]>;
+  getOrganisationIntegrationConsents(organisationId: string): Promise<IntegrationUserConsent[]>;
+  createIntegrationUserConsent(consent: InsertIntegrationUserConsent): Promise<IntegrationUserConsent>;
+  updateIntegrationUserConsent(id: string, consent: Partial<InsertIntegrationUserConsent>): Promise<IntegrationUserConsent>;
+  withdrawIntegrationUserConsent(userId: string, integrationSettingsId: string, reason: string): Promise<IntegrationUserConsent>;
+  grantIntegrationUserConsent(userId: string, integrationSettingsId: string, consentSource: string, consentChannel: string, ipAddress?: string, userAgent?: string): Promise<IntegrationUserConsent>;
+  getExpiredIntegrationConsents(organisationId: string): Promise<IntegrationUserConsent[]>;
+  getIntegrationConsentsByType(userId: string, integrationType: string): Promise<IntegrationUserConsent[]>;
+  verifyIntegrationConsent(userId: string, integrationType: string, processingPurpose: string): Promise<{ hasConsent: boolean; consentRecord?: IntegrationUserConsent }>;
+  bulkUpdateExpiredConsents(organisationId: string): Promise<{ updated: number; expired: number }>;
+
+  // Integration processing activities operations (for RoPA compliance)
+  getIntegrationProcessingActivities(organisationId: string): Promise<IntegrationProcessingActivities[]>;
+  getIntegrationProcessingActivitiesByType(organisationId: string, integrationType: string): Promise<IntegrationProcessingActivities[]>;
+  createIntegrationProcessingActivity(activity: InsertIntegrationProcessingActivities): Promise<IntegrationProcessingActivities>;
+  updateIntegrationProcessingActivity(id: string, activity: Partial<InsertIntegrationProcessingActivities>): Promise<IntegrationProcessingActivities>;
+  deleteIntegrationProcessingActivity(id: string): Promise<void>;
+  getIntegrationProcessingActivityById(id: string): Promise<IntegrationProcessingActivities | undefined>;
+  getProcessingActivitiesByLawfulBasis(organisationId: string, lawfulBasis: string): Promise<IntegrationProcessingActivities[]>;
+  getProcessingActivitiesRequiringReview(organisationId: string): Promise<IntegrationProcessingActivities[]>;
+  getProcessingActivitiesByDataCategory(organisationId: string, dataCategory: string): Promise<IntegrationProcessingActivities[]>;
+
+  // Integration audit logging operations
+  createIntegrationAuditLog(log: InsertIntegrationAuditLogs): Promise<IntegrationAuditLogs>;
+  getIntegrationAuditLogs(organisationId: string, filters?: {
+    integrationType?: string;
+    eventType?: string;
+    eventCategory?: string;
+    userId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: IntegrationAuditLogs[]; total: number }>;
+  getIntegrationAuditLogsByUser(userId: string, organisationId: string): Promise<IntegrationAuditLogs[]>;
+  getIntegrationAuditLogsByCorrelation(correlationId: string): Promise<IntegrationAuditLogs[]>;
+  searchIntegrationAuditLogs(organisationId: string, searchTerm: string, limit?: number): Promise<IntegrationAuditLogs[]>;
+  getIntegrationComplianceAlerts(organisationId: string): Promise<IntegrationAuditLogs[]>;
+  purgeExpiredIntegrationAuditLogs(daysToKeep: number): Promise<{ deleted: number }>;
+
+  // Integration consent verification helpers
+  checkIntegrationDataProcessingConsent(userId: string, integrationType: string, processingPurpose: string): Promise<{
+    canProcess: boolean;
+    consentStatus: string;
+    reason: string;
+    consentRecord?: IntegrationUserConsent;
+    requiresNewConsent?: boolean;
+  }>;
+  
+  // Integration compliance reporting
+  getIntegrationComplianceReport(organisationId: string): Promise<{
+    totalIntegrations: number;
+    compliantIntegrations: number;
+    nonCompliantIntegrations: number;
+    pendingReview: number;
+    disabledIntegrations: number;
+    consentMetrics: {
+      totalUsers: number;
+      usersWithConsent: number;
+      consentRate: number;
+      expiredConsents: number;
+      withdrawnConsents: number;
+    };
+    processingActivities: {
+      totalActivities: number;
+      activitiesWithTransfers: number;
+      highRiskActivities: number;
+      activitiesRequiringReview: number;
+    };
+    auditMetrics: {
+      totalEvents: number;
+      alertsTriggered: number;
+      complianceIssues: number;
+      recentActivity: number;
+    };
+    integrationBreakdown: Array<{
+      integrationType: string;
+      isEnabled: boolean;
+      complianceStatus: string;
+      userConsentCount: number;
+      lastAssessment: Date | null;
+    }>;
+  }>;
+
+  // Bulk operations for integration management
+  bulkEnableIntegrations(organisationId: string, integrationIds: string[], enabledBy: string): Promise<void>;
+  bulkDisableIntegrations(organisationId: string, integrationIds: string[], disabledBy: string, reason: string): Promise<void>;
+  bulkAssessIntegrationCompliance(organisationId: string, assessments: Array<{
+    integrationId: string;
+    complianceStatus: string;
+    assessedBy: string;
+    notes?: string;
+  }>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6591,6 +6714,730 @@ export class DatabaseStorage implements IStorage {
       return await this.updateChildProtectionSettings(existing.id, settings);
     } else {
       return await this.createChildProtectionSettings({ ...settings, organisationId } as InsertChildProtectionSettings);
+    }
+  }
+
+  // ===== INTEGRATION GDPR COMPLIANCE OPERATIONS IMPLEMENTATION =====
+
+  // Integration GDPR settings operations
+  async getIntegrationGdprSettings(organisationId: string): Promise<IntegrationGdprSettings[]> {
+    return await db
+      .select()
+      .from(integrationGdprSettings)
+      .where(eq(integrationGdprSettings.organisationId, organisationId))
+      .orderBy(integrationGdprSettings.integrationType);
+  }
+
+  async getIntegrationGdprSettingsByType(organisationId: string, integrationType: string): Promise<IntegrationGdprSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(integrationGdprSettings)
+      .where(and(
+        eq(integrationGdprSettings.organisationId, organisationId),
+        eq(integrationGdprSettings.integrationType, integrationType)
+      ))
+      .limit(1);
+    return settings;
+  }
+
+  async createIntegrationGdprSettings(settings: InsertIntegrationGdprSettings): Promise<IntegrationGdprSettings> {
+    const [result] = await db
+      .insert(integrationGdprSettings)
+      .values(settings)
+      .returning();
+    return result;
+  }
+
+  async updateIntegrationGdprSettings(id: string, settings: Partial<InsertIntegrationGdprSettings>): Promise<IntegrationGdprSettings> {
+    const [result] = await db
+      .update(integrationGdprSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(integrationGdprSettings.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Integration GDPR settings not found');
+    }
+    return result;
+  }
+
+  async deleteIntegrationGdprSettings(id: string): Promise<void> {
+    await db.delete(integrationGdprSettings).where(eq(integrationGdprSettings.id, id));
+  }
+
+  async getIntegrationGdprSettingsById(id: string): Promise<IntegrationGdprSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(integrationGdprSettings)
+      .where(eq(integrationGdprSettings.id, id));
+    return settings;
+  }
+
+  async getIntegrationGdprSettingsByComplianceStatus(organisationId: string, status: string): Promise<IntegrationGdprSettings[]> {
+    return await db
+      .select()
+      .from(integrationGdprSettings)
+      .where(and(
+        eq(integrationGdprSettings.organisationId, organisationId),
+        eq(integrationGdprSettings.complianceStatus, status)
+      ))
+      .orderBy(integrationGdprSettings.integrationType);
+  }
+
+  async getIntegrationsRequiringReview(organisationId: string): Promise<IntegrationGdprSettings[]> {
+    return await db
+      .select()
+      .from(integrationGdprSettings)
+      .where(and(
+        eq(integrationGdprSettings.organisationId, organisationId),
+        or(
+          eq(integrationGdprSettings.complianceStatus, 'pending_review'),
+          eq(integrationGdprSettings.complianceStatus, 'review_required')
+        )
+      ))
+      .orderBy(integrationGdprSettings.lastAssessment);
+  }
+
+  async bulkUpdateIntegrationCompliance(organisationId: string, updates: Array<{ id: string; complianceStatus: string; assessedBy: string }>): Promise<void> {
+    for (const update of updates) {
+      await db
+        .update(integrationGdprSettings)
+        .set({
+          complianceStatus: update.complianceStatus,
+          assessedBy: update.assessedBy,
+          lastAssessment: new Date(),
+          updatedAt: new Date()
+        })
+        .where(and(
+          eq(integrationGdprSettings.id, update.id),
+          eq(integrationGdprSettings.organisationId, organisationId)
+        ));
+    }
+  }
+
+  // Integration user consent operations
+  async getIntegrationUserConsent(userId: string, integrationSettingsId: string): Promise<IntegrationUserConsent | undefined> {
+    const [consent] = await db
+      .select()
+      .from(integrationUserConsent)
+      .where(and(
+        eq(integrationUserConsent.userId, userId),
+        eq(integrationUserConsent.integrationSettingsId, integrationSettingsId)
+      ))
+      .limit(1);
+    return consent;
+  }
+
+  async getUserIntegrationConsents(userId: string): Promise<IntegrationUserConsent[]> {
+    return await db
+      .select()
+      .from(integrationUserConsent)
+      .where(eq(integrationUserConsent.userId, userId))
+      .orderBy(desc(integrationUserConsent.consentGrantedAt));
+  }
+
+  async getOrganisationIntegrationConsents(organisationId: string): Promise<IntegrationUserConsent[]> {
+    return await db
+      .select({
+        integrationUserConsent,
+        integrationSettings: integrationGdprSettings
+      })
+      .from(integrationUserConsent)
+      .innerJoin(
+        integrationGdprSettings,
+        eq(integrationUserConsent.integrationSettingsId, integrationGdprSettings.id)
+      )
+      .where(eq(integrationGdprSettings.organisationId, organisationId))
+      .orderBy(desc(integrationUserConsent.consentGrantedAt));
+  }
+
+  async createIntegrationUserConsent(consent: InsertIntegrationUserConsent): Promise<IntegrationUserConsent> {
+    const [result] = await db
+      .insert(integrationUserConsent)
+      .values(consent)
+      .returning();
+    return result;
+  }
+
+  async updateIntegrationUserConsent(id: string, consent: Partial<InsertIntegrationUserConsent>): Promise<IntegrationUserConsent> {
+    const [result] = await db
+      .update(integrationUserConsent)
+      .set({ ...consent, updatedAt: new Date() })
+      .where(eq(integrationUserConsent.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Integration user consent not found');
+    }
+    return result;
+  }
+
+  async withdrawIntegrationUserConsent(userId: string, integrationSettingsId: string, reason: string): Promise<IntegrationUserConsent> {
+    const [result] = await db
+      .update(integrationUserConsent)
+      .set({
+        consentStatus: 'withdrawn',
+        consentWithdrawnAt: new Date(),
+        withdrawalReason: reason,
+        updatedAt: new Date()
+      })
+      .where(and(
+        eq(integrationUserConsent.userId, userId),
+        eq(integrationUserConsent.integrationSettingsId, integrationSettingsId)
+      ))
+      .returning();
+
+    if (!result) {
+      throw new Error('Integration user consent not found');
+    }
+    return result;
+  }
+
+  async grantIntegrationUserConsent(
+    userId: string, 
+    integrationSettingsId: string, 
+    consentSource: string, 
+    consentChannel: string, 
+    ipAddress?: string, 
+    userAgent?: string
+  ): Promise<IntegrationUserConsent> {
+    // Check if consent already exists
+    const existing = await this.getIntegrationUserConsent(userId, integrationSettingsId);
+    
+    if (existing) {
+      // Update existing consent
+      return await this.updateIntegrationUserConsent(existing.id, {
+        consentStatus: 'granted',
+        consentGrantedAt: new Date(),
+        consentSource,
+        consentChannel,
+        ipAddress,
+        userAgent,
+        consentWithdrawnAt: null,
+        withdrawalReason: null
+      });
+    } else {
+      // Create new consent
+      return await this.createIntegrationUserConsent({
+        userId,
+        integrationSettingsId,
+        consentStatus: 'granted',
+        consentGrantedAt: new Date(),
+        consentSource,
+        consentChannel,
+        ipAddress,
+        userAgent
+      });
+    }
+  }
+
+  async getExpiredIntegrationConsents(organisationId: string): Promise<IntegrationUserConsent[]> {
+    const subquery = db
+      .select({ id: integrationGdprSettings.id })
+      .from(integrationGdprSettings)
+      .where(eq(integrationGdprSettings.organisationId, organisationId));
+
+    return await db
+      .select()
+      .from(integrationUserConsent)
+      .where(and(
+        inArray(integrationUserConsent.integrationSettingsId, subquery),
+        eq(integrationUserConsent.consentStatus, 'granted'),
+        sql`${integrationUserConsent.consentExpiresAt} < NOW()`
+      ))
+      .orderBy(integrationUserConsent.consentExpiresAt);
+  }
+
+  async getIntegrationConsentsByType(userId: string, integrationType: string): Promise<IntegrationUserConsent[]> {
+    return await db
+      .select({
+        integrationUserConsent,
+        integrationSettings: integrationGdprSettings
+      })
+      .from(integrationUserConsent)
+      .innerJoin(
+        integrationGdprSettings,
+        eq(integrationUserConsent.integrationSettingsId, integrationGdprSettings.id)
+      )
+      .where(and(
+        eq(integrationUserConsent.userId, userId),
+        eq(integrationGdprSettings.integrationType, integrationType)
+      ))
+      .orderBy(desc(integrationUserConsent.consentGrantedAt));
+  }
+
+  async verifyIntegrationConsent(userId: string, integrationType: string, processingPurpose: string): Promise<{ hasConsent: boolean; consentRecord?: IntegrationUserConsent }> {
+    const consents = await this.getIntegrationConsentsByType(userId, integrationType);
+    
+    const validConsent = consents.find(c => 
+      c.integrationUserConsent.consentStatus === 'granted' && 
+      (!c.integrationUserConsent.consentExpiresAt || c.integrationUserConsent.consentExpiresAt > new Date())
+    );
+
+    return {
+      hasConsent: !!validConsent,
+      consentRecord: validConsent?.integrationUserConsent
+    };
+  }
+
+  async bulkUpdateExpiredConsents(organisationId: string): Promise<{ updated: number; expired: number }> {
+    const expiredConsents = await this.getExpiredIntegrationConsents(organisationId);
+    
+    let updated = 0;
+    for (const consent of expiredConsents) {
+      await this.updateIntegrationUserConsent(consent.id, {
+        consentStatus: 'expired',
+        updatedAt: new Date()
+      });
+      updated++;
+    }
+
+    return { updated, expired: expiredConsents.length };
+  }
+
+  // Integration processing activities operations (for RoPA compliance)
+  async getIntegrationProcessingActivities(organisationId: string): Promise<IntegrationProcessingActivities[]> {
+    return await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(eq(integrationProcessingActivities.organisationId, organisationId))
+      .orderBy(integrationProcessingActivities.integrationType);
+  }
+
+  async getIntegrationProcessingActivitiesByType(organisationId: string, integrationType: string): Promise<IntegrationProcessingActivities[]> {
+    return await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(and(
+        eq(integrationProcessingActivities.organisationId, organisationId),
+        eq(integrationProcessingActivities.integrationType, integrationType)
+      ))
+      .orderBy(integrationProcessingActivities.processingPurpose);
+  }
+
+  async createIntegrationProcessingActivity(activity: InsertIntegrationProcessingActivities): Promise<IntegrationProcessingActivities> {
+    const [result] = await db
+      .insert(integrationProcessingActivities)
+      .values(activity)
+      .returning();
+    return result;
+  }
+
+  async updateIntegrationProcessingActivity(id: string, activity: Partial<InsertIntegrationProcessingActivities>): Promise<IntegrationProcessingActivities> {
+    const [result] = await db
+      .update(integrationProcessingActivities)
+      .set({ ...activity, updatedAt: new Date() })
+      .where(eq(integrationProcessingActivities.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error('Integration processing activity not found');
+    }
+    return result;
+  }
+
+  async deleteIntegrationProcessingActivity(id: string): Promise<void> {
+    await db.delete(integrationProcessingActivities).where(eq(integrationProcessingActivities.id, id));
+  }
+
+  async getIntegrationProcessingActivityById(id: string): Promise<IntegrationProcessingActivities | undefined> {
+    const [activity] = await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(eq(integrationProcessingActivities.id, id));
+    return activity;
+  }
+
+  async getProcessingActivitiesByLawfulBasis(organisationId: string, lawfulBasis: string): Promise<IntegrationProcessingActivities[]> {
+    return await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(and(
+        eq(integrationProcessingActivities.organisationId, organisationId),
+        eq(integrationProcessingActivities.lawfulBasis, lawfulBasis)
+      ))
+      .orderBy(integrationProcessingActivities.integrationType);
+  }
+
+  async getProcessingActivitiesRequiringReview(organisationId: string): Promise<IntegrationProcessingActivities[]> {
+    return await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(and(
+        eq(integrationProcessingActivities.organisationId, organisationId),
+        or(
+          sql`${integrationProcessingActivities.lastReviewDate} IS NULL`,
+          sql`${integrationProcessingActivities.lastReviewDate} < NOW() - INTERVAL '1 year'`
+        )
+      ))
+      .orderBy(integrationProcessingActivities.lastReviewDate);
+  }
+
+  async getProcessingActivitiesByDataCategory(organisationId: string, dataCategory: string): Promise<IntegrationProcessingActivities[]> {
+    return await db
+      .select()
+      .from(integrationProcessingActivities)
+      .where(and(
+        eq(integrationProcessingActivities.organisationId, organisationId),
+        sql`${integrationProcessingActivities.dataCategories} @> ${JSON.stringify([dataCategory])}`
+      ))
+      .orderBy(integrationProcessingActivities.integrationType);
+  }
+
+  // Integration audit logging operations
+  async createIntegrationAuditLog(log: InsertIntegrationAuditLogs): Promise<IntegrationAuditLogs> {
+    const [result] = await db
+      .insert(integrationAuditLogs)
+      .values(log)
+      .returning();
+    return result;
+  }
+
+  async getIntegrationAuditLogs(organisationId: string, filters?: {
+    integrationType?: string;
+    eventType?: string;
+    eventCategory?: string;
+    userId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: IntegrationAuditLogs[]; total: number }> {
+    const conditions = [eq(integrationAuditLogs.organisationId, organisationId)];
+    
+    if (filters?.integrationType) {
+      conditions.push(eq(integrationAuditLogs.integrationType, filters.integrationType));
+    }
+    if (filters?.eventType) {
+      conditions.push(eq(integrationAuditLogs.eventType, filters.eventType));
+    }
+    if (filters?.eventCategory) {
+      conditions.push(eq(integrationAuditLogs.eventCategory, filters.eventCategory));
+    }
+    if (filters?.userId) {
+      conditions.push(eq(integrationAuditLogs.userId, filters.userId));
+    }
+    if (filters?.startDate) {
+      conditions.push(sql`${integrationAuditLogs.timestamp} >= ${filters.startDate}`);
+    }
+    if (filters?.endDate) {
+      conditions.push(sql`${integrationAuditLogs.timestamp} <= ${filters.endDate}`);
+    }
+
+    const whereCondition = conditions.length > 1 ? and(...conditions) : conditions[0];
+
+    // Get total count
+    const [{ totalCount }] = await db
+      .select({ totalCount: count() })
+      .from(integrationAuditLogs)
+      .where(whereCondition);
+
+    // Get logs with pagination
+    let query = db
+      .select()
+      .from(integrationAuditLogs)
+      .where(whereCondition)
+      .orderBy(desc(integrationAuditLogs.timestamp));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+    if (filters?.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    const logs = await query;
+
+    return { logs, total: Number(totalCount) };
+  }
+
+  async getIntegrationAuditLogsByUser(userId: string, organisationId: string): Promise<IntegrationAuditLogs[]> {
+    return await db
+      .select()
+      .from(integrationAuditLogs)
+      .where(and(
+        eq(integrationAuditLogs.userId, userId),
+        eq(integrationAuditLogs.organisationId, organisationId)
+      ))
+      .orderBy(desc(integrationAuditLogs.timestamp));
+  }
+
+  async getIntegrationAuditLogsByCorrelation(correlationId: string): Promise<IntegrationAuditLogs[]> {
+    return await db
+      .select()
+      .from(integrationAuditLogs)
+      .where(eq(integrationAuditLogs.correlationId, correlationId))
+      .orderBy(integrationAuditLogs.timestamp);
+  }
+
+  async searchIntegrationAuditLogs(organisationId: string, searchTerm: string, limit?: number): Promise<IntegrationAuditLogs[]> {
+    let query = db
+      .select()
+      .from(integrationAuditLogs)
+      .where(and(
+        eq(integrationAuditLogs.organisationId, organisationId),
+        or(
+          ilike(integrationAuditLogs.eventType, `%${searchTerm}%`),
+          ilike(integrationAuditLogs.description, `%${searchTerm}%`),
+          sql`${integrationAuditLogs.eventData}::text ILIKE ${`%${searchTerm}%`}`
+        )
+      ))
+      .orderBy(desc(integrationAuditLogs.timestamp));
+
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    return await query;
+  }
+
+  async getIntegrationComplianceAlerts(organisationId: string): Promise<IntegrationAuditLogs[]> {
+    return await db
+      .select()
+      .from(integrationAuditLogs)
+      .where(and(
+        eq(integrationAuditLogs.organisationId, organisationId),
+        eq(integrationAuditLogs.eventCategory, 'compliance_alert'),
+        sql`${integrationAuditLogs.timestamp} > NOW() - INTERVAL '30 days'`
+      ))
+      .orderBy(desc(integrationAuditLogs.timestamp));
+  }
+
+  async purgeExpiredIntegrationAuditLogs(daysToKeep: number): Promise<{ deleted: number }> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+    const result = await db
+      .delete(integrationAuditLogs)
+      .where(sql`${integrationAuditLogs.timestamp} < ${cutoffDate}`)
+      .returning({ id: integrationAuditLogs.id });
+
+    return { deleted: result.length };
+  }
+
+  // Integration consent verification helpers
+  async checkIntegrationDataProcessingConsent(userId: string, integrationType: string, processingPurpose: string): Promise<{
+    canProcess: boolean;
+    consentStatus: string;
+    reason: string;
+    consentRecord?: IntegrationUserConsent;
+    requiresNewConsent?: boolean;
+  }> {
+    const verification = await this.verifyIntegrationConsent(userId, integrationType, processingPurpose);
+    
+    if (!verification.hasConsent) {
+      return {
+        canProcess: false,
+        consentStatus: 'missing',
+        reason: `No valid consent found for ${integrationType} processing: ${processingPurpose}`,
+        requiresNewConsent: true
+      };
+    }
+
+    const consent = verification.consentRecord!;
+    const now = new Date();
+
+    if (consent.consentExpiresAt && consent.consentExpiresAt <= now) {
+      return {
+        canProcess: false,
+        consentStatus: 'expired',
+        reason: `Consent expired on ${consent.consentExpiresAt.toISOString()}`,
+        consentRecord: consent,
+        requiresNewConsent: true
+      };
+    }
+
+    if (consent.consentStatus === 'withdrawn') {
+      return {
+        canProcess: false,
+        consentStatus: 'withdrawn',
+        reason: `Consent withdrawn: ${consent.withdrawalReason || 'No reason provided'}`,
+        consentRecord: consent,
+        requiresNewConsent: true
+      };
+    }
+
+    return {
+      canProcess: true,
+      consentStatus: 'valid',
+      reason: 'Valid consent found',
+      consentRecord: consent
+    };
+  }
+  
+  // Integration compliance reporting
+  async getIntegrationComplianceReport(organisationId: string): Promise<{
+    totalIntegrations: number;
+    compliantIntegrations: number;
+    nonCompliantIntegrations: number;
+    pendingReview: number;
+    disabledIntegrations: number;
+    consentMetrics: {
+      totalUsers: number;
+      usersWithConsent: number;
+      consentRate: number;
+      expiredConsents: number;
+      withdrawnConsents: number;
+    };
+    processingActivities: {
+      totalActivities: number;
+      activitiesWithTransfers: number;
+      highRiskActivities: number;
+      activitiesRequiringReview: number;
+    };
+    auditMetrics: {
+      totalEvents: number;
+      alertsTriggered: number;
+      complianceIssues: number;
+      recentActivity: number;
+    };
+    integrationBreakdown: Array<{
+      integrationType: string;
+      isEnabled: boolean;
+      complianceStatus: string;
+      userConsentCount: number;
+      lastAssessment: Date | null;
+    }>;
+  }> {
+    // Get integration settings
+    const integrations = await this.getIntegrationGdprSettings(organisationId);
+    
+    const totalIntegrations = integrations.length;
+    const compliantIntegrations = integrations.filter(i => i.complianceStatus === 'compliant').length;
+    const nonCompliantIntegrations = integrations.filter(i => i.complianceStatus === 'non_compliant').length;
+    const pendingReview = integrations.filter(i => ['pending_review', 'review_required'].includes(i.complianceStatus)).length;
+    const disabledIntegrations = integrations.filter(i => !i.isEnabled).length;
+
+    // Get consent metrics
+    const allConsents = await this.getOrganisationIntegrationConsents(organisationId);
+    const uniqueUsers = new Set(allConsents.map(c => c.integrationUserConsent.userId));
+    const totalUsers = uniqueUsers.size;
+    const usersWithConsent = allConsents.filter(c => c.integrationUserConsent.consentStatus === 'granted').length;
+    const consentRate = totalUsers > 0 ? (usersWithConsent / totalUsers) * 100 : 0;
+    const expiredConsents = allConsents.filter(c => 
+      c.integrationUserConsent.consentExpiresAt && 
+      c.integrationUserConsent.consentExpiresAt <= new Date()
+    ).length;
+    const withdrawnConsents = allConsents.filter(c => c.integrationUserConsent.consentStatus === 'withdrawn').length;
+
+    // Get processing activities
+    const processingActivitiesList = await this.getIntegrationProcessingActivities(organisationId);
+    const totalActivities = processingActivitiesList.length;
+    const activitiesWithTransfers = processingActivitiesList.filter(a => a.hasInternationalTransfers).length;
+    const highRiskActivities = processingActivitiesList.filter(a => a.riskAssessment === 'high').length;
+    const activitiesRequiringReview = await this.getProcessingActivitiesRequiringReview(organisationId);
+
+    // Get audit metrics (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { logs: auditLogs } = await this.getIntegrationAuditLogs(organisationId, {
+      startDate: thirtyDaysAgo,
+      limit: 10000
+    });
+
+    const totalEvents = auditLogs.length;
+    const alertsTriggered = auditLogs.filter(l => l.eventCategory === 'compliance_alert').length;
+    const complianceIssues = auditLogs.filter(l => l.eventType.includes('violation') || l.eventType.includes('breach')).length;
+    const recentActivity = auditLogs.filter(l => l.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000)).length;
+
+    // Build integration breakdown
+    const integrationBreakdown = await Promise.all(
+      integrations.map(async (integration) => {
+        const consentCount = allConsents.filter(c => 
+          c.integrationSettings?.id === integration.id && 
+          c.integrationUserConsent.consentStatus === 'granted'
+        ).length;
+
+        return {
+          integrationType: integration.integrationType,
+          isEnabled: integration.isEnabled,
+          complianceStatus: integration.complianceStatus,
+          userConsentCount: consentCount,
+          lastAssessment: integration.lastAssessment
+        };
+      })
+    );
+
+    return {
+      totalIntegrations,
+      compliantIntegrations,
+      nonCompliantIntegrations,
+      pendingReview,
+      disabledIntegrations,
+      consentMetrics: {
+        totalUsers,
+        usersWithConsent,
+        consentRate,
+        expiredConsents,
+        withdrawnConsents
+      },
+      processingActivities: {
+        totalActivities,
+        activitiesWithTransfers,
+        highRiskActivities,
+        activitiesRequiringReview: activitiesRequiringReview.length
+      },
+      auditMetrics: {
+        totalEvents,
+        alertsTriggered,
+        complianceIssues,
+        recentActivity
+      },
+      integrationBreakdown
+    };
+  }
+
+  // Bulk operations for integration management
+  async bulkEnableIntegrations(organisationId: string, integrationIds: string[], enabledBy: string): Promise<void> {
+    await db
+      .update(integrationGdprSettings)
+      .set({ 
+        isEnabled: true, 
+        enabledBy,
+        updatedAt: new Date() 
+      })
+      .where(and(
+        eq(integrationGdprSettings.organisationId, organisationId),
+        inArray(integrationGdprSettings.id, integrationIds)
+      ));
+  }
+
+  async bulkDisableIntegrations(organisationId: string, integrationIds: string[], disabledBy: string, reason: string): Promise<void> {
+    await db
+      .update(integrationGdprSettings)
+      .set({ 
+        isEnabled: false, 
+        disabledBy,
+        disabledReason: reason,
+        updatedAt: new Date() 
+      })
+      .where(and(
+        eq(integrationGdprSettings.organisationId, organisationId),
+        inArray(integrationGdprSettings.id, integrationIds)
+      ));
+  }
+
+  async bulkAssessIntegrationCompliance(organisationId: string, assessments: Array<{
+    integrationId: string;
+    complianceStatus: string;
+    assessedBy: string;
+    notes?: string;
+  }>): Promise<void> {
+    for (const assessment of assessments) {
+      await db
+        .update(integrationGdprSettings)
+        .set({
+          complianceStatus: assessment.complianceStatus,
+          assessedBy: assessment.assessedBy,
+          assessmentNotes: assessment.notes,
+          lastAssessment: new Date(),
+          updatedAt: new Date()
+        })
+        .where(and(
+          eq(integrationGdprSettings.id, assessment.integrationId),
+          eq(integrationGdprSettings.organisationId, organisationId)
+        ));
     }
   }
 }

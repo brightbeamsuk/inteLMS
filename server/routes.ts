@@ -843,6 +843,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize SCORM preview service
   const scormPreviewService = new ScormPreviewService();
 
+  // GDPR-compliant Email Unsubscribe Handler
+  app.get('/api/email/unsubscribe', async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: 'Invalid unsubscribe token' });
+      }
+
+      const { gdprCompliantEmailService } = await import('./services/GdprCompliantEmailService.js');
+      
+      // Parse token to get user information
+      const [dataB64] = token.split('.');
+      if (!dataB64) {
+        return res.status(400).json({ message: 'Invalid token format' });
+      }
+
+      const tokenData = JSON.parse(Buffer.from(dataB64, 'base64').toString());
+      const { userId, organisationId } = tokenData;
+
+      // Validate token
+      const isValid = await gdprCompliantEmailService.validateUnsubscribeToken(token, userId);
+      if (!isValid) {
+        return res.status(400).json({ message: 'Invalid or expired unsubscribe token' });
+      }
+
+      // Process unsubscribe
+      await gdprCompliantEmailService.withdrawEmailMarketingConsent(
+        userId,
+        organisationId,
+        'unsubscribe_link',
+        token
+      );
+
+      // Return success page
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Unsubscribed Successfully</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+                .success { color: #28a745; margin-bottom: 20px; }
+                .info { color: #6c757d; margin-top: 20px; font-size: 14px; }
+            </style>
+        </head>
+        <body>
+            <h1 class="success">✅ Successfully Unsubscribed</h1>
+            <p>You have been successfully removed from our marketing email list.</p>
+            <p>You will no longer receive marketing emails from us.</p>
+            <p class="info">
+                You may still receive essential account-related emails.<br>
+                <a href="/privacy-preferences">Update your privacy preferences</a>
+            </p>
+        </body>
+        </html>
+      `);
+
+    } catch (error) {
+      console.error('Email unsubscribe error:', error);
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Unsubscribe Error</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+                .error { color: #dc3545; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <h1 class="error">❌ Unsubscribe Failed</h1>
+            <p>We encountered an error processing your unsubscribe request.</p>
+            <p>Please contact support for assistance.</p>
+        </body>
+        </html>
+      `);
+    }
+  });
+
   // Stripe Webhook Handler (for processing successful payments)
   // Verify Stripe payment/subscription status
   app.get('/api/subscriptions/verify/:sessionId', async (req, res) => {
@@ -8532,6 +8612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Plan does not have Stripe integration configured' });
       }
 
+      const { gdprCompliantStripeService } = await import('./services/GdprCompliantStripeService.js');
       const { getStripeService } = await import('./services/StripeService.js');
       const stripeService = getStripeService();
 
@@ -8541,10 +8622,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let subscriptionResult;
       
       if (!billingValidation.hasActiveSubscription) {
-        // Create new subscription via Stripe Checkout
-        const checkoutSession = await stripeService.createCheckoutSession(
+        // Create new subscription via GDPR-compliant Stripe Checkout
+        const checkoutSession = await gdprCompliantStripeService.createGdprCompliantCheckoutSession(
           plan,
           organisation,
+          user,
           userCount || 1
         );
         

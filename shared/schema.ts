@@ -3909,3 +3909,420 @@ export type ComplianceReports = typeof complianceReports.$inferSelect;
 
 export type InsertExportJobs = z.infer<typeof insertExportJobsSchema>;
 export type ExportJobs = typeof exportJobs.$inferSelect;
+
+// ===== INTEGRATION GDPR COMPLIANCE ENUMS AND TABLES =====
+
+// Third-party integration types enum
+export const integrationTypeEnum = pgEnum('integration_type', [
+  'stripe_payments',           // Stripe payment processing
+  'sendgrid_email',           // SendGrid email service
+  'brevo_email',              // Brevo email service
+  'smtp_email',               // Generic SMTP email
+  'mailgun_email',            // Mailgun email service
+  'postmark_email',           // Postmark email service
+  'mailjet_email',            // Mailjet email service
+  'sparkpost_email',          // SparkPost email service
+  'google_analytics',         // Google Analytics tracking
+  'google_tag_manager',       // Google Tag Manager
+  'facebook_pixel',           // Facebook Pixel tracking
+  'hotjar_analytics',         // Hotjar user behavior analytics
+  'mixpanel_analytics',       // Mixpanel event tracking
+  'segment_analytics',        // Segment data platform
+  'intercom_support',         // Intercom customer support
+  'zendesk_support',          // Zendesk customer support
+  'hubspot_crm',             // HubSpot CRM integration
+  'salesforce_crm',          // Salesforce CRM integration
+  'slack_notifications',      // Slack notification integration
+  'microsoft_teams',          // Microsoft Teams integration
+  'zoom_meetings',            // Zoom meeting integration
+  'calendly_scheduling',      // Calendly scheduling
+  'typeform_surveys',         // Typeform survey integration
+  'surveymonkey_surveys',     // SurveyMonkey integration
+  'mailchimp_marketing',      // MailChimp marketing
+  'constant_contact_marketing', // Constant Contact marketing
+  'twilio_sms',              // Twilio SMS service
+  'aws_s3_storage',          // AWS S3 object storage
+  'google_cloud_storage',     // Google Cloud Storage
+  'azure_storage',           // Azure Blob Storage
+  'cloudflare_cdn',          // Cloudflare CDN and security
+  'custom_webhook',          // Custom webhook integrations
+  'custom_api'               // Custom API integrations
+]);
+
+// Integration data processing purposes
+export const integrationProcessingPurposeEnum = pgEnum('integration_processing_purpose', [
+  'payment_processing',       // Process payments and transactions
+  'marketing_communication',  // Send marketing emails and messages
+  'transactional_communication', // Send transactional emails (receipts, confirmations)
+  'customer_support',        // Provide customer support services
+  'analytics_tracking',      // Track user behavior and analytics
+  'performance_monitoring',  // Monitor application performance
+  'security_protection',     // Protect against fraud and security threats
+  'legal_compliance',        // Meet legal and regulatory requirements
+  'service_improvement',     // Improve services and user experience
+  'personalization',         // Personalize user experience
+  'lead_generation',         // Generate and manage leads
+  'survey_research',         // Conduct surveys and research
+  'event_tracking',          // Track events and user actions
+  'content_delivery',        // Deliver content via CDN
+  'data_backup',            // Backup and archive data
+  'system_integration',      // Integrate with external systems
+  'notification_delivery',   // Deliver push notifications and alerts
+  'scheduling_coordination', // Coordinate meetings and schedules
+  'document_management',     // Manage and store documents
+  'collaboration'            // Enable team collaboration features
+]);
+
+// Integration consent requirements
+export const integrationConsentRequirementEnum = pgEnum('integration_consent_requirement', [
+  'none',                    // No explicit consent required (legitimate interest)
+  'opt_out',                // Opt-out consent (user can decline)
+  'opt_in',                 // Opt-in consent (user must explicitly agree)
+  'explicit',               // Explicit consent required (special categories)
+  'parental',               // Parental consent required (children)
+  'conditional'             // Conditional consent based on context
+]);
+
+// Integration data transfer risk levels
+export const integrationTransferRiskEnum = pgEnum('integration_transfer_risk', [
+  'none',                   // No international transfer
+  'low',                    // Transfer to adequate country
+  'medium',                 // Transfer with appropriate safeguards
+  'high',                   // Transfer to high-risk country
+  'prohibited'              // Transfer prohibited by policy
+]);
+
+// Integration compliance status
+export const integrationComplianceStatusEnum = pgEnum('integration_compliance_status', [
+  'compliant',              // Fully GDPR compliant
+  'needs_review',           // Requires compliance review
+  'non_compliant',          // Not GDPR compliant
+  'disabled',               // Disabled for compliance reasons
+  'pending_assessment'      // Awaiting compliance assessment
+]);
+
+// Integration data retention periods (in days)
+export const integrationRetentionPeriodEnum = pgEnum('integration_retention_period', [
+  'session_only',           // Data deleted at session end
+  '7_days',                // 7 days retention
+  '30_days',               // 30 days retention  
+  '90_days',               // 90 days retention
+  '1_year',                // 1 year retention
+  '2_years',               // 2 years retention
+  '7_years',               // 7 years retention (financial records)
+  'indefinite',            // Indefinite retention
+  'custom'                 // Custom retention period
+]);
+
+// Integration GDPR settings table - stores GDPR configuration for each integration per organization
+export const integrationGdprSettings = pgTable("integration_gdpr_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Integration identification
+  integrationType: integrationTypeEnum("integration_type").notNull(),
+  integrationName: varchar("integration_name").notNull(), // Human-readable name
+  integrationDescription: text("integration_description"),
+  
+  // GDPR compliance configuration
+  isEnabled: boolean("is_enabled").default(true),
+  complianceStatus: integrationComplianceStatusEnum("compliance_status").notNull().default('pending_assessment'),
+  lastAssessmentDate: timestamp("last_assessment_date"),
+  nextReviewDate: timestamp("next_review_date"),
+  assessedBy: varchar("assessed_by"), // User ID who performed assessment
+  
+  // Data processing details
+  processingPurposes: integrationProcessingPurposeEnum("processing_purposes").array().notNull(),
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis").notNull(),
+  dataCategories: dataCategoryEnum("data_categories").array().notNull(),
+  
+  // Consent requirements
+  consentRequired: integrationConsentRequirementEnum("consent_required").notNull().default('none'),
+  consentText: text("consent_text"), // Consent notice text
+  consentVersion: varchar("consent_version").default('1.0'),
+  
+  // Data retention and lifecycle
+  retentionPeriod: integrationRetentionPeriodEnum("retention_period").notNull().default('1_year'),
+  customRetentionDays: integer("custom_retention_days"), // For custom retention
+  autoDeleteEnabled: boolean("auto_delete_enabled").default(true),
+  
+  // International transfers
+  transfersPersonalData: boolean("transfers_personal_data").default(false),
+  transferDestinations: text("transfer_destinations").array().default([]), // Country codes
+  transferRisk: integrationTransferRiskEnum("transfer_risk").notNull().default('none'),
+  transferSafeguards: text("transfer_safeguards").array().default([]),
+  transferMechanismId: varchar("transfer_mechanism_id"), // FK to transfer mechanisms
+  
+  // Privacy controls
+  dataMinimizationEnabled: boolean("data_minimization_enabled").default(true),
+  pseudonymizationEnabled: boolean("pseudonymization_enabled").default(false),
+  encryptionRequired: boolean("encryption_required").default(true),
+  
+  // User rights support
+  supportsDataAccess: boolean("supports_data_access").default(false),
+  supportsDataRectification: boolean("supports_data_rectification").default(false),
+  supportsDataErasure: boolean("supports_data_erasure").default(false),
+  supportsDataPortability: boolean("supports_data_portability").default(false),
+  supportsProcessingRestriction: boolean("supports_processing_restriction").default(false),
+  
+  // Breach notification requirements
+  breachNotificationRequired: boolean("breach_notification_required").default(true),
+  breachNotificationThreshold: varchar("breach_notification_threshold").default('any_breach'),
+  breachContactInfo: jsonb("breach_contact_info").default('{}'),
+  
+  // Configuration and settings
+  integrationConfig: jsonb("integration_config").notNull().default('{}'), // Integration-specific config
+  privacySettings: jsonb("privacy_settings").notNull().default('{}'), // Privacy-specific settings
+  complianceNotes: text("compliance_notes"),
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_gdpr_settings_organisation_id").on(table.organisationId),
+  index("idx_integration_gdpr_settings_integration_type").on(table.integrationType),
+  index("idx_integration_gdpr_settings_compliance_status").on(table.complianceStatus),
+  index("idx_integration_gdpr_settings_enabled").on(table.isEnabled),
+  index("idx_integration_gdpr_settings_next_review_date").on(table.nextReviewDate),
+  index("idx_integration_gdpr_settings_transfers_data").on(table.transfersPersonalData),
+  unique("idx_integration_gdpr_settings_org_type_unique")
+    .on(table.organisationId, table.integrationType),
+]);
+
+// Integration user consent tracking - tracks user consent for specific integrations
+export const integrationUserConsent = pgTable("integration_user_consent", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  
+  // Integration reference
+  integrationSettingsId: varchar("integration_settings_id").notNull(), // FK to integration_gdpr_settings
+  integrationType: integrationTypeEnum("integration_type").notNull(),
+  
+  // Consent details
+  consentStatus: consentStatusEnum("consent_status").notNull(),
+  consentGiven: boolean("consent_given").notNull().default(false),
+  consentVersion: varchar("consent_version").notNull().default('1.0'),
+  consentText: text("consent_text"), // The consent text shown to user
+  
+  // Consent context
+  consentSource: varchar("consent_source").notNull(), // 'signup', 'settings', 'checkout', 'api'
+  consentChannel: varchar("consent_channel").notNull(), // 'web', 'mobile', 'api', 'admin'
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  geoLocation: varchar("geo_location"), // Country code
+  
+  // Consent lifecycle
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentExpiresAt: timestamp("consent_expires_at"),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  withdrawalReason: text("withdrawal_reason"),
+  
+  // Privacy preferences  
+  processingRestricted: boolean("processing_restricted").default(false),
+  marketingOptOut: boolean("marketing_opt_out").default(false),
+  analyticsOptOut: boolean("analytics_opt_out").default(false),
+  
+  // Audit trail
+  previousConsentId: varchar("previous_consent_id"), // Link to previous consent record
+  consentHistory: jsonb("consent_history").default('[]'), // Array of consent change events
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_user_consent_organisation_id").on(table.organisationId),
+  index("idx_integration_user_consent_user_id").on(table.userId),
+  index("idx_integration_user_consent_integration_settings_id").on(table.integrationSettingsId),
+  index("idx_integration_user_consent_integration_type").on(table.integrationType),
+  index("idx_integration_user_consent_status").on(table.consentStatus),
+  index("idx_integration_user_consent_given").on(table.consentGiven),
+  index("idx_integration_user_consent_expires_at").on(table.consentExpiresAt),
+  index("idx_integration_user_consent_source").on(table.consentSource),
+  unique("idx_integration_user_consent_user_integration_unique")
+    .on(table.userId, table.integrationSettingsId),
+]);
+
+// Integration data processing activities - tracks data processing activities for GDPR RoPA compliance
+export const integrationProcessingActivities = pgTable("integration_processing_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Integration reference
+  integrationSettingsId: varchar("integration_settings_id").notNull(), // FK to integration_gdpr_settings  
+  integrationType: integrationTypeEnum("integration_type").notNull(),
+  
+  // Processing activity details
+  activityName: varchar("activity_name").notNull(),
+  activityDescription: text("activity_description").notNull(),
+  processingPurpose: integrationProcessingPurposeEnum("processing_purpose").notNull(),
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis").notNull(),
+  
+  // Data subjects and categories
+  dataSubjectCategories: text("data_subject_categories").array().notNull(), // 'customers', 'employees', 'visitors'
+  personalDataCategories: dataCategoryEnum("personal_data_categories").array().notNull(),
+  specialCategoryData: boolean("special_category_data").default(false),
+  specialCategories: text("special_categories").array().default([]), // Article 9 special categories
+  
+  // Recipients and transfers
+  recipientCategories: text("recipient_categories").array().default([]), // Who receives the data
+  thirdPartyRecipients: text("third_party_recipients").array().default([]), // Specific third parties
+  internationalTransfers: boolean("international_transfers").default(false),
+  transferDestinations: text("transfer_destinations").array().default([]), // Country codes
+  transferSafeguards: text("transfer_safeguards").array().default([]),
+  
+  // Retention and security
+  retentionPeriod: varchar("retention_period").notNull(),
+  retentionCriteria: text("retention_criteria"),
+  securityMeasures: text("security_measures").array().default([]),
+  technicalSafeguards: text("technical_safeguards").array().default([]),
+  organisationalSafeguards: text("organisational_safeguards").array().default([]),
+  
+  // Data sources and collection  
+  dataSourceDescription: text("data_source_description"),
+  collectionMethods: text("collection_methods").array().default([]), // 'forms', 'cookies', 'api', 'import'
+  dataVolume: varchar("data_volume"), // 'low', 'medium', 'high'
+  dataFrequency: varchar("data_frequency"), // 'continuous', 'daily', 'weekly', 'monthly'
+  
+  // Rights and obligations
+  dataSubjectRights: text("data_subject_rights").array().default([]), // Which rights are supported
+  rightsLimitations: text("rights_limitations"), // Any limitations on rights
+  supervisoryAuthority: varchar("supervisory_authority").default('ICO'), // Relevant authority
+  
+  // Documentation and compliance
+  legalDocuments: text("legal_documents").array().default([]), // Contracts, policies, etc.
+  privacyNoticeUrl: varchar("privacy_notice_url"),
+  lastReviewDate: timestamp("last_review_date"),
+  nextReviewDate: timestamp("next_review_date"),
+  complianceNotes: text("compliance_notes"),
+  
+  // Risk assessment
+  riskLevel: varchar("risk_level").default('medium'), // 'low', 'medium', 'high'
+  riskFactors: text("risk_factors").array().default([]),
+  mitigationMeasures: text("mitigation_measures").array().default([]),
+  dataProtectionImpactAssessment: boolean("data_protection_impact_assessment").default(false),
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_processing_activities_organisation_id").on(table.organisationId),
+  index("idx_integration_processing_activities_integration_settings_id").on(table.integrationSettingsId),
+  index("idx_integration_processing_activities_integration_type").on(table.integrationType),
+  index("idx_integration_processing_activities_processing_purpose").on(table.processingPurpose),
+  index("idx_integration_processing_activities_lawful_basis").on(table.lawfulBasis),
+  index("idx_integration_processing_activities_international_transfers").on(table.internationalTransfers),
+  index("idx_integration_processing_activities_special_category_data").on(table.specialCategoryData),
+  index("idx_integration_processing_activities_next_review_date").on(table.nextReviewDate),
+]);
+
+// Integration audit logs - comprehensive audit trail for integration GDPR compliance
+export const integrationAuditLogs = pgTable("integration_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Integration context
+  integrationSettingsId: varchar("integration_settings_id"), // May be null for system-wide events
+  integrationType: integrationTypeEnum("integration_type"),
+  
+  // Audit event details
+  eventType: varchar("event_type").notNull(), // 'consent_granted', 'data_processed', 'settings_updated', etc.
+  eventCategory: varchar("event_category").notNull(), // 'consent', 'processing', 'config', 'breach', 'rights'
+  eventDescription: text("event_description").notNull(),
+  
+  // Subject and actor
+  userId: varchar("user_id"), // Data subject (may be null for admin actions)
+  actorId: varchar("actor_id"), // User who performed the action
+  actorRole: userRoleEnum("actor_role"),
+  actorType: varchar("actor_type").default('user'), // 'user', 'system', 'integration'
+  
+  // Event context
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  geoLocation: varchar("geo_location"),
+  sessionId: varchar("session_id"),
+  requestId: varchar("request_id"),
+  
+  // Data processing details
+  dataCategories: dataCategoryEnum("data_categories").array().default([]),
+  processingPurpose: integrationProcessingPurposeEnum("processing_purpose"),
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis"),
+  consentRequired: boolean("consent_required"),
+  consentVerified: boolean("consent_verified"),
+  
+  // Integration API details
+  apiEndpoint: varchar("api_endpoint"),
+  apiMethod: varchar("api_method"), // GET, POST, PUT, DELETE
+  apiStatusCode: integer("api_status_code"),
+  apiResponse: jsonb("api_response"), // Sanitized API response
+  integrationReference: varchar("integration_reference"), // External ID from integration
+  
+  // Rights exercise tracking
+  userRightType: userRightTypeEnum("user_right_type"), // For rights exercise events
+  rightRequestId: varchar("right_request_id"), // FK to user_right_requests
+  rightFulfilled: boolean("right_fulfilled"),
+  rightResponse: text("right_response"),
+  
+  // Data transfer tracking
+  dataTransferred: boolean("data_transferred").default(false),
+  transferDestination: varchar("transfer_destination"), // Country or service
+  transferMechanism: varchar("transfer_mechanism"),
+  transferVolume: varchar("transfer_volume"), // 'low', 'medium', 'high'
+  
+  // Compliance and risk
+  complianceStatus: integrationComplianceStatusEnum("compliance_status"),
+  riskLevel: varchar("risk_level"), // 'low', 'medium', 'high', 'critical'
+  alertTriggered: boolean("alert_triggered").default(false),
+  alertType: varchar("alert_type"), // 'consent_expired', 'unauthorized_access', 'data_breach'
+  
+  // Event metadata  
+  eventData: jsonb("event_data").default('{}'), // Additional event-specific data
+  previousState: jsonb("previous_state"), // State before the event
+  newState: jsonb("new_state"), // State after the event
+  correlationId: varchar("correlation_id"), // Group related events
+  
+  // Legal and compliance context
+  legalRequirement: text("legal_requirement"), // Which law/regulation requires this logging
+  retentionPeriod: integer("retention_period").default(2557), // Days (7 years default)
+  sensitiveData: boolean("sensitive_data").default(false), // Contains sensitive information
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_audit_logs_organisation_id").on(table.organisationId),
+  index("idx_integration_audit_logs_integration_settings_id").on(table.integrationSettingsId),
+  index("idx_integration_audit_logs_integration_type").on(table.integrationType),
+  index("idx_integration_audit_logs_event_type").on(table.eventType),
+  index("idx_integration_audit_logs_event_category").on(table.eventCategory),
+  index("idx_integration_audit_logs_user_id").on(table.userId),
+  index("idx_integration_audit_logs_actor_id").on(table.actorId),
+  index("idx_integration_audit_logs_user_right_type").on(table.userRightType),
+  index("idx_integration_audit_logs_right_request_id").on(table.rightRequestId),
+  index("idx_integration_audit_logs_compliance_status").on(table.complianceStatus),
+  index("idx_integration_audit_logs_alert_triggered").on(table.alertTriggered),
+  index("idx_integration_audit_logs_correlation_id").on(table.correlationId),
+  index("idx_integration_audit_logs_created_at").on(table.createdAt),
+]);
+
+// Insert schemas for integration GDPR compliance tables
+export const insertIntegrationGdprSettingsSchema = createInsertSchema(integrationGdprSettings);
+export const insertIntegrationUserConsentSchema = createInsertSchema(integrationUserConsent);
+export const insertIntegrationProcessingActivitiesSchema = createInsertSchema(integrationProcessingActivities);
+export const insertIntegrationAuditLogsSchema = createInsertSchema(integrationAuditLogs);
+
+// Integration GDPR compliance types
+export type InsertIntegrationGdprSettings = z.infer<typeof insertIntegrationGdprSettingsSchema>;
+export type IntegrationGdprSettings = typeof integrationGdprSettings.$inferSelect;
+
+export type InsertIntegrationUserConsent = z.infer<typeof insertIntegrationUserConsentSchema>;
+export type IntegrationUserConsent = typeof integrationUserConsent.$inferSelect;
+
+export type InsertIntegrationProcessingActivities = z.infer<typeof insertIntegrationProcessingActivitiesSchema>;
+export type IntegrationProcessingActivities = typeof integrationProcessingActivities.$inferSelect;
+
+export type InsertIntegrationAuditLogs = z.infer<typeof insertIntegrationAuditLogsSchema>;
+export type IntegrationAuditLogs = typeof integrationAuditLogs.$inferSelect;

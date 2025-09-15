@@ -240,10 +240,7 @@ export function CookieSettings() {
     try {
       // Validate data using Zod schema (omit organisationId as it's set server-side)
       const validatedData = insertCookieInventorySchema.omit({ 
-        organisationId: true,
-        id: true,
-        createdAt: true,
-        updatedAt: true 
+        organisationId: true
       }).parse(formData);
 
       if (editingId) {
