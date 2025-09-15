@@ -21,6 +21,7 @@ export interface GdprConfig {
     breachNotificationDeadline: number; // hours (72 for ICO)
     childAgeThreshold: number; // 13 for UK
     cookieConsentExpiry: number; // days
+    policyVersion: string; // Current privacy policy version
   };
 }
 
@@ -46,6 +47,7 @@ export const gdprConfig: GdprConfig = {
     breachNotificationDeadline: 72, // ICO requirement
     childAgeThreshold: 13, // UK threshold
     cookieConsentExpiry: 365, // 1 year
+    policyVersion: process.env.GDPR_POLICY_VERSION || '2.0', // Current privacy policy version
   },
 };
 
@@ -57,4 +59,9 @@ export const isGdprEnabled = (): boolean => {
 // Helper function to check specific GDPR features
 export const isGdprFeatureEnabled = (feature: keyof GdprConfig['features']): boolean => {
   return gdprConfig.enabled && gdprConfig.features[feature];
+};
+
+// Helper function to get current policy version
+export const getCurrentPolicyVersion = (): string => {
+  return gdprConfig.settings.policyVersion;
 };

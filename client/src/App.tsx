@@ -47,6 +47,7 @@ import { AdminSupport } from "@/pages/admin/Support";
 
 // GDPR pages (feature flag protected)
 import { PrivacySettings } from "@/pages/gdpr/PrivacySettings";
+import { ConsentPreferences } from "@/pages/gdpr/ConsentPreferences";
 
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
@@ -260,6 +261,14 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/superadmin/consent-preferences">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <ConsentPreferences />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* Admin routes */}
       <Route path="/admin">
         <ProtectedRoute requiredRole="admin">
@@ -348,6 +357,14 @@ function Router() {
           </AdminLayout>
         </ProtectedRoute>
       </Route>
+
+      <Route path="/admin/consent-preferences">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <ConsentPreferences />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
       
       {/* GDPR Privacy Settings (feature flag protected) */}
       <Route path="/admin/privacy-settings">
@@ -357,6 +374,7 @@ function Router() {
           </AdminLayout>
         </ProtectedRoute>
       </Route>
+
 
       {/* User routes */}
       <Route path="/user">
@@ -395,6 +413,14 @@ function Router() {
         <ProtectedRoute requiredRole="user">
           <UserLayout>
             <UserSupport />
+          </UserLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/user/consent-preferences">
+        <ProtectedRoute requiredRole="user">
+          <UserLayout>
+            <ConsentPreferences />
           </UserLayout>
         </ProtectedRoute>
       </Route>

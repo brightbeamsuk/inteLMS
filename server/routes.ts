@@ -33,7 +33,7 @@ import { EmailOrchestrator } from "./services/EmailOrchestrator";
 import { emailNotificationService } from "./services/EmailNotificationService";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled } from "./config/gdpr";
+import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersion } from "./config/gdpr";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -1373,6 +1373,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting privacy settings:", error);
       res.status(500).json({ message: "Failed to delete privacy settings" });
+    }
+  });
+
+  // GDPR Consent Routes (feature flag protected)
+  
+  // Get user's current consent status
+  app.get('/api/gdpr/consent', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get current active consent for the user
+      const currentConsent = await storage.getCurrentUserConsent(currentUser.id, currentUser.organisationId);
+      
+      if (!currentConsent) {
+        return res.status(404).json({ message: "No consent record found" });
+      }
+
+      res.json(currentConsent);
+    } catch (error: any) {
+      console.error("Error fetching consent:", error);
+      res.status(500).json({ message: "Failed to fetch consent status" });
+    }
+  });
+
+  // Grant or update consent
+  app.post('/api/gdpr/consent', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate request body
+      const consentSchema = insertConsentRecordSchema.extend({
+        consentType: z.string().min(1, "Consent type is required"),
+        lawfulBasis: z.enum(['consent', 'contract', 'legal_obligation', 'vital_interests', 'public_task', 'legitimate_interests']),
+        purpose: z.string().min(1, "Purpose is required"),
+        policyVersion: z.string().min(1, "Policy version is required"),
+        marketingConsents: z.record(z.boolean()).optional().default({}),
+        cookieConsents: z.record(z.boolean()).optional().default({})
+      });
+
+      const consentData = consentSchema.parse(req.body);
+
+      // Create new consent record (immutable history)
+      const newConsent = await storage.createConsentRecord({
+        userId: currentUser.id,
+        organisationId: currentUser.organisationId,
+        consentType: consentData.consentType,
+        status: 'granted',
+        lawfulBasis: consentData.lawfulBasis,
+        purpose: consentData.purpose,
+        timestamp: new Date(),
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        policyVersion: consentData.policyVersion,
+        marketingConsents: consentData.marketingConsents || {},
+        cookieConsents: consentData.cookieConsents || {},
+        metadata: consentData.metadata || {}
+      });
+
+      res.status(201).json(newConsent);
+    } catch (error: any) {
+      console.error("Error creating consent record:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create consent record" });
+    }
+  });
+
+  // Withdraw consent
+  app.delete('/api/gdpr/consent/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const { id } = req.params;
+      
+      // Find the consent record
+      const existingConsent = await storage.getConsentRecord(id);
+      if (!existingConsent) {
+        return res.status(404).json({ message: "Consent record not found" });
+      }
+
+      // Check ownership - users can only withdraw their own consent
+      if (existingConsent.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Access denied - can only withdraw your own consent" });
+      }
+
+      // Check organization scope
+      if (existingConsent.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ message: "Access denied - consent belongs to different organization" });
+      }
+
+      // Mark as withdrawn (maintain immutable history)
+      const withdrawnConsent = await storage.updateConsentRecord(id, {
+        status: 'withdrawn',
+        withdrawnAt: new Date(),
+        metadata: {
+          ...existingConsent.metadata,
+          withdrawnByIp: req.ip || req.connection.remoteAddress || 'unknown',
+          withdrawnByUserAgent: req.get('User-Agent') || 'unknown'
+        }
+      });
+
+      res.json(withdrawnConsent);
+    } catch (error: any) {
+      console.error("Error withdrawing consent:", error);
+      res.status(500).json({ message: "Failed to withdraw consent" });
+    }
+  });
+
+  // Get user's consent history (immutable log)
+  app.get('/api/gdpr/consent/history', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get all consent records for the user (ordered by most recent first)
+      const consentHistory = await storage.getConsentRecordsByUser(currentUser.id);
+      
+      // Filter to only records for current organization (multi-tenant safety)
+      const orgConsentHistory = consentHistory.filter(
+        record => record.organisationId === currentUser.organisationId
+      );
+
+      res.json(orgConsentHistory);
+    } catch (error: any) {
+      console.error("Error fetching consent history:", error);
+      res.status(500).json({ message: "Failed to fetch consent history" });
+    }
+  });
+
+  // Admin endpoint: Get organization's consent records (for compliance auditing)
+  app.get('/api/gdpr/consent/admin', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Only allow admin or superadmin to view organization consent records
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions - admin access required" });
+      }
+
+      // Get all consent records for the organization
+      const orgConsentRecords = await storage.getConsentRecordsByOrganisation(currentUser.organisationId);
+
+      res.json(orgConsentRecords);
+    } catch (error: any) {
+      console.error("Error fetching organization consent records:", error);
+      res.status(500).json({ message: "Failed to fetch consent records" });
+    }
+  });
+
+  // Get current GDPR policy version
+  app.get('/api/gdpr/policy-version', async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const policyVersion = getCurrentPolicyVersion();
+      res.json({ 
+        policyVersion,
+        lastUpdated: new Date().toISOString() // Could be made dynamic if needed
+      });
+    } catch (error: any) {
+      console.error("Error fetching policy version:", error);
+      res.status(500).json({ message: "Failed to fetch policy version" });
     }
   });
 

@@ -2587,6 +2587,55 @@ export class DatabaseStorage implements IStorage {
     return result.length;
   }
 
+  // GDPR Consent Records operations
+  async createConsentRecord(consentData: InsertConsentRecord): Promise<ConsentRecord> {
+    const [record] = await db.insert(consentRecords).values(consentData).returning();
+    return record;
+  }
+
+  async getConsentRecord(id: string): Promise<ConsentRecord | undefined> {
+    const [record] = await db.select().from(consentRecords).where(eq(consentRecords.id, id));
+    return record;
+  }
+
+  async getConsentRecordsByUser(userId: string): Promise<ConsentRecord[]> {
+    return await db.select().from(consentRecords)
+      .where(eq(consentRecords.userId, userId))
+      .orderBy(desc(consentRecords.timestamp));
+  }
+
+  async getConsentRecordsByOrganisation(organisationId: string): Promise<ConsentRecord[]> {
+    return await db.select().from(consentRecords)
+      .where(eq(consentRecords.organisationId, organisationId))
+      .orderBy(desc(consentRecords.timestamp));
+  }
+
+  async updateConsentRecord(id: string, consentData: Partial<InsertConsentRecord>): Promise<ConsentRecord> {
+    const [record] = await db
+      .update(consentRecords)
+      .set({ ...consentData, updatedAt: new Date() })
+      .where(eq(consentRecords.id, id))
+      .returning();
+    return record;
+  }
+
+  async deleteConsentRecord(id: string): Promise<void> {
+    await db.delete(consentRecords).where(eq(consentRecords.id, id));
+  }
+
+  // Get current active consent for user (latest non-withdrawn record)
+  async getCurrentUserConsent(userId: string, organisationId: string): Promise<ConsentRecord | undefined> {
+    const [record] = await db.select().from(consentRecords)
+      .where(and(
+        eq(consentRecords.userId, userId),
+        eq(consentRecords.organisationId, organisationId),
+        isNull(consentRecords.withdrawnAt)
+      ))
+      .orderBy(desc(consentRecords.timestamp))
+      .limit(1);
+    return record;
+  }
+
   // GDPR Privacy Settings operations
   async createPrivacySettings(settingsData: InsertPrivacySettings): Promise<PrivacySettings> {
     const [settings] = await db.insert(privacySettings).values(settingsData).returning();
