@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-09-15T20:22:50.881Z",
+  "duration": 3644,
+  "summary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "suite": "Breach Management",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 2275,
+      "errors": [
+        "Test failed with exit code 1"
+      ],
+      "status": "error"
+    },
+    {
+      "suite": "Audit Integrity",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 1356,
+      "errors": [
+        "Test failed with exit code 1"
+      ],
+      "status": "error"
+    }
+  ],
+  "compliance": {
+    "gdprEnabled": true,
+    "criticalTestsPassed": 0,
+    "overallCompliance": 0
+  }
+}

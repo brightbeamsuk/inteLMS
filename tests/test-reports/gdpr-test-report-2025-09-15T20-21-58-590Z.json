@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-09-15T20:21:58.590Z",
+  "duration": 742,
+  "summary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "suite": "Breach Management",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 344,
+      "errors": [
+        "Could not find '/home/runner/workspace/tests/tests/gdpr/breach-management.test.ts'\n"
+      ],
+      "status": "error"
+    },
+    {
+      "suite": "Audit Integrity",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 392,
+      "errors": [
+        "Could not find '/home/runner/workspace/tests/tests/gdpr/audit-integrity.test.ts'\n"
+      ],
+      "status": "error"
+    }
+  ],
+  "compliance": {
+    "gdprEnabled": true,
+    "criticalTestsPassed": 0,
+    "overallCompliance": 0
+  }
+}
