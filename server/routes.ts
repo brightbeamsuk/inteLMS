@@ -38,6 +38,127 @@ import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled, getCurrentPolicyVersio
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
 
+// ===== GDPR AUDIT LOGGING SYSTEM =====
+
+/**
+ * GDPR Audit Logging Helper - Comprehensive accountability system
+ * Logs all User Rights operations for legal compliance and audit trails
+ */
+interface GdprAuditLogParams {
+  organisationId: string;
+  userId?: string;
+  adminId?: string;
+  action: string;
+  resource: 'user_rights_request' | 'data_export' | 'gdpr_settings';
+  resourceId: string;
+  details: Record<string, any>;
+  ipAddress: string;
+  userAgent: string;
+}
+
+async function logGdprAudit(params: GdprAuditLogParams): Promise<void> {
+  try {
+    await storage.createGdprAuditLog({
+      organisationId: params.organisationId,
+      userId: params.userId || null,
+      adminId: params.adminId || null,
+      action: params.action,
+      resource: params.resource,
+      resourceId: params.resourceId,
+      details: params.details,
+      ipAddress: params.ipAddress,
+      userAgent: params.userAgent,
+    });
+  } catch (error) {
+    console.error('CRITICAL: GDPR audit logging failed:', error);
+    // Don't fail the operation but log the error for monitoring
+  }
+}
+
+/**
+ * Calculate 30-day SLA due date and status for User Rights requests
+ * UK GDPR Article 12(3) - Must respond within one month
+ */
+function calculateSlaStatus(requestedAt: Date, verifiedAt?: Date | null) {
+  const baseDate = verifiedAt ? new Date(verifiedAt) : new Date(requestedAt);
+  const dueDate = new Date(baseDate);
+  dueDate.setDate(dueDate.getDate() + 30); // 30 calendar days
+  
+  const now = new Date();
+  const daysRemaining = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const isOverdue = now > dueDate;
+  
+  return {
+    dueDate,
+    daysRemaining,
+    isOverdue,
+    slaStatus: isOverdue ? 'overdue' : (daysRemaining <= 7 ? 'urgent' : 'normal')
+  };
+}
+
+/**
+ * Enhanced RBAC validation for User Rights operations
+ * Includes proper organization scoping and role-based permissions
+ */
+async function validateUserRightsAccess(
+  currentUser: any, 
+  targetRequestId: string | null = null,
+  operation: 'view' | 'create' | 'process' | 'export' = 'view'
+): Promise<{ authorized: boolean; error?: string; targetRequest?: any }> {
+  
+  // Basic authentication check
+  if (!currentUser || !currentUser.id) {
+    return { authorized: false, error: 'Authentication required' };
+  }
+
+  // Role-based access control
+  const allowedRoles = ['admin', 'superadmin', 'user'];
+  if (!allowedRoles.includes(currentUser.role)) {
+    return { authorized: false, error: 'Invalid user role' };
+  }
+
+  // Operation-specific role checks
+  if (['process', 'export'].includes(operation)) {
+    if (!['admin', 'superadmin'].includes(currentUser.role)) {
+      return { authorized: false, error: 'Admin privileges required for this operation' };
+    }
+  }
+
+  // If targeting a specific request, validate access
+  if (targetRequestId) {
+    const targetRequest = await storage.getUserRightRequest(targetRequestId);
+    if (!targetRequest) {
+      return { authorized: false, error: 'User rights request not found' };
+    }
+
+    // Organization scoping validation
+    if (currentUser.role === 'admin') {
+      // Admin can only access requests from their organization
+      if (targetRequest.organisationId !== currentUser.organisationId) {
+        return { 
+          authorized: false, 
+          error: 'Access denied - cannot access requests outside your organization' 
+        };
+      }
+    } else if (currentUser.role === 'superadmin') {
+      // SuperAdmin can access any organization's requests (for compliance purposes)
+      // But must be logged for audit trail
+    } else if (currentUser.role === 'user') {
+      // Users can only access their own requests
+      if (targetRequest.userId !== currentUser.id) {
+        return { 
+          authorized: false, 
+          error: 'Access denied - can only access your own requests' 
+        };
+      }
+    }
+
+    return { authorized: true, targetRequest };
+  }
+
+  return { authorized: true };
+}
+
 // Initialize EmailOrchestrator for the new email system
 const emailOrchestrator = new EmailOrchestrator();
 
@@ -325,6 +446,24 @@ async function sendMultiRecipientNotification<T>(
       () => notificationFn(email)
     );
   }
+}
+
+// Get available actions based on request status and user role
+function getAvailableActions(requestStatus: string, userRole: string): string[] {
+  if (userRole === 'user') {
+    // Users can only view their requests
+    return [];
+  }
+
+  // Admin and SuperAdmin available actions based on request status
+  const validTransitions = {
+    'pending': ['verify', 'reject', 'update'],
+    'in_progress': ['complete', 'reject', 'update'],
+    'completed': ['update'], // Only updates allowed on completed
+    'rejected': ['update'] // Only updates allowed on rejected
+  };
+
+  return validTransitions[requestStatus] || [];
 }
 
 // Build complete variable data for email templates
@@ -1791,8 +1930,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "User not found" });
       }
 
+      // Enhanced RBAC validation
+      const accessValidation = await validateUserRightsAccess(currentUser, null, 'view');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
+      }
+
       const requests = await storage.getUserRightRequestsByUser(currentUser.id);
-      res.json(requests);
+      
+      // Enhance requests with SLA status
+      const enhancedRequests = requests.map(request => ({
+        ...request,
+        ...calculateSlaStatus(request.requestedAt, request.verifiedAt)
+      }));
+
+      // GDPR Audit Logging - View own requests
+      await logGdprAudit({
+        organisationId: currentUser.organisationId!,
+        userId: currentUser.id,
+        action: 'view_own_user_rights_requests',
+        resource: 'user_rights_request',
+        resourceId: 'list',
+        details: {
+          requestCount: requests.length,
+          userRole: currentUser.role
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(enhancedRequests);
     } catch (error: any) {
       console.error("Error fetching user rights requests:", error);
       res.status(500).json({ message: "Failed to fetch user rights requests" });
@@ -1814,6 +1981,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!currentUser.organisationId) {
         return res.status(400).json({ message: "User must belong to an organisation to submit requests" });
+      }
+
+      // Enhanced RBAC validation
+      const accessValidation = await validateUserRightsAccess(currentUser, null, 'create');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
       }
 
       // Validate request body
@@ -1845,7 +2018,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create new request
+      // Create new request with SLA tracking and audit metadata
+      const now = new Date();
+      const slaInfo = calculateSlaStatus(now);
+      
       const newRequest = await storage.createUserRightRequest({
         userId: currentUser.id,
         organisationId: currentUser.organisationId,
@@ -1853,10 +2029,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: requestData.description,
         rejectionReason: requestData.rejectionReason || null,
         attachments: requestData.attachments || [],
-        metadata: requestData.metadata || {}
+        metadata: {
+          ...requestData.metadata || {},
+          slaInfo,
+          requestSource: 'user_portal',
+          clientIp: req.ip || req.connection.remoteAddress,
+          userAgent: req.get('User-Agent')
+        }
       });
 
-      res.status(201).json(newRequest);
+      // GDPR Audit Logging - Request Creation
+      await logGdprAudit({
+        organisationId: currentUser.organisationId,
+        userId: currentUser.id,
+        action: 'create_user_rights_request',
+        resource: 'user_rights_request',
+        resourceId: newRequest.id,
+        details: {
+          requestType: requestData.type,
+          description: requestData.description,
+          slaInfo,
+          legalBasis: 'GDPR_Article_12_13_15_16_17_18_20_21' // Legal framework basis
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      // Enhance response with SLA information
+      const enhancedRequest = {
+        ...newRequest,
+        ...slaInfo
+      };
+
+      res.status(201).json(enhancedRequest);
     } catch (error: any) {
       console.error("Error creating user rights request:", error);
       if (error.name === 'ZodError') {
@@ -1882,6 +2087,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "User not found" });
       }
 
+      // Enhanced RBAC validation for admin operations
+      const accessValidation = await validateUserRightsAccess(currentUser, null, 'view');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
+      }
+
       // RBAC: Only admins and superadmins can view organisation requests
       if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
         return res.status(403).json({ message: "Access denied - insufficient privileges" });
@@ -1889,12 +2100,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { type, status, search, limit = '50', offset = '0' } = req.query;
 
-      // For superadmin, they need to specify an organisation or get all requests
+      // Enhanced organization scoping with security controls
       let organisationId = currentUser.organisationId;
+      let isAccessingOtherOrg = false;
+
       if (currentUser.role === 'superadmin') {
-        organisationId = req.query.organisationId as string;
-        if (!organisationId) {
-          return res.status(400).json({ message: "Organisation ID required for superadmin" });
+        // SuperAdmin organization scoping with audit requirements
+        const requestedOrgId = req.query.organisationId as string;
+        
+        if (requestedOrgId && requestedOrgId !== currentUser.organisationId) {
+          // Accessing another organization's data - requires explicit audit
+          organisationId = requestedOrgId;
+          isAccessingOtherOrg = true;
+          
+          // Verify the target organization exists
+          const targetOrg = await storage.getOrganisation(organisationId);
+          if (!targetOrg) {
+            return res.status(404).json({ message: "Target organisation not found" });
+          }
+        } else {
+          // Default to SuperAdmin's own organization if not specified
+          organisationId = currentUser.organisationId;
+        }
+      } else if (currentUser.role === 'admin') {
+        // Admin can ONLY access their own organization's data
+        organisationId = currentUser.organisationId;
+        
+        if (req.query.organisationId && req.query.organisationId !== organisationId) {
+          return res.status(403).json({ 
+            message: "Access denied - cannot access other organisations' GDPR data" 
+          });
         }
       }
 
@@ -1906,16 +2141,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: type as string,
         status: status as string,
         search: search as string,
-        limit: parseInt(limit as string, 10),
-        offset: parseInt(offset as string, 10)
+        limit: Math.min(parseInt(limit as string, 10), 100), // Security limit
+        offset: Math.max(parseInt(offset as string, 10), 0)
       };
 
       const requests = await storage.getUserRightRequestsWithFilters(organisationId, filters);
 
-      res.json(requests);
+      // Enhance requests with SLA status and compliance information
+      const enhancedRequests = requests.map(request => {
+        const slaStatus = calculateSlaStatus(request.requestedAt, request.verifiedAt);
+        return {
+          ...request,
+          ...slaStatus,
+          complianceStatus: slaStatus.isOverdue ? 'non_compliant' : 'compliant'
+        };
+      });
+
+      // GDPR Audit Logging - Admin viewing organization requests
+      await logGdprAudit({
+        organisationId,
+        adminId: currentUser.id,
+        action: isAccessingOtherOrg ? 'superadmin_view_org_user_rights_requests' : 'admin_view_user_rights_requests',
+        resource: 'user_rights_request',
+        resourceId: 'admin_list',
+        details: {
+          requestCount: requests.length,
+          adminRole: currentUser.role,
+          targetOrgId: organisationId,
+          isAccessingOtherOrg,
+          filters,
+          overdueCount: enhancedRequests.filter(r => r.isOverdue).length,
+          complianceStatus: enhancedRequests.some(r => r.isOverdue) ? 'has_overdue_requests' : 'all_compliant'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      // Add compliance metadata to response
+      const responseData = {
+        requests: enhancedRequests,
+        metadata: {
+          totalRequests: enhancedRequests.length,
+          overdueRequests: enhancedRequests.filter(r => r.isOverdue).length,
+          urgentRequests: enhancedRequests.filter(r => r.slaStatus === 'urgent').length,
+          complianceOverview: {
+            compliant: enhancedRequests.filter(r => !r.isOverdue).length,
+            overdue: enhancedRequests.filter(r => r.isOverdue).length,
+            totalProcessed: enhancedRequests.filter(r => r.status === 'completed').length
+          }
+        }
+      };
+
+      res.json(responseData);
     } catch (error: any) {
       console.error("Error fetching admin user rights requests:", error);
       res.status(500).json({ message: "Failed to fetch user rights requests" });
+    }
+  });
+
+  // Get individual user rights request details
+  app.get('/api/gdpr/user-rights/:id', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const requestId = req.params.id;
+
+      // Enhanced RBAC validation for viewing individual requests
+      const accessValidation = await validateUserRightsAccess(currentUser, requestId, 'view');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
+      }
+
+      const request = accessValidation.targetRequest!;
+
+      // Additional security validations
+      if (!request) {
+        return res.status(404).json({ message: "User rights request not found" });
+      }
+
+      // Role-based access control for individual request viewing
+      if (currentUser.role === 'user' && request.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Access denied - can only view your own requests" });
+      }
+
+      if (currentUser.role === 'admin' && request.organisationId !== currentUser.organisationId) {
+        return res.status(403).json({ 
+          message: "Access denied - cannot view requests from outside your organization" 
+        });
+      }
+
+      // Calculate current SLA status for the response
+      const slaStatus = calculateSlaStatus(request.requestedAt, request.verifiedAt);
+
+      // Enhance request with SLA information and compliance status
+      const enhancedRequest = {
+        ...request,
+        ...slaStatus,
+        complianceStatus: slaStatus.isOverdue ? 'non_compliant' : 'compliant',
+        availableActions: getAvailableActions(request.status, currentUser.role)
+      };
+
+      // GDPR Audit Logging - View individual request
+      await logGdprAudit({
+        organisationId: request.organisationId,
+        userId: currentUser.role === 'user' ? currentUser.id : undefined,
+        adminId: ['admin', 'superadmin'].includes(currentUser.role) ? currentUser.id : undefined,
+        action: currentUser.role === 'user' ? 'view_own_user_rights_request' : 'admin_view_user_rights_request',
+        resource: 'user_rights_request',
+        resourceId: requestId,
+        details: {
+          requestType: request.type,
+          requestStatus: request.status,
+          targetUserId: request.userId,
+          viewedByRole: currentUser.role,
+          slaStatus,
+          complianceStatus: slaStatus.isOverdue ? 'SLA_BREACH_DETECTED' : 'COMPLIANT',
+          isAccessingOwnRequest: currentUser.id === request.userId
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
+
+      res.json(enhancedRequest);
+    } catch (error: any) {
+      console.error("Error fetching user rights request:", error);
+      res.status(500).json({ message: "Failed to fetch user rights request" });
     }
   });
 
@@ -1932,68 +2290,219 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "User not found" });
       }
 
-      // RBAC: Only admins and superadmins can process requests
+      const requestId = req.params.id;
+
+      // Enhanced RBAC validation with comprehensive security checks
+      const accessValidation = await validateUserRightsAccess(currentUser, requestId, 'process');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
+      }
+
+      const existingRequest = accessValidation.targetRequest!;
+
+      // Additional RBAC: Only admins and superadmins can process requests
       if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
         return res.status(403).json({ message: "Access denied - insufficient privileges" });
       }
 
-      const requestId = req.params.id;
-      const existingRequest = await storage.getUserRightRequest(requestId);
-      
-      if (!existingRequest) {
-        return res.status(404).json({ message: "User rights request not found" });
-      }
-
-      // For admin users, ensure they can only process requests from their organisation
+      // Organization scoping validation (already handled in validateUserRightsAccess but double-check)
       if (currentUser.role === 'admin' && existingRequest.organisationId !== currentUser.organisationId) {
-        return res.status(403).json({ message: "Access denied - can only process requests from your organisation" });
+        return res.status(403).json({ 
+          message: "Access denied - cannot process requests outside your organization" 
+        });
       }
 
       const { action, adminNotes, rejectionReason, attachments } = req.body;
 
+      // Validate action is allowed for current request status
+      const validTransitions = {
+        'pending': ['verify', 'reject', 'update'],
+        'in_progress': ['complete', 'reject', 'update'],
+        'completed': ['update'], // Only updates allowed on completed
+        'rejected': ['update'] // Only updates allowed on rejected
+      };
+
+      if (!validTransitions[existingRequest.status]?.includes(action)) {
+        return res.status(400).json({ 
+          message: `Invalid action '${action}' for request status '${existingRequest.status}'` 
+        });
+      }
+
+      // Calculate current SLA status before processing
+      const currentSla = calculateSlaStatus(existingRequest.requestedAt, existingRequest.verifiedAt);
+
       let updatedRequest;
+      const processingTimestamp = new Date();
 
       switch (action) {
         case 'verify':
-          // Mark as verified and move to in_progress
-          updatedRequest = await storage.verifyUserRightRequest(requestId, currentUser.id);
+          // Mark as verified and move to in_progress with SLA reset
+          updatedRequest = await storage.updateUserRightRequest(requestId, {
+            status: 'in_progress',
+            verifiedAt: processingTimestamp,
+            adminNotes,
+            metadata: {
+              ...existingRequest.metadata || {},
+              verifiedBy: currentUser.id,
+              verificationTimestamp: processingTimestamp.toISOString(),
+              slaResetDue: calculateSlaStatus(processingTimestamp, processingTimestamp) // SLA resets from verification date
+            }
+          });
+
+          // GDPR Audit Logging - Request Verification
+          await logGdprAudit({
+            organisationId: existingRequest.organisationId,
+            adminId: currentUser.id,
+            action: 'verify_user_rights_request',
+            resource: 'user_rights_request',
+            resourceId: requestId,
+            details: {
+              requestType: existingRequest.type,
+              previousStatus: existingRequest.status,
+              newStatus: 'in_progress',
+              adminNotes,
+              slaStatusBefore: currentSla,
+              slaStatusAfter: calculateSlaStatus(processingTimestamp, processingTimestamp),
+              legalCompliance: currentSla.isOverdue ? 'OVERDUE_PROCESSED' : 'ON_TIME'
+            },
+            ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown'
+          });
           break;
 
         case 'complete':
-          // Mark as completed
-          updatedRequest = await storage.completeUserRightRequest(requestId, {
+          // Mark as completed with compliance tracking
+          updatedRequest = await storage.updateUserRightRequest(requestId, {
             status: 'completed',
+            completedAt: processingTimestamp,
             adminNotes,
-            attachments
+            attachments,
+            metadata: {
+              ...existingRequest.metadata || {},
+              completedBy: currentUser.id,
+              completionTimestamp: processingTimestamp.toISOString(),
+              finalSlaStatus: currentSla,
+              complianceStatus: currentSla.isOverdue ? 'completed_overdue' : 'completed_on_time'
+            }
+          });
+
+          // GDPR Audit Logging - Request Completion
+          await logGdprAudit({
+            organisationId: existingRequest.organisationId,
+            adminId: currentUser.id,
+            action: 'complete_user_rights_request',
+            resource: 'user_rights_request',
+            resourceId: requestId,
+            details: {
+              requestType: existingRequest.type,
+              previousStatus: existingRequest.status,
+              newStatus: 'completed',
+              adminNotes,
+              attachments: attachments || [],
+              slaStatus: currentSla,
+              complianceStatus: currentSla.isOverdue ? 'LATE_COMPLETION' : 'ON_TIME_COMPLETION',
+              processingDays: Math.ceil((processingTimestamp.getTime() - new Date(existingRequest.requestedAt).getTime()) / (1000 * 60 * 60 * 24))
+            },
+            ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown'
           });
           break;
 
         case 'reject':
-          // Mark as rejected with reason
+          // Mark as rejected with comprehensive justification
           if (!rejectionReason) {
-            return res.status(400).json({ message: "Rejection reason is required" });
+            return res.status(400).json({ message: "Rejection reason is required for legal compliance" });
           }
-          updatedRequest = await storage.completeUserRightRequest(requestId, {
+          
+          updatedRequest = await storage.updateUserRightRequest(requestId, {
             status: 'rejected',
+            completedAt: processingTimestamp,
             adminNotes,
             rejectionReason,
-            attachments
+            attachments,
+            metadata: {
+              ...existingRequest.metadata || {},
+              rejectedBy: currentUser.id,
+              rejectionTimestamp: processingTimestamp.toISOString(),
+              rejectionJustification: rejectionReason,
+              finalSlaStatus: currentSla
+            }
+          });
+
+          // GDPR Audit Logging - Request Rejection (critical for accountability)
+          await logGdprAudit({
+            organisationId: existingRequest.organisationId,
+            adminId: currentUser.id,
+            action: 'reject_user_rights_request',
+            resource: 'user_rights_request',
+            resourceId: requestId,
+            details: {
+              requestType: existingRequest.type,
+              previousStatus: existingRequest.status,
+              newStatus: 'rejected',
+              rejectionReason,
+              adminNotes,
+              slaStatus: currentSla,
+              legalJustification: rejectionReason,
+              complianceStatus: currentSla.isOverdue ? 'REJECTED_AFTER_SLA' : 'REJECTED_WITHIN_SLA'
+            },
+            ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown'
           });
           break;
 
         case 'update':
-          // General update (admin notes, status, etc.)
+          // General update with audit trail
           const updateData: any = {};
           if (adminNotes !== undefined) updateData.adminNotes = adminNotes;
           if (attachments !== undefined) updateData.attachments = attachments;
-          updatedRequest = await storage.updateUserRightRequest(requestId, updateData);
+          
+          updatedRequest = await storage.updateUserRightRequest(requestId, {
+            ...updateData,
+            metadata: {
+              ...existingRequest.metadata || {},
+              lastUpdatedBy: currentUser.id,
+              lastUpdateTimestamp: processingTimestamp.toISOString()
+            }
+          });
+
+          // GDPR Audit Logging - Request Update
+          await logGdprAudit({
+            organisationId: existingRequest.organisationId,
+            adminId: currentUser.id,
+            action: 'update_user_rights_request',
+            resource: 'user_rights_request',
+            resourceId: requestId,
+            details: {
+              requestType: existingRequest.type,
+              status: existingRequest.status,
+              updatesApplied: updateData,
+              adminNotes,
+              slaStatus: currentSla
+            },
+            ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown'
+          });
           break;
 
         default:
-          return res.status(400).json({ message: "Invalid action. Must be one of: verify, complete, reject, update" });
+          return res.status(400).json({ 
+            message: "Invalid action. Must be one of: verify, complete, reject, update" 
+          });
       }
 
-      res.json(updatedRequest);
+      // Enhance response with current SLA information
+      const finalSlaStatus = action === 'verify' 
+        ? calculateSlaStatus(processingTimestamp, processingTimestamp) // Reset SLA from verification
+        : calculateSlaStatus(new Date(existingRequest.requestedAt), existingRequest.verifiedAt);
+
+      const enhancedResponse = {
+        ...updatedRequest,
+        ...finalSlaStatus,
+        complianceStatus: finalSlaStatus.isOverdue ? 'non_compliant' : 'compliant'
+      };
+
+      res.json(enhancedResponse);
     } catch (error: any) {
       console.error("Error processing user rights request:", error);
       res.status(500).json({ message: "Failed to process user rights request" });
@@ -2014,30 +2523,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const requestId = req.params.id;
-      const request = await storage.getUserRightRequest(requestId);
-      
+
+      // Enhanced RBAC validation for data export operations
+      const accessValidation = await validateUserRightsAccess(currentUser, requestId, 'export');
+      if (!accessValidation.authorized) {
+        return res.status(403).json({ message: accessValidation.error });
+      }
+
+      const request = accessValidation.targetRequest!;
+
+      // Additional security validations
       if (!request) {
         return res.status(404).json({ message: "User rights request not found" });
       }
 
-      // Check permissions: user can export their own data, admins can export org users' data
+      // Enhanced permission checks with comprehensive RBAC
       if (currentUser.role === 'user' && request.userId !== currentUser.id) {
         return res.status(403).json({ message: "Access denied - can only export your own data" });
       }
 
       if (currentUser.role === 'admin' && request.organisationId !== currentUser.organisationId) {
-        return res.status(403).json({ message: "Access denied - can only export data from your organisation" });
+        return res.status(403).json({ 
+          message: "Access denied - cannot export data from outside your organization" 
+        });
       }
 
-      // Only allow export for access and portability requests
+      // Only allow export for access and portability requests (legal requirement)
       if (!['access', 'portability'].includes(request.type)) {
-        return res.status(400).json({ message: "Data export only available for access and portability requests" });
+        return res.status(400).json({ 
+          message: "Data export only available for access and portability requests (GDPR Articles 15 & 20)" 
+        });
       }
 
-      // Only allow export for completed requests
+      // Only allow export for completed requests (compliance requirement)
       if (request.status !== 'completed') {
-        return res.status(400).json({ message: "Data export only available for completed requests" });
+        return res.status(400).json({ 
+          message: "Data export only available for completed requests" 
+        });
       }
+
+      // Calculate SLA compliance for export tracking
+      const slaStatus = calculateSlaStatus(request.requestedAt, request.verifiedAt);
 
       // Get the user whose data is being exported
       const targetUser = await storage.getUser(request.userId);
@@ -2073,10 +2599,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
           request_id: requestId,
           request_type: request.type,
           exported_by: currentUser.id,
+          exported_by_role: currentUser.role,
           data_format: 'json',
-          gdpr_article: request.type === 'access' ? 'Article 15 (Right of Access)' : 'Article 20 (Right to Data Portability)'
+          gdpr_article: request.type === 'access' ? 'Article 15 (Right of Access)' : 'Article 20 (Right to Data Portability)',
+          legal_basis: request.type === 'access' ? 'GDPR_Article_15' : 'GDPR_Article_20',
+          export_scope: 'complete_user_data',
+          sla_status: slaStatus,
+          compliance_status: slaStatus.isOverdue ? 'exported_after_sla' : 'exported_within_sla'
         }
       };
+
+      // CRITICAL: GDPR Audit Logging - Data Export (highest security requirement)
+      await logGdprAudit({
+        organisationId: request.organisationId,
+        userId: currentUser.role === 'user' ? currentUser.id : undefined,
+        adminId: ['admin', 'superadmin'].includes(currentUser.role) ? currentUser.id : undefined,
+        action: 'export_user_data',
+        resource: 'data_export',
+        resourceId: requestId,
+        details: {
+          requestType: request.type,
+          targetUserId: request.userId,
+          exportedByUserId: currentUser.id,
+          exportedByRole: currentUser.role,
+          dataScope: 'complete_user_data',
+          exportFormat: req.query.format || 'json',
+          slaStatus,
+          legalBasis: request.type === 'access' ? 'GDPR_Article_15_Right_of_Access' : 'GDPR_Article_20_Data_Portability',
+          complianceStatus: slaStatus.isOverdue ? 'EXPORTED_AFTER_SLA_BREACH' : 'EXPORTED_WITHIN_SLA',
+          dataCategories: [
+            'personal_information',
+            'assignments', 
+            'completions',
+            'certificates',
+            'scorm_attempts',
+            'consent_records',
+            'user_rights_requests'
+          ],
+          securityLevel: 'high_sensitivity_personal_data'
+        },
+        ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown'
+      });
 
       const format = req.query.format || 'json';
 
