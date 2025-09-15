@@ -35,6 +35,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [upgradeModal, setUpgradeModal] = useState<{
     isOpen: boolean;
     featureName: string;
@@ -276,19 +277,33 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               onClick={() => setDrawerOpen(false)}
             ></label>
             
-            <aside className="min-h-full w-80 bg-base-200 text-base-content">
-              <div className="p-4">
-                <div className="mb-6">
-                  <div className="font-bold text-lg" data-testid="text-user-name">
-                    {user?.firstName} {user?.lastName}
-                  </div>
-                  <div className="text-sm opacity-60" data-testid="text-user-organisation">
-                    {organization?.displayName || 'Loading...'}
-                  </div>
-                </div>
+            <aside className={`min-h-full bg-base-200 text-base-content transition-all duration-300 ${sidebarMinimized ? 'w-20' : 'w-80'}`}>
+              {/* Minimize Toggle Button */}
+              <div className="p-4 flex justify-end lg:block hidden">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSidebarMinimized(!sidebarMinimized)}
+                  data-testid="button-minimize-sidebar"
+                  title={sidebarMinimized ? "Expand Menu" : "Minimize Menu"}
+                >
+                  <i className={`fas ${sidebarMinimized ? 'fa-chevron-right' : 'fa-chevron-left'}`}></i>
+                </button>
               </div>
               
-              <ul className="menu p-4 space-y-2">
+              {!sidebarMinimized && (
+                <div className="p-4 lg:pt-0">
+                  <div className="mb-6">
+                    <div className="font-bold text-lg" data-testid="text-user-name">
+                      {user?.firstName} {user?.lastName}
+                    </div>
+                    <div className="text-sm opacity-60" data-testid="text-user-organisation">
+                      {organization?.displayName || 'Loading...'}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <ul className={`menu space-y-2 ${sidebarMinimized ? 'p-2' : 'p-4'} lg:pt-0`}>
                 {menuItems.map((item) => {
                   const hasAccess = !item.requiresFeature || hasFeatureAccess(item.requiresFeature);
                   
@@ -296,31 +311,35 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                     <li key={item.path}>
                       {item.requiresFeature && !hasAccess ? (
                         <button
-                          className={`w-full text-left ${location === item.path ? "active" : ""} relative`}
+                          className={`w-full text-left ${location === item.path ? "active" : ""} relative ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
                           onClick={() => {
                             setDrawerOpen(false);
                             handleFeatureClick(item.requiresFeature!, item.path);
                           }}
                           data-testid={`button-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                          data-tip={sidebarMinimized ? item.label : undefined}
                         >
                           <i className={item.icon}></i>
-                          {item.label}
-                          <div className="ml-auto">
-                            <i className="fas fa-lock text-warning text-sm"></i>
-                          </div>
+                          {!sidebarMinimized && item.label}
+                          {!sidebarMinimized && (
+                            <div className="ml-auto">
+                              <i className="fas fa-lock text-warning text-sm"></i>
+                            </div>
+                          )}
                         </button>
                       ) : (
                         <Link 
                           href={item.path}
-                          className={location === item.path ? "active" : ""}
+                          className={`${location === item.path ? "active" : ""} ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
                           onClick={() => setDrawerOpen(false)}
                           data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                          data-tip={sidebarMinimized ? item.label : undefined}
                         >
                           <i className={item.icon}></i>
-                          {item.label}
+                          {!sidebarMinimized && item.label}
                           {/* Show overdue count indicator for Training Matrix */}
                           {item.path === '/admin/training-matrix' && overdueData && overdueData.overdueCount > 0 && (
-                            <div className="ml-2 animate-pulse" data-testid="indicator-overdue">
+                            <div className={`${sidebarMinimized ? 'absolute -top-1 -right-1' : 'ml-2'} animate-pulse`} data-testid="indicator-overdue">
                               <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                                 {overdueData.overdueCount}
                               </div>
@@ -328,7 +347,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                           )}
                           {/* Show unread ticket count indicator for Support */}
                           {item.path === '/admin/support' && supportUnreadData && supportUnreadData.count > 0 && (
-                            <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                            <div className={`${sidebarMinimized ? 'absolute -top-1 -right-1' : 'ml-2'} animate-pulse`} data-testid="indicator-support-unread">
                               <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                                 {supportUnreadData.count}
                               </div>

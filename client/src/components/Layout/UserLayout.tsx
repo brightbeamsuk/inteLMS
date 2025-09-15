@@ -22,6 +22,7 @@ export function UserLayout({ children }: UserLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
 
   // Fetch organization data for the current user
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
@@ -177,52 +178,67 @@ export function UserLayout({ children }: UserLayoutProps) {
             onClick={() => setDrawerOpen(false)}
           ></label>
           
-          <aside className="min-h-full w-80 bg-base-200 text-base-content">
-            <div className="p-4">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="avatar">
-                  <div className="w-12 h-12 rounded-full">
-                    {user?.profileImageUrl ? (
-                      <img 
-                        src={user.profileImageUrl} 
-                        alt="Profile" 
-                        className="w-full h-full object-cover rounded-full"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`bg-neutral text-neutral-content rounded-full w-12 h-12 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
-                      <span className="text-lg">{user?.firstName?.charAt(0) || 'U'}</span>
+          <aside className={`min-h-full bg-base-200 text-base-content transition-all duration-300 ${sidebarMinimized ? 'w-20' : 'w-80'}`}>
+            {/* Minimize Toggle Button */}
+            <div className="p-4 flex justify-end lg:block hidden">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setSidebarMinimized(!sidebarMinimized)}
+                data-testid="button-minimize-sidebar"
+                title={sidebarMinimized ? "Expand Menu" : "Minimize Menu"}
+              >
+                <i className={`fas ${sidebarMinimized ? 'fa-chevron-right' : 'fa-chevron-left'}`}></i>
+              </button>
+            </div>
+            
+            {!sidebarMinimized && (
+              <div className="p-4 lg:pt-0">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="avatar">
+                    <div className="w-12 h-12 rounded-full">
+                      {user?.profileImageUrl ? (
+                        <img 
+                          src={user.profileImageUrl} 
+                          alt="Profile" 
+                          className="w-full h-full object-cover rounded-full"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`bg-neutral text-neutral-content rounded-full w-12 h-12 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                        <span className="text-lg">{user?.firstName?.charAt(0) || 'U'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg" data-testid="text-user-name">
+                      {user?.firstName} {user?.lastName}
+                    </div>
+                    <div className="text-sm opacity-60" data-testid="text-user-title">
+                      {user?.jobTitle || 'Learner'}
                     </div>
                   </div>
                 </div>
-                <div>
-                  <div className="font-bold text-lg" data-testid="text-user-name">
-                    {user?.firstName} {user?.lastName}
-                  </div>
-                  <div className="text-sm opacity-60" data-testid="text-user-title">
-                    {user?.jobTitle || 'Learner'}
-                  </div>
-                </div>
               </div>
-            </div>
+            )}
             
-            <ul className="menu p-4 space-y-2">
+            <ul className={`menu space-y-2 ${sidebarMinimized ? 'p-2' : 'p-4'} lg:pt-0`}>
               {menuItems.map((item) => (
                 <li key={item.path}>
                   <Link 
                     href={item.path}
-                    className={location === item.path ? "active" : ""}
+                    className={`${location === item.path ? "active" : ""} ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
                     onClick={() => setDrawerOpen(false)}
                     data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-').replace('my-', '')}`}
+                    data-tip={sidebarMinimized ? item.label : undefined}
                   >
                     <i className={item.icon}></i>
-                    {item.label}
+                    {!sidebarMinimized && item.label}
                     {/* Show unread ticket count indicator for Support */}
                     {item.path === '/user/support' && supportUnreadData && supportUnreadData.count > 0 && (
-                      <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                      <div className={`${sidebarMinimized ? 'absolute -top-1 -right-1' : 'ml-2'} animate-pulse`} data-testid="indicator-support-unread">
                         <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                           {supportUnreadData.count}
                         </div>

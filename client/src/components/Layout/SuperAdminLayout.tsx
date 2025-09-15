@@ -12,6 +12,7 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
 
   // Fetch support unread ticket count
   const { data: supportUnreadData } = useQuery<{ count: number }>({
@@ -105,42 +106,57 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       {/* Main Layout */}
       <div className="flex">
         {/* Desktop Sidebar - Always visible on lg+ */}
-        <aside className="hidden lg:block w-80 min-h-screen bg-base-200 text-base-content">
-          <div className="p-4">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="avatar">
-                <div className="w-12 h-12 rounded-full">
-                  <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
-                    <span className="text-lg font-bold">
-                      {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
-                    </span>
+        <aside className={`hidden lg:block min-h-screen bg-base-200 text-base-content transition-all duration-300 ${sidebarMinimized ? 'w-20' : 'w-80'}`}>
+          {/* Minimize Toggle Button */}
+          <div className="p-4 flex justify-end">
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setSidebarMinimized(!sidebarMinimized)}
+              data-testid="button-minimize-sidebar"
+              title={sidebarMinimized ? "Expand Menu" : "Minimize Menu"}
+            >
+              <i className={`fas ${sidebarMinimized ? 'fa-chevron-right' : 'fa-chevron-left'}`}></i>
+            </button>
+          </div>
+          
+          {!sidebarMinimized && (
+            <div className="p-4">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="avatar">
+                  <div className="w-12 h-12 rounded-full">
+                    <div className="bg-primary text-primary-content rounded-full w-12 h-12 flex items-center justify-center">
+                      <span className="text-lg font-bold">
+                        {user?.firstName?.[0]}{user?.lastName?.[0] || 'SA'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-bold text-lg" data-testid="text-user-name">
+                    {user?.firstName} {user?.lastName}
+                  </div>
+                  <div className="text-sm opacity-60" data-testid="text-user-title">
+                    {user?.jobTitle || 'Platform Owner'}
                   </div>
                 </div>
               </div>
-              <div>
-                <div className="font-bold text-lg" data-testid="text-user-name">
-                  {user?.firstName} {user?.lastName}
-                </div>
-                <div className="text-sm opacity-60" data-testid="text-user-title">
-                  {user?.jobTitle || 'Platform Owner'}
-                </div>
-              </div>
             </div>
-          </div>
+          )}
           
-          <ul className="menu p-4 space-y-2">
+          <ul className={`menu space-y-2 ${sidebarMinimized ? 'p-2' : 'p-4'}`}>
             {menuItems.map((item) => (
               <li key={item.path}>
                 <Link 
                   href={item.path}
-                  className={location === item.path ? "active" : ""}
+                  className={`${location === item.path ? "active" : ""} ${sidebarMinimized ? 'justify-center tooltip tooltip-right' : ''}`}
                   data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                  data-tip={sidebarMinimized ? item.label : undefined}
                 >
                   <i className={item.icon}></i>
-                  {item.label}
+                  {!sidebarMinimized && item.label}
                   {/* Show unread ticket count indicator for Support */}
                   {item.path === '/superadmin/support' && supportUnreadData && supportUnreadData.count > 0 && (
-                    <div className="ml-2 animate-pulse" data-testid="indicator-support-unread">
+                    <div className={`${sidebarMinimized ? 'absolute -top-1 -right-1' : 'ml-2'} animate-pulse`} data-testid="indicator-support-unread">
                       <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
                         {supportUnreadData.count}
                       </div>
