@@ -18,7 +18,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";
@@ -1219,6 +1219,160 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching GDPR config:", error);
       res.status(500).json({ message: "Failed to fetch GDPR configuration" });
+    }
+  });
+
+  // GDPR Privacy Settings Routes (feature flag protected)
+  
+  // Get organization's privacy settings
+  app.get('/api/gdpr/privacy-settings', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Organization required" });
+      }
+
+      // Only allow admin or superadmin to access privacy settings
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const privacySettings = await storage.getPrivacySettingsByOrganisation(currentUser.organisationId);
+      
+      if (!privacySettings) {
+        // Return default settings if none exist
+        return res.json({
+          organisationId: currentUser.organisationId,
+          dataRetentionPeriod: 2555, // 7 years default
+          cookieSettings: {},
+          privacyContacts: {},
+          internationalTransfers: {},
+          settings: {}
+        });
+      }
+
+      res.json(privacySettings);
+    } catch (error) {
+      console.error("Error fetching privacy settings:", error);
+      res.status(500).json({ message: "Failed to fetch privacy settings" });
+    }
+  });
+
+  // Create initial privacy settings for organization
+  app.post('/api/gdpr/privacy-settings', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Organization required" });
+      }
+
+      // Only allow admin or superadmin to create privacy settings
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      // Check if settings already exist
+      const existingSettings = await storage.getPrivacySettingsByOrganisation(currentUser.organisationId);
+      if (existingSettings) {
+        return res.status(409).json({ message: "Privacy settings already exist for this organization" });
+      }
+
+      // Validate request body
+      const settingsData = insertPrivacySettingsSchema.parse({
+        ...req.body,
+        organisationId: currentUser.organisationId
+      });
+
+      const privacySettings = await storage.createPrivacySettings(settingsData);
+      res.status(201).json(privacySettings);
+    } catch (error: any) {
+      console.error("Error creating privacy settings:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create privacy settings" });
+    }
+  });
+
+  // Update organization's privacy settings
+  app.patch('/api/gdpr/privacy-settings', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Organization required" });
+      }
+
+      // Only allow admin or superadmin to update privacy settings
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      // Find existing settings
+      const existingSettings = await storage.getPrivacySettingsByOrganisation(currentUser.organisationId);
+      if (!existingSettings) {
+        return res.status(404).json({ message: "Privacy settings not found" });
+      }
+
+      // Validate request body (partial update)
+      const updateSchema = insertPrivacySettingsSchema.partial().omit({ organisationId: true });
+      const updateData = updateSchema.parse(req.body);
+
+      const updatedSettings = await storage.updatePrivacySettings(existingSettings.id, updateData);
+      res.json(updatedSettings);
+    } catch (error: any) {
+      console.error("Error updating privacy settings:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update privacy settings" });
+    }
+  });
+
+  // Delete organization's privacy settings
+  app.delete('/api/gdpr/privacy-settings', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !currentUser.organisationId) {
+        return res.status(401).json({ message: "Organization required" });
+      }
+
+      // Only allow admin or superadmin to delete privacy settings
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      // Find existing settings to ensure they belong to the user's organization
+      const existingSettings = await storage.getPrivacySettingsByOrganisation(currentUser.organisationId);
+      if (!existingSettings) {
+        return res.status(404).json({ message: "Privacy settings not found" });
+      }
+
+      // Delete the settings
+      await storage.deletePrivacySettings(existingSettings.id);
+      res.status(204).send(); // 204 No Content for successful deletion
+    } catch (error: any) {
+      console.error("Error deleting privacy settings:", error);
+      res.status(500).json({ message: "Failed to delete privacy settings" });
     }
   });
 

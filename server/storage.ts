@@ -2586,6 +2586,51 @@ export class DatabaseStorage implements IStorage {
     
     return result.length;
   }
+
+  // GDPR Privacy Settings operations
+  async createPrivacySettings(settingsData: InsertPrivacySettings): Promise<PrivacySettings> {
+    const [settings] = await db.insert(privacySettings).values(settingsData).returning();
+    return settings;
+  }
+
+  async getPrivacySettings(id: string): Promise<PrivacySettings | undefined> {
+    const [settings] = await db.select().from(privacySettings).where(eq(privacySettings.id, id));
+    return settings;
+  }
+
+  async getPrivacySettingsByOrganisation(organisationId: string): Promise<PrivacySettings | undefined> {
+    const [settings] = await db.select().from(privacySettings).where(eq(privacySettings.organisationId, organisationId));
+    return settings;
+  }
+
+  async updatePrivacySettings(id: string, privacySettingsData: Partial<InsertPrivacySettings>): Promise<PrivacySettings> {
+    const [settings] = await db
+      .update(privacySettings)
+      .set({ ...privacySettingsData, updatedAt: new Date() })
+      .where(eq(privacySettings.id, id))
+      .returning();
+    return settings;
+  }
+
+  async upsertPrivacySettings(organisationId: string, privacySettingsData: Partial<InsertPrivacySettings>): Promise<PrivacySettings> {
+    // Try to find existing settings
+    const existing = await this.getPrivacySettingsByOrganisation(organisationId);
+    
+    if (existing) {
+      // Update existing settings
+      return await this.updatePrivacySettings(existing.id, privacySettingsData);
+    } else {
+      // Create new settings
+      return await this.createPrivacySettings({
+        organisationId,
+        ...privacySettingsData,
+      } as InsertPrivacySettings);
+    }
+  }
+
+  async deletePrivacySettings(id: string): Promise<void> {
+    await db.delete(privacySettings).where(eq(privacySettings.id, id));
+  }
 }
 
 export const storage = new DatabaseStorage();

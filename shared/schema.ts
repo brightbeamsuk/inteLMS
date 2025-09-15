@@ -1158,10 +1158,23 @@ export const privacySettings = pgTable("privacy_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organisationId: varchar("organisation_id").notNull().unique(),
   dataRetentionPeriod: integer("data_retention_period").notNull().default(2555), // 7 years in days
-  cookieSettings: jsonb("cookie_settings").notNull().default('{}'),
-  privacyContacts: jsonb("privacy_contacts").notNull().default('{}'),
-  internationalTransfers: jsonb("international_transfers").notNull().default('{}'),
-  settings: jsonb("settings").notNull().default('{}'),
+  cookieSettings: jsonb("cookie_settings").$type<{
+    strictlyNecessary?: boolean;
+    functional?: boolean;
+    analytics?: boolean;
+    advertising?: boolean;
+  }>().notNull().default('{}'),
+  privacyContacts: jsonb("privacy_contacts").$type<{
+    dpoEmail?: string;
+    privacyEmail?: string;
+    complaintsProcedure?: string;
+  }>().notNull().default('{}'),
+  internationalTransfers: jsonb("international_transfers").$type<{
+    enabled?: boolean;
+    countries?: string[];
+    safeguards?: string;
+  }>().notNull().default('{}'),
+  settings: jsonb("settings").$type<Record<string, any>>().notNull().default('{}'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -1545,6 +1558,25 @@ export const insertPrivacySettingsSchema = createInsertSchema(privacySettings).o
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // Ensure proper validation for complex objects that align with UI shapes
+  cookieSettings: z.object({
+    strictlyNecessary: z.boolean().optional(),
+    functional: z.boolean().optional(),
+    analytics: z.boolean().optional(),
+    advertising: z.boolean().optional(),
+  }).optional(),
+  privacyContacts: z.object({
+    dpoEmail: z.string().email().optional(),
+    privacyEmail: z.string().email().optional(),
+    complaintsProcedure: z.string().optional(),
+  }).optional(),
+  internationalTransfers: z.object({
+    enabled: z.boolean().optional(),
+    countries: z.array(z.string()).optional(),
+    safeguards: z.string().optional(),
+  }).optional(),
+  settings: z.record(z.any()).optional(),
 });
 
 export const insertUserRightRequestSchema = createInsertSchema(userRightRequests).omit({

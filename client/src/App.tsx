@@ -45,6 +45,9 @@ import { AdminEmailTemplates } from "@/pages/admin/EmailTemplates";
 import AuditLog from "@/pages/admin/AuditLog";
 import { AdminSupport } from "@/pages/admin/Support";
 
+// GDPR pages (feature flag protected)
+import { PrivacySettings } from "@/pages/gdpr/PrivacySettings";
+
 // User pages
 import { UserDashboard } from "@/pages/user/Dashboard";
 import { UserCourses } from "@/pages/user/Courses";
@@ -342,6 +345,15 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <AdminSupport />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      
+      {/* GDPR Privacy Settings (feature flag protected) */}
+      <Route path="/admin/privacy-settings">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <PrivacySettings />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
