@@ -1583,6 +1583,517 @@ export const secureDeletionCertificates = pgTable("secure_deletion_certificates"
   index("idx_secure_deletion_certificates_legal_basis").on(table.legalBasis),
 ]);
 
+// International Transfer enums (GDPR Chapter V Articles 44-49)
+export const transferTypeEnum = pgEnum('transfer_type', [
+  'customer_data',           // Customer personal data
+  'employee_data',          // HR and employee records
+  'supplier_data',          // Vendor/supplier information
+  'marketing_data',         // Marketing and communications
+  'technical_data',         // System logs and technical data
+  'financial_data',         // Payment and billing data
+  'health_data',            // Special category health data
+  'biometric_data',         // Biometric identifiers
+  'other_special_category'  // Other Article 9 special categories
+]);
+
+export const transferLegalBasisEnum = pgEnum('transfer_legal_basis', [
+  'adequacy_decision',      // Article 45 - Adequacy decisions
+  'appropriate_safeguards', // Article 46 - Appropriate safeguards (SCCs, BCRs, etc.)
+  'binding_corporate_rules', // Article 47 - BCRs
+  'approved_code_conduct',  // Article 40 - Approved codes of conduct
+  'approved_certification', // Article 42 - Approved certification
+  'specific_situation',     // Article 49 - Derogations for specific situations
+  'explicit_consent',       // Article 49(1)(a) - Explicit consent
+  'contract_performance',   // Article 49(1)(b) - Contract performance
+  'public_interest',        // Article 49(1)(d) - Important public interest
+  'legal_claims',           // Article 49(1)(e) - Legal claims
+  'vital_interests',        // Article 49(1)(f) - Vital interests
+  'public_register'         // Article 49(1)(g) - Public register
+]);
+
+export const transferMechanismTypeEnum = pgEnum('transfer_mechanism_type', [
+  'adequacy_decision',      // EU Commission adequacy decision
+  'standard_contractual_clauses', // Standard Contractual Clauses (SCCs)
+  'international_data_transfer_agreement', // UK IDTA
+  'binding_corporate_rules', // Binding Corporate Rules
+  'approved_certification_scheme', // Certification schemes
+  'approved_code_conduct',  // Codes of conduct
+  'ad_hoc_contractual_clauses', // Ad hoc contractual clauses
+  'no_mechanism_required'   // For adequacy decision countries
+]);
+
+export const transferStatusEnum = pgEnum('transfer_status', [
+  'active',                 // Transfer is currently active
+  'suspended',              // Transfer temporarily suspended
+  'terminated',             // Transfer permanently ended
+  'under_review',           // Transfer being assessed
+  'pending_approval',       // Awaiting approval to commence
+  'non_compliant',          // Transfer flagged as non-compliant
+  'migrating_mechanism'     // Transitioning to new mechanism
+]);
+
+export const transferFrequencyEnum = pgEnum('transfer_frequency', [
+  'continuous',             // Ongoing/real-time transfers
+  'daily',                  // Daily batch transfers
+  'weekly',                 // Weekly transfers
+  'monthly',                // Monthly transfers
+  'quarterly',              // Quarterly transfers
+  'annual',                 // Annual transfers
+  'ad_hoc',                 // One-off or irregular transfers
+  'event_driven'            // Triggered by specific events
+]);
+
+export const transferRiskLevelEnum = pgEnum('transfer_risk_level', [
+  'low',                    // Low risk transfer (adequate country + appropriate safeguards)
+  'medium',                 // Medium risk (adequate safeguards but some concerns)
+  'high',                   // High risk (limited safeguards or high-risk country)
+  'very_high',              // Very high risk (minimal safeguards, authoritarian regime)
+  'prohibited'              // Transfer prohibited by policy or law
+]);
+
+export const tiaStatusEnum = pgEnum('tia_status', [
+  'draft',                  // TIA being prepared
+  'under_review',           // TIA submitted for review
+  'approved',               // TIA approved, transfer can proceed
+  'rejected',               // TIA rejected, transfer denied
+  'requires_revision',      // TIA needs updates before approval
+  'expired',                // TIA approval has expired
+  'withdrawn'               // TIA withdrawn by requester
+]);
+
+export const adequacyDecisionStatusEnum = pgEnum('adequacy_decision_status', [
+  'adequate',               // Current adequacy decision in force
+  'inadequate',             // No adequacy decision or revoked
+  'under_review',           // Adequacy decision being reviewed
+  'pending',                // Adequacy decision pending adoption
+  'transitional'            // Temporary adequacy arrangement
+]);
+
+export const documentTypeEnum = pgEnum('document_type', [
+  'transfer_impact_assessment', // TIA document
+  'data_protection_agreement',  // DPA with processor
+  'standard_contractual_clauses', // SCCs
+  'international_data_transfer_agreement', // IDTA
+  'binding_corporate_rules',    // BCR documentation
+  'adequacy_decision_document', // Official adequacy decision
+  'supplementary_measures',     // Additional safeguards documentation
+  'transfer_approval_letter',   // Internal approval
+  'due_diligence_report',       // Recipient due diligence
+  'cessation_plan'              // Transfer cessation plan
+]);
+
+// International Transfers main table
+export const internationalTransfers = pgTable("international_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Transfer identification
+  transferName: varchar("transfer_name").notNull(), // Business name for transfer
+  transferDescription: text("transfer_description"),
+  transferReference: varchar("transfer_reference"), // Internal reference number
+  
+  // Data classification
+  transferType: transferTypeEnum("transfer_type").notNull(),
+  dataCategories: text("data_categories").array().notNull(), // Array of data categories
+  dataSubjectCategories: text("data_subject_categories").array().notNull(), // Types of data subjects
+  specialCategories: boolean("special_categories").default(false), // Article 9 special categories
+  
+  // Transfer details
+  originCountry: varchar("origin_country").notNull().default('GB'), // ISO country code
+  destinationCountry: varchar("destination_country").notNull(), // ISO country code
+  recipient: varchar("recipient").notNull(), // Name of recipient organisation
+  recipientContact: text("recipient_contact"), // Contact details
+  transferPurpose: text("transfer_purpose").notNull(), // Purpose of transfer
+  
+  // Legal basis and mechanism
+  legalBasis: transferLegalBasisEnum("legal_basis").notNull(),
+  transferMechanism: transferMechanismTypeEnum("transfer_mechanism").notNull(),
+  mechanismReference: varchar("mechanism_reference"), // Reference to mechanism (SCC version, etc.)
+  
+  // Transfer characteristics
+  transferFrequency: transferFrequencyEnum("transfer_frequency").notNull(),
+  volumeDescription: text("volume_description"), // Description of data volume
+  retentionPeriod: integer("retention_period"), // Days
+  transferStart: timestamp("transfer_start"),
+  transferEnd: timestamp("transfer_end"),
+  
+  // Risk and compliance
+  riskLevel: transferRiskLevelEnum("risk_level").notNull(),
+  riskAssessmentDate: timestamp("risk_assessment_date"),
+  riskAssessmentBy: varchar("risk_assessment_by"), // User ID
+  complianceNotes: text("compliance_notes"),
+  
+  // Impact assessment reference
+  transferImpactAssessmentId: varchar("transfer_impact_assessment_id"), // FK to TIA
+  
+  // Status and lifecycle
+  status: transferStatusEnum("status").notNull().default('pending_approval'),
+  approvedBy: varchar("approved_by"), // User ID
+  approvedAt: timestamp("approved_at"),
+  reviewDue: timestamp("review_due"), // Next review date
+  
+  // Monitoring and alerts
+  lastReviewDate: timestamp("last_review_date"),
+  nextReviewDate: timestamp("next_review_date"),
+  alertsEnabled: boolean("alerts_enabled").default(true),
+  
+  // Documentation
+  documents: jsonb("documents").$type<{
+    type: string;
+    filename: string;
+    uploadedAt: Date;
+    uploadedBy: string;
+  }[]>().default([]),
+  
+  // Safeguards and additional measures
+  technicalSafeguards: text("technical_safeguards").array().default([]),
+  organisationalSafeguards: text("organisational_safeguards").array().default([]),
+  supplementaryMeasures: text("supplementary_measures"),
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(), // User ID
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_international_transfers_organisation_id").on(table.organisationId),
+  index("idx_international_transfers_destination_country").on(table.destinationCountry),
+  index("idx_international_transfers_status").on(table.status),
+  index("idx_international_transfers_risk_level").on(table.riskLevel),
+  index("idx_international_transfers_review_due").on(table.reviewDue),
+  index("idx_international_transfers_transfer_type").on(table.transferType),
+  index("idx_international_transfers_legal_basis").on(table.legalBasis),
+  index("idx_international_transfers_created_by").on(table.createdBy),
+]);
+
+// Transfer Impact Assessments (TIA) table
+export const transferImpactAssessments = pgTable("transfer_impact_assessments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // TIA identification
+  tiaReference: varchar("tia_reference").notNull(), // TIA reference number
+  title: varchar("title").notNull(),
+  description: text("description"),
+  
+  // Assessment scope
+  dataCategories: text("data_categories").array().notNull(),
+  dataSubjectCategories: text("data_subject_categories").array().notNull(),
+  transferPurpose: text("transfer_purpose").notNull(),
+  
+  // Transfer details
+  originCountry: varchar("origin_country").notNull().default('GB'),
+  destinationCountry: varchar("destination_country").notNull(),
+  recipient: varchar("recipient").notNull(),
+  proposedMechanism: transferMechanismTypeEnum("proposed_mechanism").notNull(),
+  
+  // Risk assessment
+  countryRiskScore: integer("country_risk_score"), // 1-10 scale
+  recipientRiskScore: integer("recipient_risk_score"), // 1-10 scale
+  dataRiskScore: integer("data_risk_score"), // 1-10 scale
+  overallRiskScore: integer("overall_risk_score"), // Calculated composite score
+  riskLevel: transferRiskLevelEnum("risk_level").notNull(),
+  
+  // Risk factors
+  identifiedRisks: jsonb("identified_risks").$type<{
+    category: string;
+    description: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    likelihood: 'unlikely' | 'possible' | 'likely' | 'certain';
+  }[]>().default([]),
+  
+  // Safeguards assessment
+  existingSafeguards: text("existing_safeguards").array().default([]),
+  proposedSafeguards: text("proposed_safeguards").array().default([]),
+  supplementaryMeasures: text("supplementary_measures"),
+  safeguardsEffectiveness: varchar("safeguards_effectiveness"), // Assessment of effectiveness
+  
+  // Legal assessment
+  lawfulBasisAssessment: text("lawful_basis_assessment"),
+  recipientLegalFramework: text("recipient_legal_framework"),
+  governmentAccessRisks: text("government_access_risks"),
+  dataSubjectRights: text("data_subject_rights"), // Rights in destination country
+  
+  // Decision and approval
+  recommendation: varchar("recommendation"), // 'approve', 'reject', 'conditional'
+  conditionalRequirements: text("conditional_requirements"),
+  decisionRationale: text("decision_rationale"),
+  
+  // Status and workflow
+  status: tiaStatusEnum("status").notNull().default('draft'),
+  submittedBy: varchar("submitted_by"), // User ID
+  submittedAt: timestamp("submitted_at"),
+  reviewedBy: varchar("reviewed_by"), // User ID
+  reviewedAt: timestamp("reviewed_at"),
+  approvedBy: varchar("approved_by"), // User ID
+  approvedAt: timestamp("approved_at"),
+  
+  // Validity and review
+  validFrom: timestamp("valid_from"),
+  validUntil: timestamp("valid_until"),
+  reviewRequired: boolean("review_required").default(true),
+  nextReviewDate: timestamp("next_review_date"),
+  
+  // Consultation and stakeholders
+  stakeholdersConsulted: text("stakeholders_consulted").array().default([]),
+  consultationNotes: text("consultation_notes"),
+  
+  // Documentation
+  documents: jsonb("documents").$type<{
+    type: string;
+    filename: string;
+    uploadedAt: Date;
+    uploadedBy: string;
+  }[]>().default([]),
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_transfer_impact_assessments_organisation_id").on(table.organisationId),
+  index("idx_transfer_impact_assessments_destination_country").on(table.destinationCountry),
+  index("idx_transfer_impact_assessments_status").on(table.status),
+  index("idx_transfer_impact_assessments_risk_level").on(table.riskLevel),
+  index("idx_transfer_impact_assessments_tia_reference").on(table.tiaReference),
+  index("idx_transfer_impact_assessments_submitted_by").on(table.submittedBy),
+  index("idx_transfer_impact_assessments_next_review_date").on(table.nextReviewDate),
+  unique("idx_transfer_impact_assessments_org_reference_unique")
+    .on(table.organisationId, table.tiaReference),
+]);
+
+// Transfer Mechanisms table (SCCs, IDTA, BCRs, etc.)
+export const transferMechanisms = pgTable("transfer_mechanisms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  
+  // Mechanism identification
+  mechanismType: transferMechanismTypeEnum("mechanism_type").notNull(),
+  mechanismName: varchar("mechanism_name").notNull(),
+  mechanismReference: varchar("mechanism_reference"), // Version, reference number
+  
+  // Mechanism details
+  description: text("description"),
+  applicableCountries: text("applicable_countries").array().default([]), // Countries where applicable
+  dataCategories: text("data_categories").array().default([]), // Applicable data types
+  
+  // Legal framework
+  legalFramework: text("legal_framework"), // Legal basis and framework
+  regulatoryApproval: boolean("regulatory_approval").default(false),
+  approvalAuthority: varchar("approval_authority"), // Which authority approved
+  approvalDate: timestamp("approval_date"),
+  approvalReference: varchar("approval_reference"),
+  
+  // Validity and lifecycle
+  effectiveFrom: timestamp("effective_from"),
+  effectiveUntil: timestamp("effective_until"),
+  autoRenewal: boolean("auto_renewal").default(false),
+  renewalTerms: text("renewal_terms"),
+  
+  // Implementation
+  implementationGuidance: text("implementation_guidance"),
+  mandatoryProvisions: text("mandatory_provisions").array().default([]),
+  optionalProvisions: text("optional_provisions").array().default([]),
+  
+  // Monitoring and compliance
+  complianceRequirements: text("compliance_requirements").array().default([]),
+  monitoringFrequency: varchar("monitoring_frequency"), // 'annual', 'biannual', etc.
+  lastAuditDate: timestamp("last_audit_date"),
+  nextAuditDate: timestamp("next_audit_date"),
+  
+  // Usage tracking
+  transfersUsingMechanism: integer("transfers_using_mechanism").default(0),
+  lastUsedDate: timestamp("last_used_date"),
+  
+  // Documents and templates
+  documentTemplates: jsonb("document_templates").$type<{
+    type: string;
+    filename: string;
+    version: string;
+    uploadedAt: Date;
+  }[]>().default([]),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isDeprecated: boolean("is_deprecated").default(false),
+  deprecationNotice: text("deprecation_notice"),
+  replacedBy: varchar("replaced_by"), // ID of replacement mechanism
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_transfer_mechanisms_organisation_id").on(table.organisationId),
+  index("idx_transfer_mechanisms_mechanism_type").on(table.mechanismType),
+  index("idx_transfer_mechanisms_is_active").on(table.isActive),
+  index("idx_transfer_mechanisms_effective_until").on(table.effectiveUntil),
+  index("idx_transfer_mechanisms_next_audit_date").on(table.nextAuditDate),
+  unique("idx_transfer_mechanisms_org_name_unique")
+    .on(table.organisationId, table.mechanismName),
+]);
+
+// Standard Contractual Clauses specific table
+export const standardContractualClauses = pgTable("standard_contractual_clauses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  transferMechanismId: varchar("transfer_mechanism_id").notNull(), // FK to transfer_mechanisms
+  
+  // SCC identification
+  sccType: varchar("scc_type").notNull(), // 'controller_to_controller', 'controller_to_processor', etc.
+  sccVersion: varchar("scc_version").notNull(), // EU SCC version (2021, etc.)
+  adoptionDecision: varchar("adoption_decision"), // EU Commission decision reference
+  
+  // Parties
+  dataExporter: jsonb("data_exporter").$type<{
+    name: string;
+    address: string;
+    contactEmail: string;
+    contactPhone?: string;
+    authorizedRepresentative?: string;
+  }>(),
+  dataImporter: jsonb("data_importer").$type<{
+    name: string;
+    address: string;
+    country: string;
+    contactEmail: string;
+    contactPhone?: string;
+  }>(),
+  
+  // Transfer specifications
+  transferDetails: jsonb("transfer_details").$type<{
+    dataCategories: string[];
+    dataSubjectCategories: string[];
+    purposes: string[];
+    processingOperations: string[];
+    retentionPeriod: string;
+  }>(),
+  
+  // Module selection (for EU SCCs)
+  moduleOne: boolean("module_one").default(false), // Controller to controller
+  moduleTwo: boolean("module_two").default(false), // Controller to processor
+  moduleThree: boolean("module_three").default(false), // Processor to processor
+  moduleFour: boolean("module_four").default(false), // Processor to controller
+  
+  // Annexes
+  annexOne: jsonb("annex_one").$type<{
+    dataCategories: string;
+    dataSubjects: string;
+    purposes: string;
+    personalDataLocations: string;
+  }>(), // Transfer details
+  annexTwo: text("annex_two"), // Technical and organisational measures
+  annexThree: text("annex_three"), // List of sub-processors (if applicable)
+  
+  // Execution and validity
+  executionDate: timestamp("execution_date"),
+  executedBy: varchar("executed_by"), // User ID
+  digitalSignature: boolean("digital_signature").default(false),
+  signatureDetails: jsonb("signature_details").$type<{
+    exporterSignature: { date: Date; signatory: string; method: string };
+    importerSignature: { date: Date; signatory: string; method: string };
+  }>(),
+  
+  // Compliance monitoring
+  lastReviewDate: timestamp("last_review_date"),
+  nextReviewDate: timestamp("next_review_date"),
+  complianceIssues: text("compliance_issues").array().default([]),
+  remedialActions: text("remedial_actions").array().default([]),
+  
+  // Document management
+  originalDocument: varchar("original_document"), // File path/URL
+  amendmentHistory: jsonb("amendment_history").$type<{
+    date: Date;
+    amendmentType: string;
+    description: string;
+    amendedBy: string;
+  }[]>().default([]),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  terminationDate: timestamp("termination_date"),
+  terminationReason: text("termination_reason"),
+  
+  // Metadata
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_standard_contractual_clauses_organisation_id").on(table.organisationId),
+  index("idx_standard_contractual_clauses_transfer_mechanism_id").on(table.transferMechanismId),
+  index("idx_standard_contractual_clauses_scc_type").on(table.sccType),
+  index("idx_standard_contractual_clauses_execution_date").on(table.executionDate),
+  index("idx_standard_contractual_clauses_next_review_date").on(table.nextReviewDate),
+  index("idx_standard_contractual_clauses_is_active").on(table.isActive),
+]);
+
+// Adequacy Decisions cache table (updated from EU Commission/ICO)
+export const adequacyDecisions = pgTable("adequacy_decisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Country/territory identification
+  countryCode: varchar("country_code").notNull(), // ISO country code
+  countryName: varchar("country_name").notNull(),
+  region: varchar("region"), // Geographic region
+  
+  // Decision details
+  status: adequacyDecisionStatusEnum("status").notNull(),
+  decisionType: varchar("decision_type"), // 'full', 'partial', 'sectoral'
+  adoptionDate: timestamp("adoption_date"),
+  effectiveDate: timestamp("effective_date"),
+  expiryDate: timestamp("expiry_date"),
+  
+  // Legal framework
+  decisionReference: varchar("decision_reference"), // EU Commission decision number
+  legalInstrument: varchar("legal_instrument"), // Decision, regulation, etc.
+  scope: text("scope"), // Scope of adequacy
+  limitations: text("limitations").array().default([]), // Any limitations
+  
+  // Review and monitoring
+  reviewDate: timestamp("review_date"),
+  reviewFrequency: varchar("review_frequency"), // 'annual', 'biannual', etc.
+  lastAssessmentDate: timestamp("last_assessment_date"),
+  nextAssessmentDate: timestamp("next_assessment_date"),
+  
+  // Risk factors
+  riskFactors: text("risk_factors").array().default([]),
+  riskLevel: transferRiskLevelEnum("risk_level").notNull().default('medium'),
+  governmentAccess: text("government_access"), // Government access provisions
+  dataSubjectRights: text("data_subject_rights"), // Available rights
+  
+  // Changes and updates
+  changeHistory: jsonb("change_history").$type<{
+    date: Date;
+    changeType: string;
+    description: string;
+    impact: string;
+  }[]>().default([]),
+  
+  // Sources and references
+  sourceUrl: varchar("source_url"), // Official source
+  documentUrl: varchar("document_url"), // Decision document
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  dataSource: varchar("data_source").default('manual'), // 'api', 'manual', 'scraper'
+  
+  // Usage tracking
+  transfersUsingDecision: integer("transfers_using_decision").default(0),
+  organisationsAffected: integer("organisations_affected").default(0),
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_adequacy_decisions_country_code").on(table.countryCode),
+  index("idx_adequacy_decisions_status").on(table.status),
+  index("idx_adequacy_decisions_risk_level").on(table.riskLevel),
+  index("idx_adequacy_decisions_expiry_date").on(table.expiryDate),
+  index("idx_adequacy_decisions_review_date").on(table.reviewDate),
+  unique("idx_adequacy_decisions_country_code_unique").on(table.countryCode),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -1872,6 +2383,37 @@ export const insertSecureDeletionCertificateSchema = createInsertSchema(secureDe
   createdAt: true,
 });
 
+// International Transfers insert schemas (GDPR Chapter V)
+export const insertInternationalTransferSchema = createInsertSchema(internationalTransfers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertTransferImpactAssessmentSchema = createInsertSchema(transferImpactAssessments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertTransferMechanismSchema = createInsertSchema(transferMechanisms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertStandardContractualClausesSchema = createInsertSchema(standardContractualClauses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAdequacyDecisionSchema = createInsertSchema(adequacyDecisions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -2018,3 +2560,19 @@ export type RetentionComplianceAudit = typeof retentionComplianceAudits.$inferSe
 
 export type InsertSecureDeletionCertificate = z.infer<typeof insertSecureDeletionCertificateSchema>;
 export type SecureDeletionCertificate = typeof secureDeletionCertificates.$inferSelect;
+
+// International Transfers types (GDPR Chapter V)
+export type InsertInternationalTransfer = z.infer<typeof insertInternationalTransferSchema>;
+export type InternationalTransfer = typeof internationalTransfers.$inferSelect;
+
+export type InsertTransferImpactAssessment = z.infer<typeof insertTransferImpactAssessmentSchema>;
+export type TransferImpactAssessment = typeof transferImpactAssessments.$inferSelect;
+
+export type InsertTransferMechanism = z.infer<typeof insertTransferMechanismSchema>;
+export type TransferMechanism = typeof transferMechanisms.$inferSelect;
+
+export type InsertStandardContractualClauses = z.infer<typeof insertStandardContractualClausesSchema>;
+export type StandardContractualClauses = typeof standardContractualClauses.$inferSelect;
+
+export type InsertAdequacyDecision = z.infer<typeof insertAdequacyDecisionSchema>;
+export type AdequacyDecision = typeof adequacyDecisions.$inferSelect;

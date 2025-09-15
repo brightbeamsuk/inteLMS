@@ -4568,6 +4568,625 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== INTERNATIONAL TRANSFERS API ROUTES - GDPR CHAPTER V COMPLIANCE =====
+
+  // Get international transfers analytics and compliance overview
+  app.get('/api/gdpr/international-transfers/analytics', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access international transfers analytics
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const analytics = await storage.getTransferAnalytics(currentUser.organisationId);
+      res.json(analytics);
+
+    } catch (error) {
+      console.error("Error fetching transfer analytics:", error);
+      res.status(500).json({ message: "Failed to fetch transfer analytics" });
+    }
+  });
+
+  // Get all international transfers for organization
+  app.get('/api/gdpr/international-transfers', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access international transfers
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const { status, country, riskLevel, mechanism } = req.query;
+      let transfers;
+
+      if (status) {
+        transfers = await storage.getInternationalTransfersByStatus(currentUser.organisationId, status as string);
+      } else if (country) {
+        transfers = await storage.getInternationalTransfersByDestinationCountry(currentUser.organisationId, country as string);
+      } else if (riskLevel) {
+        transfers = await storage.getInternationalTransfersByRiskLevel(currentUser.organisationId, riskLevel as string);
+      } else if (mechanism) {
+        transfers = await storage.getTransfersByMechanism(currentUser.organisationId, mechanism as string);
+      } else {
+        transfers = await storage.getInternationalTransfersByOrganisation(currentUser.organisationId);
+      }
+
+      res.json(transfers);
+
+    } catch (error) {
+      console.error("Error fetching international transfers:", error);
+      res.status(500).json({ message: "Failed to fetch international transfers" });
+    }
+  });
+
+  // Create new international transfer
+  app.post('/api/gdpr/international-transfers', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to create international transfers
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const transferData = {
+        ...req.body,
+        organisationId: currentUser.organisationId,
+        createdBy: currentUser.id,
+      };
+
+      // Validate required fields
+      if (!transferData.transferName || !transferData.destinationCountry || !transferData.legalBasis) {
+        return res.status(400).json({ message: "Missing required fields: transferName, destinationCountry, legalBasis" });
+      }
+
+      // Calculate risk assessment
+      const riskAssessment = await storage.calculateTransferRisk(
+        transferData.destinationCountry,
+        transferData.dataCategories || [],
+        transferData.transferMechanism || 'unknown'
+      );
+
+      transferData.riskLevel = riskAssessment.riskLevel;
+      transferData.riskScore = riskAssessment.riskScore;
+      transferData.riskFactors = riskAssessment.riskFactors;
+      transferData.riskAssessmentDate = new Date();
+
+      const transfer = await storage.createInternationalTransfer(transferData);
+
+      // Log GDPR audit entry
+      await storage.createGdprAuditLog({
+        organisationId: currentUser.organisationId,
+        userId: null,
+        adminId: currentUser.id,
+        action: 'create',
+        resource: 'international_transfer',
+        resourceId: transfer.id,
+        details: {
+          transferName: transfer.transferName,
+          destinationCountry: transfer.destinationCountry,
+          riskLevel: transfer.riskLevel,
+          legalBasis: transfer.legalBasis
+        },
+        ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        timestamp: new Date(),
+      });
+
+      res.status(201).json(transfer);
+
+    } catch (error: any) {
+      console.error("Error creating international transfer:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create international transfer" });
+    }
+  });
+
+  // Get specific international transfer
+  app.get('/api/gdpr/international-transfers/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access international transfers
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const transfer = await storage.getInternationalTransfer(req.params.id);
+      
+      if (!transfer || transfer.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "International transfer not found" });
+      }
+
+      res.json(transfer);
+
+    } catch (error) {
+      console.error("Error fetching international transfer:", error);
+      res.status(500).json({ message: "Failed to fetch international transfer" });
+    }
+  });
+
+  // Update international transfer
+  app.patch('/api/gdpr/international-transfers/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to update international transfers
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const transfer = await storage.getInternationalTransfer(req.params.id);
+      
+      if (!transfer || transfer.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "International transfer not found" });
+      }
+
+      const updateData = {
+        ...req.body,
+        updatedBy: currentUser.id,
+      };
+
+      // Recalculate risk if key parameters changed
+      if (updateData.destinationCountry || updateData.dataCategories || updateData.transferMechanism) {
+        const riskAssessment = await storage.calculateTransferRisk(
+          updateData.destinationCountry || transfer.destinationCountry,
+          updateData.dataCategories || transfer.dataCategories || [],
+          updateData.transferMechanism || transfer.transferMechanism || 'unknown'
+        );
+
+        updateData.riskLevel = riskAssessment.riskLevel;
+        updateData.riskScore = riskAssessment.riskScore;
+        updateData.riskFactors = riskAssessment.riskFactors;
+        updateData.riskAssessmentDate = new Date();
+      }
+
+      const updatedTransfer = await storage.updateInternationalTransfer(req.params.id, updateData);
+
+      // Log GDPR audit entry
+      await storage.createGdprAuditLog({
+        organisationId: currentUser.organisationId,
+        userId: null,
+        adminId: currentUser.id,
+        action: 'update',
+        resource: 'international_transfer',
+        resourceId: transfer.id,
+        details: {
+          transferName: updatedTransfer.transferName,
+          changes: Object.keys(updateData),
+          previousRiskLevel: transfer.riskLevel,
+          newRiskLevel: updatedTransfer.riskLevel
+        },
+        ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        timestamp: new Date(),
+      });
+
+      res.json(updatedTransfer);
+
+    } catch (error: any) {
+      console.error("Error updating international transfer:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update international transfer" });
+    }
+  });
+
+  // Delete international transfer
+  app.delete('/api/gdpr/international-transfers/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to delete international transfers
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const transfer = await storage.getInternationalTransfer(req.params.id);
+      
+      if (!transfer || transfer.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "International transfer not found" });
+      }
+
+      await storage.deleteInternationalTransfer(req.params.id);
+
+      // Log GDPR audit entry
+      await storage.createGdprAuditLog({
+        organisationId: currentUser.organisationId,
+        userId: null,
+        adminId: currentUser.id,
+        action: 'delete',
+        resource: 'international_transfer',
+        resourceId: transfer.id,
+        details: {
+          transferName: transfer.transferName,
+          destinationCountry: transfer.destinationCountry,
+          riskLevel: transfer.riskLevel
+        },
+        ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        timestamp: new Date(),
+      });
+
+      res.status(204).send();
+
+    } catch (error) {
+      console.error("Error deleting international transfer:", error);
+      res.status(500).json({ message: "Failed to delete international transfer" });
+    }
+  });
+
+  // Validate transfer compliance
+  app.get('/api/gdpr/international-transfers/:id/compliance', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to validate transfer compliance
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const transfer = await storage.getInternationalTransfer(req.params.id);
+      
+      if (!transfer || transfer.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "International transfer not found" });
+      }
+
+      const compliance = await storage.validateTransferCompliance(req.params.id);
+      res.json(compliance);
+
+    } catch (error) {
+      console.error("Error validating transfer compliance:", error);
+      res.status(500).json({ message: "Failed to validate transfer compliance" });
+    }
+  });
+
+  // Get overdue transfer reviews
+  app.get('/api/gdpr/international-transfers/reviews/overdue', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access overdue reviews
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const overdueTransfers = await storage.getOverdueTransferReviews(currentUser.organisationId);
+      res.json(overdueTransfers);
+
+    } catch (error) {
+      console.error("Error fetching overdue transfer reviews:", error);
+      res.status(500).json({ message: "Failed to fetch overdue transfer reviews" });
+    }
+  });
+
+  // ===== TRANSFER IMPACT ASSESSMENTS (TIA) ROUTES =====
+
+  // Get all Transfer Impact Assessments for organization
+  app.get('/api/gdpr/transfer-impact-assessments', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access TIAs
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const { status, country } = req.query;
+      let tias;
+
+      if (status) {
+        tias = await storage.getTransferImpactAssessmentsByStatus(currentUser.organisationId, status as string);
+      } else if (country) {
+        tias = await storage.getTransferImpactAssessmentsByDestinationCountry(currentUser.organisationId, country as string);
+      } else {
+        tias = await storage.getTransferImpactAssessmentsByOrganisation(currentUser.organisationId);
+      }
+
+      res.json(tias);
+
+    } catch (error) {
+      console.error("Error fetching Transfer Impact Assessments:", error);
+      res.status(500).json({ message: "Failed to fetch Transfer Impact Assessments" });
+    }
+  });
+
+  // Create new Transfer Impact Assessment
+  app.post('/api/gdpr/transfer-impact-assessments', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to create TIAs
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const tiaData = {
+        ...req.body,
+        organisationId: currentUser.organisationId,
+        assessorId: currentUser.id,
+        status: req.body.status || 'draft',
+      };
+
+      // Validate required fields
+      if (!tiaData.tiaReference || !tiaData.transferDescription || !tiaData.destinationCountry) {
+        return res.status(400).json({ message: "Missing required fields: tiaReference, transferDescription, destinationCountry" });
+      }
+
+      const tia = await storage.createTransferImpactAssessment(tiaData);
+
+      // Log GDPR audit entry
+      await storage.createGdprAuditLog({
+        organisationId: currentUser.organisationId,
+        userId: null,
+        adminId: currentUser.id,
+        action: 'create',
+        resource: 'transfer_impact_assessment',
+        resourceId: tia.id,
+        details: {
+          tiaReference: tia.tiaReference,
+          destinationCountry: tia.destinationCountry,
+          status: tia.status
+        },
+        ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        timestamp: new Date(),
+      });
+
+      res.status(201).json(tia);
+
+    } catch (error: any) {
+      console.error("Error creating Transfer Impact Assessment:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create Transfer Impact Assessment" });
+    }
+  });
+
+  // Get specific Transfer Impact Assessment
+  app.get('/api/gdpr/transfer-impact-assessments/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access TIAs
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const tia = await storage.getTransferImpactAssessment(req.params.id);
+      
+      if (!tia || tia.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "Transfer Impact Assessment not found" });
+      }
+
+      res.json(tia);
+
+    } catch (error) {
+      console.error("Error fetching Transfer Impact Assessment:", error);
+      res.status(500).json({ message: "Failed to fetch Transfer Impact Assessment" });
+    }
+  });
+
+  // Update Transfer Impact Assessment
+  app.patch('/api/gdpr/transfer-impact-assessments/:id', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to update TIAs
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const tia = await storage.getTransferImpactAssessment(req.params.id);
+      
+      if (!tia || tia.organisationId !== currentUser.organisationId) {
+        return res.status(404).json({ message: "Transfer Impact Assessment not found" });
+      }
+
+      const updateData = {
+        ...req.body,
+        lastReviewedBy: currentUser.id,
+        lastReviewedAt: new Date(),
+      };
+
+      const updatedTia = await storage.updateTransferImpactAssessment(req.params.id, updateData);
+
+      // Log GDPR audit entry
+      await storage.createGdprAuditLog({
+        organisationId: currentUser.organisationId,
+        userId: null,
+        adminId: currentUser.id,
+        action: 'update',
+        resource: 'transfer_impact_assessment',
+        resourceId: tia.id,
+        details: {
+          tiaReference: updatedTia.tiaReference,
+          previousStatus: tia.status,
+          newStatus: updatedTia.status,
+          changes: Object.keys(updateData)
+        },
+        ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent') || 'unknown',
+        timestamp: new Date(),
+      });
+
+      res.json(updatedTia);
+
+    } catch (error: any) {
+      console.error("Error updating Transfer Impact Assessment:", error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update Transfer Impact Assessment" });
+    }
+  });
+
+  // Get overdue TIA reviews
+  app.get('/api/gdpr/transfer-impact-assessments/reviews/overdue', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Only allow admin or superadmin to access overdue TIA reviews
+      if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const overdueTias = await storage.getOverdueTiaReviews(currentUser.organisationId);
+      res.json(overdueTias);
+
+    } catch (error) {
+      console.error("Error fetching overdue TIA reviews:", error);
+      res.status(500).json({ message: "Failed to fetch overdue TIA reviews" });
+    }
+  });
+
+  // ===== ADEQUACY DECISIONS ROUTES =====
+
+  // Get all adequacy decisions (publicly accessible cached data)
+  app.get('/api/gdpr/adequacy-decisions', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const { status } = req.query;
+      let decisions;
+
+      if (status === 'adequate') {
+        decisions = await storage.getAdequateCountries();
+      } else if (status === 'inadequate') {
+        decisions = await storage.getInadequateCountries();
+      } else {
+        decisions = await storage.getAllAdequacyDecisions();
+      }
+
+      res.json(decisions);
+
+    } catch (error) {
+      console.error("Error fetching adequacy decisions:", error);
+      res.status(500).json({ message: "Failed to fetch adequacy decisions" });
+    }
+  });
+
+  // Get adequacy decision for specific country
+  app.get('/api/gdpr/adequacy-decisions/:countryCode', requireAuth, async (req: any, res) => {
+    if (!isGdprEnabled() || !isGdprFeatureEnabled('internationalTransfers')) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+
+    try {
+      const decision = await storage.getAdequacyDecisionByCountry(req.params.countryCode);
+      
+      if (!decision) {
+        return res.status(404).json({ message: "Adequacy decision not found for this country" });
+      }
+
+      res.json(decision);
+
+    } catch (error) {
+      console.error("Error fetching adequacy decision:", error);
+      res.status(500).json({ message: "Failed to fetch adequacy decision" });
+    }
+  });
+
   // Update user profile
   app.put('/api/auth/profile', requireAuth, async (req: any, res) => {
     try {

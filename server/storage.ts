@@ -573,6 +573,88 @@ export interface IStorage {
   getEnabledDataRetentionPolicies(organisationId: string): Promise<DataRetentionPolicy[]>;
   getDataRetentionPolicyByPriority(organisationId: string, dataType: string): Promise<DataRetentionPolicy | undefined>;
 
+  // International Transfers operations (GDPR Chapter V Articles 44-49)
+  // International transfers
+  createInternationalTransfer(transfer: InsertInternationalTransfer): Promise<InternationalTransfer>;
+  getInternationalTransfer(id: string): Promise<InternationalTransfer | undefined>;
+  getInternationalTransfersByOrganisation(organisationId: string): Promise<InternationalTransfer[]>;
+  getInternationalTransfersByDestinationCountry(organisationId: string, countryCode: string): Promise<InternationalTransfer[]>;
+  getInternationalTransfersByRiskLevel(organisationId: string, riskLevel: string): Promise<InternationalTransfer[]>;
+  getInternationalTransfersByStatus(organisationId: string, status: string): Promise<InternationalTransfer[]>;
+  updateInternationalTransfer(id: string, transfer: Partial<InsertInternationalTransfer>): Promise<InternationalTransfer>;
+  deleteInternationalTransfer(id: string): Promise<void>;
+  getOverdueTransferReviews(organisationId: string): Promise<InternationalTransfer[]>;
+  getTransfersByMechanism(organisationId: string, mechanism: string): Promise<InternationalTransfer[]>;
+  
+  // Transfer Impact Assessments (TIA)
+  createTransferImpactAssessment(tia: InsertTransferImpactAssessment): Promise<TransferImpactAssessment>;
+  getTransferImpactAssessment(id: string): Promise<TransferImpactAssessment | undefined>;
+  getTransferImpactAssessmentsByOrganisation(organisationId: string): Promise<TransferImpactAssessment[]>;
+  getTransferImpactAssessmentsByStatus(organisationId: string, status: string): Promise<TransferImpactAssessment[]>;
+  getTransferImpactAssessmentsByDestinationCountry(organisationId: string, countryCode: string): Promise<TransferImpactAssessment[]>;
+  updateTransferImpactAssessment(id: string, tia: Partial<InsertTransferImpactAssessment>): Promise<TransferImpactAssessment>;
+  deleteTransferImpactAssessment(id: string): Promise<void>;
+  getOverdueTiaReviews(organisationId: string): Promise<TransferImpactAssessment[]>;
+  getTiaByReference(organisationId: string, reference: string): Promise<TransferImpactAssessment | undefined>;
+  
+  // Transfer Mechanisms
+  createTransferMechanism(mechanism: InsertTransferMechanism): Promise<TransferMechanism>;
+  getTransferMechanism(id: string): Promise<TransferMechanism | undefined>;
+  getTransferMechanismsByOrganisation(organisationId: string): Promise<TransferMechanism[]>;
+  getTransferMechanismsByType(organisationId: string, mechanismType: string): Promise<TransferMechanism[]>;
+  getActiveTransferMechanisms(organisationId: string): Promise<TransferMechanism[]>;
+  updateTransferMechanism(id: string, mechanism: Partial<InsertTransferMechanism>): Promise<TransferMechanism>;
+  deleteTransferMechanism(id: string): Promise<void>;
+  getExpiringTransferMechanisms(organisationId: string, daysAhead?: number): Promise<TransferMechanism[]>;
+  getMechanismsByCountry(organisationId: string, countryCode: string): Promise<TransferMechanism[]>;
+  
+  // Standard Contractual Clauses (SCCs)
+  createStandardContractualClauses(scc: InsertStandardContractualClauses): Promise<StandardContractualClauses>;
+  getStandardContractualClauses(id: string): Promise<StandardContractualClauses | undefined>;
+  getStandardContractualClausesByOrganisation(organisationId: string): Promise<StandardContractualClauses[]>;
+  getStandardContractualClausesByTransferMechanism(mechanismId: string): Promise<StandardContractualClauses[]>;
+  getStandardContractualClausesByType(organisationId: string, sccType: string): Promise<StandardContractualClauses[]>;
+  getActiveStandardContractualClauses(organisationId: string): Promise<StandardContractualClauses[]>;
+  updateStandardContractualClauses(id: string, scc: Partial<InsertStandardContractualClauses>): Promise<StandardContractualClauses>;
+  deleteStandardContractualClauses(id: string): Promise<void>;
+  getSccByDataImporter(organisationId: string, importerName: string): Promise<StandardContractualClauses[]>;
+  getOverdueSccReviews(organisationId: string): Promise<StandardContractualClauses[]>;
+  
+  // Adequacy Decisions (cached from ICO/EU)
+  getAdequacyDecision(id: string): Promise<AdequacyDecision | undefined>;
+  getAdequacyDecisionByCountry(countryCode: string): Promise<AdequacyDecision | undefined>;
+  getAllAdequacyDecisions(): Promise<AdequacyDecision[]>;
+  getAdequateCountries(): Promise<AdequacyDecision[]>;
+  getInadequateCountries(): Promise<AdequacyDecision[]>;
+  createAdequacyDecision(decision: InsertAdequacyDecision): Promise<AdequacyDecision>;
+  updateAdequacyDecision(id: string, decision: Partial<InsertAdequacyDecision>): Promise<AdequacyDecision>;
+  deleteAdequacyDecision(id: string): Promise<void>;
+  getAdequacyDecisionsByRiskLevel(riskLevel: string): Promise<AdequacyDecision[]>;
+  syncAdequacyDecisions(): Promise<{ updated: number; errors: string[] }>;
+  
+  // International transfers analytics and compliance
+  getTransferAnalytics(organisationId: string): Promise<{
+    totalTransfers: number;
+    transfersByCountry: { country: string; count: number }[];
+    transfersByRiskLevel: { riskLevel: string; count: number }[];
+    transfersByMechanism: { mechanism: string; count: number }[];
+    pendingTias: number;
+    overdueReviews: number;
+    complianceScore: number;
+  }>;
+  calculateTransferRisk(destinationCountry: string, dataCategories: string[], mechanism: string): Promise<{
+    riskLevel: string;
+    riskScore: number;
+    riskFactors: string[];
+    recommendations: string[];
+  }>;
+  validateTransferCompliance(transferId: string): Promise<{
+    isCompliant: boolean;
+    issues: string[];
+    recommendations: string[];
+    requiredActions: string[];
+  }>;
+
   // Data Lifecycle Management - automated deletion tracking and processing
   createDataLifecycleRecord(record: InsertDataLifecycleRecord): Promise<DataLifecycleRecord>;
   getDataLifecycleRecord(id: string): Promise<DataLifecycleRecord | undefined>;
@@ -3295,6 +3377,788 @@ export class DatabaseStorage implements IStorage {
         eq(gdprAuditLogs.resourceId, resourceId)
       ))
       .orderBy(desc(gdprAuditLogs.timestamp));
+  }
+
+  // ===== INTERNATIONAL TRANSFERS OPERATIONS - GDPR CHAPTER V COMPLIANCE =====
+
+  // International Transfers operations
+  async createInternationalTransfer(transferData: InsertInternationalTransfer): Promise<InternationalTransfer> {
+    const [transfer] = await db.insert(internationalTransfers).values({
+      ...transferData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return transfer;
+  }
+
+  async getInternationalTransfer(id: string): Promise<InternationalTransfer | undefined> {
+    const [transfer] = await db.select().from(internationalTransfers).where(eq(internationalTransfers.id, id));
+    return transfer;
+  }
+
+  async getInternationalTransfersByOrganisation(organisationId: string): Promise<InternationalTransfer[]> {
+    return await db.select().from(internationalTransfers)
+      .where(eq(internationalTransfers.organisationId, organisationId))
+      .orderBy(desc(internationalTransfers.createdAt));
+  }
+
+  async getInternationalTransfersByDestinationCountry(organisationId: string, countryCode: string): Promise<InternationalTransfer[]> {
+    return await db.select().from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        eq(internationalTransfers.destinationCountry, countryCode)
+      ))
+      .orderBy(desc(internationalTransfers.createdAt));
+  }
+
+  async getInternationalTransfersByRiskLevel(organisationId: string, riskLevel: string): Promise<InternationalTransfer[]> {
+    return await db.select().from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        eq(internationalTransfers.riskLevel, riskLevel)
+      ))
+      .orderBy(desc(internationalTransfers.riskAssessmentDate));
+  }
+
+  async getInternationalTransfersByStatus(organisationId: string, status: string): Promise<InternationalTransfer[]> {
+    return await db.select().from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        eq(internationalTransfers.status, status)
+      ))
+      .orderBy(desc(internationalTransfers.updatedAt));
+  }
+
+  async updateInternationalTransfer(id: string, transferData: Partial<InsertInternationalTransfer>): Promise<InternationalTransfer> {
+    const [transfer] = await db
+      .update(internationalTransfers)
+      .set({ ...transferData, updatedAt: new Date() })
+      .where(eq(internationalTransfers.id, id))
+      .returning();
+    return transfer;
+  }
+
+  async deleteInternationalTransfer(id: string): Promise<void> {
+    await db.delete(internationalTransfers).where(eq(internationalTransfers.id, id));
+  }
+
+  async getOverdueTransferReviews(organisationId: string): Promise<InternationalTransfer[]> {
+    const now = new Date();
+    return await db.select().from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        sql`${internationalTransfers.reviewDue} < ${now}`,
+        eq(internationalTransfers.status, 'active')
+      ))
+      .orderBy(asc(internationalTransfers.reviewDue));
+  }
+
+  async getTransfersByMechanism(organisationId: string, mechanism: string): Promise<InternationalTransfer[]> {
+    return await db.select().from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        eq(internationalTransfers.transferMechanism, mechanism)
+      ))
+      .orderBy(desc(internationalTransfers.createdAt));
+  }
+
+  // Transfer Impact Assessments (TIA) operations
+  async createTransferImpactAssessment(tiaData: InsertTransferImpactAssessment): Promise<TransferImpactAssessment> {
+    const [tia] = await db.insert(transferImpactAssessments).values({
+      ...tiaData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return tia;
+  }
+
+  async getTransferImpactAssessment(id: string): Promise<TransferImpactAssessment | undefined> {
+    const [tia] = await db.select().from(transferImpactAssessments).where(eq(transferImpactAssessments.id, id));
+    return tia;
+  }
+
+  async getTransferImpactAssessmentsByOrganisation(organisationId: string): Promise<TransferImpactAssessment[]> {
+    return await db.select().from(transferImpactAssessments)
+      .where(eq(transferImpactAssessments.organisationId, organisationId))
+      .orderBy(desc(transferImpactAssessments.createdAt));
+  }
+
+  async getTransferImpactAssessmentsByStatus(organisationId: string, status: string): Promise<TransferImpactAssessment[]> {
+    return await db.select().from(transferImpactAssessments)
+      .where(and(
+        eq(transferImpactAssessments.organisationId, organisationId),
+        eq(transferImpactAssessments.status, status)
+      ))
+      .orderBy(desc(transferImpactAssessments.updatedAt));
+  }
+
+  async getTransferImpactAssessmentsByDestinationCountry(organisationId: string, countryCode: string): Promise<TransferImpactAssessment[]> {
+    return await db.select().from(transferImpactAssessments)
+      .where(and(
+        eq(transferImpactAssessments.organisationId, organisationId),
+        eq(transferImpactAssessments.destinationCountry, countryCode)
+      ))
+      .orderBy(desc(transferImpactAssessments.createdAt));
+  }
+
+  async updateTransferImpactAssessment(id: string, tiaData: Partial<InsertTransferImpactAssessment>): Promise<TransferImpactAssessment> {
+    const [tia] = await db
+      .update(transferImpactAssessments)
+      .set({ ...tiaData, updatedAt: new Date() })
+      .where(eq(transferImpactAssessments.id, id))
+      .returning();
+    return tia;
+  }
+
+  async deleteTransferImpactAssessment(id: string): Promise<void> {
+    await db.delete(transferImpactAssessments).where(eq(transferImpactAssessments.id, id));
+  }
+
+  async getOverdueTiaReviews(organisationId: string): Promise<TransferImpactAssessment[]> {
+    const now = new Date();
+    return await db.select().from(transferImpactAssessments)
+      .where(and(
+        eq(transferImpactAssessments.organisationId, organisationId),
+        sql`${transferImpactAssessments.nextReviewDate} < ${now}`,
+        eq(transferImpactAssessments.status, 'approved')
+      ))
+      .orderBy(asc(transferImpactAssessments.nextReviewDate));
+  }
+
+  async getTiaByReference(organisationId: string, reference: string): Promise<TransferImpactAssessment | undefined> {
+    const [tia] = await db.select().from(transferImpactAssessments)
+      .where(and(
+        eq(transferImpactAssessments.organisationId, organisationId),
+        eq(transferImpactAssessments.tiaReference, reference)
+      ));
+    return tia;
+  }
+
+  // Transfer Mechanisms operations
+  async createTransferMechanism(mechanismData: InsertTransferMechanism): Promise<TransferMechanism> {
+    const [mechanism] = await db.insert(transferMechanisms).values({
+      ...mechanismData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return mechanism;
+  }
+
+  async getTransferMechanism(id: string): Promise<TransferMechanism | undefined> {
+    const [mechanism] = await db.select().from(transferMechanisms).where(eq(transferMechanisms.id, id));
+    return mechanism;
+  }
+
+  async getTransferMechanismsByOrganisation(organisationId: string): Promise<TransferMechanism[]> {
+    return await db.select().from(transferMechanisms)
+      .where(eq(transferMechanisms.organisationId, organisationId))
+      .orderBy(desc(transferMechanisms.createdAt));
+  }
+
+  async getTransferMechanismsByType(organisationId: string, mechanismType: string): Promise<TransferMechanism[]> {
+    return await db.select().from(transferMechanisms)
+      .where(and(
+        eq(transferMechanisms.organisationId, organisationId),
+        eq(transferMechanisms.mechanismType, mechanismType)
+      ))
+      .orderBy(desc(transferMechanisms.createdAt));
+  }
+
+  async getActiveTransferMechanisms(organisationId: string): Promise<TransferMechanism[]> {
+    return await db.select().from(transferMechanisms)
+      .where(and(
+        eq(transferMechanisms.organisationId, organisationId),
+        eq(transferMechanisms.isActive, true),
+        eq(transferMechanisms.isDeprecated, false)
+      ))
+      .orderBy(desc(transferMechanisms.createdAt));
+  }
+
+  async updateTransferMechanism(id: string, mechanismData: Partial<InsertTransferMechanism>): Promise<TransferMechanism> {
+    const [mechanism] = await db
+      .update(transferMechanisms)
+      .set({ ...mechanismData, updatedAt: new Date() })
+      .where(eq(transferMechanisms.id, id))
+      .returning();
+    return mechanism;
+  }
+
+  async deleteTransferMechanism(id: string): Promise<void> {
+    await db.delete(transferMechanisms).where(eq(transferMechanisms.id, id));
+  }
+
+  async getExpiringTransferMechanisms(organisationId: string, daysAhead: number = 30): Promise<TransferMechanism[]> {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+    
+    return await db.select().from(transferMechanisms)
+      .where(and(
+        eq(transferMechanisms.organisationId, organisationId),
+        eq(transferMechanisms.isActive, true),
+        sql`${transferMechanisms.effectiveUntil} <= ${futureDate}`,
+        sql`${transferMechanisms.effectiveUntil} > ${new Date()}`
+      ))
+      .orderBy(asc(transferMechanisms.effectiveUntil));
+  }
+
+  async getMechanismsByCountry(organisationId: string, countryCode: string): Promise<TransferMechanism[]> {
+    return await db.select().from(transferMechanisms)
+      .where(and(
+        eq(transferMechanisms.organisationId, organisationId),
+        eq(transferMechanisms.isActive, true),
+        sql`${countryCode} = ANY(${transferMechanisms.applicableCountries})`
+      ))
+      .orderBy(desc(transferMechanisms.createdAt));
+  }
+
+  // Standard Contractual Clauses operations
+  async createStandardContractualClauses(sccData: InsertStandardContractualClauses): Promise<StandardContractualClauses> {
+    const [scc] = await db.insert(standardContractualClauses).values({
+      ...sccData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return scc;
+  }
+
+  async getStandardContractualClauses(id: string): Promise<StandardContractualClauses | undefined> {
+    const [scc] = await db.select().from(standardContractualClauses).where(eq(standardContractualClauses.id, id));
+    return scc;
+  }
+
+  async getStandardContractualClausesByOrganisation(organisationId: string): Promise<StandardContractualClauses[]> {
+    return await db.select().from(standardContractualClauses)
+      .where(eq(standardContractualClauses.organisationId, organisationId))
+      .orderBy(desc(standardContractualClauses.createdAt));
+  }
+
+  async getStandardContractualClausesByTransferMechanism(mechanismId: string): Promise<StandardContractualClauses[]> {
+    return await db.select().from(standardContractualClauses)
+      .where(eq(standardContractualClauses.transferMechanismId, mechanismId))
+      .orderBy(desc(standardContractualClauses.createdAt));
+  }
+
+  async getStandardContractualClausesByType(organisationId: string, sccType: string): Promise<StandardContractualClauses[]> {
+    return await db.select().from(standardContractualClauses)
+      .where(and(
+        eq(standardContractualClauses.organisationId, organisationId),
+        eq(standardContractualClauses.sccType, sccType)
+      ))
+      .orderBy(desc(standardContractualClauses.createdAt));
+  }
+
+  async getActiveStandardContractualClauses(organisationId: string): Promise<StandardContractualClauses[]> {
+    return await db.select().from(standardContractualClauses)
+      .where(and(
+        eq(standardContractualClauses.organisationId, organisationId),
+        eq(standardContractualClauses.isActive, true),
+        isNull(standardContractualClauses.terminationDate)
+      ))
+      .orderBy(desc(standardContractualClauses.executionDate));
+  }
+
+  async updateStandardContractualClauses(id: string, sccData: Partial<InsertStandardContractualClauses>): Promise<StandardContractualClauses> {
+    const [scc] = await db
+      .update(standardContractualClauses)
+      .set({ ...sccData, updatedAt: new Date() })
+      .where(eq(standardContractualClauses.id, id))
+      .returning();
+    return scc;
+  }
+
+  async deleteStandardContractualClauses(id: string): Promise<void> {
+    await db.delete(standardContractualClauses).where(eq(standardContractualClauses.id, id));
+  }
+
+  async getSccByDataImporter(organisationId: string, importerName: string): Promise<StandardContractualClauses[]> {
+    return await db.select().from(standardContractualClauses)
+      .where(and(
+        eq(standardContractualClauses.organisationId, organisationId),
+        sql`${standardContractualClauses.dataImporter}->>'name' = ${importerName}`
+      ))
+      .orderBy(desc(standardContractualClauses.createdAt));
+  }
+
+  async getOverdueSccReviews(organisationId: string): Promise<StandardContractualClauses[]> {
+    const now = new Date();
+    return await db.select().from(standardContractualClauses)
+      .where(and(
+        eq(standardContractualClauses.organisationId, organisationId),
+        eq(standardContractualClauses.isActive, true),
+        sql`${standardContractualClauses.nextReviewDate} < ${now}`
+      ))
+      .orderBy(asc(standardContractualClauses.nextReviewDate));
+  }
+
+  // Adequacy Decisions operations (cached from ICO/EU Commission)
+  async getAdequacyDecision(id: string): Promise<AdequacyDecision | undefined> {
+    const [decision] = await db.select().from(adequacyDecisions).where(eq(adequacyDecisions.id, id));
+    return decision;
+  }
+
+  async getAdequacyDecisionByCountry(countryCode: string): Promise<AdequacyDecision | undefined> {
+    const [decision] = await db.select().from(adequacyDecisions)
+      .where(eq(adequacyDecisions.countryCode, countryCode.toUpperCase()));
+    return decision;
+  }
+
+  async getAllAdequacyDecisions(): Promise<AdequacyDecision[]> {
+    return await db.select().from(adequacyDecisions)
+      .orderBy(asc(adequacyDecisions.countryName));
+  }
+
+  async getAdequateCountries(): Promise<AdequacyDecision[]> {
+    return await db.select().from(adequacyDecisions)
+      .where(eq(adequacyDecisions.status, 'adequate'))
+      .orderBy(asc(adequacyDecisions.countryName));
+  }
+
+  async getInadequateCountries(): Promise<AdequacyDecision[]> {
+    return await db.select().from(adequacyDecisions)
+      .where(eq(adequacyDecisions.status, 'inadequate'))
+      .orderBy(asc(adequacyDecisions.countryName));
+  }
+
+  async createAdequacyDecision(decisionData: InsertAdequacyDecision): Promise<AdequacyDecision> {
+    const [decision] = await db.insert(adequacyDecisions).values({
+      ...decisionData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return decision;
+  }
+
+  async updateAdequacyDecision(id: string, decisionData: Partial<InsertAdequacyDecision>): Promise<AdequacyDecision> {
+    const [decision] = await db
+      .update(adequacyDecisions)
+      .set({ ...decisionData, updatedAt: new Date() })
+      .where(eq(adequacyDecisions.id, id))
+      .returning();
+    return decision;
+  }
+
+  async deleteAdequacyDecision(id: string): Promise<void> {
+    await db.delete(adequacyDecisions).where(eq(adequacyDecisions.id, id));
+  }
+
+  async getAdequacyDecisionsByRiskLevel(riskLevel: string): Promise<AdequacyDecision[]> {
+    return await db.select().from(adequacyDecisions)
+      .where(eq(adequacyDecisions.riskLevel, riskLevel))
+      .orderBy(asc(adequacyDecisions.countryName));
+  }
+
+  async syncAdequacyDecisions(): Promise<{ updated: number; errors: string[] }> {
+    // This would normally sync with ICO/EU Commission APIs
+    // For now, return empty result
+    return { updated: 0, errors: [] };
+  }
+
+  // International transfers analytics and compliance
+  async getTransferAnalytics(organisationId: string): Promise<{
+    totalTransfers: number;
+    transfersByCountry: { country: string; count: number }[];
+    transfersByRiskLevel: { riskLevel: string; count: number }[];
+    transfersByMechanism: { mechanism: string; count: number }[];
+    pendingTias: number;
+    overdueReviews: number;
+    complianceScore: number;
+  }> {
+    // Get total transfers
+    const [totalResult] = await db.select({ count: count() })
+      .from(internationalTransfers)
+      .where(eq(internationalTransfers.organisationId, organisationId));
+    const totalTransfers = totalResult.count;
+
+    // Get transfers by country
+    const transfersByCountry = await db.select({
+      country: internationalTransfers.destinationCountry,
+      count: count()
+    })
+      .from(internationalTransfers)
+      .where(eq(internationalTransfers.organisationId, organisationId))
+      .groupBy(internationalTransfers.destinationCountry)
+      .orderBy(desc(count()));
+
+    // Get transfers by risk level
+    const transfersByRiskLevel = await db.select({
+      riskLevel: internationalTransfers.riskLevel,
+      count: count()
+    })
+      .from(internationalTransfers)
+      .where(eq(internationalTransfers.organisationId, organisationId))
+      .groupBy(internationalTransfers.riskLevel)
+      .orderBy(desc(count()));
+
+    // Get transfers by mechanism
+    const transfersByMechanism = await db.select({
+      mechanism: internationalTransfers.transferMechanism,
+      count: count()
+    })
+      .from(internationalTransfers)
+      .where(eq(internationalTransfers.organisationId, organisationId))
+      .groupBy(internationalTransfers.transferMechanism)
+      .orderBy(desc(count()));
+
+    // Get pending TIAs
+    const [pendingTiasResult] = await db.select({ count: count() })
+      .from(transferImpactAssessments)
+      .where(and(
+        eq(transferImpactAssessments.organisationId, organisationId),
+        inArray(transferImpactAssessments.status, ['draft', 'under_review', 'requires_revision'])
+      ));
+    const pendingTias = pendingTiasResult.count;
+
+    // Get overdue reviews
+    const now = new Date();
+    const [overdueReviewsResult] = await db.select({ count: count() })
+      .from(internationalTransfers)
+      .where(and(
+        eq(internationalTransfers.organisationId, organisationId),
+        sql`${internationalTransfers.reviewDue} < ${now}`,
+        eq(internationalTransfers.status, 'active')
+      ));
+    const overdueReviews = overdueReviewsResult.count;
+
+    // Calculate compliance score (simplified)
+    const highRiskTransfers = transfersByRiskLevel.find(t => t.riskLevel === 'high')?.count || 0;
+    const veryHighRiskTransfers = transfersByRiskLevel.find(t => t.riskLevel === 'very_high')?.count || 0;
+    const complianceScore = totalTransfers > 0 
+      ? Math.max(0, 100 - ((highRiskTransfers * 10) + (veryHighRiskTransfers * 20) + (overdueReviews * 15)))
+      : 100;
+
+    return {
+      totalTransfers,
+      transfersByCountry,
+      transfersByRiskLevel,
+      transfersByMechanism,
+      pendingTias,
+      overdueReviews,
+      complianceScore
+    };
+  }
+
+  async calculateTransferRisk(destinationCountry: string, dataCategories: string[], mechanism: string): Promise<{
+    riskLevel: string;
+    riskScore: number;
+    riskFactors: string[];
+    recommendations: string[];
+  }> {
+    let riskScore = 0;
+    const riskFactors: string[] = [];
+    const recommendations: string[] = [];
+
+    // Check adequacy decision
+    const adequacyDecision = await this.getAdequacyDecisionByCountry(destinationCountry);
+    if (!adequacyDecision || adequacyDecision.status !== 'adequate') {
+      riskScore += 30;
+      riskFactors.push('No adequacy decision in place');
+      recommendations.push('Consider additional safeguards or alternative destinations');
+    }
+
+    // Check for special categories of data
+    const specialCategoryIndicators = ['health', 'biometric', 'genetic', 'racial', 'religious', 'political'];
+    const hasSpecialCategories = dataCategories.some(category => 
+      specialCategoryIndicators.some(indicator => category.toLowerCase().includes(indicator))
+    );
+    if (hasSpecialCategories) {
+      riskScore += 25;
+      riskFactors.push('Special categories of personal data involved');
+      recommendations.push('Implement additional technical and organizational measures');
+    }
+
+    // Check mechanism appropriateness
+    if (mechanism === 'explicit_consent') {
+      riskScore += 20;
+      riskFactors.push('Relying on explicit consent for regular transfers');
+      recommendations.push('Consider implementing appropriate safeguards instead');
+    }
+
+    // Determine risk level
+    let riskLevel: string;
+    if (riskScore >= 70) {
+      riskLevel = 'very_high';
+    } else if (riskScore >= 50) {
+      riskLevel = 'high';
+    } else if (riskScore >= 30) {
+      riskLevel = 'medium';
+    } else {
+      riskLevel = 'low';
+    }
+
+    return {
+      riskLevel,
+      riskScore,
+      riskFactors,
+      recommendations
+    };
+  }
+
+  async validateTransferCompliance(transferId: string): Promise<{
+    isCompliant: boolean;
+    issues: string[];
+    recommendations: string[];
+    requiredActions: string[];
+  }> {
+    const transfer = await this.getInternationalTransfer(transferId);
+    if (!transfer) {
+      return {
+        isCompliant: false,
+        issues: ['Transfer not found'],
+        recommendations: [],
+        requiredActions: ['Verify transfer exists']
+      };
+    }
+
+    const issues: string[] = [];
+    const recommendations: string[] = [];
+    const requiredActions: string[] = [];
+
+    // Check if TIA is required and present
+    if (transfer.riskLevel === 'high' || transfer.riskLevel === 'very_high') {
+      if (!transfer.transferImpactAssessmentId) {
+        issues.push('Transfer Impact Assessment required for high-risk transfer');
+        requiredActions.push('Complete Transfer Impact Assessment');
+      }
+    }
+
+    // Check if review is overdue
+    if (transfer.reviewDue && new Date() > transfer.reviewDue) {
+      issues.push('Transfer review is overdue');
+      requiredActions.push('Conduct transfer review');
+    }
+
+    // Check adequacy decision status
+    const adequacyDecision = await this.getAdequacyDecisionByCountry(transfer.destinationCountry);
+    if (!adequacyDecision || adequacyDecision.status !== 'adequate') {
+      if (transfer.legalBasis === 'adequacy_decision') {
+        issues.push('No adequacy decision available for claimed legal basis');
+        requiredActions.push('Update legal basis or implement appropriate safeguards');
+      }
+    }
+
+    // Check if appropriate safeguards are in place
+    if (transfer.legalBasis === 'appropriate_safeguards') {
+      if (!transfer.mechanismReference) {
+        issues.push('No mechanism reference provided for appropriate safeguards');
+        requiredActions.push('Specify transfer mechanism and reference');
+      }
+    }
+
+    const isCompliant = issues.length === 0;
+
+    return {
+      isCompliant,
+      issues,
+      recommendations,
+      requiredActions
+    };
+  }
+
+  // Enhanced Data Retention Policies operations - GDPR Article 5(e) compliance
+  async createDataRetentionPolicy(policy: InsertDataRetentionPolicy): Promise<DataRetentionPolicy> {
+    const [retentionPolicy] = await db.insert(dataRetentionPolicies).values({
+      ...policy,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return retentionPolicy;
+  }
+
+  async getDataRetentionPolicy(id: string): Promise<DataRetentionPolicy | undefined> {
+    const [policy] = await db.select().from(dataRetentionPolicies).where(eq(dataRetentionPolicies.id, id));
+    return policy;
+  }
+
+  async getDataRetentionPoliciesByOrganisation(organisationId: string): Promise<DataRetentionPolicy[]> {
+    return await db.select().from(dataRetentionPolicies)
+      .where(eq(dataRetentionPolicies.organisationId, organisationId))
+      .orderBy(desc(dataRetentionPolicies.createdAt));
+  }
+
+  async getDataRetentionPoliciesByDataType(organisationId: string, dataType: string): Promise<DataRetentionPolicy[]> {
+    return await db.select().from(dataRetentionPolicies)
+      .where(and(
+        eq(dataRetentionPolicies.organisationId, organisationId),
+        eq(dataRetentionPolicies.dataType, dataType)
+      ))
+      .orderBy(desc(dataRetentionPolicies.priority));
+  }
+
+  async updateDataRetentionPolicy(id: string, policy: Partial<InsertDataRetentionPolicy>): Promise<DataRetentionPolicy> {
+    const [retentionPolicy] = await db
+      .update(dataRetentionPolicies)
+      .set({ ...policy, updatedAt: new Date() })
+      .where(eq(dataRetentionPolicies.id, id))
+      .returning();
+    return retentionPolicy;
+  }
+
+  async deleteDataRetentionPolicy(id: string): Promise<void> {
+    await db.delete(dataRetentionPolicies).where(eq(dataRetentionPolicies.id, id));
+  }
+
+  async getEnabledDataRetentionPolicies(organisationId: string): Promise<DataRetentionPolicy[]> {
+    return await db.select().from(dataRetentionPolicies)
+      .where(and(
+        eq(dataRetentionPolicies.organisationId, organisationId),
+        eq(dataRetentionPolicies.isActive, true)
+      ))
+      .orderBy(desc(dataRetentionPolicies.priority));
+  }
+
+  async getDataRetentionPolicyByPriority(organisationId: string, dataType: string): Promise<DataRetentionPolicy | undefined> {
+    const [policy] = await db.select().from(dataRetentionPolicies)
+      .where(and(
+        eq(dataRetentionPolicies.organisationId, organisationId),
+        eq(dataRetentionPolicies.dataType, dataType),
+        eq(dataRetentionPolicies.isActive, true)
+      ))
+      .orderBy(desc(dataRetentionPolicies.priority))
+      .limit(1);
+    return policy;
+  }
+
+  // Data Lifecycle Records operations
+  async createDataLifecycleRecord(record: InsertDataLifecycleRecord): Promise<DataLifecycleRecord> {
+    const [lifecycleRecord] = await db.insert(dataLifecycleRecords).values({
+      ...record,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return lifecycleRecord;
+  }
+
+  async getDataLifecycleRecord(id: string): Promise<DataLifecycleRecord | undefined> {
+    const [record] = await db.select().from(dataLifecycleRecords).where(eq(dataLifecycleRecords.id, id));
+    return record;
+  }
+
+  async getDataLifecycleRecordsByOrganisation(organisationId: string): Promise<DataLifecycleRecord[]> {
+    return await db.select().from(dataLifecycleRecords)
+      .where(eq(dataLifecycleRecords.organisationId, organisationId))
+      .orderBy(desc(dataLifecycleRecords.createdAt));
+  }
+
+  async getDataLifecycleRecordsByStatus(organisationId: string, status: string): Promise<DataLifecycleRecord[]> {
+    return await db.select().from(dataLifecycleRecords)
+      .where(and(
+        eq(dataLifecycleRecords.organisationId, organisationId),
+        eq(dataLifecycleRecords.status, status)
+      ))
+      .orderBy(desc(dataLifecycleRecords.updatedAt));
+  }
+
+  async getDataLifecycleRecordsByResource(entityId: string, entityType: string): Promise<DataLifecycleRecord[]> {
+    return await db.select().from(dataLifecycleRecords)
+      .where(and(
+        eq(dataLifecycleRecords.entityId, entityId),
+        eq(dataLifecycleRecords.entityType, entityType)
+      ))
+      .orderBy(desc(dataLifecycleRecords.createdAt));
+  }
+
+  async updateDataLifecycleRecord(id: string, record: Partial<InsertDataLifecycleRecord>): Promise<DataLifecycleRecord> {
+    const [lifecycleRecord] = await db
+      .update(dataLifecycleRecords)
+      .set({ ...record, updatedAt: new Date() })
+      .where(eq(dataLifecycleRecords.id, id))
+      .returning();
+    return lifecycleRecord;
+  }
+
+  async deleteDataLifecycleRecord(id: string): Promise<void> {
+    await db.delete(dataLifecycleRecords).where(eq(dataLifecycleRecords.id, id));
+  }
+
+  // Retention Compliance Audits operations
+  async createRetentionComplianceAudit(audit: InsertRetentionComplianceAudit): Promise<RetentionComplianceAudit> {
+    const [complianceAudit] = await db.insert(retentionComplianceAudits).values({
+      ...audit,
+      createdAt: new Date(),
+    }).returning();
+    return complianceAudit;
+  }
+
+  async getRetentionComplianceAudit(id: string): Promise<RetentionComplianceAudit | undefined> {
+    const [audit] = await db.select().from(retentionComplianceAudits).where(eq(retentionComplianceAudits.id, id));
+    return audit;
+  }
+
+  async getRetentionComplianceAuditsByOrganisation(organisationId: string, filters: {
+    policyId?: string;
+    operation?: string;
+    complianceStatus?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<RetentionComplianceAudit[]> {
+    const { policyId, operation, complianceStatus, fromDate, toDate, limit = 50, offset = 0 } = filters;
+
+    const conditions: any[] = [eq(retentionComplianceAudits.organisationId, organisationId)];
+    if (policyId) {
+      conditions.push(eq(retentionComplianceAudits.policyId, policyId));
+    }
+    if (operation) {
+      conditions.push(eq(retentionComplianceAudits.operation, operation));
+    }
+    if (complianceStatus) {
+      conditions.push(eq(retentionComplianceAudits.complianceStatus, complianceStatus));
+    }
+    if (fromDate) {
+      conditions.push(sql`${retentionComplianceAudits.auditTimestamp} >= ${fromDate.toISOString()}`);
+    }
+    if (toDate) {
+      conditions.push(sql`${retentionComplianceAudits.auditTimestamp} <= ${toDate.toISOString()}`);
+    }
+
+    return await db.select().from(retentionComplianceAudits)
+      .where(and(...conditions))
+      .orderBy(desc(retentionComplianceAudits.auditTimestamp))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  // Secure Deletion Certificates operations
+  async createSecureDeletionCertificate(certificate: InsertSecureDeletionCertificate): Promise<SecureDeletionCertificate> {
+    const [deletionCertificate] = await db.insert(secureDeletionCertificates).values({
+      ...certificate,
+      createdAt: new Date(),
+    }).returning();
+    return deletionCertificate;
+  }
+
+  async getSecureDeletionCertificate(id: string): Promise<SecureDeletionCertificate | undefined> {
+    const [certificate] = await db.select().from(secureDeletionCertificates).where(eq(secureDeletionCertificates.id, id));
+    return certificate;
+  }
+
+  async getSecureDeletionCertificatesByOrganisation(organisationId: string): Promise<SecureDeletionCertificate[]> {
+    return await db.select().from(secureDeletionCertificates)
+      .where(eq(secureDeletionCertificates.organisationId, organisationId))
+      .orderBy(desc(secureDeletionCertificates.createdAt));
+  }
+
+  // Stub methods for data eligibility checks (to be implemented with actual business logic)
+  async getDataEligibleForSoftDelete(organisationId: string): Promise<any[]> {
+    // TODO: Implement actual logic to find data eligible for soft deletion
+    // This would query specific data tables based on retention policies
+    console.log(`[Storage] getDataEligibleForSoftDelete called for organization: ${organisationId}`);
+    return [];
+  }
+
+  async getDataEligibleForSecureErase(organisationId: string): Promise<any[]> {
+    // TODO: Implement actual logic to find data eligible for secure erasure
+    // This would query lifecycle records for soft-deleted data past grace period
+    console.log(`[Storage] getDataEligibleForSecureErase called for organization: ${organisationId}`);
+    return [];
+  }
+
+  async getDataEligibleForRetention(organisationId: string): Promise<any[]> {
+    // TODO: Implement actual logic to find data eligible for retention processing
+    // This would identify overdue records that need retention processing
+    console.log(`[Storage] getDataEligibleForRetention called for organization: ${organisationId}`);
+    return [];
   }
 }
 

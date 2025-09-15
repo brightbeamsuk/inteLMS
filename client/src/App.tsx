@@ -53,6 +53,7 @@ import { UserRights } from "@/pages/gdpr/UserRights";
 import { AdminUserRights } from "@/pages/gdpr/AdminUserRights";
 import RegisterOfProcessing from "@/pages/gdpr/RegisterOfProcessing";
 import BreachManagement from "@/pages/gdpr/BreachManagement";
+import InternationalTransfers from "@/pages/gdpr/InternationalTransfers";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -420,6 +421,14 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* GDPR International Transfers (Chapter V Articles 44-49 compliance) */}
+      <Route path="/admin/international-transfers">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <InternationalTransfers />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
 
       {/* User routes */}
       <Route path="/user">
