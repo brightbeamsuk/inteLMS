@@ -76,6 +76,8 @@ export function AdminUsers() {
   const [showLicenseLimitModal, setShowLicenseLimitModal] = useState(false);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [pendingAction, setPendingAction] = useState<() => void>(() => {});
+  const [showDuplicateWarningModal, setShowDuplicateWarningModal] = useState(false);
+  const [duplicateCourses, setDuplicateCourses] = useState<Course[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -380,6 +382,44 @@ export function AdminUsers() {
       allowCertificateDownload: false,
       status: "active",
     });
+  };
+
+  // Check for duplicate course assignments
+  const checkForDuplicates = () => {
+    if (!selectedUser || selectedCourseIds.length === 0) return;
+
+    // Find courses that are already assigned to the user
+    const alreadyAssignedCourseIds = userAssignments.map(assignment => assignment.courseId);
+    const duplicatesCourseIds = selectedCourseIds.filter(courseId => 
+      alreadyAssignedCourseIds.includes(courseId)
+    );
+
+    if (duplicatesCourseIds.length > 0) {
+      // Get course details for the duplicates
+      const duplicateCoursesData = availableCourses.filter(course => 
+        duplicatesCourseIds.includes(course.id)
+      );
+      setDuplicateCourses(duplicateCoursesData);
+      setShowDuplicateWarningModal(true);
+      
+      // Also assign the non-duplicate courses if any
+      const nonDuplicateCourseIds = selectedCourseIds.filter(courseId => 
+        !alreadyAssignedCourseIds.includes(courseId)
+      );
+      
+      if (nonDuplicateCourseIds.length > 0) {
+        assignCoursesMutation.mutate({
+          userId: selectedUser.id,
+          courseIds: nonDuplicateCourseIds
+        });
+      }
+    } else {
+      // No duplicates, proceed with assignment
+      assignCoursesMutation.mutate({
+        userId: selectedUser.id,
+        courseIds: selectedCourseIds
+      });
+    }
   };
 
   const openEditModal = (user: User) => {
@@ -1568,10 +1608,7 @@ export function AdminUsers() {
                 className={`btn btn-primary ${assignCoursesMutation.isPending ? 'loading' : ''}`}
                 onClick={() => {
                   if (selectedCourseIds.length > 0 && selectedUser) {
-                    assignCoursesMutation.mutate({
-                      userId: selectedUser.id,
-                      courseIds: selectedCourseIds
-                    });
+                    checkForDuplicates();
                   }
                 }}
                 disabled={selectedCourseIds.length === 0 || assignCoursesMutation.isPending}
@@ -1581,6 +1618,56 @@ export function AdminUsers() {
               </button>
             </div>
           </div>
+        </dialog>
+      )}
+
+      {/* Duplicate Assignment Warning Modal */}
+      {showDuplicateWarningModal && selectedUser && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-lg">
+            <h3 className="font-bold text-lg mb-4 text-warning" data-testid="text-duplicate-warning-title">
+              <i className="fas fa-exclamation-triangle mr-2"></i>
+              Duplicate Course Assignment
+            </h3>
+            
+            <div className="alert alert-warning mb-4">
+              <i className="fas fa-info-circle"></i>
+              <div>
+                <h4 className="font-bold">Courses Already Assigned</h4>
+                <div className="text-sm">
+                  The following course(s) are already assigned to {selectedUser.firstName} {selectedUser.lastName} and cannot be assigned again.
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-6">
+              <p className="font-medium">Duplicate courses:</p>
+              <ul className="list-disc list-inside space-y-1 pl-4">
+                {duplicateCourses.map((course) => (
+                  <li key={course.id} className="text-sm" data-testid={`duplicate-course-${course.id}`}>
+                    {course.title}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="modal-action">
+              <button 
+                className="btn btn-primary"
+                onClick={() => {
+                  setShowDuplicateWarningModal(false);
+                  setDuplicateCourses([]);
+                }}
+                data-testid="button-duplicate-warning-ok"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => {
+            setShowDuplicateWarningModal(false);
+            setDuplicateCourses([]);
+          }}></div>
         </dialog>
       )}
 
