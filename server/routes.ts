@@ -33,6 +33,7 @@ import { EmailOrchestrator } from "./services/EmailOrchestrator";
 import { emailNotificationService } from "./services/EmailNotificationService";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { gdprConfig, isGdprEnabled, isGdprFeatureEnabled } from "./config/gdpr";
 
 // Initialize EmailTemplateService for event notifications
 const emailTemplateService = new EmailTemplateService();
@@ -1197,6 +1198,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // GDPR Configuration Endpoint (feature flag protected)
+  app.get('/api/config/gdpr', requireAuth, async (req: any, res) => {
+    // Route guard: if GDPR is disabled, return 404 to hide the endpoint completely
+    if (!isGdprEnabled()) {
+      return res.status(404).json({ message: "Endpoint not found" });
+    }
+    
+    try {
+      // Return the GDPR configuration for frontend use
+      res.json({
+        enabled: gdprConfig.enabled,
+        environment: gdprConfig.environment,
+        features: gdprConfig.features,
+        settings: gdprConfig.settings,
+      });
+    } catch (error) {
+      console.error("Error fetching GDPR config:", error);
+      res.status(500).json({ message: "Failed to fetch GDPR configuration" });
     }
   });
 

@@ -30,6 +30,17 @@ import {
   supportTickets,
   supportTicketResponses,
   webhookEvents,
+  // GDPR tables
+  consentRecords,
+  privacySettings,
+  userRightRequests,
+  processingActivities,
+  dataBreaches,
+  retentionRules,
+  retentionSchedules,
+  gdprAuditLogs,
+  ageVerifications,
+  cookieInventory,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -91,6 +102,27 @@ import {
   type InsertSupportTicketResponse,
   type WebhookEvent,
   type InsertWebhookEvent,
+  // GDPR types
+  type ConsentRecord,
+  type InsertConsentRecord,
+  type PrivacySettings,
+  type InsertPrivacySettings,
+  type UserRightRequest,
+  type InsertUserRightRequest,
+  type ProcessingActivity,
+  type InsertProcessingActivity,
+  type DataBreach,
+  type InsertDataBreach,
+  type RetentionRule,
+  type InsertRetentionRule,
+  type RetentionSchedule,
+  type InsertRetentionSchedule,
+  type GdprAuditLog,
+  type InsertGdprAuditLog,
+  type AgeVerification,
+  type InsertAgeVerification,
+  type CookieInventory,
+  type InsertCookieInventory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, like, or, isNull, avg, ilike, inArray } from "drizzle-orm";
@@ -424,6 +456,98 @@ export interface IStorage {
   isWebhookEventProcessed(stripeEventId: string): Promise<boolean>;
   recordWebhookEvent(event: InsertWebhookEvent): Promise<WebhookEvent>;
   cleanupOldWebhookEvents(olderThanDays: number): Promise<number>; // Returns number of deleted events
+
+  // GDPR operations (UK GDPR and Data Protection Act 2018 compliance)
+  // Consent records
+  createConsentRecord(consentRecord: InsertConsentRecord): Promise<ConsentRecord>;
+  getConsentRecord(id: string): Promise<ConsentRecord | undefined>;
+  getConsentRecordsByUser(userId: string): Promise<ConsentRecord[]>;
+  getConsentRecordsByOrganisation(organisationId: string): Promise<ConsentRecord[]>;
+  updateConsentRecord(id: string, consentRecord: Partial<InsertConsentRecord>): Promise<ConsentRecord>;
+  deleteConsentRecord(id: string): Promise<void>;
+  
+  // Privacy settings
+  createPrivacySettings(privacySettings: InsertPrivacySettings): Promise<PrivacySettings>;
+  getPrivacySettings(id: string): Promise<PrivacySettings | undefined>;
+  getPrivacySettingsByOrganisation(organisationId: string): Promise<PrivacySettings | undefined>;
+  updatePrivacySettings(id: string, privacySettings: Partial<InsertPrivacySettings>): Promise<PrivacySettings>;
+  upsertPrivacySettings(organisationId: string, privacySettings: Partial<InsertPrivacySettings>): Promise<PrivacySettings>;
+  deletePrivacySettings(id: string): Promise<void>;
+  
+  // User rights (DSAR)
+  createUserRightRequest(userRightRequest: InsertUserRightRequest): Promise<UserRightRequest>;
+  getUserRightRequest(id: string): Promise<UserRightRequest | undefined>;
+  getUserRightRequestsByUser(userId: string): Promise<UserRightRequest[]>;
+  getUserRightRequestsByOrganisation(organisationId: string): Promise<UserRightRequest[]>;
+  updateUserRightRequest(id: string, userRightRequest: Partial<InsertUserRightRequest>): Promise<UserRightRequest>;
+  deleteUserRightRequest(id: string): Promise<void>;
+  
+  // Processing activities (RoPA)
+  createProcessingActivity(processingActivity: InsertProcessingActivity): Promise<ProcessingActivity>;
+  getProcessingActivity(id: string): Promise<ProcessingActivity | undefined>;
+  getProcessingActivitiesByOrganisation(organisationId: string): Promise<ProcessingActivity[]>;
+  updateProcessingActivity(id: string, processingActivity: Partial<InsertProcessingActivity>): Promise<ProcessingActivity>;
+  deleteProcessingActivity(id: string): Promise<void>;
+  
+  // Data breaches
+  createDataBreach(dataBreach: InsertDataBreach): Promise<DataBreach>;
+  getDataBreach(id: string): Promise<DataBreach | undefined>;
+  getDataBreachesByOrganisation(organisationId: string): Promise<DataBreach[]>;
+  updateDataBreach(id: string, dataBreach: Partial<InsertDataBreach>): Promise<DataBreach>;
+  deleteDataBreach(id: string): Promise<void>;
+  getDataBreachesByStatus(organisationId: string, status: string): Promise<DataBreach[]>;
+  getOverdueDataBreaches(organisationId: string): Promise<DataBreach[]>;
+  
+  // Retention rules
+  createRetentionRule(retentionRule: InsertRetentionRule): Promise<RetentionRule>;
+  getRetentionRule(id: string): Promise<RetentionRule | undefined>;
+  getRetentionRulesByOrganisation(organisationId: string): Promise<RetentionRule[]>;
+  updateRetentionRule(id: string, retentionRule: Partial<InsertRetentionRule>): Promise<RetentionRule>;
+  deleteRetentionRule(id: string): Promise<void>;
+  getRetentionRulesByDataType(organisationId: string, dataType: string): Promise<RetentionRule[]>;
+  
+  // Retention schedules
+  createRetentionSchedule(retentionSchedule: InsertRetentionSchedule): Promise<RetentionSchedule>;
+  getRetentionSchedule(id: string): Promise<RetentionSchedule | undefined>;
+  getRetentionSchedulesByOrganisation(organisationId: string): Promise<RetentionSchedule[]>;
+  getRetentionSchedulesByUser(userId: string): Promise<RetentionSchedule[]>;
+  updateRetentionSchedule(id: string, retentionSchedule: Partial<InsertRetentionSchedule>): Promise<RetentionSchedule>;
+  deleteRetentionSchedule(id: string): Promise<void>;
+  getOverdueRetentionSchedules(organisationId: string): Promise<RetentionSchedule[]>;
+  processRetentionSchedule(id: string): Promise<RetentionSchedule>;
+  
+  // GDPR audit logs
+  createGdprAuditLog(gdprAuditLog: InsertGdprAuditLog): Promise<GdprAuditLog>;
+  getGdprAuditLog(id: string): Promise<GdprAuditLog | undefined>;
+  getGdprAuditLogsByOrganisation(organisationId: string, filters?: {
+    userId?: string;
+    adminId?: string;
+    action?: string;
+    resource?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<GdprAuditLog[]>;
+  getGdprAuditLogsByUser(userId: string): Promise<GdprAuditLog[]>;
+  cleanupOldGdprAuditLogs(organisationId: string, olderThanDays: number): Promise<number>;
+  
+  // Age verification
+  createAgeVerification(ageVerification: InsertAgeVerification): Promise<AgeVerification>;
+  getAgeVerification(id: string): Promise<AgeVerification | undefined>;
+  getAgeVerificationByUser(userId: string): Promise<AgeVerification | undefined>;
+  getAgeVerificationsByOrganisation(organisationId: string): Promise<AgeVerification[]>;
+  updateAgeVerification(id: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification>;
+  upsertAgeVerification(userId: string, ageVerification: Partial<InsertAgeVerification>): Promise<AgeVerification>;
+  deleteAgeVerification(id: string): Promise<void>;
+  
+  // Cookie inventory
+  createCookieInventory(cookieInventory: InsertCookieInventory): Promise<CookieInventory>;
+  getCookieInventory(id: string): Promise<CookieInventory | undefined>;
+  getCookieInventoriesByOrganisation(organisationId: string): Promise<CookieInventory[]>;
+  updateCookieInventory(id: string, cookieInventory: Partial<InsertCookieInventory>): Promise<CookieInventory>;
+  deleteCookieInventory(id: string): Promise<void>;
+  getCookieInventoriesByCategory(organisationId: string, category: string): Promise<CookieInventory[]>;
 }
 
 export class DatabaseStorage implements IStorage {

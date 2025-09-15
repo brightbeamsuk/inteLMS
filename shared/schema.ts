@@ -148,6 +148,19 @@ export const emailSendStatusEnum = pgEnum('email_send_status', [
   'retrying'     // Temporarily failed, will retry
 ]);
 
+// GDPR enums (UK GDPR and Data Protection Act 2018 compliance)
+export const consentStatusEnum = pgEnum('consent_status', ['granted', 'denied', 'withdrawn', 'pending']);
+export const processingLawfulBasisEnum = pgEnum('processing_lawful_basis', ['consent', 'contract', 'legal_obligation', 'vital_interests', 'public_task', 'legitimate_interests']);
+export const dataCategoryEnum = pgEnum('data_category', ['identity', 'contact', 'financial', 'demographic', 'education', 'technical', 'usage', 'special']);
+export const userRightTypeEnum = pgEnum('user_right_type', ['access', 'rectification', 'erasure', 'restriction', 'objection', 'portability']);
+export const userRightStatusEnum = pgEnum('user_right_status', ['pending', 'in_progress', 'completed', 'rejected', 'expired']);
+export const breachSeverityEnum = pgEnum('breach_severity', ['low', 'medium', 'high', 'critical']);
+export const breachStatusEnum = pgEnum('breach_status', ['detected', 'assessed', 'notified_ico', 'notified_subjects', 'resolved']);
+export const cookieCategoryEnum = pgEnum('cookie_category', ['strictly_necessary', 'functional', 'analytics', 'advertising']);
+export const marketingConsentTypeEnum = pgEnum('marketing_consent_type', ['email', 'sms', 'phone', 'post', 'push_notifications']);
+export const retentionDeletionMethodEnum = pgEnum('retention_deletion_method', ['soft', 'hard']);
+export const retentionScheduleStatusEnum = pgEnum('retention_schedule_status', ['scheduled', 'completed', 'cancelled']);
+
 // Users table (required for Replit Auth)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1114,6 +1127,225 @@ export const webhookEvents = pgTable("webhook_events", {
   index("idx_webhook_events_event_type").on(table.eventType),
 ]);
 
+// GDPR tables (UK GDPR and Data Protection Act 2018 compliance)
+export const consentRecords = pgTable("consent_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  consentType: varchar("consent_type").notNull(),
+  status: consentStatusEnum("status").notNull(),
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis").notNull(),
+  purpose: text("purpose").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  ipAddress: varchar("ip_address").notNull(),
+  userAgent: text("user_agent").notNull(),
+  policyVersion: varchar("policy_version").notNull(),
+  withdrawnAt: timestamp("withdrawn_at"),
+  expiresAt: timestamp("expires_at"),
+  marketingConsents: jsonb("marketing_consents").notNull().default('{}'),
+  cookieConsents: jsonb("cookie_consents").notNull().default('{}'),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_consent_records_user_id").on(table.userId),
+  index("idx_consent_records_organisation_id").on(table.organisationId),
+  index("idx_consent_records_status").on(table.status),
+  index("idx_consent_records_timestamp").on(table.timestamp),
+]);
+
+export const privacySettings = pgTable("privacy_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull().unique(),
+  dataRetentionPeriod: integer("data_retention_period").notNull().default(2555), // 7 years in days
+  cookieSettings: jsonb("cookie_settings").notNull().default('{}'),
+  privacyContacts: jsonb("privacy_contacts").notNull().default('{}'),
+  internationalTransfers: jsonb("international_transfers").notNull().default('{}'),
+  settings: jsonb("settings").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_privacy_settings_organisation_id").on(table.organisationId),
+]);
+
+export const userRightRequests = pgTable("user_right_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organisationId: varchar("organisation_id").notNull(),
+  type: userRightTypeEnum("type").notNull(),
+  status: userRightStatusEnum("status").notNull().default('pending'),
+  description: text("description").notNull(),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  verifiedAt: timestamp("verified_at"),
+  processedAt: timestamp("processed_at"),
+  completedAt: timestamp("completed_at"),
+  rejectionReason: text("rejection_reason"),
+  adminNotes: text("admin_notes").notNull().default(''),
+  attachments: text("attachments").array().notNull().default(sql`ARRAY[]::text[]`),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_user_right_requests_user_id").on(table.userId),
+  index("idx_user_right_requests_organisation_id").on(table.organisationId),
+  index("idx_user_right_requests_status").on(table.status),
+  index("idx_user_right_requests_type").on(table.type),
+  index("idx_user_right_requests_requested_at").on(table.requestedAt),
+]);
+
+export const processingActivities = pgTable("processing_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  name: varchar("name").notNull(),
+  purpose: text("purpose").notNull(),
+  description: text("description").notNull(),
+  lawfulBasis: processingLawfulBasisEnum("lawful_basis").notNull(),
+  dataCategories: text("data_categories").array().notNull().default(sql`ARRAY[]::text[]`),
+  dataSubjects: text("data_subjects").array().notNull().default(sql`ARRAY[]::text[]`),
+  recipients: text("recipients").array().notNull().default(sql`ARRAY[]::text[]`),
+  internationalTransfers: boolean("international_transfers").notNull().default(false),
+  transferCountries: text("transfer_countries").array().notNull().default(sql`ARRAY[]::text[]`),
+  retentionPeriod: varchar("retention_period").notNull(),
+  securityMeasures: text("security_measures").array().notNull().default(sql`ARRAY[]::text[]`),
+  dpia: jsonb("dpia").notNull().default('{"required": false, "completed": false}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_processing_activities_organisation_id").on(table.organisationId),
+  index("idx_processing_activities_lawful_basis").on(table.lawfulBasis),
+]);
+
+export const dataBreaches = pgTable("data_breaches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  title: varchar("title").notNull(),
+  description: text("description").notNull(),
+  severity: breachSeverityEnum("severity").notNull(),
+  status: breachStatusEnum("status").notNull().default('detected'),
+  detectedAt: timestamp("detected_at").defaultNow().notNull(),
+  reportedAt: timestamp("reported_at"),
+  icoNotifiedAt: timestamp("ico_notified_at"),
+  subjectsNotifiedAt: timestamp("subjects_notified_at"),
+  affectedSubjects: integer("affected_subjects").notNull().default(0),
+  dataCategories: text("data_categories").array().notNull().default(sql`ARRAY[]::text[]`),
+  cause: text("cause").notNull(),
+  impact: text("impact").notNull(),
+  containmentMeasures: text("containment_measures").notNull(),
+  preventiveMeasures: text("preventive_measures").notNull(),
+  notificationDeadline: timestamp("notification_deadline").notNull(),
+  responsible: varchar("responsible").notNull(),
+  attachments: text("attachments").array().notNull().default(sql`ARRAY[]::text[]`),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_data_breaches_organisation_id").on(table.organisationId),
+  index("idx_data_breaches_severity").on(table.severity),
+  index("idx_data_breaches_status").on(table.status),
+  index("idx_data_breaches_detected_at").on(table.detectedAt),
+  index("idx_data_breaches_notification_deadline").on(table.notificationDeadline),
+]);
+
+export const retentionRules = pgTable("retention_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description").notNull(),
+  dataType: varchar("data_type").notNull(),
+  retentionPeriod: integer("retention_period").notNull(), // days
+  deletionMethod: retentionDeletionMethodEnum("deletion_method").notNull().default('soft'),
+  legalBasis: text("legal_basis").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_retention_rules_organisation_id").on(table.organisationId),
+  index("idx_retention_rules_data_type").on(table.dataType),
+  index("idx_retention_rules_enabled").on(table.enabled),
+]);
+
+export const retentionSchedules = pgTable("retention_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  dataType: varchar("data_type").notNull(),
+  scheduledDeletion: timestamp("scheduled_deletion").notNull(),
+  status: retentionScheduleStatusEnum("status").notNull().default('scheduled'),
+  retentionRuleId: varchar("retention_rule_id").notNull(),
+  processedAt: timestamp("processed_at"),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_retention_schedules_organisation_id").on(table.organisationId),
+  index("idx_retention_schedules_user_id").on(table.userId),
+  index("idx_retention_schedules_scheduled_deletion").on(table.scheduledDeletion),
+  index("idx_retention_schedules_status").on(table.status),
+  index("idx_retention_schedules_retention_rule_id").on(table.retentionRuleId),
+]);
+
+export const gdprAuditLogs = pgTable("gdpr_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  userId: varchar("user_id"),
+  adminId: varchar("admin_id"),
+  action: varchar("action").notNull(),
+  resource: varchar("resource").notNull(),
+  resourceId: varchar("resource_id").notNull(),
+  details: jsonb("details").notNull().default('{}'),
+  ipAddress: varchar("ip_address").notNull(),
+  userAgent: text("user_agent").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+}, (table) => [
+  index("idx_gdpr_audit_logs_organisation_id").on(table.organisationId),
+  index("idx_gdpr_audit_logs_user_id").on(table.userId),
+  index("idx_gdpr_audit_logs_admin_id").on(table.adminId),
+  index("idx_gdpr_audit_logs_action").on(table.action),
+  index("idx_gdpr_audit_logs_resource").on(table.resource),
+  index("idx_gdpr_audit_logs_timestamp").on(table.timestamp),
+]);
+
+export const ageVerifications = pgTable("age_verifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique(),
+  organisationId: varchar("organisation_id").notNull(),
+  dateOfBirth: timestamp("date_of_birth"),
+  ageVerified: boolean("age_verified").notNull().default(false),
+  parentalConsentRequired: boolean("parental_consent_required").notNull().default(false),
+  parentalConsentGiven: boolean("parental_consent_given").notNull().default(false),
+  parentEmail: varchar("parent_email"),
+  parentName: varchar("parent_name"),
+  verificationMethod: varchar("verification_method").notNull(),
+  verifiedAt: timestamp("verified_at"),
+  metadata: jsonb("metadata").notNull().default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_age_verifications_user_id").on(table.userId),
+  index("idx_age_verifications_organisation_id").on(table.organisationId),
+  index("idx_age_verifications_age_verified").on(table.ageVerified),
+  index("idx_age_verifications_parental_consent_required").on(table.parentalConsentRequired),
+]);
+
+export const cookieInventory = pgTable("cookie_inventory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull(),
+  name: varchar("name").notNull(),
+  purpose: text("purpose").notNull(),
+  category: cookieCategoryEnum("category").notNull(),
+  duration: varchar("duration").notNull(),
+  provider: varchar("provider").notNull(),
+  domain: varchar("domain").notNull(),
+  essential: boolean("essential").notNull().default(false),
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_cookie_inventory_organisation_id").on(table.organisationId),
+  index("idx_cookie_inventory_category").on(table.category),
+  index("idx_cookie_inventory_essential").on(table.essential),
+]);
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -1302,6 +1534,65 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
   createdAt: true,
 });
 
+// GDPR insert schemas (UK GDPR and Data Protection Act 2018 compliance)
+export const insertConsentRecordSchema = createInsertSchema(consentRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPrivacySettingsSchema = createInsertSchema(privacySettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserRightRequestSchema = createInsertSchema(userRightRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProcessingActivitySchema = createInsertSchema(processingActivities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDataBreachSchema = createInsertSchema(dataBreaches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRetentionRuleSchema = createInsertSchema(retentionRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRetentionScheduleSchema = createInsertSchema(retentionSchedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertGdprAuditLogSchema = createInsertSchema(gdprAuditLogs).omit({
+  id: true,
+});
+
+export const insertAgeVerificationSchema = createInsertSchema(ageVerifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCookieInventorySchema = createInsertSchema(cookieInventory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1404,3 +1695,34 @@ export type SupportTicketResponse = typeof supportTicketResponses.$inferSelect;
 // Webhook event types
 export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
+
+// GDPR types (UK GDPR and Data Protection Act 2018 compliance)
+export type InsertConsentRecord = z.infer<typeof insertConsentRecordSchema>;
+export type ConsentRecord = typeof consentRecords.$inferSelect;
+
+export type InsertPrivacySettings = z.infer<typeof insertPrivacySettingsSchema>;
+export type PrivacySettings = typeof privacySettings.$inferSelect;
+
+export type InsertUserRightRequest = z.infer<typeof insertUserRightRequestSchema>;
+export type UserRightRequest = typeof userRightRequests.$inferSelect;
+
+export type InsertProcessingActivity = z.infer<typeof insertProcessingActivitySchema>;
+export type ProcessingActivity = typeof processingActivities.$inferSelect;
+
+export type InsertDataBreach = z.infer<typeof insertDataBreachSchema>;
+export type DataBreach = typeof dataBreaches.$inferSelect;
+
+export type InsertRetentionRule = z.infer<typeof insertRetentionRuleSchema>;
+export type RetentionRule = typeof retentionRules.$inferSelect;
+
+export type InsertRetentionSchedule = z.infer<typeof insertRetentionScheduleSchema>;
+export type RetentionSchedule = typeof retentionSchedules.$inferSelect;
+
+export type InsertGdprAuditLog = z.infer<typeof insertGdprAuditLogSchema>;
+export type GdprAuditLog = typeof gdprAuditLogs.$inferSelect;
+
+export type InsertAgeVerification = z.infer<typeof insertAgeVerificationSchema>;
+export type AgeVerification = typeof ageVerifications.$inferSelect;
+
+export type InsertCookieInventory = z.infer<typeof insertCookieInventorySchema>;
+export type CookieInventory = typeof cookieInventory.$inferSelect;

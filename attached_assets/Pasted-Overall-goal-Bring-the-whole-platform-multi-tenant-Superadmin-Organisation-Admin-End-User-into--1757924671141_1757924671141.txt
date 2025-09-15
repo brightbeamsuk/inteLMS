@@ -1,0 +1,149 @@
+Overall goal
+Bring the whole platform (multi-tenant: Superadmin, Organisation Admin, End User) into compliance with UK GDPR and the Data Protection Act 2018, with PECR-compliant cookies and direct marketing. Build features, settings and policies so the system can demonstrate accountability (“privacy by design and by default”) with clear user controls and admin tools. Use UK English in all user-facing text. Follow ICO guidance for breach handling within 72 hours.
+
+⸻
+
+1) Privacy by design & default
+	•	Role-based access control with least-privilege.
+	•	Data minimisation: only collect strictly necessary fields.
+	•	Data Protection Settings area with retention, transfers, cookies, privacy contacts.
+	•	Accountability Log for all privacy-impacting changes.
+	•	DPIA template and attachment support.
+
+⸻
+
+2) Lawful bases & records (RoPA)
+	•	Register of Processing Activities module for each organisation.
+	•	Record: purpose, categories, lawful basis, retention, recipients/sub-processors, transfers.
+	•	Export as PDF/CSV.
+
+⸻
+
+3) Consent & preferences
+	•	Consent & Preferences Centre with granular options (service vs marketing, analytics vs advertising cookies).
+	•	Timestamp, IP, and policy version stored.
+	•	Withdrawal possible at any time, with suppression of processing.
+	•	Immutable consent history.
+
+Children
+	•	Age-gate and parental consent under 13.
+	•	Child-friendly privacy notices.
+
+⸻
+
+4) Cookies & trackers (PECR compliant)
+	•	Cookie banner blocks non-essential cookies until opt-in.
+	•	Granular toggles: Strictly necessary (locked), Analytics, Functional, Advertising.
+	•	Persistent “Cookie settings” link.
+	•	Live cookie inventory per tenant.
+
+⸻
+
+5) User rights workflows
+
+Self-service + admin queue with logs:
+	•	Access (DSAR) with JSON + PDF export.
+	•	Rectification (self-edit or approval).
+	•	Erasure (with retention/legal holds).
+	•	Restriction/Objection toggles.
+	•	Portability (JSON/CSV export).
+
+⸻
+
+6) Security measures
+	•	TLS, encryption at rest.
+	•	Secrets manager, key rotation.
+	•	Audit logs for sign-in, exports, role changes.
+	•	Backups with encrypted storage.
+	•	MFA/SSO options.
+
+⸻
+
+7) Data retention
+	•	Retention rules engine per data type.
+	•	Dashboard for upcoming deletions.
+	•	Soft-delete with secure erase on final deletion.
+
+⸻
+
+8) Breach detection & notification
+	•	Breach Management console with log, severity, subjects, mitigation, templates.
+	•	72-hour ICO notification workflow + user notification templates.
+
+⸻
+
+9) International transfers
+	•	List destinations & sub-processors.
+	•	Store IDTAs or UK Addendum to SCCs.
+	•	Transfer impact assessment dashboard.
+
+⸻
+
+10) Documents & transparency
+
+Auto-generate per tenant:
+	•	Privacy Policy, Cookie Policy, Data Processing Agreement, RoPA summary, Breach Playbook.
+	•	Age-appropriate notices for children.
+
+⸻
+
+11) Marketing (PECR)
+	•	Separate service vs marketing communications.
+	•	Marketing requires opt-in; unsubscribe on every message.
+	•	Track consent provenance.
+
+⸻
+
+12) Tenant dashboards
+	•	RoPA health, DSARs, deletions, cookie stats, breaches, transfers.
+	•	Export in CSV/JSON/PDF.
+
+⸻
+
+13) Integrations
+	•	Stripe/GoCardless: record data flows, contracts, PCI scope.
+	•	Email providers: respect consent preferences.
+	•	Analytics: only load after opt-in.
+
+⸻
+
+14) QA & tests
+	•	Automated tests for cookies, consent, DSAR, erasure, retention, breaches, transfers.
+	•	Privacy regression checklist per release.
+
+⸻
+
+15) Copy & accessibility
+	•	UK English, clear, no pre-ticked boxes.
+	•	WCAG AA compliance for consent/cookie UIs.
+
+⸻
+
+References to follow:
+ICO guidance: accountability & design, breach notifications, children’s age 13, PECR cookies, international transfers, DPA 2018.
+
+⸻
+
+ADDENDUM: Safe-change guardrails (no unnecessary edits + fix what you break)
+
+Change strategy
+	1.	Branch + plan first: new branch feat/gdpr-compliance; generate Change Plan listing files you will touch.
+	2.	Scope control: only GDPR features. No wholesale refactors, renames, lint-only edits, dependency upgrades unless required.
+	3.	File allow-list: only privacy/cookie/consent/DSAR/retention/policy files.
+	4.	Compat layering: new code behind feature flag gdpr_compliance.enabled (default false).
+	5.	Migrations: up + down migrations, rollback plan, no dropped columns with data.
+	6.	Tests: extend coverage; fail CI if existing tests break or coverage drops.
+	7.	Fix what you break: if your change breaks compilation/tests, apply smallest possible fix and document it.
+	8.	Non-functional: no new PII logs, no hard-coded secrets, perf overhead <10ms.
+	9.	Docs: README.gdpr.md explaining features, env vars, toggles.
+	10.	UI copy: UK English, no dark patterns.
+	11.	Acceptance criteria:
+
+	•	Flag off ⇒ zero user-visible changes, all tests pass.
+	•	Flag on ⇒ all GDPR features work.
+	•	Git diff only shows allowed files.
+
+	12.	Commits: atomic, descriptive (feat(gdpr): consent centre, fix(gdpr): compat fix etc.).
+	13.	Dry-run & audit: CLI gdpr:dry-run showing intended changes; attach plan, test reports, file list, screenshots before merge.
+
+STRICT MODE: Do not modify code outside the GDPR allow-list. If unavoidable, pause and document reason in the Change Plan, then apply smallest possible fix.
