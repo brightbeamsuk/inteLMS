@@ -321,10 +321,7 @@ export default function BreachManagement() {
   // Resolve breach mutation
   const resolveMutation = useMutation({
     mutationFn: ({ breachId, data }: { breachId: string; data: any }) =>
-      apiRequest(`/api/gdpr/breaches/${breachId}/resolve`, {
-        method: 'PATCH',
-        body: JSON.stringify(data)
-      }),
+      apiRequest('PATCH', `/api/gdpr/breaches/${breachId}/resolve`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches'] });
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches/analytics'] });

@@ -231,7 +231,7 @@ export function GdprDashboard() {
     queryKey: ['/api/gdpr/dashboard', selectedOrgId],
     queryFn: async () => {
       const params = user?.role === 'superadmin' && selectedOrgId ? `?organisationId=${selectedOrgId}` : '';
-      return await apiRequest(`/api/gdpr/dashboard${params}`, 'GET');
+      return await apiRequest('GET', `/api/gdpr/dashboard${params}`).then(res => res.json());
     },
     enabled: !!selectedOrgId,
     refetchInterval: autoRefresh ? 30000 : false,
@@ -253,7 +253,7 @@ export function GdprDashboard() {
         params.set('endDate', now.toISOString());
       }
       const queryString = params.toString();
-      return await apiRequest(`/api/gdpr/dashboard/metrics${queryString ? '?' + queryString : ''}`, 'GET');
+      return await apiRequest('GET', `/api/gdpr/dashboard/metrics${queryString ? '?' + queryString : ''}`).then(res => res.json());
     },
     enabled: !!selectedOrgId,
     refetchInterval: autoRefresh ? 60000 : false,
@@ -479,7 +479,7 @@ export function GdprDashboard() {
                 <span className="text-2xl font-bold" data-testid="text-consent-total">
                   {complianceMetrics?.consentMetrics?.totalConsents || 0}
                 </span>
-                <span className={`badge ${complianceMetrics?.consentMetrics?.consentRate >= 80 ? 'badge-success' : 'badge-warning'}`} data-testid="badge-consent-rate">
+                <span className={`badge ${(complianceMetrics?.consentMetrics?.consentRate || 0) >= 80 ? 'badge-success' : 'badge-warning'}`} data-testid="badge-consent-rate">
                   {complianceMetrics?.consentMetrics?.consentRate?.toFixed(1) || 0}% rate
                 </span>
               </div>
@@ -523,16 +523,16 @@ export function GdprDashboard() {
                 <span className="text-2xl font-bold" data-testid="text-user-rights-total">
                   {complianceMetrics?.userRightsMetrics?.totalRequests || 0}
                 </span>
-                {complianceMetrics?.userRightsMetrics?.overdueRequests > 0 && (
+                {(complianceMetrics?.userRightsMetrics?.overdueRequests || 0) > 0 && (
                   <span className="badge badge-error" data-testid="badge-overdue-requests">
-                    {complianceMetrics.userRightsMetrics.overdueRequests} overdue
+                    {complianceMetrics?.userRightsMetrics?.overdueRequests || 0} overdue
                   </span>
                 )}
               </div>
               
               <div className="flex justify-between text-sm">
                 <span>Pending: {complianceMetrics?.userRightsMetrics?.pendingRequests || 0}</span>
-                <span className={complianceMetrics?.userRightsMetrics?.complianceRate >= 95 ? 'text-success' : 'text-warning'}>
+                <span className={(complianceMetrics?.userRightsMetrics?.complianceRate || 0) >= 95 ? 'text-success' : 'text-warning'}>
                   {complianceMetrics?.userRightsMetrics?.complianceRate?.toFixed(1) || 0}% compliant
                 </span>
               </div>

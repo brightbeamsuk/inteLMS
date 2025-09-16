@@ -419,7 +419,7 @@ export default function RegisterOfProcessing() {
       transferCountries: activity.transferCountries,
       retentionPeriod: activity.retentionPeriod,
       securityMeasures: activity.securityMeasures,
-      dpia: activity.dpia
+      dpia: activity.dpia as any
     });
     setIsEditDialogOpen(true);
   };
@@ -522,7 +522,7 @@ export default function RegisterOfProcessing() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">DPIA Required</p>
                 <p className="text-2xl font-bold" data-testid="text-dpia-required">
-                  {activities?.filter(a => a.dpia?.required).length || 0}
+                  {activities?.filter(a => (a.dpia as any)?.required).length || 0}
                 </p>
               </div>
               <AlertTriangle className="h-8 w-8 text-muted-foreground" />
@@ -536,7 +536,7 @@ export default function RegisterOfProcessing() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Last Updated</p>
                 <p className="text-sm font-medium" data-testid="text-last-updated">
-                  {activities?.length > 0 ? format(new Date(Math.max(...activities.map(a => new Date(a.updatedAt || a.createdAt!).getTime()))), 'MMM dd, yyyy') : 'Never'}
+                  {(activities && activities.length > 0) ? format(new Date(Math.max(...activities.map(a => new Date(a.updatedAt || a.createdAt!).getTime()))), 'MMM dd, yyyy') : 'Never'}
                 </p>
               </div>
               <Clock className="h-8 w-8 text-muted-foreground" />
