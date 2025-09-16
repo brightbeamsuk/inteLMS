@@ -119,7 +119,7 @@ export function ConsentPreferences() {
         },
       };
 
-      return await apiRequest('/api/gdpr/consent', 'POST', payload);
+      return await apiRequest('POST', '/api/gdpr/consent', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/consent'] });
@@ -141,7 +141,7 @@ export function ConsentPreferences() {
   // Withdraw consent mutation
   const withdrawConsentMutation = useMutation({
     mutationFn: async (consentId: string) => {
-      return await apiRequest(`/api/gdpr/consent/${consentId}`, 'DELETE');
+      return await apiRequest('DELETE', `/api/gdpr/consent/${consentId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/consent'] });

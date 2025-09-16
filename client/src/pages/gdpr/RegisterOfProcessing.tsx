@@ -242,13 +242,13 @@ export default function RegisterOfProcessing() {
   // Fetch processing activities
   const { data: activities, isLoading } = useQuery<ProcessingActivity[]>({
     queryKey: ['/api/gdpr/processing-activities', queryParams.toString()],
-    queryFn: () => apiRequest(`/api/gdpr/processing-activities?${queryParams.toString()}`),
+    queryFn: () => apiRequest('GET', `/api/gdpr/processing-activities?${queryParams.toString()}`).then(res => res.json()),
   });
 
   // Create processing activity mutation
   const createActivityMutation = useMutation({
     mutationFn: async (data: InsertProcessingActivity) => {
-      return await apiRequest('/api/gdpr/processing-activities', 'POST', data);
+      return await apiRequest('POST', '/api/gdpr/processing-activities', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/processing-activities'] });
@@ -271,7 +271,7 @@ export default function RegisterOfProcessing() {
   // Update processing activity mutation
   const updateActivityMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertProcessingActivity> }) => {
-      return await apiRequest(`/api/gdpr/processing-activities/${id}`, 'PUT', data);
+      return await apiRequest('PUT', `/api/gdpr/processing-activities/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/processing-activities'] });
@@ -295,7 +295,7 @@ export default function RegisterOfProcessing() {
   // Delete processing activity mutation
   const deleteActivityMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest(`/api/gdpr/processing-activities/${id}`, 'DELETE');
+      return await apiRequest('DELETE', `/api/gdpr/processing-activities/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/processing-activities'] });

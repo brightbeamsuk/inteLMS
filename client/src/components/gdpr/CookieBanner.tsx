@@ -110,7 +110,7 @@ export function CookieBanner({ onConsentGiven, className = "" }: CookieBannerPro
           },
         };
 
-        await apiRequest('/api/gdpr/consent', 'POST', payload);
+        await apiRequest('POST', '/api/gdpr/consent', payload);
         queryClient.invalidateQueries({ queryKey: ['/api/gdpr/consent'] });
       }
       

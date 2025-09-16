@@ -211,7 +211,7 @@ export default function BreachManagement() {
       if (filters.severity) params.set('severity', filters.severity);
       if (filters.status) params.set('status', filters.status);
       
-      return apiRequest(`/api/gdpr/breaches?${params.toString()}`);
+      return apiRequest('GET', `/api/gdpr/breaches?${params.toString()}`).then(res => res.json());
     },
     enabled: !!user && ['admin', 'superadmin'].includes(user.role)
   });
@@ -219,16 +219,13 @@ export default function BreachManagement() {
   // Fetch breach analytics
   const { data: analytics } = useQuery({
     queryKey: ['/api/gdpr/breaches/analytics'],
-    queryFn: () => apiRequest('/api/gdpr/breaches/analytics'),
+    queryFn: () => apiRequest('GET', '/api/gdpr/breaches/analytics').then(res => res.json()),
     enabled: !!user && ['admin', 'superadmin'].includes(user.role)
   });
 
   // Create new breach mutation
   const createBreachMutation = useMutation({
-    mutationFn: (data: any) => apiRequest('/api/gdpr/breaches', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
+    mutationFn: (data: any) => apiRequest('POST', '/api/gdpr/breaches', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches'] });
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches/analytics'] });
@@ -250,10 +247,7 @@ export default function BreachManagement() {
   // Update breach mutation
   const updateBreachMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => 
-      apiRequest(`/api/gdpr/breaches/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data)
-      }),
+      apiRequest('PUT', `/api/gdpr/breaches/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches'] });
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches/analytics'] });
@@ -276,9 +270,7 @@ export default function BreachManagement() {
   // ICO notification mutation
   const icoNotifyMutation = useMutation({
     mutationFn: (breachId: string) => 
-      apiRequest(`/api/gdpr/breaches/${breachId}/ico-notify`, {
-        method: 'PATCH'
-      }),
+      apiRequest('PATCH', `/api/gdpr/breaches/${breachId}/ico-notify`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches'] });
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches/analytics'] });
@@ -301,12 +293,9 @@ export default function BreachManagement() {
   // Individual notifications mutation
   const bulkNotifyMutation = useMutation({
     mutationFn: ({ breachId, emails, message }: { breachId: string; emails: string[]; message?: string }) =>
-      apiRequest(`/api/gdpr/breaches/${breachId}/notify-subjects`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          recipientEmails: emails.filter(email => email.trim()),
-          notificationMessage: message
-        })
+      apiRequest('PATCH', `/api/gdpr/breaches/${breachId}/notify-subjects`, {
+        recipientEmails: emails.filter(email => email.trim()),
+        notificationMessage: message
       }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/breaches'] });
