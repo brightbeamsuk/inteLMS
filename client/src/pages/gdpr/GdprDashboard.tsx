@@ -185,6 +185,9 @@ export function GdprDashboard() {
   const [selectedOrgId, setSelectedOrgId] = useState<string>(user?.organisationId || '');
   const [activeView, setActiveView] = useState<'overview' | 'analytics' | 'reports' | 'settings'>('overview');
 
+  // Get role-based path prefix for navigation
+  const pathPrefix = user?.role === 'superadmin' ? '/superadmin' : '/admin';
+
   // Fetch organizations for SuperAdmin
   const { data: organizations } = useQuery<Array<{id: string; name: string}>>({
     queryKey: ['/api/superadmin/organisations'],
@@ -376,7 +379,7 @@ export function GdprDashboard() {
           </button>
           
           {/* Settings */}
-          <Link href="/admin/gdpr-dashboard/settings">
+          <Link href={`${pathPrefix}/gdpr-dashboard/settings`}>
             <button className="btn btn-outline btn-sm" data-testid="button-settings">
               <Settings className="w-4 h-4" />
               Settings
@@ -469,7 +472,7 @@ export function GdprDashboard() {
                   <p className="text-sm text-base-content/70">Active Consents</p>
                 </div>
               </div>
-              <Link href="/admin/gdpr/consent" className="btn btn-ghost btn-xs">
+              <Link href={`${pathPrefix}/gdpr/consent`} className="btn btn-ghost btn-xs">
                 <Eye className="w-4 h-4" />
               </Link>
             </div>
@@ -513,7 +516,7 @@ export function GdprDashboard() {
                   <p className="text-sm text-base-content/70">DSAR Processing</p>
                 </div>
               </div>
-              <Link href="/admin/gdpr/user-rights" className="btn btn-ghost btn-xs">
+              <Link href={`${pathPrefix}/gdpr/user-rights`} className="btn btn-ghost btn-xs">
                 <Eye className="w-4 h-4" />
               </Link>
             </div>
@@ -559,7 +562,7 @@ export function GdprDashboard() {
                   <p className="text-sm text-base-content/70">ICO Notifications</p>
                 </div>
               </div>
-              <Link href="/admin/gdpr/breaches" className="btn btn-ghost btn-xs">
+              <Link href={`${pathPrefix}/gdpr/breaches`} className="btn btn-ghost btn-xs">
                 <Eye className="w-4 h-4" />
               </Link>
             </div>
@@ -605,7 +608,7 @@ export function GdprDashboard() {
                   <p className="text-sm text-base-content/70">Lifecycle Management</p>
                 </div>
               </div>
-              <Link href="/admin/gdpr/data-retention" className="btn btn-ghost btn-xs">
+              <Link href={`${pathPrefix}/gdpr/data-retention`} className="btn btn-ghost btn-xs">
                 <Eye className="w-4 h-4" />
               </Link>
             </div>
@@ -639,42 +642,42 @@ export function GdprDashboard() {
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <Link href="/admin/gdpr/user-rights/new">
+          <Link href={`${pathPrefix}/gdpr/user-rights/new`}>
             <button className="btn btn-outline w-full" data-testid="button-process-dsar">
               <Users className="w-4 h-4" />
               Process DSAR
             </button>
           </Link>
           
-          <Link href="/admin/gdpr/breaches/new">
+          <Link href={`${pathPrefix}/gdpr/breaches/new`}>
             <button className="btn btn-outline w-full" data-testid="button-report-breach">
               <AlertTriangle className="w-4 h-4" />
               Report Breach
             </button>
           </Link>
           
-          <Link href="/admin/gdpr/consent">
+          <Link href={`${pathPrefix}/gdpr/consent`}>
             <button className="btn btn-outline w-full" data-testid="button-manage-consents">
               <CheckCircle className="w-4 h-4" />
               Manage Consents
             </button>
           </Link>
           
-          <Link href="/admin/gdpr/data-retention">
+          <Link href={`${pathPrefix}/gdpr/data-retention`}>
             <button className="btn btn-outline w-full" data-testid="button-review-retention">
               <Database className="w-4 h-4" />
               Review Retention
             </button>
           </Link>
           
-          <Link href="/admin/gdpr/compliance-documents">
+          <Link href={`${pathPrefix}/gdpr/compliance-documents`}>
             <button className="btn btn-outline w-full" data-testid="button-update-policies">
               <FileText className="w-4 h-4" />
               Update Policies
             </button>
           </Link>
           
-          <Link href="/admin/gdpr/privacy-settings">
+          <Link href={`${pathPrefix}/gdpr/privacy-settings`}>
             <button className="btn btn-outline w-full" data-testid="button-privacy-settings">
               <Lock className="w-4 h-4" />
               Privacy Settings
@@ -731,7 +734,7 @@ export function GdprDashboard() {
                       </div>
                     </div>
                   </div>
-                  <Link href="/admin/gdpr/user-rights">
+                  <Link href={`${pathPrefix}/gdpr/user-rights`}>
                     <button className="btn btn-warning btn-xs">Review</button>
                   </Link>
                 </div>
@@ -748,7 +751,7 @@ export function GdprDashboard() {
                       </div>
                     </div>
                   </div>
-                  <Link href="/admin/gdpr/data-retention">
+                  <Link href={`${pathPrefix}/gdpr/data-retention`}>
                     <button className="btn btn-info btn-xs">Review</button>
                   </Link>
                 </div>
@@ -765,7 +768,7 @@ export function GdprDashboard() {
                       </div>
                     </div>
                   </div>
-                  <Link href="/admin/gdpr/breaches">
+                  <Link href={`${pathPrefix}/gdpr/breaches`}>
                     <button className="btn btn-error btn-xs">Manage</button>
                   </Link>
                 </div>

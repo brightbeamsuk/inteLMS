@@ -583,7 +583,7 @@ export default function BreachManagement() {
                 <SelectValue placeholder="Filter by severity" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Severities</SelectItem>
+                <SelectItem value="all">All Severities</SelectItem>
                 <SelectItem value="low">Low Risk</SelectItem>
                 <SelectItem value="medium">Medium Risk</SelectItem>
                 <SelectItem value="high">High Risk</SelectItem>
@@ -598,7 +598,7 @@ export default function BreachManagement() {
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="detected">Detected</SelectItem>
                 <SelectItem value="assessed">Assessed</SelectItem>
                 <SelectItem value="notified_ico">ICO Notified</SelectItem>

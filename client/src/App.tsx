@@ -57,6 +57,7 @@ import RegisterOfProcessing from "@/pages/gdpr/RegisterOfProcessing";
 import BreachManagement from "@/pages/gdpr/BreachManagement";
 import InternationalTransfers from "@/pages/gdpr/InternationalTransfers";
 import ComplianceDocuments from "@/pages/gdpr/ComplianceDocuments";
+import DataRetention from "@/pages/gdpr/DataRetention";
 
 // GDPR components
 import { CookieBanner } from "@/components/gdpr/CookieBanner";
@@ -300,6 +301,76 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* SuperAdmin GDPR User Rights */}
+      <Route path="/superadmin/gdpr/user-rights">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <AdminUserRights />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/superadmin/gdpr/user-rights/new">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <AdminUserRights />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* SuperAdmin GDPR Breach Management */}
+      <Route path="/superadmin/gdpr/breaches">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <BreachManagement />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/superadmin/gdpr/breaches/new">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <BreachManagement />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* SuperAdmin GDPR Consent Management */}
+      <Route path="/superadmin/gdpr/consent">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <ConsentPreferences />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* SuperAdmin GDPR Data Retention */}
+      <Route path="/superadmin/gdpr/data-retention">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <DataRetention />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* SuperAdmin GDPR Compliance Documents */}
+      <Route path="/superadmin/gdpr/compliance-documents">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <ComplianceDocuments />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* SuperAdmin GDPR Privacy Settings */}
+      <Route path="/superadmin/gdpr/privacy-settings">
+        <ProtectedRoute requiredRole="superadmin">
+          <SuperAdminLayout>
+            <PrivacySettings />
+          </SuperAdminLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* Admin routes */}
       <Route path="/admin">
         <ProtectedRoute requiredRole="admin">
@@ -474,6 +545,76 @@ function Router() {
         <ProtectedRoute requiredRole="admin">
           <AdminLayout>
             <ComplianceExport />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR User Rights */}
+      <Route path="/admin/gdpr/user-rights">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminUserRights />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/gdpr/user-rights/new">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <AdminUserRights />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR Breach Management */}
+      <Route path="/admin/gdpr/breaches">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <BreachManagement />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/gdpr/breaches/new">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <BreachManagement />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR Consent Management */}
+      <Route path="/admin/gdpr/consent">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <ConsentPreferences />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR Data Retention */}
+      <Route path="/admin/gdpr/data-retention">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <DataRetention />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR Compliance Documents */}
+      <Route path="/admin/gdpr/compliance-documents">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <ComplianceDocuments />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin GDPR Privacy Settings */}
+      <Route path="/admin/gdpr/privacy-settings">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLayout>
+            <PrivacySettings />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

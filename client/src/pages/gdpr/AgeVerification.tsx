@@ -565,7 +565,7 @@ export function AgeVerification() {
                     <SelectValue placeholder="Filter by age group" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All age groups</SelectItem>
+                    <SelectItem value="all">All age groups</SelectItem>
                     <SelectItem value="child_under_13">Under 13</SelectItem>
                     <SelectItem value="child_13_to_16">13-16 Years</SelectItem>
                     <SelectItem value="adult_over_16">Over 16</SelectItem>
@@ -576,7 +576,7 @@ export function AgeVerification() {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="verified">Verified</SelectItem>
                     <SelectItem value="failed">Failed</SelectItem>
@@ -700,7 +700,7 @@ export function AgeVerification() {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="granted">Granted</SelectItem>
                     <SelectItem value="withdrawn">Withdrawn</SelectItem>

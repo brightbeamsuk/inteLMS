@@ -384,7 +384,7 @@ export function AdminUserRights() {
                     <SelectValue placeholder="All types" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All types</SelectItem>
+                    <SelectItem value="all">All types</SelectItem>
                     {Object.entries(userRightsInfo).map(([key, info]) => (
                       <SelectItem key={key} value={key} data-testid={`option-type-${key}`}>
                         {info.title}
@@ -401,7 +401,7 @@ export function AdminUserRights() {
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="pending" data-testid="option-status-pending">Pending</SelectItem>
                     <SelectItem value="in_progress" data-testid="option-status-in_progress">In Progress</SelectItem>
                     <SelectItem value="completed" data-testid="option-status-completed">Completed</SelectItem>

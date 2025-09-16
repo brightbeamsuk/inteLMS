@@ -568,7 +568,7 @@ export default function RegisterOfProcessing() {
                 <SelectValue placeholder="Filter by lawful basis" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All lawful bases</SelectItem>
+                <SelectItem value="all">All lawful bases</SelectItem>
                 {Object.entries(lawfulBasisInfo).map(([key, info]) => (
                   <SelectItem key={key} value={key} data-testid={`option-lawful-basis-${key}`}>
                     {info.title}
