@@ -410,13 +410,13 @@ export function GdprDashboard() {
             
             {/* Quick Export Actions */}
             <div className="flex gap-2">
-              <Link href="/admin/gdpr-dashboard/reports">
+              <Link href="/admin/compliance-export">
                 <button className="btn btn-primary btn-sm" data-testid="button-create-report">
                   <FileText className="w-4 h-4" />
                   Create Report
                 </button>
               </Link>
-              <Link href="/admin/gdpr-dashboard/export">
+              <Link href="/admin/compliance-export">
                 <button className="btn btn-outline btn-sm" data-testid="button-export-data">
                   <Download className="w-4 h-4" />
                   Export Data

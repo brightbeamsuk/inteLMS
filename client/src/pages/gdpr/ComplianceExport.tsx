@@ -126,7 +126,7 @@ export function ComplianceExport() {
         params.set('status', statusFilter);
       }
       const queryString = params.toString();
-      return await apiRequest(`/api/gdpr/dashboard/export-jobs${queryString ? '?' + queryString : ''}`, 'GET');
+      return await apiRequest('GET', `/api/gdpr/dashboard/export-jobs${queryString ? '?' + queryString : ''}`).then(res => res.json());
     },
     enabled: !!selectedOrgId,
     refetchInterval: 10000, // Refresh every 10 seconds for status updates
@@ -137,7 +137,7 @@ export function ComplianceExport() {
     queryKey: ['/api/gdpr/dashboard/reports', selectedOrgId],
     queryFn: async () => {
       const params = user?.role === 'superadmin' && selectedOrgId ? `?organisationId=${selectedOrgId}` : '';
-      return await apiRequest(`/api/gdpr/dashboard/reports${params}`, 'GET');
+      return await apiRequest('GET', `/api/gdpr/dashboard/reports${params}`).then(res => res.json());
     },
     enabled: !!selectedOrgId,
   });
@@ -145,7 +145,7 @@ export function ComplianceExport() {
   // Create export job mutation
   const createExportJobMutation = useMutation({
     mutationFn: async (exportData: any) => {
-      return await apiRequest('/api/gdpr/dashboard/export-jobs', 'POST', exportData);
+      return await apiRequest('POST', '/api/gdpr/dashboard/export-jobs', exportData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/dashboard/export-jobs'] });
@@ -169,7 +169,7 @@ export function ComplianceExport() {
   // Create compliance report mutation
   const createReportMutation = useMutation({
     mutationFn: async (reportData: any) => {
-      return await apiRequest('/api/gdpr/dashboard/reports', 'POST', reportData);
+      return await apiRequest('POST', '/api/gdpr/dashboard/reports', reportData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/gdpr/dashboard/reports'] });
