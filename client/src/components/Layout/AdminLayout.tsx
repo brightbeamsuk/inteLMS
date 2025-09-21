@@ -476,6 +476,135 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </div>
 
+        {/* Mobile Sidebar Overlay */}
+        {drawerOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setDrawerOpen(false)}>
+            <aside 
+              className="w-80 min-h-screen bg-base-200 text-base-content"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="avatar">
+                    <div className="w-12 h-12 rounded-full">
+                      {user?.profileImageUrl ? (
+                        <img 
+                          src={user.profileImageUrl} 
+                          alt="Profile"
+                          className="object-cover w-full h-full rounded-full"
+                          data-testid="img-mobile-user-avatar"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`bg-neutral text-neutral-content rounded-full w-12 h-12 flex items-center justify-center ${user?.profileImageUrl ? 'hidden' : ''}`}>
+                        <span className="text-lg font-bold">
+                          {user?.firstName?.[0]}{user?.lastName?.[0] || 'A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg" data-testid="text-mobile-user-name">
+                      {user?.firstName} {user?.lastName}
+                    </div>
+                    <div className="text-sm opacity-60" data-testid="text-mobile-user-title">
+                      {user?.jobTitle || 'Administrator'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <ul className="menu p-4 space-y-2">
+                {menuItems.map((item) => {
+                  const hasAccess = !item.requiresFeature || hasFeatureAccess(item.requiresFeature);
+                  
+                  return (
+                    <li key={item.path}>
+                      {item.requiresFeature && !hasAccess ? (
+                        <button
+                          className={`w-full text-left ${location === item.path ? "active" : ""} relative`}
+                          onClick={() => {
+                            setDrawerOpen(false);
+                            handleFeatureClick(item.requiresFeature!, item.path);
+                          }}
+                          data-testid={`button-mobile-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <i className={item.icon}></i>
+                          {item.label}
+                          <div className="ml-auto">
+                            <i className="fas fa-lock text-warning text-sm"></i>
+                          </div>
+                        </button>
+                      ) : (
+                        <Link 
+                          href={item.path}
+                          className={location === item.path ? "active" : ""}
+                          onClick={() => setDrawerOpen(false)}
+                          data-testid={`link-mobile-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <i className={item.icon}></i>
+                          {item.label}
+                          {/* Show overdue count indicator for Training Matrix */}
+                          {item.path === '/admin/training-matrix' && overdueData && overdueData.overdueCount > 0 && (
+                            <div className="ml-2 animate-pulse" data-testid="indicator-mobile-overdue">
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                                {overdueData.overdueCount}
+                              </div>
+                            </div>
+                          )}
+                          {/* Show unread ticket count indicator for Support */}
+                          {item.path === '/admin/support' && supportUnreadData && supportUnreadData.count > 0 && (
+                            <div className="ml-2 animate-pulse" data-testid="indicator-mobile-support-unread">
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-600 text-white text-xs font-bold rounded-full">
+                                {supportUnreadData.count}
+                              </div>
+                            </div>
+                          )}
+                        </Link>
+                      )}
+                    </li>
+                  );
+                })}
+                
+                {/* GDPR Compliance Menu Section for Mobile */}
+                {isGdprEnabled && availableGdprItems.length > 0 && (
+                  <>
+                    <li className="menu-title">
+                      <span className="font-semibold text-sm opacity-70 uppercase tracking-wide">
+                        <i className="fas fa-shield-alt mr-2"></i>
+                        GDPR Compliance
+                      </span>
+                    </li>
+                    
+                    {availableGdprItems.map((item) => (
+                      <li key={item.path} className="ml-4">
+                        <Link 
+                          href={item.path}
+                          className={location === item.path ? "active" : ""}
+                          onClick={() => setDrawerOpen(false)}
+                          data-testid={`link-mobile-gdpr-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <i className={item.icon}></i>
+                          {item.label}
+                          {/* Special badge for RoPA as it's critical for Article 30 */}
+                          {item.path === '/admin/processing-activities' && (
+                            <div className="ml-2">
+                              <div className="badge badge-primary badge-xs">Article 30</div>
+                            </div>
+                          )}
+                        </Link>
+                      </li>
+                    ))}
+                  </>
+                )}
+              </ul>
+            </aside>
+          </div>
+        )}
+
         {/* Feature Upgrade Modal */}
         <FeatureUpgradeModal
           isOpen={upgradeModal.isOpen}
