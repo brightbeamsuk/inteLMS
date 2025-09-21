@@ -43,17 +43,20 @@ export function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       {/* Header */}
       <div className="navbar bg-base-300 shadow-lg">
         <div className="navbar-start">
-          <div className="dropdown">
-            <button 
-              tabIndex={0} 
-              role="button" 
-              className="btn btn-ghost btn-circle lg:hidden cursor-pointer"
-              onClick={() => setDrawerOpen(!drawerOpen)}
-              data-testid="button-menu-toggle"
-            >
-              <i className="fas fa-bars text-xl"></i>
-            </button>
-          </div>
+          <button 
+            className="btn btn-ghost btn-circle lg:hidden z-50 relative"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('SuperAdmin Hamburger clicked, current drawerOpen:', drawerOpen);
+              setDrawerOpen(!drawerOpen);
+              console.log('SuperAdmin Set drawerOpen to:', !drawerOpen);
+            }}
+            data-testid="button-menu-toggle"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <i className="fas fa-bars text-xl"></i>
+          </button>
           <Link href="/superadmin" className="btn btn-ghost" data-testid="link-home">
             <img 
               src={inteLMSLogo} 

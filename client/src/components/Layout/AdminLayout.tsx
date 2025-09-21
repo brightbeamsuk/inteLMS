@@ -250,9 +250,16 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <div className="navbar bg-base-300 shadow-lg">
           <div className="navbar-start">
             <button 
-              className="btn btn-ghost btn-circle lg:hidden"
-              onClick={() => setDrawerOpen(!drawerOpen)}
+              className="btn btn-ghost btn-circle lg:hidden z-50 relative"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Hamburger clicked, current drawerOpen:', drawerOpen);
+                setDrawerOpen(!drawerOpen);
+                console.log('Set drawerOpen to:', !drawerOpen);
+              }}
               data-testid="button-menu-toggle"
+              style={{ touchAction: 'manipulation' }}
             >
               <i className="fas fa-bars text-xl"></i>
             </button>
