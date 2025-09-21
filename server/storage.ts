@@ -323,6 +323,7 @@ export interface IStorage {
   deleteCertificateTemplate(id: string): Promise<void>;
   getCertificateTemplates(): Promise<CertificateTemplate[]>;
   getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined>;
+  clearDefaultCertificateTemplates(): Promise<void>;
 
   // Organisation settings operations
   getOrganisationSettings(organisationId: string): Promise<OrganisationSettings | undefined>;
@@ -1919,6 +1920,10 @@ export class DatabaseStorage implements IStorage {
   async getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined> {
     const [template] = await db.select().from(certificateTemplates).where(and(eq(certificateTemplates.isDefault, true), isNull(certificateTemplates.organisationId)));
     return template;
+  }
+
+  async clearDefaultCertificateTemplates(): Promise<void> {
+    await db.delete(certificateTemplates).where(and(eq(certificateTemplates.isDefault, true), isNull(certificateTemplates.organisationId)));
   }
 
   // Organisation settings operations

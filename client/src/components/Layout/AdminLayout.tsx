@@ -251,13 +251,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           <div className="navbar-start">
             <button 
               className="btn btn-ghost btn-circle lg:hidden z-50 relative"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Hamburger clicked, current drawerOpen:', drawerOpen);
-                setDrawerOpen(!drawerOpen);
-                console.log('Set drawerOpen to:', !drawerOpen);
-              }}
+              onClick={() => setDrawerOpen(!drawerOpen)}
               data-testid="button-menu-toggle"
               style={{ touchAction: 'manipulation' }}
             >
