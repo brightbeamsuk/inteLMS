@@ -8666,10 +8666,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updatedTemplate = await storage.updateCertificateTemplate(id, updateData);
       
-      res.json(updatedTemplate);
+      // Ensure response is properly formatted JSON
+      res.json({
+        success: true,
+        message: 'PDF template updated successfully',
+        template: updatedTemplate
+      });
     } catch (error) {
       console.error('Error updating PDF certificate template:', error);
-      res.status(500).json({ message: 'Failed to update PDF certificate template' });
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to update PDF certificate template',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
