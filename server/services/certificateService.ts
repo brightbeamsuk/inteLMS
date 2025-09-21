@@ -342,25 +342,61 @@ export class CertificateService {
       // Load the PDF document
       const pdfDoc = await PDFDocument.load(templateBuffer);
       
-      // Get all pages
-      const pages = pdfDoc.getPages();
+      // Embed standard font for reliable text rendering across viewers
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       
-      // Map user placeholders to our certificate data
-      const placeholderMap: Record<string, string> = {
-        '{{learner_name}}': data.userName,
-        '{{course_name}}': data.courseName,
-        '{{completion_date}}': data.dateCompleted,
-        // Also support the original system placeholders for backward compatibility
-        '{{USERNAME}}': data.userName,
-        '{{USER_EMAIL}}': data.userEmail,
-        '{{COURSE_NAME}}': data.courseName,
-        '{{COURSE_ID}}': data.courseId,
-        '{{ORGANISATION_NAME}}': data.organisationName,
-        '{{ADMIN_NAME}}': data.adminName,
-        '{{SCORE_PERCENT}}': data.scorePercent,
-        '{{PASS_FAIL}}': data.passFailStatus,
-        '{{DATE_COMPLETED}}': data.dateCompleted,
-        '{{CERTIFICATE_ID}}': data.certificateId
+      // Create comprehensive data mapping with multiple name variations
+      const dataMapping: Record<string, string> = {
+        // Learner/User information
+        learner_name: data.userName,
+        user_name: data.userName,
+        username: data.userName,
+        name: data.userName,
+        student_name: data.userName,
+        participant_name: data.userName,
+        
+        // Course information  
+        course_name: data.courseName,
+        coursename: data.courseName,
+        course_title: data.courseName,
+        training_name: data.courseName,
+        
+        // Date information
+        completion_date: data.dateCompleted,
+        date_completed: data.dateCompleted,
+        completiondate: data.dateCompleted,
+        certificate_date: data.dateCompleted,
+        issue_date: data.dateCompleted,
+        
+        // Organization information
+        organisation_name: data.organisationName,
+        organization_name: data.organisationName,
+        company_name: data.organisationName,
+        org_name: data.organisationName,
+        
+        // Additional fields
+        user_email: data.userEmail,
+        email: data.userEmail,
+        course_id: data.courseId,
+        admin_name: data.adminName,
+        administrator: data.adminName,
+        score_percent: data.scorePercent,
+        score: data.scorePercent,
+        pass_fail: data.passFailStatus,
+        status: data.passFailStatus,
+        result: data.passFailStatus,
+        certificate_id: data.certificateId,
+        cert_id: data.certificateId,
+        id: data.certificateId
+      };
+
+      // Helper function to normalize field names for better matching
+      const normalizeFieldName = (fieldName: string): string => {
+        return fieldName
+          .toLowerCase()
+          .replace(/[{}]/g, '') // Remove curly braces
+          .replace(/[-\s]/g, '_') // Replace hyphens and spaces with underscores
+          .trim();
       };
 
       // Check if the PDF has form fields we can fill (best approach)
@@ -371,75 +407,55 @@ export class CertificateService {
         // The PDF has form fields - fill them with our data
         console.log(`📝 Found ${fields.length} form fields in PDF template`);
         
+        let fieldsFilledCount = 0;
+        
         fields.forEach(field => {
           const fieldName = field.getName();
-          console.log(`🔍 Processing form field: ${fieldName}`);
+          const normalizedFieldName = normalizeFieldName(fieldName);
           
-          let value = '';
+          console.log(`🔍 Processing form field: '${fieldName}' (normalized: '${normalizedFieldName}')`);
           
-          // Map form field names to our certificate data
-          // Support both direct field names and placeholder format
-          if (fieldName === 'learner_name' || fieldName === 'userName' || fieldName === 'user_name') {
-            value = data.userName;
-          }
-          else if (fieldName === 'course_name' || fieldName === 'courseName') {
-            value = data.courseName;
-          }
-          else if (fieldName === 'completion_date' || fieldName === 'completionDate' || fieldName === 'date_completed') {
-            value = data.dateCompleted;
-          }
-          else if (fieldName === 'organisation_name' || fieldName === 'organizationName') {
-            value = data.organisationName;
-          }
-          else if (fieldName === 'score_percent' || fieldName === 'scorePercent') {
-            value = data.scorePercent;
-          }
-          else if (fieldName === 'certificate_id' || fieldName === 'certificateId') {
-            value = data.certificateId;
-          }
-          else if (fieldName === 'admin_name' || fieldName === 'adminName') {
-            value = data.adminName;
-          }
-          else if (fieldName === 'pass_fail' || fieldName === 'passFailStatus') {
-            value = data.passFailStatus;
-          }
-          else if (fieldName === 'user_email' || fieldName === 'userEmail') {
-            value = data.userEmail;
-          }
-          else if (fieldName === 'course_id' || fieldName === 'courseId') {
-            value = data.courseId;
-          }
+          // Look for matching data using normalized field name
+          let value = dataMapping[normalizedFieldName];
           
           if (value) {
             try {
-              // Try to fill as text field first
+              // Try to fill as text field
               const textField = form.getTextField(fieldName);
               textField.setText(value);
+              fieldsFilledCount++;
               console.log(`✅ Filled text field '${fieldName}' with: ${value}`);
             } catch (textError) {
               try {
-                // If not a text field, try other field types
-                console.log(`⚠️  Field '${fieldName}' is not a text field, trying other types...`);
+                // Try other field types if not a text field
+                console.log(`⚠️  Field '${fieldName}' is not a text field, attempting other types...`);
+                // Note: Could extend this to handle checkboxes, dropdowns, etc. if needed
               } catch (error) {
                 console.log(`❌ Could not fill field '${fieldName}':`, error.message);
               }
             }
           } else {
-            console.log(`❌ No matching data found for form field: ${fieldName}`);
+            console.log(`❌ No matching data found for form field: '${fieldName}' (normalized: '${normalizedFieldName}')`);
           }
         });
         
+        // Update field appearances with embedded font for consistent rendering
+        console.log('🎨 Updating field appearances for consistent rendering...');
+        try {
+          form.updateFieldAppearances(font);
+        } catch (appearanceError) {
+          console.log('⚠️ Could not update field appearances:', appearanceError.message);
+        }
+        
         // Flatten the form to make fields non-editable and preserve formatting
         form.flatten();
-        console.log('✅ Form fields filled and flattened successfully');
+        console.log(`✅ Form processing complete - filled ${fieldsFilledCount}/${fields.length} fields and flattened form`);
         
       } else {
-        console.log('📄 No form fields found in PDF template');
+        console.log('📄 No form fields found in PDF template - using text overlay fallback');
         console.log('💡 For best results, create fillable form fields in your PDF template with names like:');
-        console.log('   - learner_name, course_name, completion_date, organisation_name, etc.');
+        console.log('   learner_name, course_name, completion_date, organisation_name, etc.');
         
-        // Fallback: Use text overlay approach with better positioning
-        // This is less ideal but works when PDF doesn't have form fields
         const pages = pdfDoc.getPages();
         
         for (const page of pages) {
@@ -448,30 +464,60 @@ export class CertificateService {
           
           console.log('⚠️  Using text overlay fallback - positioning may not match your template design');
           
-          // Add text overlays - users should ideally create form fields for proper alignment
+          // Add text overlays with better spacing and all certificate data
+          let yPosition = height - 180;
+          const lineSpacing = 50;
+          
           if (data.userName) {
             page.drawText(data.userName, {
-              x: 100, // Adjust based on your template
-              y: height - 200, 
-              size: fontSize,
+              x: 100,
+              y: yPosition,
+              size: fontSize + 2,
+              font: font,
               color: rgb(0, 0, 0),
             });
+            yPosition -= lineSpacing;
           }
           
           if (data.courseName) {
             page.drawText(data.courseName, {
               x: 100,
-              y: height - 250,
-              size: fontSize - 2,
+              y: yPosition,
+              size: fontSize,
+              font: font,
               color: rgb(0, 0, 0),
             });
+            yPosition -= lineSpacing;
           }
           
           if (data.dateCompleted) {
-            page.drawText(data.dateCompleted, {
+            page.drawText(`Completed: ${data.dateCompleted}`, {
               x: 100,
-              y: height - 300,
+              y: yPosition,
+              size: fontSize - 2,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+            yPosition -= lineSpacing;
+          }
+          
+          if (data.scorePercent) {
+            page.drawText(`Score: ${data.scorePercent}`, {
+              x: 100,
+              y: yPosition,
+              size: fontSize - 2,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+            yPosition -= lineSpacing;
+          }
+          
+          if (data.certificateId) {
+            page.drawText(`Certificate ID: ${data.certificateId}`, {
+              x: 100,
+              y: yPosition,
               size: fontSize - 4,
+              font: font,
               color: rgb(0, 0, 0),
             });
           }
