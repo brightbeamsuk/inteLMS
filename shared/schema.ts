@@ -530,8 +530,9 @@ export const certificateTemplates = pgTable("certificate_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
   template: text("template"), // HTML template with placeholders
-  templateFormat: varchar("template_format", { enum: ["html", "visual"] }).default("html"), // 'html' or 'visual'
+  templateFormat: varchar("template_format", { enum: ["html", "visual", "pdf"] }).default("html"), // 'html', 'visual', or 'pdf'
   templateData: jsonb("template_data"), // JSON data for visual templates
+  pdfTemplateUrl: varchar("pdf_template_url"), // URL/path to uploaded PDF template
   isDefault: boolean("is_default").default(false),
   organisationId: varchar("organisation_id"), // null for global templates
   createdAt: timestamp("created_at").defaultNow(),
