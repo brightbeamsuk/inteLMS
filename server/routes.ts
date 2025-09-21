@@ -7939,16 +7939,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Get certificate URL and redirect to object storage
+      // Get certificate URL and serve file directly
       if (certificate.certificateUrl) {
         // If it's already a full URL, redirect directly
         if (certificate.certificateUrl.startsWith('http')) {
           return res.redirect(certificate.certificateUrl);
         }
         
-        // If it's a relative path, serve through object storage
+        // If it's a relative path, serve through object storage directly
         if (certificate.certificateUrl.startsWith('/objects/')) {
-          return res.redirect(certificate.certificateUrl);
+          try {
+            const objectStorageService = new ObjectStorageService();
+            const objectFile = await objectStorageService.getObjectEntityFile(certificate.certificateUrl);
+            
+            // Set appropriate headers for PDF download
+            res.set({
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="certificate-${certificate.id}.pdf"`
+            });
+            
+            // Stream the file directly to the response
+            const stream = objectFile.createReadStream();
+            stream.pipe(res);
+            return;
+          } catch (error) {
+            console.error('Error serving certificate file:', error);
+            return res.status(404).json({ message: 'Certificate file not found' });
+          }
         }
         
         // If it's our demo certificate, serve the HTML directly
