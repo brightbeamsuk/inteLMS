@@ -28,38 +28,6 @@ export function SignIn() {
   const [adminLastName, setAdminLastName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
 
-  const demoCredentials = [
-    {
-      role: 'SuperAdmin',
-      email: 'superadmin@demo.app',
-      password: 'superadmin123',
-      className: 'btn-primary'
-    },
-    {
-      role: 'Admin (Acme Care Ltd)',
-      email: 'admin.acme@demo.app',
-      password: 'admin123',
-      className: 'btn-secondary'
-    },
-    {
-      role: 'Admin (Ocean Nurseries CIC)',
-      email: 'admin.ocean@demo.app',
-      password: 'admin123',
-      className: 'btn-secondary'
-    },
-    {
-      role: 'User (Alice - Acme)',
-      email: 'alice@acme.demo',
-      password: 'user123',
-      className: 'btn-accent'
-    },
-    {
-      role: 'User (Dan - Ocean)',
-      email: 'dan@ocean.demo',
-      password: 'user123',
-      className: 'btn-accent'
-    }
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,33 +58,6 @@ export function SignIn() {
     }
   };
 
-  const handleDemoLogin = async (cred: typeof demoCredentials[0]) => {
-    setError('');
-    setIsLoading(true);
-    
-    try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: cred.email, password: cred.password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Login successful, redirect to appropriate dashboard
-        window.location.href = data.redirectUrl || '/dashboard';
-      } else {
-        setError(data.message || 'Demo login failed');
-      }
-    } catch (error) {
-      setError('Network error. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleIndividualSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -785,60 +726,6 @@ export function SignIn() {
             </div>
           )}
 
-          {/* Demo Section - Only show on login mode */}
-          {authMode === 'login' && (
-            <div className="mt-8">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">Or explore with demo accounts</span>
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {demoCredentials.map((cred, index) => (
-                  <button
-                    key={index}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg hover:border-[#634396] hover:bg-gray-50 transition-all duration-200 text-left flex items-center justify-between"
-                    onClick={() => handleDemoLogin(cred)}
-                    data-testid={`button-demo-${cred.role.toLowerCase().replace(/\s+/g, '-')}`}
-                    disabled={isLoading}
-                  >
-                    <div className="flex items-center gap-3">
-                      <i className={`fas ${
-                        cred.role.includes('SuperAdmin') ? 'fa-crown text-yellow-500' :
-                        cred.role.includes('Admin') ? 'fa-user-shield text-blue-500' : 'fa-user text-green-500'
-                      }`}></i>
-                      <span className="font-medium text-gray-700">{cred.role}</span>
-                    </div>
-                    <i className="fas fa-arrow-right text-gray-400"></i>
-                  </button>
-                ))}
-              </div>
-
-              {/* Demo Info */}
-              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                    <i className="fas fa-info text-white text-xs"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-blue-800 mb-2">Demo Credentials</p>
-                    <div className="text-xs text-blue-700 space-y-1">
-                      {demoCredentials.slice(0, 3).map((cred, index) => (
-                        <div key={index} className="flex justify-between" data-testid={`text-credentials-${index}`}>
-                          <span className="font-medium">{cred.email}</span>
-                          <span>{cred.password}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Signup help text */}
           {authMode === 'signup' && (
