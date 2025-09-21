@@ -80,6 +80,8 @@ export function SuperAdminSettings() {
   const [showPreview, setShowPreview] = useState(false);
   const [useVisualEditor, setUseVisualEditor] = useState(true);
   const [currentVisualTemplate, setCurrentVisualTemplate] = useState<VisualCertificateTemplate | null>(null);
+  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
+  const [currentPdfTemplate, setCurrentPdfTemplate] = useState<CertificateTemplate | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -270,6 +272,16 @@ export function SuperAdminSettings() {
     queryKey: ['/api/certificate-templates'],
   });
 
+  // Find current PDF template
+  useEffect(() => {
+    if (templates && templates.length > 0) {
+      const pdfTemplate = (templates as CertificateTemplate[]).find(
+        t => t.templateFormat === 'pdf' && t.isDefault
+      );
+      setCurrentPdfTemplate(pdfTemplate || null);
+    }
+  }, [templates]);
+
   // Save template mutation
   const saveTemplateMutation = useMutation({
     mutationFn: async (templateData: any) => {
@@ -306,6 +318,76 @@ export function SuperAdminSettings() {
       isDefault: false
     };
     saveTemplateMutation.mutate(templateData);
+  };
+
+  // PDF template upload mutation
+  const uploadPdfTemplateMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('pdfTemplate', file);
+      formData.append('name', 'System PDF Template');
+      formData.append('templateFormat', 'pdf');
+      formData.append('isDefault', 'true');
+
+      // If there's an existing PDF template, update it; otherwise create new
+      const url = currentPdfTemplate 
+        ? `/api/certificate-templates/${currentPdfTemplate.id}/pdf`
+        : '/api/certificate-templates/pdf';
+      
+      const response = await fetch(url, {
+        method: currentPdfTemplate ? 'PUT' : 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to upload PDF template');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "PDF template uploaded successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/certificate-templates'] });
+      setSelectedPdfFile(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload PDF template",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle file selection
+  const handlePdfFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type === 'application/pdf') {
+      setSelectedPdfFile(file);
+    } else if (file) {
+      toast({
+        title: "Error",
+        description: "Please select a valid PDF file",
+        variant: "destructive",
+      });
+      event.target.value = ''; // Reset file input
+    }
+  };
+
+  // Handle PDF upload
+  const handlePdfUpload = () => {
+    if (!selectedPdfFile) {
+      toast({
+        title: "Error",
+        description: "Please select a PDF file first",
+        variant: "destructive",
+      });
+      return;
+    }
+    uploadPdfTemplateMutation.mutate(selectedPdfFile);
   };
 
   // System email settings mutations
@@ -625,7 +707,7 @@ export function SuperAdminSettings() {
     return preview;
   };
 
-  const tabs = ["Certificate Templates", "Platform Options", "Email Settings"];
+  const tabs = ["Certificate Settings", "Platform Options", "Email Settings"];
 
   return (
     <div>
@@ -658,262 +740,150 @@ export function SuperAdminSettings() {
             ))}
           </div>
 
-          {/* Certificate Templates Tab */}
+          {/* Certificate Settings Tab */}
           {activeTab === 0 && (
             <div className="space-y-6">
-              {/* Editor Mode Toggle */}
-              <div className="flex gap-2 mb-6">
-                <button 
-                  className={`btn btn-sm ${useVisualEditor ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setUseVisualEditor(true)}
-                  data-testid="button-visual-editor"
-                >
-                  <i className="fas fa-palette"></i> Visual Editor
-                </button>
-                <button 
-                  className={`btn btn-sm ${!useVisualEditor ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setUseVisualEditor(false)}
-                  data-testid="button-html-editor"
-                >
-                  <i className="fas fa-code"></i> HTML Editor
-                </button>
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Certificate Template</h3>
+                <p className="text-base-content/70 mb-6">
+                  Upload a PDF template that will be used for all certificates generated on the system. 
+                  The PDF should contain placeholders that will be replaced with actual data when certificates are generated.
+                </p>
               </div>
 
-              {useVisualEditor ? (
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Visual Certificate Template Builder</h3>
-                  <VisualCertificateEditor 
-                    onSave={handleVisualTemplateSave}
-                    initialTemplate={currentVisualTemplate || undefined}
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Template Editor */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">HTML Certificate Template Builder</h3>
-                    
-                    <div className="form-control mb-4">
-                      <label className="label">
-                        <span className="label-text">Template Name</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        placeholder="Default Platform Template" 
-                        className="input input-bordered"
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        data-testid="input-template-name"
-                      />
-                    </div>
-
-                    <div className="form-control mb-4">
-                      <label className="label">
-                        <span className="label-text">Template HTML</span>
-                      </label>
-                      <textarea 
-                        className="textarea textarea-bordered h-64" 
-                        placeholder="Enter your certificate template HTML here..."
-                        value={templateEditor}
-                        onChange={(e) => setTemplateEditor(e.target.value)}
-                        data-testid="textarea-template-editor"
-                      ></textarea>
-                    </div>
-
-                    <div className="flex gap-2 mb-4">
-                      <button 
-                        className="btn btn-primary"
-                        onClick={handleSaveTemplate}
-                        disabled={saveTemplateMutation.isPending}
-                        data-testid="button-save-template"
-                      >
-                        {saveTemplateMutation.isPending ? (
-                          <span className="loading loading-spinner loading-sm"></span>
-                        ) : (
-                          <i className="fas fa-save"></i>
-                        )}
-                        {editingTemplateId ? 'Update Template' : 'Save Template'}
-                      </button>
-                      <button 
-                        className="btn btn-secondary"
-                        onClick={() => setShowPreview(!showPreview)}
-                        data-testid="button-preview-template"
-                      >
-                        <i className="fas fa-eye"></i> {showPreview ? 'Hide Preview' : 'Show Preview'}
-                      </button>
-                      {editingTemplateId && (
-                        <button 
-                          className="btn btn-outline"
-                          onClick={clearEditor}
-                          data-testid="button-clear-template"
-                        >
-                          <i className="fas fa-times"></i> Cancel Edit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Placeholders Panel */}
-                  <div>
-                  <h3 className="text-lg font-semibold mb-4">Available Placeholders</h3>
-                  <p className="text-sm text-base-content/60 mb-4">Click to insert into template</p>
-                  
-                  <div className="grid grid-cols-1 gap-2">
-                    {availablePlaceholders.map((placeholder) => (
-                      <button
-                        key={placeholder}
-                        className="btn btn-sm btn-outline justify-start"
-                        onClick={() => insertPlaceholder(placeholder)}
-                        data-testid={`button-placeholder-${placeholder.replace(/[{}]/g, '').toLowerCase()}`}
-                      >
-                        <code className="text-xs">{placeholder}</code>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="divider"></div>
-
-                  <div className="space-y-4">
-                    <h4 className="font-semibold">Template Options</h4>
-                    <div className="text-sm text-gray-600 mb-4">
-                      Upload images and use {`{{BACKGROUND_IMAGE}}`} and {`{{SIGNATURE_IMAGE}}`} placeholders in your template
-                    </div>
-                    
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">Background Image</span>
-                      </label>
-                      <ImageUpload
-                        imageType="certificate-bg"
-                        currentImageUrl={backgroundImage || undefined}
-                        onImageUploaded={(publicPath) => setBackgroundImage(publicPath)}
-                        buttonClassName="btn btn-outline w-full"
-                        previewClassName="w-32 h-20 object-cover rounded border"
-                      >
-                        <button 
-                          className="btn btn-xs btn-error ml-2"
-                          onClick={() => setBackgroundImage(null)}
-                          data-testid="button-remove-background"
-                        >
-                          Remove
-                        </button>
-                      </ImageUpload>
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">Signature Image</span>
-                      </label>
-                      <ImageUpload
-                        imageType="certificate-signature"
-                        currentImageUrl={signatureImage || undefined}
-                        onImageUploaded={(publicPath) => setSignatureImage(publicPath)}
-                        buttonClassName="btn btn-outline w-full"
-                        previewClassName="w-32 h-20 object-cover rounded border"
-                      >
-                        <button 
-                          className="btn btn-xs btn-error ml-2"
-                          onClick={() => setSignatureImage(null)}
-                          data-testid="button-remove-signature"
-                        >
-                          Remove
-                        </button>
-                      </ImageUpload>
-                    </div>
-
-                    <div className="form-control">
-                      <label className="label">
-                        <span className="label-text">Font Family</span>
-                      </label>
-                      <select className="select select-bordered" data-testid="select-font-family">
-                        <option value="Georgia">Georgia (serif)</option>
-                        <option value="Arial">Arial (sans-serif)</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Helvetica">Helvetica</option>
-                      </select>
-                    </div>
-                  </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Template Preview */}
-              {showPreview && (
-                <div className="card bg-base-100 shadow-sm">
-                  <div className="card-body">
-                    <h3 className="text-lg font-semibold mb-4">Preview with Sample Data</h3>
-                    <div className="bg-gray-100 p-4 rounded-lg">
-                      <div 
-                        className="certificate-preview border bg-white rounded-lg min-h-[400px] relative overflow-hidden" 
-                        style={{ 
-                          position: 'relative',
-                          padding: '1rem',
-                          ...(backgroundImage && {
-                            backgroundImage: `url('${backgroundImage}')`,
-                            backgroundSize: 'cover',
-                            backgroundPosition: 'center',
-                            backgroundRepeat: 'no-repeat'
-                          })
-                        }}
-                        dangerouslySetInnerHTML={{ __html: previewTemplate() }}
-                        data-testid="preview-certificate"
-                      ></div>
-                      {(backgroundImage || signatureImage) && (
-                        <div className="mt-4 text-sm text-gray-600">
-                          <p><strong>Note:</strong> This preview shows your uploaded images.</p>
-                          {backgroundImage && <p>✓ Background image is applied</p>}
-                          {signatureImage && <p>✓ Signature image is applied</p>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Existing Templates */}
+              {/* PDF Template Upload */}
               <div className="card bg-base-100 shadow-sm">
                 <div className="card-body">
-                  <h3 className="text-lg font-semibold mb-4">Existing Templates</h3>
+                  <h4 className="font-semibold mb-4">PDF Template Upload</h4>
+                  
+                  <div className="form-control mb-6">
+                    <label className="label">
+                      <span className="label-text">Certificate PDF Template</span>
+                    </label>
+                    <input 
+                      type="file" 
+                      accept=".pdf"
+                      className="file-input file-input-bordered w-full"
+                      onChange={handlePdfFileChange}
+                      data-testid="input-pdf-template"
+                    />
+                    <div className="label">
+                      <span className="label-text-alt">Upload a PDF file that contains your certificate template</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-center">
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={handlePdfUpload}
+                      disabled={!selectedPdfFile || uploadPdfTemplateMutation.isPending}
+                      data-testid="button-save-pdf-template"
+                    >
+                      {uploadPdfTemplateMutation.isPending ? (
+                        <span className="loading loading-spinner loading-sm"></span>
+                      ) : (
+                        <i className="fas fa-upload"></i>
+                      )}
+                      {currentPdfTemplate ? 'Update PDF Template' : 'Upload PDF Template'}
+                    </button>
+                    {selectedPdfFile && (
+                      <div className="text-sm text-base-content/70">
+                        Selected: {selectedPdfFile.name}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Available Placeholders */}
+              <div className="card bg-base-100 shadow-sm">
+                <div className="card-body">
+                  <h4 className="font-semibold mb-4">Available Placeholders</h4>
+                  <p className="text-sm text-base-content/60 mb-4">
+                    Include these placeholders in your PDF template. They will be replaced with actual data when certificates are generated.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="card bg-base-200">
+                      <div className="card-body p-4">
+                        <h5 className="font-medium mb-2">Learner Information</h5>
+                        <div className="space-y-1">
+                          <code className="block text-sm bg-base-300 px-2 py-1 rounded">{'{{learner_name}}'}</code>
+                          <p className="text-xs text-base-content/60">Full name of the learner</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card bg-base-200">
+                      <div className="card-body p-4">
+                        <h5 className="font-medium mb-2">Course Information</h5>
+                        <div className="space-y-1">
+                          <code className="block text-sm bg-base-300 px-2 py-1 rounded">{'{{course_name}}'}</code>
+                          <p className="text-xs text-base-content/60">Name of the completed course</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card bg-base-200">
+                      <div className="card-body p-4">
+                        <h5 className="font-medium mb-2">Completion Information</h5>
+                        <div className="space-y-1">
+                          <code className="block text-sm bg-base-300 px-2 py-1 rounded">{'{{completion_date}}'}</code>
+                          <p className="text-xs text-base-content/60">Date when the course was completed</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-4 bg-info/10 rounded-lg">
+                    <h6 className="font-medium text-info mb-2">How to use placeholders:</h6>
+                    <ol className="list-decimal list-inside text-sm space-y-1 text-base-content/70">
+                      <li>Add text boxes or editable fields to your PDF template</li>
+                      <li>Insert the placeholder text exactly as shown above (including the curly braces)</li>
+                      <li>When certificates are generated, these placeholders will be replaced with real data</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Template Status */}
+              <div className="card bg-base-100 shadow-sm">
+                <div className="card-body">
+                  <h4 className="font-semibold mb-4">Current Template Status</h4>
                   {templatesLoading ? (
                     <div className="flex justify-center py-4">
                       <span className="loading loading-spinner loading-lg"></span>
                     </div>
-                  ) : (templates as CertificateTemplate[]).length === 0 ? (
-                    <p className="text-base-content/60 text-center py-4">No templates created yet</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {(templates as CertificateTemplate[]).map((template: CertificateTemplate) => (
-                        <div key={template.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div>
-                            <h4 className="font-semibold">{template.name}</h4>
-                            <p className="text-sm text-base-content/60">
-                              Created: {new Date(template.createdAt).toLocaleDateString()}
-                              {template.isDefault && <span className="badge badge-primary badge-sm ml-2">Default</span>}
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <button 
-                              className="btn btn-sm btn-outline"
-                              onClick={() => editTemplate(template)}
-                              data-testid={`button-edit-template-${template.id}`}
-                            >
-                              <i className="fas fa-edit"></i> Edit
-                            </button>
-                            <button 
-                              className="btn btn-sm btn-error btn-outline"
-                              onClick={() => {
-                                if (window.confirm('Are you sure you want to delete this template?')) {
-                                  deleteTemplateMutation.mutate(template.id);
-                                }
-                              }}
-                              disabled={deleteTemplateMutation.isPending}
-                              data-testid={`button-delete-template-${template.id}`}
-                            >
-                              <i className="fas fa-trash"></i> Delete
-                            </button>
-                          </div>
+                  ) : currentPdfTemplate ? (
+                    <div className="flex items-center gap-4">
+                      <div className="avatar placeholder">
+                        <div className="bg-success text-success-content rounded-full w-12">
+                          <i className="fas fa-file-pdf text-xl"></i>
                         </div>
-                      ))}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">{currentPdfTemplate.name}</p>
+                        <p className="text-sm text-base-content/60">
+                          Uploaded: {new Date(currentPdfTemplate.createdAt).toLocaleDateString()}
+                          {currentPdfTemplate.updatedAt !== currentPdfTemplate.createdAt && 
+                            ` • Updated: ${new Date(currentPdfTemplate.updatedAt).toLocaleDateString()}`
+                          }
+                        </p>
+                      </div>
+                      <div className="badge badge-success">Active</div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-4">
+                      <div className="avatar placeholder">
+                        <div className="bg-neutral text-neutral-content rounded-full w-12">
+                          <i className="fas fa-file-pdf text-xl"></i>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">No PDF template uploaded</p>
+                        <p className="text-sm text-base-content/60">Upload a PDF template to enable certificate generation</p>
+                      </div>
+                      <div className="badge badge-warning">Not Set</div>
                     </div>
                   )}
                 </div>
