@@ -8622,6 +8622,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMPORARY: Generate certificates for demo completions
+  app.post('/api/certificates/generate-demo', requireAuth, async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || !['admin', 'superadmin'].includes(user.role)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const demoCompletionIds = [
+        '71fb757f-8720-4874-907e-cb1a5e6df5d2', // Charlie Brown
+        'f56a9d96-3040-4e99-9512-0259e3df1fdd', // Diana Smith  
+        '6d1ad85c-2d18-4560-bae8-e9e938de2d1c', // Ethan Davis
+        '52909783-b0e2-4eb0-bbd6-c9cbce033d3a', // George Taylor
+        '1f147b8d-6b87-4728-9a7b-80ea7fbefe4e'  // Benny Wakefield
+      ];
+
+      const results = [];
+
+      for (const completionId of demoCompletionIds) {
+        try {
+          // Check if certificate already exists
+          const existingCertificate = await storage.getCertificateByCompletionId(completionId);
+          if (existingCertificate) {
+            results.push({
+              completionId,
+              status: 'skipped',
+              message: 'Certificate already exists',
+              certificateId: existingCertificate.id
+            });
+            continue;
+          }
+
+          // Get completion data
+          const completion = await storage.getCompletion(completionId);
+          if (!completion) {
+            results.push({
+              completionId,
+              status: 'error',
+              message: 'Completion not found'
+            });
+            continue;
+          }
+
+          // Get related data
+          const completionUser = await storage.getUser(completion.userId);
+          const course = await storage.getCourse(completion.courseId);
+          const organisation = await storage.getOrganisation(completion.organisationId);
+
+          if (!completionUser || !course || !organisation) {
+            results.push({
+              completionId,
+              status: 'error',
+              message: 'Related data not found'
+            });
+            continue;
+          }
+
+          // Generate certificate
+          const certificateUrl = await certificateService.generateCertificate(completion, completionUser, course, organisation);
+          
+          // Create certificate record
+          const certificate = await storage.createCertificate({
+            completionId: completion.id,
+            userId: completion.userId,
+            courseId: completion.courseId,
+            organisationId: completion.organisationId,
+            certificateUrl,
+            expiryDate: course.certificateExpiryPeriod ? 
+              new Date(Date.now() + course.certificateExpiryPeriod * 30 * 24 * 60 * 60 * 1000) : 
+              null,
+          });
+
+          console.log(`📜 Demo certificate generated: ${certificate.id} for ${completionUser.email}`);
+
+          results.push({
+            completionId,
+            status: 'success',
+            message: 'Certificate generated successfully',
+            certificateId: certificate.id,
+            learnerName: `${completionUser.firstName} ${completionUser.lastName}`,
+            courseName: course.title
+          });
+
+        } catch (error) {
+          console.error(`Error generating certificate for ${completionId}:`, error);
+          results.push({
+            completionId,
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Generated ${results.filter(r => r.status === 'success').length} certificates`,
+        results
+      });
+
+    } catch (error) {
+      console.error('Error in bulk certificate generation:', error);
+      res.status(500).json({ message: 'Failed to generate demo certificates' });
+    }
+  });
+
   // Update existing PDF certificate template
   app.put('/api/certificate-templates/:id/pdf', requireAuth, pdfUpload.single('pdfTemplate'), async (req: any, res) => {
     try {
