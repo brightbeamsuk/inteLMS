@@ -363,55 +363,118 @@ export class CertificateService {
         '{{CERTIFICATE_ID}}': data.certificateId
       };
 
-      // Process each page to replace text placeholders
-      for (const page of pages) {
-        // Note: pdf-lib doesn't have built-in text replacement
-        // We'll need to implement a custom solution using form fields or annotations
-        // For now, we'll add text overlays at specific positions
+      // Check if the PDF has form fields we can fill (best approach)
+      const form = pdfDoc.getForm();
+      const fields = form.getFields();
+      
+      if (fields.length > 0) {
+        // The PDF has form fields - fill them with our data
+        console.log(`📝 Found ${fields.length} form fields in PDF template`);
         
-        // Get page dimensions
-        const { width, height } = page.getSize();
+        fields.forEach(field => {
+          const fieldName = field.getName();
+          console.log(`🔍 Processing form field: ${fieldName}`);
+          
+          let value = '';
+          
+          // Map form field names to our certificate data
+          // Support both direct field names and placeholder format
+          if (fieldName === 'learner_name' || fieldName === 'userName' || fieldName === 'user_name') {
+            value = data.userName;
+          }
+          else if (fieldName === 'course_name' || fieldName === 'courseName') {
+            value = data.courseName;
+          }
+          else if (fieldName === 'completion_date' || fieldName === 'completionDate' || fieldName === 'date_completed') {
+            value = data.dateCompleted;
+          }
+          else if (fieldName === 'organisation_name' || fieldName === 'organizationName') {
+            value = data.organisationName;
+          }
+          else if (fieldName === 'score_percent' || fieldName === 'scorePercent') {
+            value = data.scorePercent;
+          }
+          else if (fieldName === 'certificate_id' || fieldName === 'certificateId') {
+            value = data.certificateId;
+          }
+          else if (fieldName === 'admin_name' || fieldName === 'adminName') {
+            value = data.adminName;
+          }
+          else if (fieldName === 'pass_fail' || fieldName === 'passFailStatus') {
+            value = data.passFailStatus;
+          }
+          else if (fieldName === 'user_email' || fieldName === 'userEmail') {
+            value = data.userEmail;
+          }
+          else if (fieldName === 'course_id' || fieldName === 'courseId') {
+            value = data.courseId;
+          }
+          
+          if (value) {
+            try {
+              // Try to fill as text field first
+              const textField = form.getTextField(fieldName);
+              textField.setText(value);
+              console.log(`✅ Filled text field '${fieldName}' with: ${value}`);
+            } catch (textError) {
+              try {
+                // If not a text field, try other field types
+                console.log(`⚠️  Field '${fieldName}' is not a text field, trying other types...`);
+              } catch (error) {
+                console.log(`❌ Could not fill field '${fieldName}':`, error.message);
+              }
+            }
+          } else {
+            console.log(`❌ No matching data found for form field: ${fieldName}`);
+          }
+        });
         
-        // For this implementation, we'll look for specific placeholder positions
-        // In a real implementation, you'd want to parse the PDF content to find placeholder locations
-        // For now, we'll add text at predefined positions that users can specify
+        // Flatten the form to make fields non-editable and preserve formatting
+        form.flatten();
+        console.log('✅ Form fields filled and flattened successfully');
         
-        // This is a simplified approach - in practice, you'd want to:
-        // 1. Parse PDF content to find placeholder text locations
-        // 2. Replace the text in place
-        // 3. Or use PDF form fields for dynamic content
+      } else {
+        console.log('📄 No form fields found in PDF template');
+        console.log('💡 For best results, create fillable form fields in your PDF template with names like:');
+        console.log('   - learner_name, course_name, completion_date, organisation_name, etc.');
         
-        // For demonstration, we'll add text in common certificate positions
-        const fontSize = 14;
+        // Fallback: Use text overlay approach with better positioning
+        // This is less ideal but works when PDF doesn't have form fields
+        const pages = pdfDoc.getPages();
         
-        // Add learner name (typically centered)
-        if (placeholderMap['{{learner_name}}']) {
-          page.drawText(placeholderMap['{{learner_name}}'], {
-            x: width / 2 - (placeholderMap['{{learner_name}}'].length * fontSize) / 4,
-            y: height * 0.6,
-            size: fontSize + 4,
-            color: rgb(0, 0, 0),
-          });
-        }
-        
-        // Add course name
-        if (placeholderMap['{{course_name}}']) {
-          page.drawText(placeholderMap['{{course_name}}'], {
-            x: width / 2 - (placeholderMap['{{course_name}}'].length * fontSize) / 4,
-            y: height * 0.4,
-            size: fontSize,
-            color: rgb(0, 0, 0),
-          });
-        }
-        
-        // Add completion date
-        if (placeholderMap['{{completion_date}}']) {
-          page.drawText(`Completed on: ${placeholderMap['{{completion_date}}']}`, {
-            x: width / 2 - (placeholderMap['{{completion_date}}'].length * fontSize) / 3,
-            y: height * 0.2,
-            size: fontSize - 2,
-            color: rgb(0, 0, 0),
-          });
+        for (const page of pages) {
+          const { width, height } = page.getSize();
+          const fontSize = 16;
+          
+          console.log('⚠️  Using text overlay fallback - positioning may not match your template design');
+          
+          // Add text overlays - users should ideally create form fields for proper alignment
+          if (data.userName) {
+            page.drawText(data.userName, {
+              x: 100, // Adjust based on your template
+              y: height - 200, 
+              size: fontSize,
+              color: rgb(0, 0, 0),
+            });
+          }
+          
+          if (data.courseName) {
+            page.drawText(data.courseName, {
+              x: 100,
+              y: height - 250,
+              size: fontSize - 2,
+              color: rgb(0, 0, 0),
+            });
+          }
+          
+          if (data.dateCompleted) {
+            page.drawText(data.dateCompleted, {
+              x: 100,
+              y: height - 300,
+              size: fontSize - 4,
+              color: rgb(0, 0, 0),
+            });
+          }
         }
       }
       
