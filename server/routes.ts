@@ -8463,6 +8463,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PDF Certificate Template Upload Routes
+  const pdfUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit for PDF files
+    },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype === 'application/pdf') {
+        cb(null, true);
+      } else {
+        cb(new Error('Only PDF files are allowed'));
+      }
+    },
+  });
+
+  // Create new PDF certificate template
+  app.post('/api/certificate-templates/pdf', requireAuth, pdfUpload.single('pdfTemplate'), async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'PDF file is required' });
+      }
+
+      const { name, isDefault } = req.body;
+      
+      if (!name) {
+        return res.status(400).json({ message: 'Template name is required' });
+      }
+
+      // Upload PDF to object storage
+      const objectStorageService = new ObjectStorageService();
+      const filename = `certificate-template-${Date.now()}.pdf`;
+      const pdfPath = `public/certificate-templates/${filename}`;
+      
+      // Save the PDF file
+      await objectStorageService.uploadObject(pdfPath, req.file.buffer, 'application/pdf');
+      const pdfUrl = `/objects/${pdfPath}`;
+
+      // If this is going to be the default template, remove default flag from existing templates
+      if (isDefault === 'true' || isDefault === true) {
+        await storage.clearDefaultCertificateTemplates();
+      }
+
+      // Create template record
+      const newTemplate = await storage.createCertificateTemplate({
+        name,
+        template: null,
+        templateFormat: 'pdf',
+        templateData: null,
+        pdfTemplateUrl: pdfUrl,
+        isDefault: isDefault === 'true' || isDefault === true,
+        organisationId: null
+      });
+      
+      res.status(201).json(newTemplate);
+    } catch (error) {
+      console.error('Error uploading PDF certificate template:', error);
+      res.status(500).json({ message: 'Failed to upload PDF certificate template' });
+    }
+  });
+
+  // Update existing PDF certificate template
+  app.put('/api/certificate-templates/:id/pdf', requireAuth, pdfUpload.single('pdfTemplate'), async (req: any, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { id } = req.params;
+      const { name, isDefault } = req.body;
+
+      let updateData: any = {};
+      
+      if (name) {
+        updateData.name = name;
+      }
+
+      if (req.file) {
+        // Upload new PDF to object storage
+        const objectStorageService = new ObjectStorageService();
+        const filename = `certificate-template-${Date.now()}.pdf`;
+        const pdfPath = `public/certificate-templates/${filename}`;
+        
+        await objectStorageService.uploadObject(pdfPath, req.file.buffer, 'application/pdf');
+        updateData.pdfTemplateUrl = `/objects/${pdfPath}`;
+      }
+
+      if (isDefault === 'true' || isDefault === true) {
+        await storage.clearDefaultCertificateTemplates();
+        updateData.isDefault = true;
+      }
+
+      const updatedTemplate = await storage.updateCertificateTemplate(id, updateData);
+      
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error('Error updating PDF certificate template:', error);
+      res.status(500).json({ message: 'Failed to update PDF certificate template' });
+    }
+  });
+
   // Stripe Plans Testing and Diagnostics API (SuperAdmin only)
   
   // Plan Price Test - validates Stripe Product and Price alignment

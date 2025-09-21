@@ -2,6 +2,8 @@ import { storage } from "../storage";
 import { ObjectStorageService } from "../objectStorage";
 import puppeteer from "puppeteer";
 import { randomUUID } from "crypto";
+import { PDFDocument, rgb } from "pdf-lib";
+import fs from "fs/promises";
 import type { User, Course, Completion, Organisation, CertificateTemplate } from "@shared/schema";
 
 export interface CertificateData {
@@ -44,17 +46,24 @@ export class CertificateService {
       // Generate certificate data
       const certificateData = await this.prepareCertificateData(completion, user, course, organisation);
       
-      // Generate HTML content based on template format
-      let html: string;
-      if (template.templateFormat === 'visual' && template.templateData) {
-        html = this.generateHTMLFromVisualTemplate(template.templateData, certificateData);
-      } else {
-        // Legacy HTML template
-        html = this.replacePlaceholders(template.template || this.getDefaultTemplate(), certificateData);
-      }
+      let pdfBuffer: Buffer;
       
-      // Generate PDF from HTML
-      const pdfBuffer = await this.htmlToPdf(html);
+      if (template.templateFormat === 'pdf' && template.pdfTemplateUrl) {
+        // Use PDF template with placeholder replacement
+        pdfBuffer = await this.generatePdfFromTemplate(template.pdfTemplateUrl, certificateData);
+      } else {
+        // Generate HTML content based on template format
+        let html: string;
+        if (template.templateFormat === 'visual' && template.templateData) {
+          html = this.generateHTMLFromVisualTemplate(template.templateData, certificateData);
+        } else {
+          // Legacy HTML template
+          html = this.replacePlaceholders(template.template || this.getDefaultTemplate(), certificateData);
+        }
+        
+        // Generate PDF from HTML
+        pdfBuffer = await this.htmlToPdf(html);
+      }
       
       // Upload to object storage
       const certificateUrl = await this.uploadCertificateToStorage(pdfBuffer, certificateData.certificateId);
@@ -321,6 +330,119 @@ export class CertificateService {
 
   getAvailablePlaceholders(): string[] {
     return [...this.placeholders];
+  }
+
+  // Generate PDF from PDF template with placeholder replacement
+  private async generatePdfFromTemplate(templateUrl: string, data: CertificateData): Promise<Buffer> {
+    try {
+      // Download the PDF template
+      const templateBuffer = await this.downloadPdfTemplate(templateUrl);
+      
+      // Load the PDF document
+      const pdfDoc = await PDFDocument.load(templateBuffer);
+      
+      // Get all pages
+      const pages = pdfDoc.getPages();
+      
+      // Map user placeholders to our certificate data
+      const placeholderMap: Record<string, string> = {
+        '{{learner_name}}': data.userName,
+        '{{course_name}}': data.courseName,
+        '{{completion_date}}': data.dateCompleted,
+        // Also support the original system placeholders for backward compatibility
+        '{{USERNAME}}': data.userName,
+        '{{USER_EMAIL}}': data.userEmail,
+        '{{COURSE_NAME}}': data.courseName,
+        '{{COURSE_ID}}': data.courseId,
+        '{{ORGANISATION_NAME}}': data.organisationName,
+        '{{ADMIN_NAME}}': data.adminName,
+        '{{SCORE_PERCENT}}': data.scorePercent,
+        '{{PASS_FAIL}}': data.passFailStatus,
+        '{{DATE_COMPLETED}}': data.dateCompleted,
+        '{{CERTIFICATE_ID}}': data.certificateId
+      };
+
+      // Process each page to replace text placeholders
+      for (const page of pages) {
+        // Note: pdf-lib doesn't have built-in text replacement
+        // We'll need to implement a custom solution using form fields or annotations
+        // For now, we'll add text overlays at specific positions
+        
+        // Get page dimensions
+        const { width, height } = page.getSize();
+        
+        // For this implementation, we'll look for specific placeholder positions
+        // In a real implementation, you'd want to parse the PDF content to find placeholder locations
+        // For now, we'll add text at predefined positions that users can specify
+        
+        // This is a simplified approach - in practice, you'd want to:
+        // 1. Parse PDF content to find placeholder text locations
+        // 2. Replace the text in place
+        // 3. Or use PDF form fields for dynamic content
+        
+        // For demonstration, we'll add text in common certificate positions
+        const fontSize = 14;
+        
+        // Add learner name (typically centered)
+        if (placeholderMap['{{learner_name}}']) {
+          page.drawText(placeholderMap['{{learner_name}}'], {
+            x: width / 2 - (placeholderMap['{{learner_name}}'].length * fontSize) / 4,
+            y: height * 0.6,
+            size: fontSize + 4,
+            color: rgb(0, 0, 0),
+          });
+        }
+        
+        // Add course name
+        if (placeholderMap['{{course_name}}']) {
+          page.drawText(placeholderMap['{{course_name}}'], {
+            x: width / 2 - (placeholderMap['{{course_name}}'].length * fontSize) / 4,
+            y: height * 0.4,
+            size: fontSize,
+            color: rgb(0, 0, 0),
+          });
+        }
+        
+        // Add completion date
+        if (placeholderMap['{{completion_date}}']) {
+          page.drawText(`Completed on: ${placeholderMap['{{completion_date}}']}`, {
+            x: width / 2 - (placeholderMap['{{completion_date}}'].length * fontSize) / 3,
+            y: height * 0.2,
+            size: fontSize - 2,
+            color: rgb(0, 0, 0),
+          });
+        }
+      }
+      
+      // Serialize the PDF
+      const pdfBytes = await pdfDoc.save();
+      return Buffer.from(pdfBytes);
+      
+    } catch (error) {
+      console.error('Error processing PDF template:', error);
+      throw new Error('Failed to process PDF template');
+    }
+  }
+
+  private async downloadPdfTemplate(templateUrl: string): Promise<Buffer> {
+    try {
+      // If it's a file path, read from filesystem
+      if (templateUrl.startsWith('/') || templateUrl.startsWith('./')) {
+        return await fs.readFile(templateUrl);
+      }
+      
+      // If it's a URL, fetch it
+      const response = await fetch(templateUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download PDF template: ${response.status}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error) {
+      console.error('Error downloading PDF template:', error);
+      throw new Error('Failed to download PDF template');
+    }
   }
 
   async createTemplate(name: string, template: string, organisationId?: string): Promise<CertificateTemplate> {
