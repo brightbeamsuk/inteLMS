@@ -324,6 +324,7 @@ export interface IStorage {
   getCertificateTemplates(): Promise<CertificateTemplate[]>;
   getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined>;
   clearDefaultCertificateTemplates(): Promise<void>;
+  getCertificateByCompletionId(completionId: string): Promise<Certificate | undefined>;
 
   // Organisation settings operations
   getOrganisationSettings(organisationId: string): Promise<OrganisationSettings | undefined>;
@@ -1924,6 +1925,11 @@ export class DatabaseStorage implements IStorage {
 
   async clearDefaultCertificateTemplates(): Promise<void> {
     await db.delete(certificateTemplates).where(and(eq(certificateTemplates.isDefault, true), isNull(certificateTemplates.organisationId)));
+  }
+
+  async getCertificateByCompletionId(completionId: string): Promise<Certificate | undefined> {
+    const [certificate] = await db.select().from(certificates).where(eq(certificates.completionId, completionId));
+    return certificate;
   }
 
   // Organisation settings operations

@@ -426,7 +426,21 @@ export class CertificateService {
 
   private async downloadPdfTemplate(templateUrl: string): Promise<Buffer> {
     try {
-      // If it's a file path, read from filesystem
+      // If it's an object storage path (starts with /objects/), use ObjectStorageService
+      if (templateUrl.startsWith('/objects/')) {
+        const objectFile = await this.objectStorage.getObjectEntityFile(templateUrl);
+        const stream = objectFile.createReadStream();
+        
+        // Convert stream to buffer
+        const chunks: Buffer[] = [];
+        return new Promise((resolve, reject) => {
+          stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+          stream.on('error', reject);
+        });
+      }
+      
+      // If it's a local file path, read from filesystem
       if (templateUrl.startsWith('/') || templateUrl.startsWith('./')) {
         return await fs.readFile(templateUrl);
       }
@@ -463,7 +477,15 @@ export class CertificateService {
     try {
       browser = await puppeteer.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+        executablePath: '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium',
+        args: [
+          '--no-sandbox', 
+          '--disable-setuid-sandbox', 
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--no-first-run',
+          '--disable-extensions'
+        ]
       });
       
       const page = await browser.newPage();

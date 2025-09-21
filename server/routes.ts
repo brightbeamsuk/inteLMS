@@ -8537,6 +8537,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate certificate for a specific completion
+  app.post('/api/certificates/generate', requireAuth, async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || !['admin', 'superadmin'].includes(user.role)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { completionId } = req.body;
+      if (!completionId) {
+        return res.status(400).json({ message: 'Completion ID is required' });
+      }
+
+      // Get completion data
+      const completion = await storage.getCompletion(completionId);
+      if (!completion) {
+        return res.status(404).json({ message: 'Completion not found' });
+      }
+
+      // Get related data
+      const completionUser = await storage.getUser(completion.userId);
+      const course = await storage.getCourse(completion.courseId);
+      const organisation = await storage.getOrganisation(completion.organisationId);
+
+      if (!completionUser || !course || !organisation) {
+        return res.status(404).json({ message: 'Related data not found' });
+      }
+
+      // Check if certificate already exists
+      const existingCertificate = await storage.getCertificateByCompletionId(completionId);
+      if (existingCertificate) {
+        return res.status(409).json({ 
+          message: 'Certificate already exists for this completion',
+          certificateId: existingCertificate.id,
+          certificateUrl: existingCertificate.certificateUrl
+        });
+      }
+
+      // Generate certificate
+      const certificateUrl = await certificateService.generateCertificate(completion, completionUser, course, organisation);
+      
+      // Create certificate record
+      const certificate = await storage.createCertificate({
+        completionId: completion.id,
+        userId: completion.userId,
+        courseId: completion.courseId,
+        organisationId: completion.organisationId,
+        certificateUrl,
+        expiryDate: course.certificateExpiryPeriod ? 
+          new Date(Date.now() + course.certificateExpiryPeriod * 30 * 24 * 60 * 60 * 1000) : 
+          null,
+      });
+
+      console.log(`📜 Manual certificate generated: ${certificate.id} for ${completionUser.email}`);
+
+      res.json({
+        success: true,
+        message: 'Certificate generated successfully',
+        certificateId: certificate.id,
+        certificateUrl: certificate.certificateUrl
+      });
+
+    } catch (error) {
+      console.error('Error generating certificate:', error);
+      res.status(500).json({ message: 'Failed to generate certificate' });
+    }
+  });
+
   // Update existing PDF certificate template
   app.put('/api/certificate-templates/:id/pdf', requireAuth, pdfUpload.single('pdfTemplate'), async (req: any, res) => {
     try {
