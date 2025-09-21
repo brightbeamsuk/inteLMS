@@ -1187,6 +1187,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Secure credential update endpoint for superadmin
+  app.patch('/api/account/credentials', requireAuth, async (req: any, res) => {
+    try {
+      const { newEmail, newPassword, currentPassword } = req.body;
+      const userId = getUserIdFromSession(req);
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+
+      // Get current user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Validate inputs
+      if (!newEmail && !newPassword) {
+        return res.status(400).json({ message: 'Either new email or new password is required' });
+      }
+
+      let updateData: any = {};
+
+      // Handle email update
+      if (newEmail) {
+        if (!newEmail.includes('@')) {
+          return res.status(400).json({ message: 'Invalid email format' });
+        }
+
+        // Check if email is already taken
+        try {
+          const existingUser = await storage.getUserByEmail(newEmail);
+          if (existingUser && existingUser.id !== userId) {
+            return res.status(409).json({ message: 'Email already in use' });
+          }
+        } catch (error) {
+          // If getUserByEmail throws, email is not found, which is good
+        }
+
+        updateData.email = newEmail;
+        console.log(`📧 Updating email for user ${userId} to ${newEmail}`);
+      }
+
+      // Handle password update
+      if (newPassword) {
+        // Password validation
+        if (newPassword.length < 8) {
+          return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+        }
+
+        // For demo users (no existing password hash), skip current password check
+        const isDemoUser = user.id === 'demo-superadmin' && !user.passwordHash;
+        
+        if (!isDemoUser && user.passwordHash) {
+          // Require current password for security
+          if (!currentPassword) {
+            return res.status(400).json({ message: 'Current password is required to set new password' });
+          }
+
+          const currentPasswordMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+          if (!currentPasswordMatch) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+          }
+
+          // Don't allow setting the same password
+          const samePassword = await bcrypt.compare(newPassword, user.passwordHash);
+          if (samePassword) {
+            return res.status(400).json({ message: 'New password must be different from current password' });
+          }
+        }
+
+        // Hash the new password
+        const saltRounds = 12;
+        const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+        updateData.passwordHash = newPasswordHash;
+        updateData.requiresPasswordChange = false;
+        
+        console.log(`🔐 Updating password for user ${userId}`);
+      }
+
+      // Update user in database
+      await storage.updateUser(userId, updateData);
+
+      // Audit log for security
+      console.log(`🔒 SECURITY AUDIT: User ${userId} (${user.email}) updated credentials`, {
+        changedEmail: !!newEmail,
+        changedPassword: !!newPassword,
+        timestamp: new Date().toISOString(),
+        userAgent: req.headers['user-agent'],
+        ip: req.ip || req.connection.remoteAddress
+      });
+
+      // Invalidate all sessions for security if password was changed
+      if (newPassword) {
+        // Force logout by clearing current session
+        req.session.destroy((err: any) => {
+          if (err) {
+            console.error('Error destroying session:', err);
+          }
+        });
+        
+        return res.json({ 
+          message: 'Credentials updated successfully. Please log in again with your new credentials.',
+          requiresRelogin: true
+        });
+      }
+
+      // Update session with new user data if only email was changed
+      const updatedUser = await storage.getUser(userId);
+      req.session.user = updatedUser;
+
+      res.json({ 
+        message: 'Credentials updated successfully',
+        user: updatedUser,
+        requiresRelogin: false
+      });
+
+    } catch (error) {
+      console.error('Error updating credentials:', error);
+      res.status(500).json({ message: 'Failed to update credentials' });
+    }
+  });
+
   // Handle logout as both GET and POST
   const handleLogout = (req: any, res: any) => {
     req.session.destroy((err: any) => {
