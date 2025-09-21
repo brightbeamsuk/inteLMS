@@ -3,7 +3,7 @@ import { ObjectStorageService } from "../objectStorage";
 import { ObjectPermission, ObjectAclPolicy } from "../objectAcl";
 import puppeteer from "puppeteer";
 import { randomUUID } from "crypto";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import fs from "fs/promises";
 import type { User, Course, Completion, Organisation, CertificateTemplate } from "@shared/schema";
 
@@ -101,6 +101,7 @@ export class CertificateService {
       template: this.getDefaultTemplate(),
       templateFormat: 'html',
       templateData: null,
+      pdfTemplateUrl: null,
       isDefault: true,
       organisationId: null,
       createdAt: new Date(),
@@ -431,7 +432,7 @@ export class CertificateService {
                 console.log(`⚠️  Field '${fieldName}' is not a text field, attempting other types...`);
                 // Note: Could extend this to handle checkboxes, dropdowns, etc. if needed
               } catch (error) {
-                console.log(`❌ Could not fill field '${fieldName}':`, error.message);
+                console.log(`❌ Could not fill field '${fieldName}':`, error instanceof Error ? error.message : 'Unknown error');
               }
             }
           } else {
@@ -444,7 +445,7 @@ export class CertificateService {
         try {
           form.updateFieldAppearances(font);
         } catch (appearanceError) {
-          console.log('⚠️ Could not update field appearances:', appearanceError.message);
+          console.log('⚠️ Could not update field appearances:', appearanceError instanceof Error ? appearanceError.message : 'Unknown error');
         }
         
         // Flatten the form to make fields non-editable and preserve formatting
