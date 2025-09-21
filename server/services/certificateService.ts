@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { ObjectStorageService } from "../objectStorage";
+import { ObjectPermission, ObjectAclPolicy } from "../objectAcl";
 import puppeteer from "puppeteer";
 import { randomUUID } from "crypto";
 import { PDFDocument, rgb } from "pdf-lib";
@@ -66,7 +67,7 @@ export class CertificateService {
       }
       
       // Upload to object storage
-      const certificateUrl = await this.uploadCertificateToStorage(pdfBuffer, certificateData.certificateId);
+      const certificateUrl = await this.uploadCertificateToStorage(pdfBuffer, certificateData.certificateId, user.id, user.organisationId!);
       
       console.log(`📜 Generated certificate for ${user.email} - Course: ${course.title} - URL: ${certificateUrl}`);
       
@@ -428,7 +429,8 @@ export class CertificateService {
     try {
       // If it's an object storage path (starts with /objects/), use ObjectStorageService
       if (templateUrl.startsWith('/objects/')) {
-        const objectFile = await this.objectStorage.getObjectEntityFile(templateUrl);
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(templateUrl);
         const stream = objectFile.createReadStream();
         
         // Convert stream to buffer
@@ -514,7 +516,7 @@ export class CertificateService {
     }
   }
 
-  private async uploadCertificateToStorage(pdfBuffer: Buffer, certificateId: string): Promise<string> {
+  private async uploadCertificateToStorage(pdfBuffer: Buffer, certificateId: string, userId: string, organisationId: string): Promise<string> {
     try {
       const objectStorageService = new ObjectStorageService();
       
@@ -546,6 +548,15 @@ export class CertificateService {
       if (!response.ok) {
         throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
+      
+      // Set ACL policy for the certificate file - simplified approach
+      const aclPolicy: ObjectAclPolicy = {
+        owner: userId, // The certificate owner (user)
+        visibility: "private" // Private file, access controlled via API authorization
+      };
+      
+      // Apply the ACL policy to the uploaded file
+      await objectStorageService.trySetObjectEntityAclPolicy(`/objects/certificates/${filename}`, aclPolicy);
       
       // Return the public URL for the certificate
       return `/objects/certificates/${filename}`;
