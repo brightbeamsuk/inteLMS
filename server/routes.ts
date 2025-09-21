@@ -8500,11 +8500,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Upload PDF to object storage
       const objectStorageService = new ObjectStorageService();
       const filename = `certificate-template-${Date.now()}.pdf`;
-      const pdfPath = `public/certificate-templates/${filename}`;
+      
+      // Get the private object directory and create the full path
+      const privateDir = objectStorageService.getPrivateObjectDir();
+      const pdfPath = `${privateDir}/certificate-templates/${filename}`;
       
       // Save the PDF file
-      await objectStorageService.uploadObject(pdfPath, req.file.buffer, 'application/pdf');
-      const pdfUrl = `/objects/${pdfPath}`;
+      const uploadResult = await objectStorageService.uploadObject(
+        pdfPath, 
+        req.file.buffer, 
+        'application/pdf',
+        { public: false }
+      );
+      const pdfUrl = `/objects/certificate-templates/${filename}`;
 
       // If this is going to be the default template, remove default flag from existing templates
       if (isDefault === 'true' || isDefault === true) {
@@ -8551,10 +8559,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Upload new PDF to object storage
         const objectStorageService = new ObjectStorageService();
         const filename = `certificate-template-${Date.now()}.pdf`;
-        const pdfPath = `public/certificate-templates/${filename}`;
         
-        await objectStorageService.uploadObject(pdfPath, req.file.buffer, 'application/pdf');
-        updateData.pdfTemplateUrl = `/objects/${pdfPath}`;
+        // Get the private object directory and create the full path
+        const privateDir = objectStorageService.getPrivateObjectDir();
+        const pdfPath = `${privateDir}/certificate-templates/${filename}`;
+        
+        // Save the PDF file
+        const uploadResult = await objectStorageService.uploadObject(
+          pdfPath, 
+          req.file.buffer, 
+          'application/pdf',
+          { public: false }
+        );
+        updateData.pdfTemplateUrl = `/objects/certificate-templates/${filename}`;
       }
 
       if (isDefault === 'true' || isDefault === true) {

@@ -105,6 +105,23 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Schema patcher - Add missing database columns for PDF certificate templates
+  console.log('🔧 Applying database schema patches...');
+  try {
+    const { db } = await import('./db.js');
+    
+    // Add PDF template URL column to certificate templates if it doesn't exist
+    await db.execute(`
+      ALTER TABLE certificate_templates 
+      ADD COLUMN IF NOT EXISTS pdf_template_url TEXT;
+    `);
+    
+    console.log('✅ Database schema patches applied successfully');
+  } catch (error) {
+    console.error('❌ Schema patch failed:', error);
+    // Continue anyway - the column might already exist
+  }
+
   // Initialize GDPR Breach Management Services
   // Critical for Articles 33 & 34 compliance - automatic deadline monitoring
   console.log('🛡️  Initializing GDPR breach management services...');

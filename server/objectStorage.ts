@@ -264,6 +264,69 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+
+  // Upload an object to storage
+  async uploadObject(
+    destPath: string, 
+    data: Buffer, 
+    contentType: string,
+    options: {
+      public?: boolean;
+      cacheControl?: string;
+      metadata?: Record<string, string>;
+    } = {}
+  ): Promise<{ storageKey: string; url: string | null }> {
+    try {
+      const { bucketName, objectName } = parseObjectPath(destPath);
+      const bucket = objectStorageClient.bucket(bucketName);
+      const file = bucket.file(objectName);
+
+      // Upload the file with metadata
+      await file.save(data, {
+        metadata: {
+          contentType,
+          cacheControl: options.cacheControl || 'private, max-age=3600',
+          ...options.metadata,
+        },
+        resumable: false,
+      });
+
+      // Set public access if requested
+      if (options.public) {
+        await file.makePublic();
+      }
+
+      // Return storage info
+      const storageKey = destPath;
+      const url = options.public 
+        ? `https://storage.googleapis.com/${bucketName}/${objectName}`
+        : null;
+
+      return { storageKey, url };
+    } catch (error) {
+      console.error('Error uploading object:', error);
+      throw new Error('Failed to upload object to storage');
+    }
+  }
+
+  // Get public URL for a storage key
+  getPublicUrl(storageKey: string): string {
+    const { bucketName, objectName } = parseObjectPath(storageKey);
+    return `https://storage.googleapis.com/${bucketName}/${objectName}`;
+  }
+
+  // Delete an object from storage
+  async deleteObject(storageKey: string): Promise<void> {
+    try {
+      const { bucketName, objectName } = parseObjectPath(storageKey);
+      const bucket = objectStorageClient.bucket(bucketName);
+      const file = bucket.file(objectName);
+      await file.delete();
+    } catch (error) {
+      console.error('Error deleting object:', error);
+      throw new Error('Failed to delete object from storage');
+    }
+  }
 }
 
 function parseObjectPath(path: string): {
