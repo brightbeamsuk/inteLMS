@@ -19863,6 +19863,54 @@ This test was initiated by ${user.email}.
               console.error('Error sending course completion/failure notification:', notificationError);
               // Don't let notification errors break the completion process
             }
+
+            // Send direct email notification to the learner
+            try {
+              const learner = await storage.getUser(userId);
+              const organisation = await storage.getOrganisation(assignment.organisationId);
+              const course = await storage.getCourse(assignment.courseId);
+              
+              if (learner && learner.email && organisation && course) {
+                const context = {
+                  user: {
+                    name: `${learner.firstName} ${learner.lastName}`,
+                    email: learner.email,
+                    firstName: learner.firstName,
+                    lastName: learner.lastName
+                  },
+                  course: {
+                    title: course.title,
+                    description: course.description
+                  },
+                  org: {
+                    name: organisation.name
+                  },
+                  attempt: {
+                    score: attemptData.scoreRaw?.toString() || '0',
+                    passed: passed
+                  },
+                  completedAt: new Date().toISOString()
+                };
+
+                const templateKey = passed ? 'course_completed' : 'course_failed';
+                const triggerEvent = passed ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
+
+                await emailOrchestrator.queue({
+                  triggerEvent,
+                  templateKey,
+                  toEmail: learner.email,
+                  context,
+                  organisationId: assignment.organisationId,
+                  resourceId: `learner-notif-${templateKey}-${completion.id}-${userId}`,
+                  priority: 1
+                });
+
+                console.log(`✅ ${templateKey.toUpperCase()} email queued for learner ${learner.email}`);
+              }
+            } catch (learnerEmailError) {
+              console.error('Error sending learner course completion/failure email:', learnerEmailError);
+              // Don't let email errors break the completion process
+            }
           }
         } else if (assignment.status === 'not_started' && (attemptData.progressPercent > 0 || reason === 'commit' || reason === 'finish')) {
           // Course started - update to in_progress status
@@ -19965,6 +20013,54 @@ This test was initiated by ${user.email}.
       } catch (notificationError) {
         console.error('Error sending course completion/failure notification:', notificationError);
         // Don't let notification errors break the completion process
+      }
+
+      // Send direct email notification to the learner
+      try {
+        const learner = await storage.getUser(userId);
+        const organisation = await storage.getOrganisation(assignment.organisationId);
+        
+        if (learner && learner.email && organisation) {
+          const context = {
+            user: {
+              name: `${learner.firstName} ${learner.lastName}`,
+              email: learner.email,
+              firstName: learner.firstName,
+              lastName: learner.lastName
+            },
+            course: {
+              title: course.title,
+              description: course.description
+            },
+            org: {
+              name: organisation.name
+            },
+            attempt: {
+              score: completionData.score?.toString() || '0',
+              passed: completionData.status === 'passed'
+            },
+            completedAt: new Date().toLocaleDateString()
+          };
+
+          const isPassed = completionData.status === 'passed';
+          const templateKey = isPassed ? 'course_completed' : 'course_failed';
+          const triggerEvent = isPassed ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
+
+          await emailOrchestrator.queue({
+            triggerEvent,
+            templateKey,
+            toEmail: learner.email,
+            context,
+            organisationId: assignment.organisationId,
+            resourceId: `learner-notification-${completion.id}`,
+            priority: 1
+          });
+
+          console.log(`✅ ${templateKey.toUpperCase()} email queued for learner ${learner.email}`);
+        }
+      } catch (learnerEmailError) {
+        console.error('Error sending learner course completion/failure email:', learnerEmailError);
+        // Don't let email errors break the completion process
       }
 
       // Update assignment status
@@ -20159,6 +20255,54 @@ This test was initiated by ${user.email}.
               } catch (emailError) {
                 console.error('Error sending completion/failure notification:', emailError);
                 // Don't let email errors break completion recording
+              }
+
+              // Send direct email notification to the learner
+              try {
+                const learner = await storage.getUser(completionData.userId);
+                const organisation = await storage.getOrganisation(completionData.organisationId);
+                const course = await storage.getCourse(completionData.courseId);
+                
+                if (learner && learner.email && organisation && course) {
+                  const context = {
+                    user: {
+                      name: `${learner.firstName} ${learner.lastName}`,
+                      email: learner.email,
+                      firstName: learner.firstName,
+                      lastName: learner.lastName
+                    },
+                    course: {
+                      title: course.title,
+                      description: course.description
+                    },
+                    org: {
+                      name: organisation.name
+                    },
+                    attempt: {
+                      score: completionData.score || '0',
+                      passed: completionData.status === 'pass'
+                    },
+                    completedAt: new Date().toISOString()
+                  };
+
+                  const templateKey = completionData.status === 'pass' ? 'course_completed' : 'course_failed';
+                  const triggerEvent = completionData.status === 'pass' ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
+
+                  await emailOrchestrator.queue({
+                    triggerEvent,
+                    templateKey,
+                    toEmail: learner.email,
+                    context,
+                    organisationId: completionData.organisationId,
+                    resourceId: `learner-notif-${templateKey}-${completion.id}-${userId}`,
+                    priority: 1
+                  });
+
+                  console.log(`✅ ${templateKey.toUpperCase()} email queued for learner ${learner.email}`);
+                }
+              } catch (learnerEmailError) {
+                console.error('Error sending learner course completion/failure email:', learnerEmailError);
+                // Don't let email errors break the completion process
               }
             }
           }
