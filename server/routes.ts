@@ -18,7 +18,7 @@ const mailerService = new MailerService();
 import { scormService } from "./services/scormService";
 import { certificateService } from "./services/certificateService";
 import { ScormPreviewService } from "./services/scormPreviewService";
-import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailTemplateSchema, insertOrgEmailTemplateSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, insertUserRightRequestSchema, insertConsentRecordSchema, insertCookieInventorySchema, insertComplianceDocumentSchema, insertComplianceDocumentTemplateSchema, insertComplianceDocumentAuditSchema, insertComplianceDocumentPublicationSchema, emailTemplateTypeEnum } from "@shared/schema";
+import { insertUserSchema, insertOrganisationSchema, insertCourseSchema, insertAssignmentSchema, insertEmailProviderConfigsSchema, insertPrivacySettingsSchema, insertUserRightRequestSchema, insertConsentRecordSchema, insertCookieInventorySchema, insertComplianceDocumentSchema, insertComplianceDocumentTemplateSchema, insertComplianceDocumentAuditSchema, insertComplianceDocumentPublicationSchema, emailTemplateTypeEnum } from "@shared/schema";
 import { scormRoutes } from "./scorm/routes";
 import { ScormApiDispatcher } from "./scorm/api-dispatch";
 import { stripeWebhookService } from "./services/StripeWebhookService";

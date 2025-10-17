@@ -16,8 +16,8 @@ import {
   planFeatures,
   planFeatureMappings,
   auditLogs,
-  emailTemplates, // NEW: Platform default templates
-  orgEmailTemplates, // NEW: Organization override templates
+  // emailTemplates, // REMOVED: Platform default templates (replaced with hardcoded automated emails)
+  // orgEmailTemplates, // REMOVED: Organization override templates (replaced with hardcoded automated emails)
   // emailTemplateDefaults, // DEPRECATED
   // emailTemplateOverrides, // DEPRECATED
   systemEmailSettings,
@@ -408,36 +408,37 @@ export interface IStorage {
   getAuditLogs(organisationId: string, limit?: number, offset?: number): Promise<AuditLog[]>;
   getAuditLogsByUser(userId: string, limit?: number, offset?: number): Promise<AuditLog[]>;
 
-  // NEW ROBUST EMAIL TEMPLATE OPERATIONS
-
-  // Platform email templates (defaults) operations
-  createEmailTemplate(template: InsertEmailTemplate): Promise<EmailTemplate>;
-  getEmailTemplate(id: string): Promise<EmailTemplate | undefined>;
-  getEmailTemplateByKey(key: string): Promise<EmailTemplate | undefined>;
-  getAllEmailTemplates(): Promise<EmailTemplate[]>;
-  getEmailTemplatesByCategory(category: string): Promise<EmailTemplate[]>;
-  updateEmailTemplate(key: string, template: Partial<InsertEmailTemplate>): Promise<EmailTemplate>;
-  deleteEmailTemplate(key: string): Promise<void>;
+  // REMOVED: Email template operations (replaced with hardcoded automated email templates)
+  // The automated email system now uses hardcoded templates in AutomatedEmailTemplates.ts
   
-  // Organization email template overrides operations
-  createOrgEmailTemplate(override: InsertOrgEmailTemplate): Promise<OrgEmailTemplate>;
-  getOrgEmailTemplate(id: string): Promise<OrgEmailTemplate | undefined>;
-  getOrgEmailTemplateByKey(orgId: string, templateKey: string): Promise<OrgEmailTemplate | undefined>;
-  getOrgEmailTemplatesByOrg(orgId: string): Promise<OrgEmailTemplate[]>;
-  updateOrgEmailTemplate(id: string, override: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate>;
-  upsertOrgEmailTemplate(orgId: string, templateKey: string, override: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate>;
-  deleteOrgEmailTemplate(id: string): Promise<void>;
-  disableOrgEmailTemplate(orgId: string, templateKey: string): Promise<void>;
+  // // Platform email templates (defaults) operations
+  // createEmailTemplate(template: InsertEmailTemplate): Promise<EmailTemplate>;
+  // getEmailTemplate(id: string): Promise<EmailTemplate | undefined>;
+  // getEmailTemplateByKey(key: string): Promise<EmailTemplate | undefined>;
+  // getAllEmailTemplates(): Promise<EmailTemplate[]>;
+  // getEmailTemplatesByCategory(category: string): Promise<EmailTemplate[]>;
+  // updateEmailTemplate(key: string, template: Partial<InsertEmailTemplate>): Promise<EmailTemplate>;
+  // deleteEmailTemplate(key: string): Promise<void>;
   
-  // Comprehensive email template resolution (platform + org overrides)
-  getEffectiveEmailTemplate(orgId: string, templateKey: string): Promise<{
-    template: EmailTemplate;
-    override: OrgEmailTemplate | null;
-    effectiveSubject: string;
-    effectiveHtml: string;
-    effectiveMjml: string;
-    effectiveText: string | null;
-  } | undefined>;
+  // // Organization email template overrides operations
+  // createOrgEmailTemplate(override: InsertOrgEmailTemplate): Promise<OrgEmailTemplate>;
+  // getOrgEmailTemplate(id: string): Promise<OrgEmailTemplate | undefined>;
+  // getOrgEmailTemplateByKey(orgId: string, templateKey: string): Promise<OrgEmailTemplate | undefined>;
+  // getOrgEmailTemplatesByOrg(orgId: string): Promise<OrgEmailTemplate[]>;
+  // updateOrgEmailTemplate(id: string, override: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate>;
+  // upsertOrgEmailTemplate(orgId: string, templateKey: string, override: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate>;
+  // deleteOrgEmailTemplate(id: string): Promise<void>;
+  // disableOrgEmailTemplate(orgId: string, templateKey: string): Promise<void>;
+  
+  // // Comprehensive email template resolution (platform + org overrides)
+  // getEffectiveEmailTemplate(orgId: string, templateKey: string): Promise<{
+  //   template: EmailTemplate;
+  //   override: OrgEmailTemplate | null;
+  //   effectiveSubject: string;
+  //   effectiveHtml: string;
+  //   effectiveMjml: string;
+  //   effectiveText: string | null;
+  // } | undefined>;
 
   // DEPRECATED - OLD EMAIL TEMPLATE OPERATIONS (TO BE REMOVED)
   // createEmailTemplateDefault(template: InsertEmailTemplateDefaults): Promise<EmailTemplateDefaults>;
@@ -1385,7 +1386,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(assignments).where(eq(assignments.organisationId, id));
     
     // 5. Delete organisation-specific email and settings data
-    await db.delete(orgEmailTemplates).where(eq(orgEmailTemplates.orgId, id));
+    // await db.delete(orgEmailTemplates).where(eq(orgEmailTemplates.orgId, id)); // REMOVED: org email templates
     await db.delete(emailLogs).where(eq(emailLogs.organisationId, id));
     await db.delete(emailSends).where(eq(emailSends.organisationId, id));
     await db.delete(emailProviderConfigs).where(eq(emailProviderConfigs.orgId, id));
@@ -2403,156 +2404,159 @@ export class DatabaseStorage implements IStorage {
       .limit(limit)
       .offset(offset);
   }
-  // Email template operations
-  async createEmailTemplate(templateData: InsertEmailTemplate): Promise<EmailTemplate> {
-    const [template] = await db.insert(emailTemplates).values(templateData).returning();
-    return template;
-  }
+  // REMOVED: Email template operations (replaced with hardcoded automated email templates)
+  // The automated email system now uses hardcoded templates in AutomatedEmailTemplates.ts
+  
+  // // Email template operations
+  // async createEmailTemplate(templateData: InsertEmailTemplate): Promise<EmailTemplate> {
+  //   const [template] = await db.insert(emailTemplates).values(templateData).returning();
+  //   return template;
+  // }
 
-  async getEmailTemplate(id: string): Promise<EmailTemplate | undefined> {
-    const [template] = await db.select().from(emailTemplates).where(eq(emailTemplates.id, id));
-    return template;
-  }
+  // async getEmailTemplate(id: string): Promise<EmailTemplate | undefined> {
+  //   const [template] = await db.select().from(emailTemplates).where(eq(emailTemplates.id, id));
+  //   return template;
+  // }
 
-  async getEmailTemplateByKey(key: string): Promise<EmailTemplate | undefined> {
-    const [template] = await db.select().from(emailTemplates).where(eq(emailTemplates.key, key));
-    return template;
-  }
+  // async getEmailTemplateByKey(key: string): Promise<EmailTemplate | undefined> {
+  //   const [template] = await db.select().from(emailTemplates).where(eq(emailTemplates.key, key));
+  //   return template;
+  // }
 
-  async getAllEmailTemplates(): Promise<EmailTemplate[]> {
-    return await db.select().from(emailTemplates).orderBy(asc(emailTemplates.key));
-  }
+  // async getAllEmailTemplates(): Promise<EmailTemplate[]> {
+  //   return await db.select().from(emailTemplates).orderBy(asc(emailTemplates.key));
+  // }
 
-  async getEmailTemplatesByCategory(category: string): Promise<EmailTemplate[]> {
-    return await db
-      .select()
-      .from(emailTemplates)
-      .where(eq(emailTemplates.category, category as any))
-      .orderBy(asc(emailTemplates.key));
-  }
+  // async getEmailTemplatesByCategory(category: string): Promise<EmailTemplate[]> {
+  //   return await db
+  //     .select()
+  //     .from(emailTemplates)
+  //     .where(eq(emailTemplates.category, category as any))
+  //     .orderBy(asc(emailTemplates.key));
+  // }
 
-  async updateEmailTemplate(key: string, templateData: Partial<InsertEmailTemplate>): Promise<EmailTemplate> {
-    const [template] = await db
-      .update(emailTemplates)
-      .set({ ...templateData, updatedAt: new Date() })
-      .where(eq(emailTemplates.key, key))
-      .returning();
-    return template;
-  }
+  // async updateEmailTemplate(key: string, templateData: Partial<InsertEmailTemplate>): Promise<EmailTemplate> {
+  //   const [template] = await db
+  //     .update(emailTemplates)
+  //     .set({ ...templateData, updatedAt: new Date() })
+  //     .where(eq(emailTemplates.key, key))
+  //     .returning();
+  //   return template;
+  // }
 
-  async deleteEmailTemplate(key: string): Promise<void> {
-    await db.delete(emailTemplates).where(eq(emailTemplates.key, key));
-  }
+  // async deleteEmailTemplate(key: string): Promise<void> {
+  //   await db.delete(emailTemplates).where(eq(emailTemplates.key, key));
+  // }
 
-  // Organization email template overrides operations
-  async createOrgEmailTemplate(overrideData: InsertOrgEmailTemplate): Promise<OrgEmailTemplate> {
-    const [override] = await db.insert(orgEmailTemplates).values(overrideData).returning();
-    return override;
-  }
+  // // Organization email template overrides operations
+  // async createOrgEmailTemplate(overrideData: InsertOrgEmailTemplate): Promise<OrgEmailTemplate> {
+  //   const [override] = await db.insert(orgEmailTemplates).values(overrideData).returning();
+  //   return override;
+  // }
 
-  async getOrgEmailTemplate(id: string): Promise<OrgEmailTemplate | undefined> {
-    const [template] = await db.select().from(orgEmailTemplates).where(eq(orgEmailTemplates.id, id));
-    return template;
-  }
+  // async getOrgEmailTemplate(id: string): Promise<OrgEmailTemplate | undefined> {
+  //   const [template] = await db.select().from(orgEmailTemplates).where(eq(orgEmailTemplates.id, id));
+  //   return template;
+  // }
 
-  async getOrgEmailTemplateByKey(orgId: string, templateKey: string): Promise<OrgEmailTemplate | undefined> {
-    const [override] = await db
-      .select()
-      .from(orgEmailTemplates)
-      .where(
-        and(
-          eq(orgEmailTemplates.orgId, orgId),
-          eq(orgEmailTemplates.templateKey, templateKey)
-        )
-      );
-    return override;
-  }
+  // async getOrgEmailTemplateByKey(orgId: string, templateKey: string): Promise<OrgEmailTemplate | undefined> {
+  //   const [override] = await db
+  //     .select()
+  //     .from(orgEmailTemplates)
+  //     .where(
+  //       and(
+  //         eq(orgEmailTemplates.orgId, orgId),
+  //         eq(orgEmailTemplates.templateKey, templateKey)
+  //       )
+  //     );
+  //   return override;
+  // }
 
-  async getOrgEmailTemplatesByOrg(orgId: string): Promise<OrgEmailTemplate[]> {
-    return await db
-      .select()
-      .from(orgEmailTemplates)
-      .where(eq(orgEmailTemplates.orgId, orgId))
-      .orderBy(asc(orgEmailTemplates.templateKey));
-  }
+  // async getOrgEmailTemplatesByOrg(orgId: string): Promise<OrgEmailTemplate[]> {
+  //   return await db
+  //     .select()
+  //     .from(orgEmailTemplates)
+  //     .where(eq(orgEmailTemplates.orgId, orgId))
+  //     .orderBy(asc(orgEmailTemplates.templateKey));
+  // }
 
-  async updateOrgEmailTemplate(id: string, overrideData: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate> {
-    const [override] = await db
-      .update(orgEmailTemplates)
-      .set({ ...overrideData, updatedAt: new Date() })
-      .where(eq(orgEmailTemplates.id, id))
-      .returning();
-    return override;
-  }
+  // async updateOrgEmailTemplate(id: string, overrideData: Partial<InsertOrgEmailTemplate>): Promise<OrgEmailTemplate> {
+  //   const [override] = await db
+  //     .update(orgEmailTemplates)
+  //     .set({ ...overrideData, updatedAt: new Date() })
+  //     .where(eq(orgEmailTemplates.id, id))
+  //     .returning();
+  //   return override;
+  // }
 
-  async upsertOrgEmailTemplate(
-    orgId: string, 
-    templateKey: string, 
-    overrideData: Partial<InsertOrgEmailTemplate>
-  ): Promise<OrgEmailTemplate> {
-    const existing = await this.getOrgEmailTemplateByKey(orgId, templateKey);
-    
-    if (existing) {
-      // Update existing override
-      return await this.updateOrgEmailTemplate(existing.id, {
-        ...overrideData,
-        isActive: true
-      });
-    } else {
-      // Create new override
-      return await this.createOrgEmailTemplate({
-        orgId,
-        templateKey,
-        ...overrideData,
-        isActive: true
-      });
-    }
-  }
+  // async upsertOrgEmailTemplate(
+  //   orgId: string, 
+  //   templateKey: string, 
+  //   overrideData: Partial<InsertOrgEmailTemplate>
+  // ): Promise<OrgEmailTemplate> {
+  //   const existing = await this.getOrgEmailTemplateByKey(orgId, templateKey);
+  //   
+  //   if (existing) {
+  //     // Update existing override
+  //     return await this.updateOrgEmailTemplate(existing.id, {
+  //       ...overrideData,
+  //       isActive: true
+  //     });
+  //   } else {
+  //     // Create new override
+  //     return await this.createOrgEmailTemplate({
+  //       orgId,
+  //       templateKey,
+  //       ...overrideData,
+  //       isActive: true
+  //     });
+  //   }
+  // }
 
-  async deleteOrgEmailTemplate(id: string): Promise<void> {
-    await db.delete(orgEmailTemplates).where(eq(orgEmailTemplates.id, id));
-  }
+  // async deleteOrgEmailTemplate(id: string): Promise<void> {
+  //   await db.delete(orgEmailTemplates).where(eq(orgEmailTemplates.id, id));
+  // }
 
-  async disableOrgEmailTemplate(orgId: string, templateKey: string): Promise<void> {
-    await db
-      .update(orgEmailTemplates)
-      .set({ isActive: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(orgEmailTemplates.orgId, orgId),
-          eq(orgEmailTemplates.templateKey, templateKey)
-        )
-      );
-  }
+  // async disableOrgEmailTemplate(orgId: string, templateKey: string): Promise<void> {
+  //   await db
+  //     .update(orgEmailTemplates)
+  //     .set({ isActive: false, updatedAt: new Date() })
+  //     .where(
+  //       and(
+  //         eq(orgEmailTemplates.orgId, orgId),
+  //         eq(orgEmailTemplates.templateKey, templateKey)
+  //       )
+  //     );
+  // }
 
-  // Comprehensive email template resolution (platform + org overrides)
-  async getEffectiveEmailTemplate(orgId: string, templateKey: string): Promise<{
-    template: EmailTemplate;
-    override: OrgEmailTemplate | null;
-    effectiveSubject: string;
-    effectiveHtml: string;
-    effectiveMjml: string;
-    effectiveText: string | null;
-  } | undefined> {
-    // Get the platform template
-    const template = await this.getEmailTemplateByKey(templateKey);
-    if (!template) {
-      return undefined;
-    }
+  // // Comprehensive email template resolution (platform + org overrides)
+  // async getEffectiveEmailTemplate(orgId: string, templateKey: string): Promise<{
+  //   template: EmailTemplate;
+  //   override: OrgEmailTemplate | null;
+  //   effectiveSubject: string;
+  //   effectiveHtml: string;
+  //   effectiveMjml: string;
+  //   effectiveText: string | null;
+  // } | undefined> {
+  //   // Get the platform template
+  //   const template = await this.getEmailTemplateByKey(templateKey);
+  //   if (!template) {
+  //     return undefined;
+  //   }
 
-    // Get the organization override if it exists
-    const override = await this.getOrgEmailTemplateByKey(orgId, templateKey);
+  //   // Get the organization override if it exists
+  //   const override = await this.getOrgEmailTemplateByKey(orgId, templateKey);
 
-    // Return combined effective template
-    return {
-      template,
-      override: override || null,
-      effectiveSubject: override?.subjectOverride || template.subject,
-      effectiveHtml: override?.htmlOverride || template.html,
-      effectiveMjml: override?.mjmlOverride || template.mjml,
-      effectiveText: override?.textOverride || template.text
-    };
-  }
+  //   // Return combined effective template
+  //   return {
+  //     template,
+  //     override: override || null,
+  //     effectiveSubject: override?.subjectOverride || template.subject,
+  //     effectiveHtml: override?.htmlOverride || template.html,
+  //     effectiveMjml: override?.mjmlOverride || template.mjml,
+  //     effectiveText: override?.textOverride || template.text
+  //   };
+  // }
 
   // System SMTP settings operations
   async getSystemEmailSettings(): Promise<SystemEmailSettings | undefined> {

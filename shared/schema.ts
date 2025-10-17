@@ -723,49 +723,51 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// NEW ROBUST EMAIL TEMPLATE SCHEMA
+// REMOVED: Email template tables (replaced with hardcoded automated email templates)
+// The automated email system now uses hardcoded templates in AutomatedEmailTemplates.ts
+// and routes through EmailOrchestrator for idempotency
 
-// EmailTemplate table - platform-level default email templates with MJML support
-export const emailTemplates = pgTable("email_templates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  key: varchar("key").notNull().unique(), // e.g., 'welcome', 'course_assigned', 'training_expiring'
-  name: varchar("name").notNull(), // Human-readable title
-  subject: text("subject").notNull(), // Handlebars-enabled subject template
-  html: text("html").notNull(), // Compiled HTML from MJML
-  mjml: text("mjml").notNull(), // Source MJML template
-  text: text("text"), // Optional plain text version
-  variablesSchema: jsonb("variables_schema"), // JSON schema defining required/optional variables
-  category: emailTemplateCategoryEnum("category").notNull(), // learner | admin
-  version: integer("version").notNull().default(1), // Version control for templates
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_email_template_key").on(table.key),
-  index("idx_email_template_category").on(table.category),
-  index("idx_email_template_active").on(table.isActive),
-]);
+// // EmailTemplate table - platform-level default email templates with MJML support
+// export const emailTemplates = pgTable("email_templates", {
+//   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+//   key: varchar("key").notNull().unique(), // e.g., 'welcome', 'course_assigned', 'training_expiring'
+//   name: varchar("name").notNull(), // Human-readable title
+//   subject: text("subject").notNull(), // Handlebars-enabled subject template
+//   html: text("html").notNull(), // Compiled HTML from MJML
+//   mjml: text("mjml").notNull(), // Source MJML template
+//   text: text("text"), // Optional plain text version
+//   variablesSchema: jsonb("variables_schema"), // JSON schema defining required/optional variables
+//   category: emailTemplateCategoryEnum("category").notNull(), // learner | admin
+//   version: integer("version").notNull().default(1), // Version control for templates
+//   isActive: boolean("is_active").notNull().default(true),
+//   createdAt: timestamp("created_at").defaultNow(),
+//   updatedAt: timestamp("updated_at").defaultNow(),
+// }, (table) => [
+//   index("idx_email_template_key").on(table.key),
+//   index("idx_email_template_category").on(table.category),
+//   index("idx_email_template_active").on(table.isActive),
+// ]);
 
-// OrgEmailTemplate table - organization-specific overrides for email templates
-export const orgEmailTemplates = pgTable("org_email_templates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull(), // FK to organisations
-  templateKey: varchar("template_key").notNull(), // FK to EmailTemplate.key
-  subjectOverride: text("subject_override"), // Override subject template
-  htmlOverride: text("html_override"), // Override compiled HTML
-  mjmlOverride: text("mjml_override"), // Override MJML source
-  textOverride: text("text_override"), // Override plain text version
-  version: integer("version").notNull().default(1), // Track override version
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_org_email_template_org").on(table.orgId),
-  index("idx_org_email_template_key").on(table.templateKey),
-  index("idx_org_email_template_org_key").on(table.orgId, table.templateKey),
-  // Unique constraint to prevent duplicate overrides for same org+template
-  unique("unique_org_email_template").on(table.orgId, table.templateKey),
-]);
+// // OrgEmailTemplate table - organization-specific overrides for email templates
+// export const orgEmailTemplates = pgTable("org_email_templates", {
+//   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+//   orgId: varchar("org_id").notNull(), // FK to organisations
+//   templateKey: varchar("template_key").notNull(), // FK to EmailTemplate.key
+//   subjectOverride: text("subject_override"), // Override subject template
+//   htmlOverride: text("html_override"), // Override compiled HTML
+//   mjmlOverride: text("mjml_override"), // Override MJML source
+//   textOverride: text("text_override"), // Override plain text version
+//   version: integer("version").notNull().default(1), // Track override version
+//   isActive: boolean("is_active").notNull().default(true),
+//   createdAt: timestamp("created_at").defaultNow(),
+//   updatedAt: timestamp("updated_at").defaultNow(),
+// }, (table) => [
+//   index("idx_org_email_template_org").on(table.orgId),
+//   index("idx_org_email_template_key").on(table.templateKey),
+//   index("idx_org_email_template_org_key").on(table.orgId, table.templateKey),
+//   // Unique constraint to prevent duplicate overrides for same org+template
+//   unique("unique_org_email_template").on(table.orgId, table.templateKey),
+// ]);
 
 // System-wide email settings table (SuperAdmin level - platform defaults)
 export const systemEmailSettings = pgTable("system_email_settings", {
@@ -1212,24 +1214,24 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
-// NEW ROBUST EMAIL TEMPLATE RELATIONS
+// REMOVED: Email template relations (replaced with hardcoded automated email templates)
 
-// EmailTemplate relations (platform defaults - no org relationship)
-export const emailTemplatesRelations = relations(emailTemplates, ({ many }) => ({
-  orgOverrides: many(orgEmailTemplates), // One template can have many org overrides
-}));
+// // EmailTemplate relations (platform defaults - no org relationship)
+// export const emailTemplatesRelations = relations(emailTemplates, ({ many }) => ({
+//   orgOverrides: many(orgEmailTemplates), // One template can have many org overrides
+// }));
 
-// OrgEmailTemplate relations (tenant overrides)
-export const orgEmailTemplatesRelations = relations(orgEmailTemplates, ({ one }) => ({
-  organisation: one(organisations, {
-    fields: [orgEmailTemplates.orgId],
-    references: [organisations.id],
-  }),
-  template: one(emailTemplates, {
-    fields: [orgEmailTemplates.templateKey],
-    references: [emailTemplates.key],
-  }),
-}));
+// // OrgEmailTemplate relations (tenant overrides)
+// export const orgEmailTemplatesRelations = relations(orgEmailTemplates, ({ one }) => ({
+//   organisation: one(organisations, {
+//     fields: [orgEmailTemplates.orgId],
+//     references: [organisations.id],
+//   }),
+//   template: one(emailTemplates, {
+//     fields: [orgEmailTemplates.templateKey],
+//     references: [emailTemplates.key],
+//   }),
+// }));
 
 export const systemEmailSettingsRelations = relations(systemEmailSettings, ({ one }) => ({
   updatedByUser: one(users, {
@@ -3722,20 +3724,20 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
-// NEW ROBUST EMAIL TEMPLATE INSERT SCHEMAS
-export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
-  id: true,
-  version: true, // Auto-managed
-  createdAt: true,
-  updatedAt: true,
-});
+// REMOVED: Email template insert schemas (replaced with hardcoded automated email templates)
+// export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
+//   id: true,
+//   version: true, // Auto-managed
+//   createdAt: true,
+//   updatedAt: true,
+// });
 
-export const insertOrgEmailTemplateSchema = createInsertSchema(orgEmailTemplates).omit({
-  id: true,
-  version: true, // Auto-managed
-  createdAt: true,
-  updatedAt: true,
-});
+// export const insertOrgEmailTemplateSchema = createInsertSchema(orgEmailTemplates).omit({
+//   id: true,
+//   version: true, // Auto-managed
+//   createdAt: true,
+//   updatedAt: true,
+// });
 
 export const insertSystemEmailSettingsSchema = createInsertSchema(systemEmailSettings).omit({
   id: true,
@@ -4116,12 +4118,12 @@ export type PlanFeatureMapping = typeof planFeatureMappings.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 
-// NEW ROBUST EMAIL TEMPLATE TYPES
-export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
-export type EmailTemplate = typeof emailTemplates.$inferSelect;
+// REMOVED: Email template types (replaced with hardcoded automated email templates)
+// export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+// export type EmailTemplate = typeof emailTemplates.$inferSelect;
 
-export type InsertOrgEmailTemplate = z.infer<typeof insertOrgEmailTemplateSchema>;
-export type OrgEmailTemplate = typeof orgEmailTemplates.$inferSelect;
+// export type InsertOrgEmailTemplate = z.infer<typeof insertOrgEmailTemplateSchema>;
+// export type OrgEmailTemplate = typeof orgEmailTemplates.$inferSelect;
 
 // DEPRECATED - OLD EMAIL TEMPLATE TYPES (TO BE REMOVED)
 // export type InsertEmailTemplateDefaults = z.infer<typeof insertEmailTemplateDefaultsSchema>;
