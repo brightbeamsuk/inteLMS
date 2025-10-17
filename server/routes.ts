@@ -20139,7 +20139,7 @@ This test was initiated by ${user.email}.
             completedAt: new Date().toLocaleDateString()
           };
 
-          const isPassed = completionData.status === 'passed';
+          const isPassed = completionData.status === 'pass';
           const templateKey = isPassed ? 'course_completed' : 'course_failed';
           const triggerEvent = isPassed ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
 
@@ -20167,12 +20167,14 @@ This test was initiated by ${user.email}.
       });
 
       // Generate certificate if passed
-      if (completionData.status === 'passed') {
+      if (completionData.status === 'pass') {
         const user = await storage.getUser(userId);
         const organisation = await storage.getOrganisation(assignment.organisationId);
         
         if (user && organisation) {
           const certificateUrl = await certificateService.generateCertificate(completion, user, course, organisation);
+          
+          console.log(`📜 Auto-generated certificate for ${user.email} - Course: ${course.title}`);
           
           await storage.createCertificate({
             completionId: completion.id,
@@ -20187,7 +20189,7 @@ This test was initiated by ${user.email}.
         }
       }
 
-      res.json({ completion, certificateGenerated: completionData.status === 'passed' });
+      res.json({ completion, certificateGenerated: completionData.status === 'pass' });
     } catch (error) {
       console.error('Error processing SCORM completion:', error);
       res.status(500).json({ message: 'Failed to process completion' });
