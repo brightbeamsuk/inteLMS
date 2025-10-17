@@ -241,7 +241,7 @@ export interface QueueEmailParams {
     'COMPLIANCE_QUARTERLY_REPORT' | 'COMPLIANCE_ANNUAL_REPORT' | 'COMPLIANCE_ALERT_CRITICAL' |
     'COMPLIANCE_ALERT_WARNING' | 'COMPLIANCE_SLA_BREACH' | 'COMPLIANCE_EXPORT_READY' |
     'ICO_SUBMISSION_READY' | 'REGULATORY_DEADLINE_REMINDER' | 'COMPLIANCE_AUDIT_ALERT';
-  templateKey: string;
+  templateKey?: string; // Optional when using preRenderedContent
   toEmail: string;
   context: TemplateRenderContext;
   
@@ -250,6 +250,13 @@ export interface QueueEmailParams {
   resourceId?: string; // For idempotency: course ID, user ID, etc.
   priority?: number; // Higher priority emails sent first
   scheduledFor?: Date; // Schedule for future sending
+  
+  // Support for hardcoded/pre-rendered templates
+  preRenderedContent?: {
+    subject: string;
+    htmlBody: string;
+    textBody: string;
+  };
 }
 
 export interface SendNowParams {
@@ -762,15 +769,30 @@ export class EmailOrchestrator {
       fromName = fromName || 'inteLMS Platform';
       replyTo = replyTo || fromEmail;
 
-      // Render the email template
-      const rendered = await this.render(params.templateKey, params.context, params.organisationId);
+      // Render the email template (use preRenderedContent if provided, otherwise render from database template)
+      let rendered: { subject: string; htmlContent: string; textContent: string | null };
+      
+      if (params.preRenderedContent) {
+        // Use hardcoded/pre-rendered template
+        rendered = {
+          subject: params.preRenderedContent.subject,
+          htmlContent: params.preRenderedContent.htmlBody,
+          textContent: params.preRenderedContent.textBody
+        };
+        console.log(`${this.LOG_PREFIX} Using pre-rendered template for ${params.triggerEvent}`);
+      } else if (params.templateKey) {
+        // Use database template (legacy)
+        rendered = await this.render(params.templateKey, params.context, params.organisationId);
+      } else {
+        throw new Error('Either templateKey or preRenderedContent must be provided');
+      }
       
       // Create email send record
       const emailSend: InsertEmailSend = {
         idempotencyKey,
         triggerEvent: params.triggerEvent,
         organisationId: params.organisationId || null,
-        templateKey: params.templateKey,
+        templateKey: params.templateKey || 'hardcoded',
         toEmail: params.toEmail,
         subject: rendered.subject,
         htmlContent: rendered.htmlContent,

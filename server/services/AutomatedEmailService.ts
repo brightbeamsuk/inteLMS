@@ -2,122 +2,108 @@
  * Automated Email Service
  * 
  * Handles automated email notifications using hardcoded templates.
- * Uses organization's email provider settings (or system defaults) to send emails.
+ * Routes all emails through EmailOrchestrator to maintain idempotency and prevent duplicates.
  */
 
-import { MailerService, type EmailResult } from './MailerService';
+import { EmailOrchestrator } from './EmailOrchestrator';
 import { AutomatedEmailTemplates, type CourseAssignedData, type CourseCompletedData, type DueDatePassedData } from './AutomatedEmailTemplates';
 
 const LOG_PREFIX = '[AutomatedEmail]';
-const mailerService = new MailerService();
+const emailOrchestrator = new EmailOrchestrator();
 
 export class AutomatedEmailService {
 
   /**
-   * Send email using organization-specific provider or system defaults
-   * The MailerService automatically handles fallback from org -> system
-   */
-  private async sendEmail(params: {
-    to: string;
-    subject: string;
-    html: string;
-    text?: string;
-    organisationId?: string;
-  }): Promise<EmailResult> {
-    try {
-      // MailerService automatically uses org settings if orgId is provided, falls back to system defaults
-      const result = await mailerService.send({
-        orgId: params.organisationId,
-        to: params.to,
-        subject: params.subject,
-        html: params.html,
-        text: params.text
-      });
-      
-      console.log(`${LOG_PREFIX} Email sent:`, result.success ? 'Success' : 'Failed');
-      return result;
-      
-    } catch (error) {
-      console.error(`${LOG_PREFIX} Email send failed:`, error);
-      return {
-        success: false,
-        provider: 'smtp_generic' as const,
-        details: {
-          from: '',
-          to: params.to,
-          messageId: '',
-          effectiveFieldSources: {} as any,
-          timestamp: new Date().toISOString()
-        }
-      };
-    }
-  }
-
-  /**
    * Send course assigned notification to user
    */
-  async sendCourseAssigned(data: CourseAssignedData & { userEmail: string; organisationId?: string }): Promise<EmailResult> {
-    console.log(`${LOG_PREFIX} Sending course assigned email to ${data.userEmail}`);
+  async sendCourseAssigned(data: CourseAssignedData & { userEmail: string; organisationId?: string; courseId: string; assignmentId: string }): Promise<void> {
+    console.log(`${LOG_PREFIX} Queueing course assigned email to ${data.userEmail}`);
     
     const template = AutomatedEmailTemplates.courseAssigned(data);
     
-    return this.sendEmail({
-      to: data.userEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
-      organisationId: data.organisationId
+    await emailOrchestrator.queue({
+      triggerEvent: 'COURSE_ASSIGNED',
+      toEmail: data.userEmail,
+      context: {},
+      organisationId: data.organisationId,
+      resourceId: `course-assign:${data.userEmail}:${data.courseId}:${data.assignmentId}`,
+      preRenderedContent: {
+        subject: template.subject,
+        htmlBody: template.html,
+        textBody: template.text
+      },
+      priority: 2
     });
   }
 
   /**
    * Send course completed notification to user
    */
-  async sendUserCourseCompleted(data: CourseCompletedData & { organisationId?: string }): Promise<EmailResult> {
-    console.log(`${LOG_PREFIX} Sending course completed email to ${data.userEmail}`);
+  async sendUserCourseCompleted(data: CourseCompletedData & { organisationId?: string; courseId: string; completionId: string }): Promise<void> {
+    console.log(`${LOG_PREFIX} Queueing course ${data.status.toLowerCase()} email to ${data.userEmail}`);
     
     const template = AutomatedEmailTemplates.userCourseCompleted(data);
+    const triggerEvent = data.status === 'PASS' ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
     
-    return this.sendEmail({
-      to: data.userEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
-      organisationId: data.organisationId
+    await emailOrchestrator.queue({
+      triggerEvent,
+      toEmail: data.userEmail,
+      context: {},
+      organisationId: data.organisationId,
+      resourceId: `course-complete:${data.userEmail}:${data.courseId}:${data.completionId}`,
+      preRenderedContent: {
+        subject: template.subject,
+        htmlBody: template.html,
+        textBody: template.text
+      },
+      priority: 1
     });
   }
 
   /**
    * Send due date passed notification to user
    */
-  async sendDueDatePassed(data: DueDatePassedData & { userEmail: string; organisationId?: string }): Promise<EmailResult> {
-    console.log(`${LOG_PREFIX} Sending due date passed email to ${data.userEmail}`);
+  async sendDueDatePassed(data: DueDatePassedData & { userEmail: string; organisationId?: string; courseId: string; assignmentId: string }): Promise<void> {
+    console.log(`${LOG_PREFIX} Queueing due date passed email to ${data.userEmail}`);
     
     const template = AutomatedEmailTemplates.dueDatePassed(data);
     
-    return this.sendEmail({
-      to: data.userEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
-      organisationId: data.organisationId
+    await emailOrchestrator.queue({
+      triggerEvent: 'COURSE_ASSIGNED', // Reuse COURSE_ASSIGNED trigger for due date notifications
+      toEmail: data.userEmail,
+      context: {},
+      organisationId: data.organisationId,
+      resourceId: `due-date-passed:${data.userEmail}:${data.courseId}:${data.assignmentId}`,
+      preRenderedContent: {
+        subject: template.subject,
+        htmlBody: template.html,
+        textBody: template.text
+      },
+      priority: 1
     });
   }
 
   /**
    * Send course completion notification to admin (candidate completed/failed)
    */
-  async sendAdminCandidateCompleted(data: CourseCompletedData & { adminEmail: string; organisationId?: string }): Promise<EmailResult> {
-    console.log(`${LOG_PREFIX} Sending candidate completion notification to admin ${data.adminEmail}`);
+  async sendAdminCandidateCompleted(data: CourseCompletedData & { adminEmail: string; organisationId?: string; courseId: string; completionId: string }): Promise<void> {
+    console.log(`${LOG_PREFIX} Queueing candidate completion notification to admin ${data.adminEmail}`);
     
     const template = AutomatedEmailTemplates.adminCandidateCompleted(data);
+    const triggerEvent = data.status === 'PASS' ? 'COURSE_COMPLETED' : 'COURSE_FAILED';
     
-    return this.sendEmail({
-      to: data.adminEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
-      organisationId: data.organisationId
+    await emailOrchestrator.queue({
+      triggerEvent,
+      toEmail: data.adminEmail,
+      context: {},
+      organisationId: data.organisationId,
+      resourceId: `admin-notify:${data.adminEmail}:${data.userEmail}:${data.courseId}:${data.completionId}`,
+      preRenderedContent: {
+        subject: template.subject,
+        htmlBody: template.html,
+        textBody: template.text
+      },
+      priority: 2
     });
   }
 
@@ -131,17 +117,24 @@ export class AutomatedEmailService {
     userEmail: string;
     orgName: string;
     organisationId?: string;
-  }): Promise<EmailResult> {
-    console.log(`${LOG_PREFIX} Sending new user notification to admin ${data.adminEmail}`);
+    userId: string;
+  }): Promise<void> {
+    console.log(`${LOG_PREFIX} Queueing new user notification to admin ${data.adminEmail}`);
     
     const template = AutomatedEmailTemplates.adminNewUserAdded(data);
     
-    return this.sendEmail({
-      to: data.adminEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
-      organisationId: data.organisationId
+    await emailOrchestrator.queue({
+      triggerEvent: 'USER_FAST_ADD',
+      toEmail: data.adminEmail,
+      context: {},
+      organisationId: data.organisationId,
+      resourceId: `new-user:${data.adminEmail}:${data.userEmail}:${data.userId}`,
+      preRenderedContent: {
+        subject: template.subject,
+        htmlBody: template.html,
+        textBody: template.text
+      },
+      priority: 2
     });
   }
 }

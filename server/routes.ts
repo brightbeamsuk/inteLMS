@@ -18664,7 +18664,9 @@ This test was initiated by ${user.email}.
               orgName: organization.displayName || organization.name,
               courseUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/course/${assignment.courseId}`,
               userEmail: targetUser.email,
-              organisationId: assignment.organisationId
+              organisationId: assignment.organisationId,
+              courseId: assignment.courseId,
+              assignmentId: assignment.id
             });
             
             console.log(`✅ Course assigned email sent to ${targetUser.email}: ${course.title}`);
@@ -20351,7 +20353,9 @@ This test was initiated by ${user.email}.
                     status: completionData.status === 'pass' ? 'PASS' : 'FAIL',
                     completedDate,
                     orgName: organisation.displayName || organisation.name,
-                    organisationId: completionData.organisationId
+                    organisationId: completionData.organisationId,
+                    courseId: completionData.courseId,
+                    completionId: completion.id
                   });
                   
                   console.log(`✅ Course ${completionData.status} email sent to learner: ${learner.email}`);
@@ -20370,7 +20374,9 @@ This test was initiated by ${user.email}.
                           adminName: `${admin.firstName} ${admin.lastName}`,
                           adminEmail: admin.email,
                           orgName: organisation.displayName || organisation.name,
-                          organisationId: completionData.organisationId
+                          organisationId: completionData.organisationId,
+                          courseId: completionData.courseId,
+                          completionId: completion.id
                         });
                       }
                     }
