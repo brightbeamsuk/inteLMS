@@ -28,6 +28,57 @@ export function SignIn() {
   const [adminLastName, setAdminLastName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
 
+  // Quick login test accounts
+  const quickLoginAccounts = [
+    {
+      role: 'SuperAdmin',
+      email: 'hello@intelms.co.uk',
+      password: 'sMfpyPJWsd87?',
+      icon: 'fa-crown',
+      color: 'text-yellow-500'
+    },
+    {
+      role: 'Admin / Organisation',
+      email: 'admin@test.com',
+      password: 'test123',
+      icon: 'fa-user-shield',
+      color: 'text-blue-500'
+    },
+    {
+      role: 'User',
+      email: 'user@test.com',
+      password: 'test123',
+      icon: 'fa-user',
+      color: 'text-green-500'
+    }
+  ];
+
+  const handleQuickLogin = async (account: typeof quickLoginAccounts[0]) => {
+    setError('');
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: account.email, password: account.password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        window.location.href = data.redirectUrl || '/dashboard';
+      } else {
+        setError(data.message || 'Quick login failed');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -726,6 +777,37 @@ export function SignIn() {
             </div>
           )}
 
+          {/* Quick Login Section - Only show on login mode */}
+          {authMode === 'login' && (
+            <div className="mt-8">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">Quick Login</span>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {quickLoginAccounts.map((account, index) => (
+                  <button
+                    key={index}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg hover:border-[#634396] hover:bg-gray-50 transition-all duration-200 text-left flex items-center justify-between"
+                    onClick={() => handleQuickLogin(account)}
+                    data-testid={`button-quick-login-${account.role.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-')}`}
+                    disabled={isLoading}
+                  >
+                    <div className="flex items-center gap-3">
+                      <i className={`fas ${account.icon} ${account.color}`}></i>
+                      <span className="font-medium text-gray-700">{account.role}</span>
+                    </div>
+                    <i className="fas fa-arrow-right text-gray-400"></i>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Signup help text */}
           {authMode === 'signup' && (
