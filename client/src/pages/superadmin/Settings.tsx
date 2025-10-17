@@ -707,7 +707,7 @@ export function SuperAdminSettings() {
     return preview;
   };
 
-  const tabs = ["Certificate Settings", "Platform Options", "Email Settings"];
+  const tabs = ["Certificate Settings", "Platform Options", "Email Settings", "Data Management"];
 
   return (
     <div>
@@ -1358,6 +1358,114 @@ export function SuperAdminSettings() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Data Management Tab */}
+          {activeTab === 3 && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Database Management</h3>
+                <p className="text-sm text-base-content/60">
+                  Manage platform data and perform cleanup operations.
+                </p>
+              </div>
+
+              <div className="divider"></div>
+
+              {/* Delete Test Data Section */}
+              <div className="alert alert-warning">
+                <i className="fas fa-exclamation-triangle"></i>
+                <div className="flex-1">
+                  <h3 className="font-bold">Delete All Test Data</h3>
+                  <div className="text-sm mt-2">
+                    <p className="mb-2">This action will permanently delete:</p>
+                    <ul className="list-disc list-inside ml-4 space-y-1">
+                      <li>All organizations and their settings</li>
+                      <li>All users except the SuperAdmin account</li>
+                      <li>All courses and course assignments</li>
+                      <li>All completions and certificates</li>
+                      <li>All SCORM attempts and progress</li>
+                    </ul>
+                    <p className="mt-3 font-semibold">Your SuperAdmin account will be preserved.</p>
+                    <p className="mt-2 text-xs opacity-70">
+                      This operation cannot be undone. Make sure you want to proceed before clicking the button below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  className="btn btn-error"
+                  onClick={() => {
+                    const modal = document.getElementById('delete-test-data-modal') as HTMLDialogElement;
+                    modal?.showModal();
+                  }}
+                  data-testid="button-delete-test-data"
+                >
+                  <i className="fas fa-trash"></i>
+                  Delete All Test Data
+                </button>
+              </div>
+
+              {/* Confirmation Modal */}
+              <dialog id="delete-test-data-modal" className="modal">
+                <div className="modal-box">
+                  <h3 className="font-bold text-lg text-error">
+                    <i className="fas fa-exclamation-triangle mr-2"></i>
+                    Confirm Data Deletion
+                  </h3>
+                  <p className="py-4">
+                    Are you absolutely sure you want to delete all test data? 
+                    This action cannot be undone and will remove all organizations, users (except SuperAdmin), 
+                    courses, and related data from the database.
+                  </p>
+                  <div className="modal-action">
+                    <form method="dialog">
+                      <button className="btn btn-ghost mr-2" data-testid="button-cancel-deletion">
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-error"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          try {
+                            const response = await apiRequest('POST', '/api/superadmin/delete-test-data');
+                            const data = await response.json();
+                            
+                            if (data.success) {
+                              toast({
+                                title: "Success",
+                                description: `Test data deleted successfully. Removed: ${data.deleted.users || 0} users, ${data.deleted.organisations || 0} orgs, ${data.deleted.courses || 0} courses`,
+                              });
+                              
+                              // Close modal
+                              const modal = document.getElementById('delete-test-data-modal') as HTMLDialogElement;
+                              modal?.close();
+                              
+                              // Refresh page data
+                              queryClient.invalidateQueries();
+                            } else {
+                              throw new Error(data.message || 'Failed to delete test data');
+                            }
+                          } catch (error: any) {
+                            toast({
+                              title: "Error",
+                              description: error.message || "Failed to delete test data",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                        data-testid="button-confirm-deletion"
+                      >
+                        <i className="fas fa-trash"></i>
+                        Yes, Delete Everything
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </dialog>
             </div>
           )}
         </div>

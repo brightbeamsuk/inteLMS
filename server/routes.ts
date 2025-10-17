@@ -20683,6 +20683,135 @@ This test was initiated by ${user.email}.
   // Register new SCORM runtime routes
   app.use('/api/scorm', scormRoutes);
 
+  // SuperAdmin: Update superadmin profile details
+  app.put('/api/superadmin/profile', requireAuth, async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      const { firstName, lastName, email, jobTitle } = req.body;
+
+      // Validate required fields
+      if (!firstName || !lastName || !email) {
+        return res.status(400).json({ message: 'First name, last name, and email are required' });
+      }
+
+      // Update the superadmin user
+      const updatedUser = await storage.updateUser(user.id, {
+        firstName,
+        lastName,
+        email,
+        jobTitle: jobTitle || null
+      });
+
+      console.log(`✅ SuperAdmin profile updated: ${updatedUser.email}`);
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        user: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          jobTitle: updatedUser.jobTitle,
+          role: updatedUser.role
+        }
+      });
+    } catch (error) {
+      console.error('Error updating superadmin profile:', error);
+      res.status(500).json({ message: 'Failed to update profile' });
+    }
+  });
+
+  // SuperAdmin: Delete all test data except superadmin account
+  app.post('/api/superadmin/delete-test-data', requireAuth, async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Access denied - SuperAdmin only' });
+      }
+
+      console.log('🗑️  Starting test data deletion...');
+
+      // Get the superadmin ID to preserve
+      const superadminId = user.id;
+
+      // Delete in correct order to respect foreign key constraints
+      const deletionResults: Record<string, number> = {};
+
+      // 1. Delete SCORM attempts first
+      const scormAttempts = await storage.getAllScormAttempts?.() || [];
+      for (const attempt of scormAttempts) {
+        await storage.deleteScormAttempt?.(attempt.id);
+      }
+      deletionResults.scormAttempts = scormAttempts.length;
+
+      // 2. Delete completions
+      const allCompletions = await storage.getAllCompletions?.() || [];
+      for (const completion of allCompletions) {
+        await storage.deleteCompletion?.(completion.id);
+      }
+      deletionResults.completions = allCompletions.length;
+
+      // 3. Delete certificates
+      const allCertificates = await storage.getAllCertificates?.() || [];
+      for (const cert of allCertificates) {
+        await storage.deleteCertificate?.(cert.id);
+      }
+      deletionResults.certificates = allCertificates.length;
+
+      // 4. Delete assignments
+      const allAssignments = await storage.getAllAssignments?.() || [];
+      for (const assignment of allAssignments) {
+        await storage.deleteAssignment?.(assignment.id);
+      }
+      deletionResults.assignments = allAssignments.length;
+
+      // 5. Delete courses
+      const allCourses = await storage.getAllCourses();
+      for (const course of allCourses) {
+        await storage.deleteCourse(course.id);
+      }
+      deletionResults.courses = allCourses.length;
+
+      // 6. Delete users except superadmin
+      const allUsers = await storage.getAllUsers();
+      const nonSuperadminUsers = allUsers.filter(u => u.id !== superadminId);
+      for (const userToDelete of nonSuperadminUsers) {
+        await storage.deleteUser(userToDelete.id);
+      }
+      deletionResults.users = nonSuperadminUsers.length;
+
+      // 7. Delete organisations
+      const allOrgs = await storage.getAllOrganisations();
+      for (const org of allOrgs) {
+        await storage.deleteOrganisation(org.id);
+      }
+      deletionResults.organisations = allOrgs.length;
+
+      console.log('✅ Test data deletion complete:', deletionResults);
+
+      res.json({
+        success: true,
+        message: 'All test data deleted successfully',
+        deleted: deletionResults,
+        preserved: {
+          superadminId,
+          superadminEmail: user.email
+        }
+      });
+    } catch (error) {
+      console.error('Error deleting test data:', error);
+      res.status(500).json({ 
+        message: 'Failed to delete test data',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
 
   const httpServer = createServer(app);
   
