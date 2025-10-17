@@ -257,6 +257,21 @@ app.use((req, res, next) => {
     next();
   });
 
+  // Handle PDF files explicitly before Vite catch-all
+  app.get('*.pdf', (req, res, next) => {
+    const pdfPath = path.join(process.cwd(), 'public', req.path);
+    res.sendFile(pdfPath, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline'
+      }
+    }, (err) => {
+      if (err) {
+        next();
+      }
+    });
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
