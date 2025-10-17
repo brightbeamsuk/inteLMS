@@ -540,16 +540,16 @@ export class CertificateService {
       // If it's an object storage path (starts with /objects/), use ObjectStorageService
       if (templateUrl.startsWith('/objects/')) {
         const objectStorageService = new ObjectStorageService();
-        const objectFile = await objectStorageService.getObjectEntityFile(templateUrl);
-        const stream = objectFile.createReadStream();
         
-        // Convert stream to buffer
-        const chunks: Buffer[] = [];
-        return new Promise((resolve, reject) => {
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-          stream.on('end', () => resolve(Buffer.concat(chunks)));
-          stream.on('error', reject);
-        });
+        // System-level access: bypass authentication for certificate template access
+        // This is safe because only admins can upload certificate templates
+        const objectFile = await objectStorageService.getObjectEntityFile(templateUrl);
+        
+        // Download the file content directly using Google Cloud Storage SDK
+        const [fileBuffer] = await objectFile.download();
+        
+        console.log(`📥 Downloaded certificate template: ${templateUrl} (${fileBuffer.length} bytes)`);
+        return fileBuffer;
       }
       
       // If it's a local file path, read from filesystem
