@@ -30,6 +30,17 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   }
 }));
 
+// Serve static files from public directory (for test certificates, etc.)
+app.use(express.static(path.join(process.cwd(), 'public'), {
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+    }
+  }
+}));
+
 // Serve extracted SCORM files with iframe-friendly headers
 app.use('/scos', (req, res, next) => {
   // Log 404/403 errors for debugging
