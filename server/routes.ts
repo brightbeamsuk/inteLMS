@@ -12192,8 +12192,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Extract admin user data and selectedCategoryIds from request body
-      const { adminEmail, adminFirstName, adminLastName, adminJobTitle, adminDepartment, selectedCategoryIds, ...orgData } = req.body;
+      // Extract admin user data, selectedCategoryIds, and pricing fields from request body
+      const { 
+        adminEmail, 
+        adminFirstName, 
+        adminLastName, 
+        adminJobTitle, 
+        adminDepartment, 
+        selectedCategoryIds,
+        pricingModel,
+        customMonthlyPrice,
+        customAnnualPrice,
+        customUserLimit,
+        customBillingCadence,
+        customPricingNotes,
+        ...orgData 
+      } = req.body;
       
       // Validate required admin fields
       if (!adminEmail || !adminFirstName || !adminLastName) {
@@ -12217,7 +12231,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Admin email address is already in use' });
       }
 
-      const validatedOrgData = insertOrganisationSchema.parse(orgData);
+      // Add pricing fields to orgData
+      const orgDataWithPricing = {
+        ...orgData,
+        pricingModel: pricingModel || 'standard_plan',
+        customMonthlyPrice: customMonthlyPrice ? parseFloat(customMonthlyPrice) : null,
+        customAnnualPrice: customAnnualPrice ? parseFloat(customAnnualPrice) : null,
+        customUserLimit: customUserLimit ? parseInt(customUserLimit) : null,
+        customBillingCadence: customBillingCadence || null,
+        customPricingNotes: customPricingNotes || null,
+      };
+
+      const validatedOrgData = insertOrganisationSchema.parse(orgDataWithPricing);
       const organisation = await storage.createOrganisation(validatedOrgData);
       
       // Generate a temporary password for the admin user
