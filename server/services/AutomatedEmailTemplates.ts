@@ -362,4 +362,429 @@ export class AutomatedEmailTemplates {
       text: `${adminName ? `Hi ${adminName},` : 'Hi,'}\n\nA new user has been added to your organization:\n\nName: ${userName}\nEmail: ${userEmail}\n\n${orgName}`
     };
   }
+
+  /**
+   * USER: Welcome Email (with temporary password)
+   */
+  static welcomeEmail(data: {
+    userName: string;
+    userEmail: string;
+    temporaryPassword: string;
+    orgName: string;
+    loginUrl: string;
+  }): EmailTemplateData {
+    const { userName, userEmail, temporaryPassword, orgName, loginUrl } = data;
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="#2563eb" align="center">
+                Welcome to ${orgName}
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                Hi ${userName},
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                Welcome! Your account has been created and you're ready to start your training journey.
+              </mj-text>
+              
+              <mj-text font-size="16px" padding="10px 0">
+                <strong>Email:</strong> ${userEmail}
+              </mj-text>
+              
+              <mj-section background-color="#f9fafb" padding="20px" border-radius="8px">
+                <mj-column>
+                  <mj-text font-size="14px" color="#6b7280" align="center">
+                    Your Temporary Password
+                  </mj-text>
+                  <mj-text font-size="20px" font-weight="bold" color="#2563eb" align="center" padding="10px 0">
+                    ${temporaryPassword}
+                  </mj-text>
+                  <mj-text font-size="12px" color="#dc2626" align="center">
+                    You will be required to change this password on first login
+                  </mj-text>
+                </mj-column>
+              </mj-section>
+              
+              <mj-button background-color="#2563eb" color="#ffffff" href="${loginUrl}" padding="20px 0">
+                Log In Now
+              </mj-button>
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `Welcome to ${orgName} - Your Account is Ready`,
+      html,
+      text: `Hi ${userName},\n\nWelcome! Your account has been created.\n\nEmail: ${userEmail}\nTemporary Password: ${temporaryPassword}\n\nYou will be required to change this password on first login.\n\nLog in: ${loginUrl}\n\n${orgName}`
+    };
+  }
+
+  /**
+   * USER: Password Reset
+   */
+  static passwordReset(data: {
+    userName: string;
+    resetLink: string;
+    expiryTime: string;
+    orgName: string;
+  }): EmailTemplateData {
+    const { userName, resetLink, expiryTime, orgName } = data;
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="#2563eb" align="center">
+                Password Reset Request
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                Hi ${userName},
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                We received a request to reset your password. Click the button below to create a new password:
+              </mj-text>
+              
+              <mj-button background-color="#2563eb" color="#ffffff" href="${resetLink}" padding="20px 0">
+                Reset Password
+              </mj-button>
+              
+              <mj-text font-size="14px" color="#dc2626" padding="10px 0">
+                This link will expire in ${expiryTime}.
+              </mj-text>
+              
+              <mj-text font-size="14px" color="#6b7280">
+                If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+              </mj-text>
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `Password Reset Request - ${orgName}`,
+      html,
+      text: `Hi ${userName},\n\nWe received a request to reset your password.\n\nReset your password: ${resetLink}\n\nThis link will expire in ${expiryTime}.\n\nIf you didn't request this, please ignore this email.\n\n${orgName}`
+    };
+  }
+
+  /**
+   * USER: Course Reminder (X days before due date)
+   */
+  static courseReminder(data: {
+    userName: string;
+    courseName: string;
+    dueDate: string;
+    daysRemaining: number;
+    orgName: string;
+    courseUrl?: string;
+  }): EmailTemplateData {
+    const { userName, courseName, dueDate, daysRemaining, orgName, courseUrl } = data;
+    const urgencyColor = daysRemaining <= 3 ? '#dc2626' : '#f59e0b';
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="${urgencyColor}" align="center">
+                Course Reminder
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                Hi ${userName},
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                This is a friendly reminder that your course <strong>${courseName}</strong> is due soon.
+              </mj-text>
+              
+              <mj-section background-color="#fef3c7" padding="20px" border-radius="8px">
+                <mj-column>
+                  <mj-text font-size="18px" font-weight="bold" color="${urgencyColor}" align="center">
+                    ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining
+                  </mj-text>
+                  <mj-text font-size="14px" align="center" padding="5px 0">
+                    Due: ${dueDate}
+                  </mj-text>
+                </mj-column>
+              </mj-section>
+              
+              ${courseUrl ? `
+              <mj-button background-color="${urgencyColor}" color="#ffffff" href="${courseUrl}" padding="20px 0">
+                Continue Course
+              </mj-button>
+              ` : ''}
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `Reminder: ${courseName} - Due in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
+      html,
+      text: `Hi ${userName},\n\nThis is a reminder that your course "${courseName}" is due soon.\n\nDue Date: ${dueDate}\nDays Remaining: ${daysRemaining}\n${courseUrl ? `\nContinue course: ${courseUrl}\n` : ''}\n${orgName}`
+    };
+  }
+
+  /**
+   * USER: Certificate Issued
+   */
+  static certificateIssued(data: {
+    userName: string;
+    courseName: string;
+    issueDate: string;
+    certificateUrl: string;
+    orgName: string;
+  }): EmailTemplateData {
+    const { userName, courseName, issueDate, certificateUrl, orgName } = data;
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="#10b981" align="center">
+                🎓 Certificate Issued
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                Hi ${userName},
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                Congratulations! Your certificate for <strong>${courseName}</strong> has been issued.
+              </mj-text>
+              
+              <mj-text font-size="16px" padding="10px 0">
+                <strong>Issue Date:</strong> ${issueDate}
+              </mj-text>
+              
+              <mj-button background-color="#10b981" color="#ffffff" href="${certificateUrl}" padding="20px 0">
+                Download Certificate
+              </mj-button>
+              
+              <mj-text font-size="14px" color="#6b7280">
+                You can access your certificate at any time from your dashboard.
+              </mj-text>
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `Certificate Issued: ${courseName}`,
+      html,
+      text: `Hi ${userName},\n\nCongratulations! Your certificate for "${courseName}" has been issued.\n\nIssue Date: ${issueDate}\n\nDownload: ${certificateUrl}\n\n${orgName}`
+    };
+  }
+
+  /**
+   * ADMIN: New Admin Added (notification to existing admins)
+   */
+  static newAdminAdded(data: {
+    existingAdminName?: string;
+    newAdminName: string;
+    newAdminEmail: string;
+    addedBy: string;
+    orgName: string;
+  }): EmailTemplateData {
+    const { existingAdminName, newAdminName, newAdminEmail, addedBy, orgName } = data;
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="#2563eb" align="center">
+                New Admin Added
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                ${existingAdminName ? `Hi ${existingAdminName},` : 'Hi,'}
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                A new administrator has been added to your organization by ${addedBy}.
+              </mj-text>
+              
+              <mj-section background-color="#f9fafb" padding="15px" border-radius="8px">
+                <mj-column>
+                  <mj-text font-size="16px">
+                    <strong>Name:</strong> ${newAdminName}<br/>
+                    <strong>Email:</strong> ${newAdminEmail}
+                  </mj-text>
+                </mj-column>
+              </mj-section>
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `New Administrator Added: ${newAdminName}`,
+      html,
+      text: `${existingAdminName ? `Hi ${existingAdminName},` : 'Hi,'}\n\nA new administrator has been added to your organization by ${addedBy}.\n\nName: ${newAdminName}\nEmail: ${newAdminEmail}\n\n${orgName}`
+    };
+  }
+
+  /**
+   * ADMIN: Plan/Subscription Updated
+   */
+  static planUpdated(data: {
+    adminName?: string;
+    orgName: string;
+    planName: string;
+    previousPlan?: string;
+    changeType: 'upgraded' | 'downgraded' | 'changed';
+    effectiveDate: string;
+    updatedBy: string;
+  }): EmailTemplateData {
+    const { adminName, orgName, planName, previousPlan, changeType, effectiveDate, updatedBy } = data;
+    const changeColor = changeType === 'upgraded' ? '#10b981' : changeType === 'downgraded' ? '#f59e0b' : '#2563eb';
+    
+    const mjml = `
+      <mjml>
+        <mj-head>
+          <mj-attributes>
+            <mj-all font-family="Arial, sans-serif" />
+            <mj-text color="#333333" line-height="1.6" />
+          </mj-attributes>
+        </mj-head>
+        <mj-body background-color="#f4f4f4">
+          <mj-section background-color="#ffffff" padding="40px 20px">
+            <mj-column>
+              <mj-text font-size="24px" font-weight="bold" color="${changeColor}" align="center">
+                Subscription ${changeType === 'upgraded' ? 'Upgraded' : changeType === 'downgraded' ? 'Downgraded' : 'Updated'}
+              </mj-text>
+              
+              <mj-divider border-color="#e5e7eb" padding="20px 0" />
+              
+              <mj-text font-size="16px">
+                ${adminName ? `Hi ${adminName},` : 'Hi,'}
+              </mj-text>
+              
+              <mj-text font-size="16px">
+                Your organization's subscription has been ${changeType}.
+              </mj-text>
+              
+              <mj-section background-color="#f9fafb" padding="15px" border-radius="8px">
+                <mj-column>
+                  ${previousPlan ? `
+                  <mj-text font-size="14px" color="#6b7280">
+                    Previous Plan: ${previousPlan}
+                  </mj-text>
+                  ` : ''}
+                  <mj-text font-size="16px" font-weight="bold" color="${changeColor}">
+                    New Plan: ${planName}
+                  </mj-text>
+                  <mj-text font-size="14px" color="#6b7280">
+                    Effective: ${effectiveDate}
+                  </mj-text>
+                  <mj-text font-size="14px" color="#6b7280">
+                    Updated by: ${updatedBy}
+                  </mj-text>
+                </mj-column>
+              </mj-section>
+              
+              <mj-text font-size="14px" color="#6b7280" padding-top="20px">
+                ${orgName}
+              </mj-text>
+            </mj-column>
+          </mj-section>
+        </mj-body>
+      </mjml>
+    `;
+    
+    const { html } = mjml2html(mjml);
+    
+    return {
+      subject: `Subscription ${changeType === 'upgraded' ? 'Upgraded' : changeType === 'downgraded' ? 'Downgraded' : 'Updated'}: ${planName}`,
+      html,
+      text: `${adminName ? `Hi ${adminName},` : 'Hi,'}\n\nYour organization's subscription has been ${changeType}.\n\n${previousPlan ? `Previous Plan: ${previousPlan}\n` : ''}New Plan: ${planName}\nEffective: ${effectiveDate}\nUpdated by: ${updatedBy}\n\n${orgName}`
+    };
+  }
 }
