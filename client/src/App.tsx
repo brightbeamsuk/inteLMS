@@ -24,7 +24,6 @@ import { SuperAdminOrganisations } from "@/pages/superadmin/Organisations";
 import { SuperAdminUsers } from "@/pages/superadmin/Users";
 import { SuperAdminCourseBuilder } from "@/pages/superadmin/CourseBuilder";
 import { SuperAdminCourses } from "@/pages/superadmin/Courses";
-import { SuperAdminEmailTemplates } from "@/pages/superadmin/EmailTemplates";
 import { SuperAdminEmailLogs } from "@/pages/superadmin/EmailLogs";
 import { SuperAdminSettings } from "@/pages/superadmin/Settings";
 import { SuperAdminProfile } from "@/pages/superadmin/Profile";
@@ -215,14 +214,6 @@ function Router() {
         <ProtectedRoute requiredRole="superadmin">
           <SuperAdminLayout>
             <SuperAdminCourses />
-          </SuperAdminLayout>
-        </ProtectedRoute>
-      </Route>
-      
-      <Route path="/superadmin/email-templates">
-        <ProtectedRoute requiredRole="superadmin">
-          <SuperAdminLayout>
-            <SuperAdminEmailTemplates />
           </SuperAdminLayout>
         </ProtectedRoute>
       </Route>
