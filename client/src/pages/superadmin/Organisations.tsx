@@ -91,6 +91,13 @@ export function SuperAdminOrganisations() {
     adminDepartment: "",
     // Course category access
     selectedCategoryIds: [] as string[],
+    // Pricing model fields
+    pricingModel: "standard_plan" as "standard_plan" | "custom" | "privately_billed",
+    customMonthlyPrice: "",
+    customAnnualPrice: "",
+    customUserLimit: "",
+    customBillingCadence: "monthly" as "monthly" | "annual",
+    customPricingNotes: "",
   });
 
   const { data: organisations = [], isLoading } = useQuery<Organisation[]>({
@@ -253,6 +260,12 @@ export function SuperAdminOrganisations() {
       adminJobTitle: "",
       adminDepartment: "",
       selectedCategoryIds: [],
+      pricingModel: "standard_plan",
+      customMonthlyPrice: "",
+      customAnnualPrice: "",
+      customUserLimit: "",
+      customBillingCadence: "monthly",
+      customPricingNotes: "",
     });
   };
 
@@ -745,6 +758,127 @@ export function SuperAdminOrganisations() {
                   data-testid="input-admin-department"
                 />
               </div>
+
+              {/* Pricing Model Section */}
+              <div className="divider">
+                <span className="text-lg font-semibold">💰 Pricing & Billing</span>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Pricing Model *</span>
+                </label>
+                <select 
+                  className="select select-bordered w-full" 
+                  value={formData.pricingModel}
+                  onChange={(e) => setFormData(prev => ({ ...prev, pricingModel: e.target.value as any }))}
+                  data-testid="select-pricing-model"
+                >
+                  <option value="standard_plan">Standard Plan (via Stripe)</option>
+                  <option value="custom">Custom Pricing</option>
+                  <option value="privately_billed">Privately Billed (Unlimited Access)</option>
+                </select>
+                <label className="label">
+                  <span className="label-text-alt">
+                    {formData.pricingModel === 'standard_plan' && 'Organisation will select from available plans and pay via Stripe'}
+                    {formData.pricingModel === 'custom' && 'Set custom pricing and limits for this organisation'}
+                    {formData.pricingModel === 'privately_billed' && 'Full platform access with unlimited users, no Stripe integration'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Custom Pricing Fields */}
+              {formData.pricingModel === 'custom' && (
+                <div className="space-y-4 p-4 bg-base-200 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Monthly Price ($)</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        placeholder="e.g. 99.00" 
+                        className="input input-bordered" 
+                        value={formData.customMonthlyPrice}
+                        onChange={(e) => setFormData(prev => ({ ...prev, customMonthlyPrice: e.target.value }))}
+                        data-testid="input-custom-monthly-price"
+                      />
+                    </div>
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Annual Price ($)</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        placeholder="e.g. 999.00" 
+                        className="input input-bordered" 
+                        value={formData.customAnnualPrice}
+                        onChange={(e) => setFormData(prev => ({ ...prev, customAnnualPrice: e.target.value }))}
+                        data-testid="input-custom-annual-price"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">User Limit</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        placeholder="Leave empty for unlimited" 
+                        className="input input-bordered" 
+                        value={formData.customUserLimit}
+                        onChange={(e) => setFormData(prev => ({ ...prev, customUserLimit: e.target.value }))}
+                        data-testid="input-custom-user-limit"
+                      />
+                      <label className="label">
+                        <span className="label-text-alt">Leave empty for unlimited users</span>
+                      </label>
+                    </div>
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text">Billing Cadence</span>
+                      </label>
+                      <select 
+                        className="select select-bordered w-full" 
+                        value={formData.customBillingCadence}
+                        onChange={(e) => setFormData(prev => ({ ...prev, customBillingCadence: e.target.value as any }))}
+                        data-testid="select-custom-billing-cadence"
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="annual">Annual</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text">Pricing Notes</span>
+                    </label>
+                    <textarea 
+                      className="textarea textarea-bordered h-20" 
+                      placeholder="Add any notes about this custom pricing arrangement..." 
+                      value={formData.customPricingNotes}
+                      onChange={(e) => setFormData(prev => ({ ...prev, customPricingNotes: e.target.value }))}
+                      data-testid="textarea-custom-pricing-notes"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Privately Billed Info */}
+              {formData.pricingModel === 'privately_billed' && (
+                <div className="alert alert-success">
+                  <i className="fas fa-check-circle"></i>
+                  <div>
+                    <p className="font-semibold">Privately Billed Organisation</p>
+                    <p className="text-sm">This organisation will have full platform access with unlimited users and no Stripe integration required.</p>
+                  </div>
+                </div>
+              )}
 
               {/* Course Categories Section */}
               <div className="divider">
