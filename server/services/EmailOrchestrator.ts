@@ -233,6 +233,8 @@ export interface TemplateRenderContext {
 export interface QueueEmailParams {
   // Required parameters
   triggerEvent: 'ORG_FAST_ADD' | 'USER_FAST_ADD' | 'COURSE_ASSIGNED' | 'COURSE_COMPLETED' | 'COURSE_FAILED' | 'PLAN_UPDATED' | 
+    // New Automated Emails
+    'WELCOME_EMAIL' | 'PASSWORD_RESET' | 'COURSE_REMINDER' | 'CERTIFICATE_ISSUED' | 'NEW_ADMIN_ADDED' |
     // GDPR Breach Management Events (Articles 33 & 34)
     'BREACH_ICO_NOTIFICATION' | 'BREACH_SUBJECT_NOTIFICATION' | 'BREACH_DEADLINE_ALERT' | 
     'BREACH_URGENT_ALERT' | 'BREACH_OVERDUE_ALERT' | 'BREACH_ESCALATION_ALERT' |
@@ -517,6 +519,18 @@ export class EmailOrchestrator {
       'billing_failed',
       'billing_updated',
       'compliance_reminder',
+      // New Automated Email Events
+      'WELCOME_EMAIL',
+      'PASSWORD_RESET',
+      'COURSE_REMINDER',
+      'CERTIFICATE_ISSUED',
+      'NEW_ADMIN_ADDED',
+      'PLAN_UPDATED',
+      'COURSE_ASSIGNED',
+      'COURSE_COMPLETED',
+      'COURSE_FAILED',
+      'ORG_FAST_ADD',
+      'USER_FAST_ADD',
       // GDPR Dashboard Compliance Service Events
       'COMPLIANCE_DAILY_DIGEST',
       'COMPLIANCE_WEEKLY_REPORT',

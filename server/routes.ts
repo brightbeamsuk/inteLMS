@@ -8733,6 +8733,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`📜 Manual certificate generated: ${certificate.id} for ${completionUser.email}`);
 
+      // Send certificate issued email
+      if (completionUser.email) {
+        try {
+          const { AutomatedEmailTemplates } = await import('./services/AutomatedEmailTemplates');
+          const userName = completionUser.firstName && completionUser.lastName 
+            ? `${completionUser.firstName} ${completionUser.lastName}` 
+            : (completionUser.firstName || completionUser.email);
+          const emailTemplate = AutomatedEmailTemplates.certificateIssued({
+            userName,
+            courseName: course.title,
+            issueDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+            certificateUrl: certificateUrl,
+            orgName: organisation.displayName || organisation.name
+          });
+
+          await emailOrchestrator.queue({
+            triggerEvent: 'CERTIFICATE_ISSUED',
+            toEmail: completionUser.email,
+            context: {},
+            organisationId: completion.organisationId,
+            resourceId: certificate.id,
+            priority: 1,
+            preRenderedContent: {
+              subject: emailTemplate.subject,
+              htmlBody: emailTemplate.html,
+              textBody: emailTemplate.text
+            }
+          });
+          
+          console.log(`✅ CERTIFICATE_ISSUED email queued for ${completionUser.email}`);
+        } catch (emailError) {
+          console.warn('⚠️ Failed to queue CERTIFICATE_ISSUED email:', emailError);
+        }
+      }
+
       res.json({
         success: true,
         message: 'Certificate generated successfully',
@@ -16569,56 +16604,71 @@ This test was initiated by ${user.email}.
         }
       }
       
-      // Send welcome email using EmailOrchestrator if EMAIL_TEMPLATES_V2 is enabled
-      if (EMAIL_TEMPLATES_V2_ENABLED) {
+      // Send welcome email with temporary password
+      if (newUser.email && passwordForEmail) {
         try {
-          // Get organization info for context
-          let orgContext = null;
+          // Get organization info
+          let orgName = 'Your Learning Platform';
           if (newUser.organisationId) {
             const organisation = await getOrgById(storage, newUser.organisationId);
             if (organisation) {
-              orgContext = {
-                name: organisation.name,
-                displayName: organisation.displayName || organisation.name
-              };
+              orgName = organisation.displayName || organisation.name;
             }
           }
 
-          const context = {
-            user: {
-              name: `${newUser.firstName} ${newUser.lastName}`,
-              email: newUser.email ?? undefined,
-              firstName: newUser.firstName ?? undefined,
-              lastName: newUser.lastName ?? undefined,
-              fullName: `${newUser.firstName} ${newUser.lastName}`
-            },
-            org: orgContext ?? undefined,
-            addedBy: {
-              name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Administrator'
-            },
-            addedAt: new Date().toISOString(),
-            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`,
-            supportEmail: process.env.SUPPORT_EMAIL || 'support@intellms.app',
-            temporaryPassword: passwordForEmail || undefined // Include temporary password for all users
-          };
+          // Generate welcome email using hardcoded MJML template
+          const { AutomatedEmailTemplates } = await import('./services/AutomatedEmailTemplates');
+          const userName = newUser.firstName && newUser.lastName 
+            ? `${newUser.firstName} ${newUser.lastName}` 
+            : (newUser.firstName || newUser.email);
+          const emailTemplate = AutomatedEmailTemplates.welcomeEmail({
+            userName,
+            userEmail: newUser.email,
+            temporaryPassword: passwordForEmail,
+            orgName,
+            loginUrl: `${process.env.REPLIT_URL || 'http://localhost:5000'}/api/login`
+          });
 
-          // Only queue email if user has a valid email address
-          if (newUser.email) {
-            await emailOrchestrator.queue({
-              triggerEvent: 'USER_FAST_ADD',
-              templateKey: 'new_user_welcome',
-              toEmail: newUser.email,
-              context,
-              organisationId: newUser.organisationId || undefined,
-              resourceId: newUser.id,
-              priority: 1
-            });
-          }
+          await emailOrchestrator.queue({
+            triggerEvent: 'WELCOME_EMAIL',
+            toEmail: newUser.email,
+            context: {},
+            organisationId: newUser.organisationId || undefined,
+            resourceId: newUser.id,
+            priority: 1,
+            preRenderedContent: {
+              subject: emailTemplate.subject,
+              htmlBody: emailTemplate.html,
+              textBody: emailTemplate.text
+            }
+          });
           
-          console.log(`✅ USER_FAST_ADD email queued for ${newUser.email} (Admin/SuperAdmin created)`);
+          console.log(`✅ WELCOME_EMAIL queued for ${newUser.email} with temporary password`);
         } catch (emailError) {
-          console.warn('⚠️ Failed to queue USER_FAST_ADD email:', emailError);
+          console.warn('⚠️ Failed to queue WELCOME_EMAIL:', emailError);
           // Don't fail user creation if email fails
+        }
+      }
+      
+      // Send notifications for new user creation (admin notifications)
+      if (EMAIL_TEMPLATES_V2_ENABLED && newUser.organisationId) {
+        try {
+          if (newUser.role === 'admin') {
+            await emailNotificationService.notifyNewAdminAdded(
+              newUser.organisationId,
+              newUser.id,
+              user.id
+            );
+          } else if (newUser.role === 'user') {
+            await emailNotificationService.notifyNewUserAdded(
+              newUser.organisationId,
+              newUser.id,
+              user.id
+            );
+          }
+        } catch (error) {
+          console.error('[User Creation] Failed to send user notification:', error);
+          // Don't break user creation flow on notification failure
         }
       }
       

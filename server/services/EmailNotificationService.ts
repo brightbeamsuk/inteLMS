@@ -99,6 +99,7 @@ export class EmailNotificationService {
 
   /**
    * Notify when a new admin is added to an organization
+   * Uses NEW hardcoded MJML template for NEW_ADMIN_ADDED
    */
   async notifyNewAdminAdded(organizationId: string, newAdminUserId: string, addedByUserId?: string): Promise<void> {
     try {
@@ -122,36 +123,55 @@ export class EmailNotificationService {
         addedBy = await storage.getUser(addedByUserId);
       }
 
-      const context: TemplateRenderContext = {
-        org: {
-          name: organization.name,
-          displayName: organization.displayName
-        },
-        user: {
-          name: newAdmin.firstName ? `${newAdmin.firstName} ${newAdmin.lastName || ''}`.trim() : newAdmin.email!,
-          email: newAdmin.email!,
-          firstName: newAdmin.firstName || '',
-          lastName: newAdmin.lastName || '',
-          fullName: newAdmin.firstName ? `${newAdmin.firstName} ${newAdmin.lastName || ''}`.trim() : newAdmin.email!
-        },
-        addedBy: addedBy ? {
-          name: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!,
-          fullName: addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!
-        } : {
-          name: 'System',
-          fullName: 'System'
-        },
-        addedAt: new Date().toLocaleDateString()
-      };
+      const addedByName = addedBy 
+        ? (addedBy.firstName ? `${addedBy.firstName} ${addedBy.lastName || ''}`.trim() : addedBy.email!)
+        : 'System Administrator';
 
-      await this.sendToAdmins({
-        organizationId,
-        templateKey: 'admin.new_admin_added',
-        triggerEvent: 'ORG_FAST_ADD',
-        context,
-        resourceId: `new-admin-${newAdminUserId}`,
-        excludeUserIds: [newAdminUserId] // Exclude the newly added admin from notifications
-      });
+      // Get all existing active admin users (exclude the new admin)
+      const existingAdmins = await this.getOrganizationAdmins(organizationId);
+      const adminsToNotify = existingAdmins.filter(admin => admin.id !== newAdminUserId);
+
+      if (adminsToNotify.length === 0) {
+        console.log('[EmailNotificationService] No existing admins to notify about new admin');
+        return;
+      }
+
+      // Send to each existing admin using the new automated template
+      const { AutomatedEmailTemplates } = await import('./AutomatedEmailTemplates');
+      
+      const newAdminName = newAdmin.firstName && newAdmin.lastName 
+        ? `${newAdmin.firstName} ${newAdmin.lastName}`.trim() 
+        : (newAdmin.firstName || newAdmin.email!);
+      
+      for (const existingAdmin of adminsToNotify) {
+        try {
+          const emailTemplate = AutomatedEmailTemplates.newAdminAdded({
+            existingAdminName: existingAdmin.firstName || existingAdmin.email,
+            newAdminName,
+            newAdminEmail: newAdmin.email!,
+            addedBy: addedByName,
+            orgName: organization.displayName || organization.name
+          });
+
+          await this.emailOrchestrator.queue({
+            triggerEvent: 'NEW_ADMIN_ADDED',
+            toEmail: existingAdmin.email,
+            context: {},
+            organisationId: organizationId,
+            resourceId: `new-admin-${newAdminUserId}-notify-${existingAdmin.id}`,
+            priority: 1,
+            preRenderedContent: {
+              subject: emailTemplate.subject,
+              htmlBody: emailTemplate.html,
+              textBody: emailTemplate.text
+            }
+          });
+
+          console.log(`✅ NEW_ADMIN_ADDED email queued for ${existingAdmin.email}`);
+        } catch (error) {
+          console.error(`Failed to queue NEW_ADMIN_ADDED email for ${existingAdmin.email}:`, error);
+        }
+      }
 
     } catch (error) {
       console.error('[EmailNotificationService] Failed to notify new admin added:', error);
@@ -364,6 +384,7 @@ export class EmailNotificationService {
 
   /**
    * Notify when organization's plan is updated
+   * Uses NEW hardcoded MJML template for PLAN_UPDATED
    */
   async notifyPlanUpdated(organizationId: string, oldPlanId?: string, newPlanId?: string, changedByUserId?: string): Promise<void> {
     try {
@@ -390,31 +411,61 @@ export class EmailNotificationService {
         changedBy = await storage.getUser(changedByUserId);
       }
 
-      const context: TemplateRenderContext = {
-        org: {
-          name: organization.name,
-          displayName: organization.displayName
-        },
-        plan: {
-          name: newPlan?.name || 'Updated Plan',
-          oldPrice: oldPlan ? `${oldPlan.pricePerUser || 0}` : '0',
-          newPrice: newPlan ? `${newPlan.pricePerUser || 0}` : '0'
-        },
-        changedBy: changedBy ? {
-          name: changedBy.firstName ? `${changedBy.firstName} ${changedBy.lastName || ''}`.trim() : changedBy.email!
-        } : {
-          name: 'System'
-        },
-        changedAt: new Date().toLocaleDateString()
-      };
+      const changedByName = changedBy 
+        ? (changedBy.firstName ? `${changedBy.firstName} ${changedBy.lastName || ''}`.trim() : changedBy.email!)
+        : 'System Administrator';
 
-      await this.sendToAdmins({
-        organizationId,
-        templateKey: 'admin.plan_updated',
-        triggerEvent: 'PLAN_UPDATED',
-        context,
-        resourceId: `plan-updated-${organizationId}-${Date.now()}`
-      });
+      // Determine change type
+      let changeType: 'upgraded' | 'downgraded' | 'changed' = 'changed';
+      if (oldPlan && newPlan) {
+        const oldPrice = oldPlan.pricePerUser || 0;
+        const newPrice = newPlan.pricePerUser || 0;
+        if (newPrice > oldPrice) changeType = 'upgraded';
+        else if (newPrice < oldPrice) changeType = 'downgraded';
+      }
+
+      // Get all active admin users
+      const admins = await this.getOrganizationAdmins(organizationId);
+
+      if (admins.length === 0) {
+        console.log('[EmailNotificationService] No admins to notify about plan update');
+        return;
+      }
+
+      // Send to each admin using the new automated template
+      const { AutomatedEmailTemplates } = await import('./AutomatedEmailTemplates');
+      
+      for (const admin of admins) {
+        try {
+          const emailTemplate = AutomatedEmailTemplates.planUpdated({
+            adminName: admin.firstName || admin.email,
+            orgName: organization.displayName || organization.name,
+            planName: newPlan?.name || 'Updated Plan',
+            previousPlan: oldPlan?.name,
+            changeType,
+            effectiveDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+            updatedBy: changedByName
+          });
+
+          await this.emailOrchestrator.queue({
+            triggerEvent: 'PLAN_UPDATED',
+            toEmail: admin.email,
+            context: {},
+            organisationId: organizationId,
+            resourceId: `plan-updated-${organizationId}-${admin.id}-${Date.now()}`,
+            priority: 1,
+            preRenderedContent: {
+              subject: emailTemplate.subject,
+              htmlBody: emailTemplate.html,
+              textBody: emailTemplate.text
+            }
+          });
+
+          console.log(`✅ PLAN_UPDATED email queued for ${admin.email}`);
+        } catch (error) {
+          console.error(`Failed to queue PLAN_UPDATED email for ${admin.email}:`, error);
+        }
+      }
 
     } catch (error) {
       console.error('[EmailNotificationService] Failed to notify plan updated:', error);
