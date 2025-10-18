@@ -69,6 +69,9 @@ export const priceChangePolicyEnum = pgEnum('price_change_policy', ['prorate_imm
 // Billing status enum for organizations
 export const billingStatusEnum = pgEnum('billing_status', ['active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'trialing', 'paused']);
 
+// Pricing model enum for organizations
+export const pricingModelEnum = pgEnum('pricing_model', ['standard_plan', 'custom', 'privately_billed']);
+
 // Support ticket status enum
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'resolved', 'closed']);
 
@@ -424,6 +427,14 @@ export const organisations = pgTable("organisations", {
   activeUserCount: integer("active_user_count").default(0), // For tracking usage (licensed_seats)
   currentPeriodEnd: timestamp("current_period_end"), // Subscription current period end date
   lastBillingSync: timestamp("last_billing_sync"), // Last time usage was synced to Stripe
+  
+  // Custom pricing fields
+  pricingModel: pricingModelEnum("pricing_model").default('standard_plan'), // Pricing model for this organisation
+  customMonthlyPrice: decimal("custom_monthly_price", { precision: 10, scale: 2 }), // Custom monthly price (if pricing_model is 'custom')
+  customAnnualPrice: decimal("custom_annual_price", { precision: 10, scale: 2 }), // Custom annual price (if pricing_model is 'custom')
+  customUserLimit: integer("custom_user_limit"), // Custom user limit (null = unlimited)
+  customBillingCadence: billingCadenceEnum("custom_billing_cadence"), // Custom billing cadence
+  customPricingNotes: text("custom_pricing_notes"), // Notes about custom pricing arrangement
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
