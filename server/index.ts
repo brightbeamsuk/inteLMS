@@ -150,9 +150,9 @@ app.use((req, res, next) => {
     const breachNotificationService = new BreachNotificationService();
     const dataRetentionService = new DataRetentionService();
     
-    // Register breach notification templates at startup
-    await breachNotificationService.registerBreachTemplates();
-    console.log('✅ Breach notification templates registered');
+    // TEMPORARILY DISABLED: Register breach notification templates at startup
+    // await breachNotificationService.registerBreachTemplates();
+    console.log('⚠️  Breach notification templates registration skipped (templates now use AutomatedEmailTemplates)');
     
     // Set up automated deadline monitoring (every hour)
     // Critical: 72-hour ICO notification deadlines per Article 33

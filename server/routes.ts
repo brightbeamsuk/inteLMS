@@ -172,15 +172,15 @@ async function validateUserRightsAccess(
 // Initialize EmailOrchestrator for the new email system
 const emailOrchestrator = new EmailOrchestrator();
 
-// Initialize and register breach notification templates
-(async () => {
-  try {
-    await breachNotificationService.registerBreachTemplates();
-    console.log('[GDPR] Breach notification templates registered successfully');
-  } catch (error) {
-    console.error('[GDPR] Failed to register breach notification templates:', error);
-  }
-})();
+// TEMPORARILY DISABLED: Initialize and register breach notification templates
+// (async () => {
+//   try {
+//     await breachNotificationService.registerBreachTemplates();
+//     console.log('[GDPR] Breach notification templates registered successfully');
+//   } catch (error) {
+//     console.error('[GDPR] Failed to register breach notification templates:', error);
+//   }
+// })();
 
 // Feature flag for EMAIL_TEMPLATES_V2 system
 const EMAIL_TEMPLATES_V2_ENABLED = process.env.EMAIL_TEMPLATES_V2 === 'true';
