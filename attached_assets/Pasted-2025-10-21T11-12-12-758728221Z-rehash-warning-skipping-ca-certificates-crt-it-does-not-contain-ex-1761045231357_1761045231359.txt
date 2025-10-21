@@ -1,0 +1,58 @@
+2025-10-21T11:12:12.758728221Z  rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2025-10-21T11:12:12.818308761Z  4 added, 0 removed; done.
+2025-10-21T11:12:12.818331295Z  Running hooks in /etc/ca-certificates/update.d...
+2025-10-21T11:12:12.828772394Z  done.
+2025-10-21T11:12:12.869016084Z  CA certificates copied and updated successfully.
+2025-10-21T11:12:13.033928949Z  Starting periodic command scheduler: cron.
+2025-10-21T11:12:13.389421068Z  Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2025-10-21T11:12:13.399355016Z  Could not find operation ID in manifest. Generating an operation id...
+2025-10-21T11:12:13.399381393Z  Build Operation ID: b63e0211-8f39-4593-9837-73b1c2ee062a
+2025-10-21T11:12:14.147646643Z  Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2025-10-21T11:12:14.200233242Z  Writing output script to '/opt/startup/startup.sh'
+2025-10-21T11:12:14.342220368Z  Running #!/bin/sh
+2025-10-21T11:12:14.342256139Z
+2025-10-21T11:12:14.342258926Z  # Enter the source directory to make sure the script runs where the user expects
+2025-10-21T11:12:14.342261116Z  cd "/home/site/wwwroot"
+2025-10-21T11:12:14.342263065Z
+2025-10-21T11:12:14.342264744Z  export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2025-10-21T11:12:14.342266459Z  if [ -z "$PORT" ]; then
+2025-10-21T11:12:14.342268469Z  		export PORT=8080
+2025-10-21T11:12:14.342270470Z  fi
+2025-10-21T11:12:14.342272120Z
+2025-10-21T11:12:14.342273605Z  echo Found tar.gz based node_modules.
+2025-10-21T11:12:14.342286577Z  extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2025-10-21T11:12:14.342288741Z  echo "Removing existing modules directory from root..."
+2025-10-21T11:12:14.342290474Z  rm -fr /node_modules
+2025-10-21T11:12:14.342292120Z  mkdir -p /node_modules
+2025-10-21T11:12:14.342293739Z  echo Extracting modules...
+2025-10-21T11:12:14.342295379Z  $extractionCommand
+2025-10-21T11:12:14.342296919Z  export NODE_PATH="/node_modules":$NODE_PATH
+2025-10-21T11:12:14.342298612Z  export PATH=/node_modules/.bin:$PATH
+2025-10-21T11:12:14.342300312Z  if [ -d node_modules ]; then
+2025-10-21T11:12:14.342302019Z      mv -f node_modules _del_node_modules || true
+2025-10-21T11:12:14.342303654Z  fi
+2025-10-21T11:12:14.342305190Z
+2025-10-21T11:12:14.342306673Z  if [ -d /node_modules ]; then
+2025-10-21T11:12:14.342308319Z      ln -sfn /node_modules ./node_modules
+2025-10-21T11:12:14.342309902Z  fi
+2025-10-21T11:12:14.342311356Z
+2025-10-21T11:12:14.342312938Z  echo "Done."
+2025-10-21T11:12:14.342446764Z  PATH="$PATH:/home/site/wwwroot" node dist/index.js
+2025-10-21T11:12:14.358786208Z  Found tar.gz based node_modules.
+2025-10-21T11:12:14.358807837Z  Removing existing modules directory from root...
+2025-10-21T11:12:14.510248398Z  Extracting modules...
+2025-10-21T11:13:10.149433761Z  Done.
+2025-10-21T11:13:22.012641345Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:13:22.020519172Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:13:22.050741524Z  file:///home/site/wwwroot/dist/index.js:26970
+2025-10-21T11:13:22.050765090Z        throw new Error("STRIPE_SECRET_KEY environment variable is required");
+2025-10-21T11:13:22.050768667Z              ^
+2025-10-21T11:13:22.050771260Z
+2025-10-21T11:13:22.050773819Z  Error: STRIPE_SECRET_KEY environment variable is required
+2025-10-21T11:13:22.050776547Z      at new StripeWebhookService (file:///home/site/wwwroot/dist/index.js:26970:13)
+2025-10-21T11:13:22.050779437Z      at file:///home/site/wwwroot/dist/index.js:27968:28
+2025-10-21T11:13:22.050781990Z      at ModuleJob.run (node:internal/modules/esm/module_job:263:25)
+2025-10-21T11:13:22.050791371Z      at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+2025-10-21T11:13:22.050794345Z      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2025-10-21T11:13:22.053053585Z
+2025-10-21T11:13:22.053068023Z  Node.js v20.19.3
