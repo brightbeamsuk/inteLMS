@@ -103,6 +103,10 @@ async function upsertUser(
     }
   }
 
+  // Check if this email should be a superadmin (from environment variable)
+  const superadminEmail = process.env.SUPERADMIN_EMAIL;
+  const isSuperadmin = superadminEmail && email === superadminEmail;
+
   // For non-demo users or if demo user doesn't exist yet, create/update normally
   await storage.upsertUser({
     id: demoMapping?.id || claims["sub"],
@@ -110,7 +114,7 @@ async function upsertUser(
     firstName: demoMapping?.firstName || claims["first_name"],
     lastName: demoMapping?.lastName || claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
-    role: (demoMapping?.role as 'superadmin' | 'admin' | 'user') || 'user', // Default role for non-demo users
+    role: isSuperadmin ? 'superadmin' : ((demoMapping?.role as 'superadmin' | 'admin' | 'user') || 'user'),
   });
 }
 
