@@ -1,0 +1,252 @@
+2025-10-21T11:33:46.169629998Z  Documentation: http://aka.ms/webapp-linux
+2025-10-21T11:33:46.169631832Z  NodeJS quickstart: https://aka.ms/node-qs
+2025-10-21T11:33:46.169633625Z  NodeJS Version : v20.19.3
+2025-10-21T11:33:46.169635574Z  Note: Any data outside '/home' is not persisted
+2025-10-21T11:33:46.169637489Z
+2025-10-21T11:33:50.049921213Z  Starting OpenBSD Secure Shell server: sshd.
+2025-10-21T11:33:50.075919533Z  WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2025-10-21T11:33:50.122223376Z  Updating certificates in /etc/ssl/certs...
+2025-10-21T11:34:09.683390610Z  rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2025-10-21T11:34:09.809530972Z  4 added, 0 removed; done.
+2025-10-21T11:34:09.809554655Z  Running hooks in /etc/ca-certificates/update.d...
+2025-10-21T11:34:09.809557665Z  done.
+2025-10-21T11:34:09.902971056Z  CA certificates copied and updated successfully.
+2025-10-21T11:34:10.367459413Z  Starting periodic command scheduler: cron.
+2025-10-21T11:34:10.850080390Z  Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2025-10-21T11:34:10.859982835Z  Could not find operation ID in manifest. Generating an operation id...
+2025-10-21T11:34:10.860659521Z  Build Operation ID: 8431ad37-ab95-437d-aef9-b64fa8f881c0
+2025-10-21T11:34:13.003030552Z  Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2025-10-21T11:34:13.019623920Z  Writing output script to '/opt/startup/startup.sh'
+2025-10-21T11:34:13.230853253Z  Running #!/bin/sh
+2025-10-21T11:34:13.230879181Z
+2025-10-21T11:34:13.230882885Z  # Enter the source directory to make sure the script runs where the user expects
+2025-10-21T11:34:13.230885735Z  cd "/home/site/wwwroot"
+2025-10-21T11:34:13.230888701Z
+2025-10-21T11:34:13.230891149Z  export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2025-10-21T11:34:13.230893771Z  if [ -z "$PORT" ]; then
+2025-10-21T11:34:13.230896567Z  		export PORT=8080
+2025-10-21T11:34:13.230899359Z  fi
+2025-10-21T11:34:13.230901680Z
+2025-10-21T11:34:13.230904105Z  echo Found tar.gz based node_modules.
+2025-10-21T11:34:13.230921388Z  extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2025-10-21T11:34:13.230923770Z  echo "Removing existing modules directory from root..."
+2025-10-21T11:34:13.230925753Z  rm -fr /node_modules
+2025-10-21T11:34:13.230927570Z  mkdir -p /node_modules
+2025-10-21T11:34:13.230929406Z  echo Extracting modules...
+2025-10-21T11:34:13.230931187Z  $extractionCommand
+2025-10-21T11:34:13.230932978Z  export NODE_PATH="/node_modules":$NODE_PATH
+2025-10-21T11:34:13.230940844Z  export PATH=/node_modules/.bin:$PATH
+2025-10-21T11:34:13.230942696Z  if [ -d node_modules ]; then
+2025-10-21T11:34:13.230944593Z      mv -f node_modules _del_node_modules || true
+2025-10-21T11:34:13.230946396Z  fi
+2025-10-21T11:34:13.230948069Z
+2025-10-21T11:34:13.230949838Z  if [ -d /node_modules ]; then
+2025-10-21T11:34:13.230951748Z      ln -sfn /node_modules ./node_modules
+2025-10-21T11:34:13.230953584Z  fi
+2025-10-21T11:34:13.230955287Z
+2025-10-21T11:34:13.230956974Z  echo "Done."
+2025-10-21T11:34:13.238492916Z  PATH="$PATH:/home/site/wwwroot" node dist/index.js
+2025-10-21T11:34:13.263374575Z  Found tar.gz based node_modules.
+2025-10-21T11:34:13.264990541Z  Removing existing modules directory from root...
+2025-10-21T11:34:13.317784698Z  Extracting modules...
+2025-10-21T11:34:58.141076250Z  Done.
+2025-10-21T11:35:13.153089935Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.240888698Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.240980905Z  [EmailTemplateService] Handlebars helpers registered
+2025-10-21T11:35:13.240986482Z  [EmailTemplateService] Handlebars helpers registered
+2025-10-21T11:35:13.240989311Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.240991716Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.240994065Z  [BreachNotificationService] Initialized breach notification service
+2025-10-21T11:35:13.240996438Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.240998663Z  [EmailTemplateService] Handlebars helpers registered
+2025-10-21T11:35:13.241000805Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.303819943Z  🔧 Applying database schema patches...
+2025-10-21T11:35:13.825365784Z  🛡️  Initializing GDPR breach management services...
+2025-10-21T11:35:13.825433533Z  [BreachDeadlineService] Initialized breach deadline monitoring service
+2025-10-21T11:35:13.825439551Z  [BreachDeadlineService] Initialized breach deadline monitoring service
+2025-10-21T11:35:13.825442733Z  [EmailOrchestrator] Initialized with security helpers
+2025-10-21T11:35:13.825455598Z  [BreachNotificationService] Initialized breach notification service
+2025-10-21T11:35:13.825458020Z  ⚠️  Breach notification templates registration skipped (templates now use AutomatedEmailTemplates)
+2025-10-21T11:35:13.825460442Z  ✅ Breach deadline monitoring active - checking every 60 minutes
+2025-10-21T11:35:13.825463401Z  🗂️  Initializing automated data retention scanning...
+2025-10-21T11:35:13.825465624Z  ✅ Data retention lifecycle scanning active - checking every 6 hours
+2025-10-21T11:35:13.825467805Z  🛡️  GDPR breach management and data retention services initialized successfully
+2025-10-21T11:35:13.843772950Z  ❌ Schema patch failed: ErrorEvent {
+2025-10-21T11:35:13.843803151Z    [Symbol(kTarget)]: WebSocket {
+2025-10-21T11:35:13.843806278Z      _events: [Object: null prototype] {
+2025-10-21T11:35:13.843808457Z        error: [Function],
+2025-10-21T11:35:13.843810525Z        message: [Function],
+2025-10-21T11:35:13.843812816Z        close: [Function],
+2025-10-21T11:35:13.843814752Z        open: [Function]
+2025-10-21T11:35:13.843816762Z      },
+2025-10-21T11:35:13.843818742Z      _eventsCount: 4,
+2025-10-21T11:35:13.843820722Z      _maxListeners: undefined,
+2025-10-21T11:35:13.843822797Z      _binaryType: 'arraybuffer',
+2025-10-21T11:35:13.843836155Z      _closeCode: 1006,
+2025-10-21T11:35:13.843838188Z      _closeFrameReceived: false,
+2025-10-21T11:35:13.843840252Z      _closeFrameSent: false,
+2025-10-21T11:35:13.843842221Z      _closeMessage: <Buffer >,
+2025-10-21T11:35:13.843844888Z      _closeTimer: null,
+2025-10-21T11:35:13.843846883Z      _errorEmitted: true,
+2025-10-21T11:35:13.843848812Z      _extensions: {},
+2025-10-21T11:35:13.843855866Z      _paused: false,
+2025-10-21T11:35:13.843857880Z      _protocol: '',
+2025-10-21T11:35:13.843859754Z      _readyState: 3,
+2025-10-21T11:35:13.843861798Z      _receiver: null,
+2025-10-21T11:35:13.843863739Z      _sender: null,
+2025-10-21T11:35:13.843865686Z      _socket: null,
+2025-10-21T11:35:13.843867617Z      _bufferedAmount: 0,
+2025-10-21T11:35:13.843869675Z      _isServer: false,
+2025-10-21T11:35:13.843949583Z      _redirects: 0,
+2025-10-21T11:35:13.843953772Z      _autoPong: true,
+2025-10-21T11:35:13.843955892Z      _url: 'wss://intelms-server.postgres.database.azure.com/v2',
+2025-10-21T11:35:13.843958063Z      _req: null,
+2025-10-21T11:35:13.843959999Z      [Symbol(shapeMode)]: false,
+2025-10-21T11:35:13.843961901Z      [Symbol(kCapture)]: false
+2025-10-21T11:35:13.843963793Z    },
+2025-10-21T11:35:13.843965785Z    [Symbol(kType)]: 'error',
+2025-10-21T11:35:13.843977604Z    [Symbol(kError)]: Error: connect ECONNREFUSED 10.0.2.4:443
+2025-10-21T11:35:13.843979913Z        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+2025-10-21T11:35:13.843982066Z        at TCPConnectWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+2025-10-21T11:35:13.843984136Z      errno: -111,
+2025-10-21T11:35:14.161533393Z      code: 'ECONNREFUSED',
+2025-10-21T11:35:14.161539914Z      syscall: 'connect',
+2025-10-21T11:35:14.161541860Z      address: '10.0.2.4',
+2025-10-21T11:35:14.161543720Z      port: 443
+2025-10-21T11:35:14.161545495Z    },
+2025-10-21T11:35:14.161547342Z    [Symbol(kMessage)]: 'connect ECONNREFUSED 10.0.2.4:443'
+2025-10-21T11:35:14.161549354Z  }
+2025-10-21T11:35:14.418959113Z  11:35:13 AM [express] serving on port 8080
+2025-10-21T11:35:14.418987060Z  🚨 Starting breach deadline monitoring sweep...
+2025-10-21T11:35:14.418991246Z  [BreachDeadlineService] Starting deadline monitoring sweep...
+2025-10-21T11:35:14.418993522Z  [BreachDeadlineService] Found 0 active breaches to monitor
+2025-10-21T11:35:14.418995799Z  [BreachDeadlineService] Completed deadline monitoring sweep
+2025-10-21T11:35:14.418997781Z  ✅ Breach deadline monitoring completed successfully
+2025-10-21T11:35:14.441535650Z  [BreachDeadlineService] Error fetching active breaches: ErrorEvent {
+2025-10-21T11:35:14.441555217Z    [Symbol(kTarget)]: WebSocket {
+2025-10-21T11:35:14.441558142Z      _events: [Object: null prototype] {
+2025-10-21T11:35:14.441568228Z        error: [Function],
+2025-10-21T11:35:14.441570272Z        message: [Function],
+2025-10-21T11:35:14.441572379Z        close: [Function],
+2025-10-21T11:35:14.441574550Z        open: [Function]
+2025-10-21T11:35:14.441576853Z      },
+2025-10-21T11:35:14.441578842Z      _eventsCount: 4,
+2025-10-21T11:35:14.441580882Z      _maxListeners: undefined,
+2025-10-21T11:35:14.441582809Z      _binaryType: 'arraybuffer',
+2025-10-21T11:35:14.441584773Z      _closeCode: 1006,
+2025-10-21T11:35:14.441586672Z      _closeFrameReceived: false,
+2025-10-21T11:35:14.441588670Z      _closeFrameSent: false,
+2025-10-21T11:35:14.441590686Z      _closeMessage: <Buffer >,
+2025-10-21T11:35:14.441593039Z      _closeTimer: null,
+2025-10-21T11:35:14.441594944Z      _errorEmitted: true,
+2025-10-21T11:35:14.441596833Z      _extensions: {},
+2025-10-21T11:35:14.445476100Z      _paused: false,
+2025-10-21T11:35:14.445485113Z      _protocol: '',
+2025-10-21T11:35:14.445487413Z      _readyState: 3,
+2025-10-21T11:35:14.445489823Z      _receiver: null,
+2025-10-21T11:35:14.445492094Z      _sender: null,
+2025-10-21T11:35:14.445558378Z      _socket: null,
+2025-10-21T11:35:14.445566371Z      _bufferedAmount: 0,
+2025-10-21T11:35:14.445568135Z      _isServer: false,
+2025-10-21T11:35:14.445569810Z      _redirects: 0,
+2025-10-21T11:35:14.445571538Z      _autoPong: true,
+2025-10-21T11:35:14.445573287Z      _url: 'wss://intelms-server.postgres.database.azure.com/v2',
+2025-10-21T11:35:14.445575076Z      _req: null,
+2025-10-21T11:35:14.445576948Z      [Symbol(shapeMode)]: false,
+2025-10-21T11:35:14.445578689Z      [Symbol(kCapture)]: false
+2025-10-21T11:35:14.445580433Z    },
+2025-10-21T11:35:14.445582092Z    [Symbol(kType)]: 'error',
+2025-10-21T11:35:14.445583786Z    [Symbol(kError)]: Error: connect ECONNREFUSED 10.0.2.4:443
+2025-10-21T11:35:14.445585599Z        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+2025-10-21T11:35:14.445587530Z        at TCPConnectWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+2025-10-21T11:35:14.445589321Z      errno: -111,
+2025-10-21T11:35:14.445591166Z      code: 'ECONNREFUSED',
+2025-10-21T11:35:14.445592913Z      syscall: 'connect',
+2025-10-21T11:35:14.445594609Z      address: '10.0.2.4',
+2025-10-21T11:35:14.445596313Z      port: 443
+2025-10-21T11:35:14.445597960Z    },
+2025-10-21T11:35:14.445599708Z    [Symbol(kMessage)]: 'connect ECONNREFUSED 10.0.2.4:443'
+2025-10-21T11:35:14.445622595Z  }
+2025-10-21T11:35:15.336152826Z  ⚠️ Could not check user count for auto-seeding: ErrorEvent {
+2025-10-21T11:35:15.336178193Z    [Symbol(kTarget)]: WebSocket {
+2025-10-21T11:35:15.336181392Z      _events: [Object: null prototype] {
+2025-10-21T11:35:15.336183427Z        error: [Function],
+2025-10-21T11:35:15.336185298Z        message: [Function],
+2025-10-21T11:35:15.336187585Z        close: [Function],
+2025-10-21T11:35:15.336189460Z        open: [Function]
+2025-10-21T11:35:15.336191488Z      },
+2025-10-21T11:35:15.336193447Z      _eventsCount: 4,
+2025-10-21T11:35:15.336195280Z      _maxListeners: undefined,
+2025-10-21T11:35:15.336197168Z      _binaryType: 'arraybuffer',
+2025-10-21T11:35:15.336198935Z      _closeCode: 1006,
+2025-10-21T11:35:15.336200655Z      _closeFrameReceived: false,
+2025-10-21T11:35:15.336202517Z      _closeFrameSent: false,
+2025-10-21T11:35:15.336204314Z      _closeMessage: <Buffer >,
+2025-10-21T11:35:15.336206684Z      _closeTimer: null,
+2025-10-21T11:35:15.336208461Z      _errorEmitted: true,
+2025-10-21T11:35:15.336210257Z      _extensions: {},
+2025-10-21T11:35:15.336211966Z      _paused: false,
+2025-10-21T11:35:15.336223960Z      _protocol: '',
+2025-10-21T11:35:15.336225937Z      _readyState: 3,
+2025-10-21T11:35:15.336227773Z      _receiver: null,
+2025-10-21T11:35:15.336229581Z      _sender: null,
+2025-10-21T11:35:15.336576930Z      _socket: null,
+2025-10-21T11:35:15.336584319Z      _bufferedAmount: 0,
+2025-10-21T11:35:15.336586487Z      _isServer: false,
+2025-10-21T11:35:15.336588339Z      _redirects: 0,
+2025-10-21T11:35:15.336590153Z      _autoPong: true,
+2025-10-21T11:35:15.336592077Z      _url: 'wss://intelms-server.postgres.database.azure.com/v2',
+2025-10-21T11:35:15.336594089Z      _req: null,
+2025-10-21T11:35:15.336595860Z      [Symbol(shapeMode)]: false,
+2025-10-21T11:35:15.336597812Z      [Symbol(kCapture)]: false
+2025-10-21T11:35:15.336599581Z    },
+2025-10-21T11:35:15.336601292Z    [Symbol(kType)]: 'error',
+2025-10-21T11:35:15.336603168Z    [Symbol(kError)]: Error: connect ECONNREFUSED 10.0.2.4:443
+2025-10-21T11:35:15.336605226Z        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+2025-10-21T11:35:15.336610396Z        at TCPConnectWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+2025-10-21T11:35:15.336618531Z      errno: -111,
+2025-10-21T11:35:15.336620535Z      code: 'ECONNREFUSED',
+2025-10-21T11:35:15.336622467Z      syscall: 'connect',
+2025-10-21T11:35:15.336718194Z      address: '10.0.2.4',
+2025-10-21T11:35:15.336845654Z      port: 443
+2025-10-21T11:35:15.336847937Z    },
+2025-10-21T11:35:15.336849697Z    [Symbol(kMessage)]: 'connect ECONNREFUSED 10.0.2.4:443'
+2025-10-21T11:35:15.336851701Z  }
+2025-10-21T11:35:18.329372908Z  🔒 Auth failed for GET /api/auth/user - No session user found
+2025-10-21T11:35:18.354121972Z  11:35:18 AM [express] GET /api/auth/user 401 in 27ms :: {"message":"Unauthorized","error":"Authentica…
+2025-10-21T11:35:18.371156602Z  🔒 Auth failed for GET /api/config/gdpr - No session user found
+2025-10-21T11:35:18.372760455Z  11:35:18 AM [express] GET /api/config/gdpr 401 in 2ms :: {"message":"Unauthorized","error":"Authentic…
+2025-10-21T11:35:18.728103299Z  🔒 Auth failed for GET /api/auth/user - No session user found
+2025-10-21T11:35:18.737632423Z  11:35:18 AM [express] GET /api/auth/user 401 in 9ms :: {"message":"Unauthorized","error":"Authenticat…
+2025-10-21T11:35:27.280508959Z  Login error: ErrorEvent {
+2025-10-21T11:35:27.280541346Z    [Symbol(kTarget)]: WebSocket {
+2025-10-21T11:35:27.280544106Z      _events: [Object: null prototype] {
+2025-10-21T11:35:27.280546133Z        error: [Function],
+2025-10-21T11:35:27.280547990Z        message: [Function],
+2025-10-21T11:35:27.280549932Z        close: [Function],
+2025-10-21T11:35:27.280561652Z        open: [Function]
+2025-10-21T11:35:27.280563776Z      },
+2025-10-21T11:35:27.290453217Z      _eventsCount: 4,
+2025-10-21T11:35:27.290458382Z      _maxListeners: undefined,
+2025-10-21T11:35:27.290460438Z      _binaryType: 'arraybuffer',
+2025-10-21T11:35:27.290462310Z      _closeCode: 1006,
+2025-10-21T11:35:27.290464170Z      _closeFrameReceived: false,
+2025-10-21T11:35:27.290466150Z      _closeFrameSent: false,
+2025-10-21T11:35:27.290467985Z      _closeMessage: <Buffer >,
+2025-10-21T11:35:27.290470526Z      _closeTimer: null,
+2025-10-21T11:35:27.290472362Z      _errorEmitted: true,
+2025-10-21T11:35:27.290474233Z      _extensions: {},
+2025-10-21T11:35:27.290475949Z      _paused: false,
+2025-10-21T11:35:27.291255670Z      _protocol: '',
+2025-10-21T11:35:27.291258420Z      _readyState: 3,
+2025-10-21T11:35:27.291260305Z      _receiver: null,
+2025-10-21T11:35:27.291262074Z      _sender: null,
+2025-10-21T11:35:27.291263893Z      _socket: null,
+2025-10-21T11:35:27.291265878Z      _bufferedAmount: 0,
+2025-10-21T11:35:27.291267779Z      _isServer: false,
+2025-10-21T11:35:27.291269603Z      _redirects: 0,
+2025-10-21T11:35:27.291271455Z      _autoPong: true,
+2025-10-21T11:35:27.291273426Z      _url: 'wss://intelms-server.postgres.database.azure.com/v2',
+2025-10-21T11:35:27.291275411Z      _req: null,
+2025-10-21T11:35:27.291277208Z      [Symbol(shapeMode)]: false,
+2025-10-21T11:35:27.291279095Z      [Symbol(kCapture)]: false
